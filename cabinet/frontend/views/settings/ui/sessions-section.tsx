@@ -41,10 +41,10 @@ export function SessionsSection({
       {titled ? (
         <ListCardTitle sub={t("settings.sessionsSub")}>{t("ui.sessionsDevices")}</ListCardTitle>
       ) : (
-        <p className="pb-2 pt-3 text-xs font-medium text-muted-foreground">{t("settings.sessionsSub")}</p>
+        <p className="pb-2 pt-3 text-xs font-medium text-ink-soft">{t("settings.sessionsSub")}</p>
       )}
 
-      {error && <p className="mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+      {error && <p className="mb-2 rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{error}</p>}
 
       {loading ? (
         [0, 1].map((i) => (
@@ -58,7 +58,7 @@ export function SessionsSection({
           </div>
         ))
       ) : list.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">{t("settings.noSessions")}</p>
+        <p className="py-6 text-center text-sm text-ink-soft">{t("settings.noSessions")}</p>
       ) : (
         list.map((s, i) => {
           const { label, icon: Icon } = deviceOf(s.user_agent, t);
@@ -69,12 +69,12 @@ export function SessionsSection({
                   the ip/last-seen meta were being clipped to an ellipsis on a phone. */}
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2.5 py-3.5">
                 <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-main-surface text-foreground">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-ink">
                     <Icon className="size-4.5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">{label}</p>
-                    <p className="break-words text-xs leading-snug text-muted-foreground">{metaOf(s, name, t)}</p>
+                    <p className="text-sm font-medium text-ink">{label}</p>
+                    <p className="break-words text-xs leading-snug text-ink-soft">{metaOf(s, name, t)}</p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5 pl-12 sm:pl-0">
@@ -92,7 +92,7 @@ export function SessionsSection({
                         size="sm"
                         disabled={busy}
                         onClick={() => s.id && onRevoke(s.id)}
-                        className="border-main-accent-t4/40 text-main-accent-t4 hover:text-main-accent-t4"
+                        className="border-accent-info/40 text-accent-info hover:text-accent-info"
                       >
                         {t("settings.revoke")}
                       </Button>
@@ -117,7 +117,7 @@ export function SessionsSection({
             variant="outline"
             disabled={busy}
             onClick={onRevokeOthers}
-            className="w-full min-w-0 shrink truncate border-main-accent-t4/40 text-main-accent-t4 hover:text-main-accent-t4"
+            className="w-full min-w-0 shrink truncate border-accent-info/40 text-accent-info hover:text-accent-info"
           >
             {busy && <Loader2 className="mr-1.5 size-4 animate-spin" />} {t("settings.signOutOthers")}
           </Button>

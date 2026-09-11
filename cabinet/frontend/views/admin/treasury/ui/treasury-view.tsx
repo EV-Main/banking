@@ -22,7 +22,7 @@ import { StaggerItem } from "@/shared/ui/motion";
 import { ResourceError } from "@/shared/ui/resource-error";
 import { AdminHeader, AdminScreen } from "@/views/admin/ui/shell";
 
-const TEAL_CTA = "bg-main-accent-t1 text-main-black hover:bg-main-accent-t1/90";
+const TEAL_CTA = "bg-accent-debug text-background hover:bg-accent-debug/90";
 
 const GAS_SYMBOLS: Record<string, string> = {
   bep20: "BNB",
@@ -59,7 +59,7 @@ export function TreasuryView() {
       {error && <ResourceError message={error} onRetry={retry} retrying={loading} />}
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.treasury.layer1")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer1")}</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MoneyCard label={t("admin.treasury.claimsTotal")} value={treasury?.total_custody} hint={t("admin.treasury.claimsTotalHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.claims-total" />
           <MoneyCard label={t("admin.treasury.heldForClients")} value={treasury?.held_for_clients} hint={t("admin.treasury.heldForClientsHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.held-for-clients" />
@@ -73,7 +73,7 @@ export function TreasuryView() {
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.treasury.layer2")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer2")}</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {treasury ? (
             <>
@@ -95,7 +95,7 @@ export function TreasuryView() {
           it where their grammar wants it. `RichMessage` is what lets that argument render
           as `<code>` rather than as prose: an invariant set in the body face reads as
           something someone wrote, not as something the system enforces. */}
-      <StaggerItem as="p" className="max-w-3xl text-xs text-muted-foreground">
+      <StaggerItem as="p" className="max-w-3xl text-xs text-ink-soft">
         <RichMessage
           id="admin.treasury.invariantNote"
           values={{ invariant: <code className="font-mono-tech">sum(custody) == sum(claims)</code> }}
@@ -142,18 +142,18 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
 
   return (
     <StaggerItem as="section" className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.treasury.recordArrival")}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.recordArrival")}</p>
       <Card>
         <CardContent className="space-y-5 py-6">
-          <p className="max-w-3xl text-sm text-muted-foreground">{t("admin.treasury.recordArrivalIntro")}</p>
+          <p className="max-w-3xl text-sm text-ink-soft">{t("admin.treasury.recordArrivalIntro")}</p>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm text-muted-foreground">{t("admin.rail")}</span>
+              <span className="text-sm text-ink-soft">{t("admin.rail")}</span>
               <Select value={network} onValueChange={setNetwork}>
-                <SelectTrigger className="w-full border-border bg-main-surface" disabled={options.length === 0}>
+                <SelectTrigger className="w-full border-border bg-secondary" disabled={options.length === 0}>
                   {/* The placeholder is trigger text, not a selectable item — "Select a
                       rail…" is not a rail. */}
-                  <span className={cn("flex min-w-0 items-center gap-1.5", !network && "text-muted-foreground")}>
+                  <span className={cn("flex min-w-0 items-center gap-1.5", !network && "text-ink-soft")}>
                     {network && <NetworkMark network={network} className="size-3.5 shrink-0" />}
                     <span className="truncate">
                       {network ? railLabel(network, t) : options.length === 0 ? t("admin.treasury.noRailWithTreasury") : t("admin.treasury.selectRail")}
@@ -171,11 +171,11 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
               </Select>
             </div>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-muted-foreground">{t("admin.treasury.expectedAmount")}</span>
+              <span className="text-sm text-ink-soft">{t("admin.treasury.expectedAmount")}</span>
               <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder={t("admin.treasury.placeholder.any")} className="w-full" />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-muted-foreground">{t("admin.treasury.onchainRef")}</span>
+              <span className="text-sm text-ink-soft">{t("admin.treasury.onchainRef")}</span>
               {/* A format literal, not prose — it reads the same in every locale. */}
               <Input value={txRef} onChange={(e) => setTxRef(e.target.value)} placeholder="0xhash:logIndex" className="w-full" />
             </label>
@@ -184,7 +184,7 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
           {/* The two reference formats are code, so they ride in as ICU arguments and the
               note stays one key: a translator needs the whole sentence to place them, and
               splitting around the two spans would hand them three fragments instead. */}
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-ink-soft">
             <RichMessage
               id="admin.treasury.refNote"
               values={{
@@ -195,16 +195,16 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
           </p>
 
           {state.error && (
-            <p className="flex items-center gap-2 text-sm text-destructive">
+            <p className="flex items-center gap-2 text-sm text-accent-error">
               <TriangleAlert className="size-4 shrink-0" /> {state.error}
             </p>
           )}
           {state.result?.recorded && (
-            <p className="text-sm text-main-accent-t1">
+            <p className="text-sm text-accent-debug">
               {t("admin.treasury.recorded", { amount: formatUsd(state.result.amount), party: partyLabel(state.result, t) })}
             </p>
           )}
-          {state.result && !state.result.recorded && <p className="text-sm text-main-accent-t3">{t("admin.treasury.alreadyRecorded")}</p>}
+          {state.result && !state.result.recorded && <p className="text-sm text-accent-warn">{t("admin.treasury.alreadyRecorded")}</p>}
 
           <Button type="button" className={cn("ml-auto flex", TEAL_CTA)} disabled={state.busy || !network || !txRef.trim()} onClick={submit}>
             {state.busy ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -233,18 +233,18 @@ function MoneyCard({ label, network, value, hint, loading, unavailable, footer, 
     <Card>
       <CardContent className="space-y-1 py-5">
         <div className="flex items-center gap-1.5">
-          {network && <NetworkMark network={network} className="size-3.5 shrink-0 text-muted-foreground" />}
-          <p className="text-xs text-muted-foreground">{label || "…"}</p>
+          {network && <NetworkMark network={network} className="size-3.5 shrink-0 text-ink-soft" />}
+          <p className="text-xs text-ink-soft">{label || "…"}</p>
           {tip && <TipAnchor anchor={tip} />}
         </div>
         {loading ? (
           <Skeleton className="mt-1 h-8 w-28" />
         ) : unavailable ? (
-          <p className="text-3xl font-semibold tabular-nums text-muted-foreground">—</p>
+          <p className="text-3xl font-semibold tabular-nums text-ink-soft">—</p>
         ) : (
           <p className="text-3xl font-semibold tabular-nums">{formatUsd(value)}</p>
         )}
-        {hint && !loading && !unavailable && <p className="text-xs text-main-accent-t2">{hint}</p>}
+        {hint && !loading && !unavailable && <p className="text-xs text-positive">{hint}</p>}
         {footer && !loading && footer}
       </CardContent>
     </Card>
@@ -266,13 +266,13 @@ function RailFunding({ rail }: { rail: RailLiquidity }) {
       {rail.treasury_address ? (
         <div className="space-y-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-xs text-muted-foreground">{t("nav.treasury")}</p>
+            <p className="text-xs text-ink-soft">{t("nav.treasury")}</p>
             <TipAnchor anchor="admin.treasury.rail.address" />
           </div>
           <CopyableAddress address={show(rail.treasury_address)} />
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">{t("admin.treasury.custodyUnconfigured")}</p>
+        <p className="text-xs text-ink-soft">{t("admin.treasury.custodyUnconfigured")}</p>
       )}
       <FundingRow label={t("admin.treasury.onchainUsdt")} value={rail.onchain_usdt ? qty(rail.onchain_usdt, locale) : undefined} />
       <FundingRow label={t("admin.treasury.gas")} value={rail.onchain_gas ? `${qty(rail.onchain_gas, locale)} ${gasSymbol}`.trimEnd() : undefined} />
@@ -281,9 +281,9 @@ function RailFunding({ rail }: { rail: RailLiquidity }) {
           <div className="flex items-center gap-1.5">
             {/* The accent parenthetical is its own complete thought, so it keeps its own key
                 and its own colour rather than being folded into the label. */}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-ink-soft">
               {t("admin.treasury.gasStation")}{" "}
-              <span className="text-main-accent-t2">{t("admin.treasury.gasStationHint", { symbol: gasSymbol || t("admin.treasury.gasWord") })}</span>
+              <span className="text-positive">{t("admin.treasury.gasStationHint", { symbol: gasSymbol || t("admin.treasury.gasWord") })}</span>
             </p>
             <TipAnchor anchor="admin.treasury.rail.gas-station" />
           </div>
@@ -301,7 +301,7 @@ function RailFunding({ rail }: { rail: RailLiquidity }) {
 function FundingRow({ label, value }: { label: string; value: string | undefined }) {
   return (
     <div className="flex items-center justify-between text-xs">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-ink-soft">{label}</span>
       <span className="tabular-nums">{value ?? "—"}</span>
     </div>
   );
@@ -321,9 +321,9 @@ function CopyableAddress({ address, label }: { address: string; label?: string }
 
   return (
     <div className="space-y-1">
-      {label && <p className="text-xs text-muted-foreground">{label}</p>}
+      {label && <p className="text-xs text-ink-soft">{label}</p>}
       <div className="flex items-center gap-1.5">
-        <code className="flex-1 min-w-0 truncate rounded border border-border bg-main-surface px-2 py-1 font-mono-tech text-xs text-muted-foreground" title={address}>
+        <code className="flex-1 min-w-0 truncate rounded border border-border bg-secondary px-2 py-1 font-mono-tech text-xs text-ink-soft" title={address}>
           {address}
         </code>
         <Button type="button" variant="outline" size="icon" onClick={copy} aria-label={t("admin.treasury.a11y.copy", { what: label ?? t("ui.address") })}>

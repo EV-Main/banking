@@ -58,7 +58,7 @@ export function SubscribePanel({ service, nav }: { service: string; nav: FundNav
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-main-surface p-4">
+    <div className="space-y-3 rounded-lg border border-border bg-secondary p-4">
       {/* The receipt and the failure occupy the same slot and replace one another, so
           they share a presence boundary: retrying after an error swaps the panel in
           place instead of collapsing the form and re-expanding it. */}
@@ -66,7 +66,7 @@ export function SubscribePanel({ service, nav }: { service: string; nav: FundNav
         {done && (
           <Panel key="receipt" from="bottom">
             <Alert>
-              <Sparkles className="size-4 text-main-accent-t2" />
+              <Sparkles className="size-4 text-positive" />
               <AlertTitle>{t("invest.subscribeReceived")}</AlertTitle>
               <AlertDescription>{t("invest.subscribeReceiptBody", { n: Number(done.units ?? 0), units: formatUnits(done.units), nav: formatUsdt(done.nav) })}</AlertDescription>
             </Alert>
@@ -97,7 +97,7 @@ export function SubscribePanel({ service, nav }: { service: string; nav: FundNav
         </Button>
       </div>
 
-      <p className={cn("text-xs", dust || overCap ? "text-destructive" : "text-muted-foreground")}>
+      <p className={cn("text-xs", dust || overCap ? "text-accent-error" : "text-ink-soft")}>
         {dust
           ? t("invest.dustHint", { nav: formatUsdt(nav?.nav) })
           : overCap
@@ -137,12 +137,12 @@ export function RedeemPanel({ service, position, nav }: { service: string; posit
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-main-surface p-4">
+    <div className="space-y-3 rounded-lg border border-border bg-secondary p-4">
       <PanelPresence>
         {done && (
           <Panel key="receipt" from="bottom">
             <Alert>
-              <Clock className="size-4 text-main-accent-t3" />
+              <Clock className="size-4 text-accent-warn" />
               <AlertTitle>{t(done.state === "completed" ? "invest.redeemCompleted" : "invest.redeemQueued")}</AlertTitle>
               <AlertDescription>
                 {done.state === "completed"
@@ -164,7 +164,7 @@ export function RedeemPanel({ service, position, nav }: { service: string; posit
       </PanelPresence>
 
       {/* The one genuinely surprising rule of this product, stated on the action itself. */}
-      <p className="flex items-start gap-1.5 text-xs text-main-accent-t3">
+      <p className="flex items-start gap-1.5 text-xs text-accent-warn">
         <Clock className="mt-0.5 size-3.5 shrink-0" />
         <span>
           {t("invest.redeemTimingNote")}
@@ -179,7 +179,7 @@ export function RedeemPanel({ service, position, nav }: { service: string; posit
               {t("invest.unitsToRedeem")}
               <TipAnchor anchor="invest.redeem.units" />
             </span>
-            <button type="button" className="text-xs text-main-accent-t1 hover:underline" onClick={() => setUnits(position.units ?? "0")}>
+            <button type="button" className="text-xs text-accent-debug hover:underline" onClick={() => setUnits(position.units ?? "0")}>
               {t("ui.max")}
             </button>
           </span>
@@ -191,7 +191,7 @@ export function RedeemPanel({ service, position, nav }: { service: string; posit
         </Button>
       </div>
 
-      <p className={cn("text-xs", overdraw ? "text-destructive" : "text-muted-foreground")}>
+      <p className={cn("text-xs", overdraw ? "text-accent-error" : "text-ink-soft")}>
         {overdraw
           ? t("invest.youHoldUnits", { n: Number(position.units ?? 0), units: formatUnits(position.units) })
           : estimate !== null
@@ -223,17 +223,17 @@ export function QueuedList({ items }: { items: Redemption[] }) {
   };
 
   return (
-    <div className="space-y-2 rounded-lg border border-main-accent-t3/30 bg-main-accent-t3/5 p-3">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-main-accent-t3">
+    <div className="space-y-2 rounded-lg border border-accent-warn/30 bg-accent-warn/5 p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-accent-warn">
         {t("invest.awaitingSettlement")}
         <TipAnchor anchor="invest.activity.status" />
       </p>
-      {!!error && <p className="text-xs text-destructive">{errorMessage(error, t)}</p>}
+      {!!error && <p className="text-xs text-accent-error">{errorMessage(error, t)}</p>}
       {items.map((r) => (
         <div key={r.id ?? ""} className="flex items-center justify-between gap-3 text-sm">
           <span>
             <span className="font-medium">{t("dash.unitsAmount", { n: Number(r.units ?? 0), units: formatUnits(r.units) })}</span>{" "}
-            <span className="text-muted-foreground">{t("invest.reservedPricedAtSettle")}</span>
+            <span className="text-ink-soft">{t("invest.reservedPricedAtSettle")}</span>
           </span>
           <span className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" disabled={busy === (r.id ?? "")} onClick={() => cancel(r.id ?? "")}>

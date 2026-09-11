@@ -28,15 +28,15 @@ export interface RailMeta {
 }
 
 const RAILS: Record<string, RailMeta> = {
-  bep20: { label: "BEP20", chainKey: "wallet.chain.bep20", badge: "B", tone: "bg-main-accent-t3/15 text-main-accent-t3" },
-  trc20: { label: "TRC20", chainKey: "wallet.chain.trc20", badge: "T", tone: "bg-main-accent-t4/15 text-main-accent-t4" },
-  ton: { label: "TON", chainKey: "wallet.chain.ton", badge: "◆", tone: "bg-main-accent-t1/15 text-main-accent-t1" },
-  polygon: { label: "Polygon", chainKey: "wallet.chain.polygon", badge: "P", tone: "bg-main-accent-t1/15 text-main-accent-t1" },
+  bep20: { label: "BEP20", chainKey: "wallet.chain.bep20", badge: "B", tone: "bg-accent-warn/15 text-accent-warn" },
+  trc20: { label: "TRC20", chainKey: "wallet.chain.trc20", badge: "T", tone: "bg-accent-info/15 text-accent-info" },
+  ton: { label: "TON", chainKey: "wallet.chain.ton", badge: "◆", tone: "bg-accent-debug/15 text-accent-debug" },
+  polygon: { label: "Polygon", chainKey: "wallet.chain.polygon", badge: "P", tone: "bg-accent-debug/15 text-accent-debug" },
 };
 
 export function railMeta(network: string | undefined): RailMeta {
   const id = network ?? "";
-  return RAILS[id] ?? { label: id.toUpperCase(), chainKey: "wallet.chain.unknown", badge: (id[0] ?? "?").toUpperCase(), tone: "bg-muted text-muted-foreground" };
+  return RAILS[id] ?? { label: id.toUpperCase(), chainKey: "wallet.chain.unknown", badge: (id[0] ?? "?").toUpperCase(), tone: "bg-muted text-ink-soft" };
 }
 
 export function networkLabel(network: string | undefined): string {

@@ -7,12 +7,12 @@ export function PagePlaceholder({ eyebrow, title, blurb, icon }: { eyebrow: stri
   return (
     <div className="px-8 pb-7 pt-6">
       <header className="mb-6 space-y-1">
-        <p className="font-mono-tech text-xs uppercase tracking-widest text-main-accent-t1">{eyebrow}</p>
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
+        <p className="font-mono-tech text-xs uppercase tracking-widest text-accent-debug">{eyebrow}</p>
+        <h1 className="text-2xl font-semibold text-ink">{title}</h1>
       </header>
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-main-card px-8 py-20 text-center">
-        <span className="flex size-12 items-center justify-center rounded-full bg-main-accent-t1/10 text-main-accent-t1">{icon}</span>
-        <p className="max-w-md text-sm text-muted-foreground">{blurb}</p>
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card px-8 py-20 text-center">
+        <span className="flex size-12 items-center justify-center rounded-full bg-accent-debug/10 text-accent-debug">{icon}</span>
+        <p className="max-w-md text-sm text-ink-soft">{blurb}</p>
       </div>
     </div>
   );

@@ -59,8 +59,8 @@ export function TipAnchor({ anchor, className }: TipAnchorProps) {
     <InfoTip>
       <InfoTipTrigger label={t("tips.a11y.about", { title })} className={className} />
       <InfoTipContent>
-        <p className="text-foreground font-medium">{title}</p>
-        <p className="text-muted-foreground mt-1">{body}</p>
+        <p className="text-ink font-medium">{title}</p>
+        <p className="text-ink-soft mt-1">{body}</p>
       </InfoTipContent>
     </InfoTip>
   );

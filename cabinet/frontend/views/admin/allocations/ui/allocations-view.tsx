@@ -19,15 +19,15 @@ import { ResourceError } from "@/shared/ui/resource-error";
 import { compactUnits, stateLabel } from "@/views/admin/lib/format";
 import { AdminHeader, AdminScreen } from "@/views/admin/ui/shell";
 
-const TEAL_CTA = "bg-main-accent-t1 text-main-black hover:bg-main-accent-t1/90";
+const TEAL_CTA = "bg-accent-debug text-background hover:bg-accent-debug/90";
 
 // The registry's own vocabulary, rendered. `closed` is amber rather than destructive:
 // it stops new subscriptions but investors can still redeem out of it, so it is a
 // wind-down, not a failure.
 const STATE_TONE: Record<AllocationState, string> = {
-  draft: "border-border text-muted-foreground",
-  open: "border-main-accent-t2/40 bg-main-accent-t2/10 text-main-accent-t2",
-  closed: "border-main-accent-t3/40 bg-main-accent-t3/10 text-main-accent-t3",
+  draft: "border-border text-ink-soft",
+  open: "border-positive/40 bg-positive/10 text-positive",
+  closed: "border-accent-warn/40 bg-accent-warn/10 text-accent-warn",
 };
 
 // Catalogue keys, not finished prose: this map is module scope, so it holds what to say
@@ -61,7 +61,7 @@ function IconSelect({ value, onChange, className }: { value: AllocationIcon; onC
         if (picked) onChange(picked);
       }}
     >
-      <SelectTrigger className={cn("w-full border-border bg-main-surface", className)}>
+      <SelectTrigger className={cn("w-full border-border bg-secondary", className)}>
         <span className="flex min-w-0 items-center gap-1.5">
           <ProductIcon icon={value} className="size-3.5 shrink-0" />
           <span className="truncate">{t(`admin.alloc.icon.${value}`)}</span>
@@ -129,9 +129,9 @@ export function AllocationsView() {
       {adding && <RegisterForm busy={busy === "register"} onCancel={() => setAdding(false)} onSubmit={async (body) => (await run("register", () => registerAllocation(body))) && setAdding(false)} />}
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-ink-soft">
           {t("admin.alloc.registry")}
-          {rows && <span className="rounded-full bg-main-accent-t1/15 px-2 py-0.5 text-xs font-semibold text-main-accent-t1">{rows.length}</span>}
+          {rows && <span className="rounded-full bg-accent-debug/15 px-2 py-0.5 text-xs font-semibold text-accent-debug">{rows.length}</span>}
         </p>
         <Card>
           <CardContent className="p-0">
@@ -144,13 +144,13 @@ export function AllocationsView() {
               }
             >
               {!rows ? null : rows.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">{t("admin.alloc.empty")}</p>
+                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.alloc.empty")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     {/* i18n-max: 14 per header — auto-layout table with no scroll wrapper;
                         a long header widens its column and squeezes the Product cell. */}
-                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
                       <th className="px-5 py-3 font-medium">{t("admin.alloc.col.product")}</th>
                       <th className="px-5 py-3 font-medium">{t("admin.alloc.col.serviceId")}</th>
                       <th className="px-5 py-3 font-medium">{t("admin.col.state")}</th>
@@ -189,7 +189,7 @@ export function AllocationsView() {
             has to be able to move `draft` to wherever the sentence puts it in their
             language, which splitting the note around the `<span>` would forbid. The cost
             is the word's mono styling, which is decoration rather than meaning here. */}
-        <p className="max-w-3xl text-xs text-muted-foreground">{t("admin.alloc.footnote", { state: t("admin.state.draft") })}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.alloc.footnote", { state: t("admin.state.draft") })}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -228,14 +228,14 @@ function AllocationRow({
               investor sees in the rail, so an operator must be able to check it without
               opening a form that could then be saved by accident. */}
           <div className="flex items-center gap-2.5">
-            <ProductIcon icon={row.icon} className="size-4 shrink-0 text-muted-foreground" />
+            <ProductIcon icon={row.icon} className="size-4 shrink-0 text-ink-soft" />
             <div className="min-w-0">
               <p className="font-medium">{row.title}</p>
-              {row.summary && <p className="text-xs text-muted-foreground">{row.summary}</p>}
+              {row.summary && <p className="text-xs text-ink-soft">{row.summary}</p>}
             </div>
           </div>
         </td>
-        <td className="px-5 py-3 font-mono-tech text-xs text-muted-foreground">{row.service}</td>
+        <td className="px-5 py-3 font-mono-tech text-xs text-ink-soft">{row.service}</td>
         <td className="px-5 py-3">
           {/* i18n-max: 12 — a chip in a table cell. The value is authored in display
               case rather than lowercased and fixed with CSS `capitalize`: that rule
@@ -247,7 +247,7 @@ function AllocationRow({
         </td>
         {/* Read-only here: resizing the supply is a money decision and lives on the
             Valuation screen, next to the issued figure it has to be judged against. */}
-        <td className="px-5 py-3 tabular-nums text-muted-foreground">{compactUnits(row.unit_cap)}</td>
+        <td className="px-5 py-3 tabular-nums text-ink-soft">{compactUnits(row.unit_cap)}</td>
         <td className="px-5 py-3">
           {/* i18n-max: 12 per verb — two `shrink-0` Buttons share this cell, and every
               character widens the Actions column at the Product column's expense. */}
@@ -262,24 +262,24 @@ function AllocationRow({
         </td>
       </tr>
       {editing && (
-        <tr className="bg-foreground/[0.03]">
+        <tr className="bg-ink/[0.03]">
           <td colSpan={5} className="px-5 py-4">
             <div className="flex flex-wrap items-end gap-3">
               {/* `flex flex-col`, not `block` + `space-y`: the uikit Input is `inline-flex`,
                   so a narrow one shares the line with its label unless the column is
                   explicit. */}
               <label className="flex w-56 flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">{t("admin.alloc.field.title")}</span>
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.title")}</span>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full" />
               </label>
               <label className="flex min-w-56 flex-1 flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">{t("admin.alloc.field.summary")}</span>
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.summary")}</span>
                 <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary")} className="w-full" />
               </label>
               {/* Not a `<label>`: the trigger is a button, and wrapping it would make the
                   caption a second click target that reopens the popup it just closed. */}
               <div className="flex w-44 flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">{t("admin.alloc.field.icon")}</span>
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.icon")}</span>
                 <IconSelect value={icon} onChange={setIcon} />
               </div>
               <Button type="button" className={cn(TEAL_CTA)} disabled={busy || !title.trim()} onClick={() => onSave({ service: row.service, title, summary, icon })}>
@@ -313,31 +313,31 @@ function RegisterForm({ busy, onCancel, onSubmit }: { busy: boolean; onCancel: (
       <CardContent className="space-y-4 py-6">
         <div className="grid gap-4 md:grid-cols-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-muted-foreground">{t("admin.alloc.col.serviceId")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.col.serviceId")}</span>
             {/* The two placeholders are format examples, not prose — a slug and a proper
                 noun — so they stay as they are in every locale. */}
             <Input value={service} onChange={(e) => setService(e.target.value.trim())} placeholder="quy-nhon-fund" spellCheck={false} className="w-full font-mono-tech" />
-            <span className={cn("text-xs", service && !slugOk ? "text-destructive" : "text-muted-foreground")}>
+            <span className={cn("text-xs", service && !slugOk ? "text-accent-error" : "text-ink-soft")}>
               {service && !slugOk ? t("admin.alloc.slugInvalid") : t("admin.alloc.slugHint")}
             </span>
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-muted-foreground">{t("admin.alloc.field.title")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.title")}</span>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Quy Nhon Fund" className="w-full" />
           </label>
           {/* Not a `<label>` — see the row editor: the trigger is a button, so a wrapping
               label would toggle the popup a second time. */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm text-muted-foreground">{t("admin.alloc.field.icon")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.icon")}</span>
             <IconSelect value={icon} onChange={setIcon} />
           </div>
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-muted-foreground">{t("admin.alloc.field.summary")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.summary")}</span>
             <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary")} className="w-full" />
           </label>
         </div>
         <div className="flex items-center gap-3">
-          <p className="min-w-0 text-xs text-muted-foreground">{t("admin.alloc.registerHint")}</p>
+          <p className="min-w-0 text-xs text-ink-soft">{t("admin.alloc.registerHint")}</p>
           {/* i18n-max: 12 per verb — both Buttons are `shrink-0` beside the hint above. */}
           <Button type="button" variant="outline" className="ml-auto" onClick={onCancel}>
             {t("ui.cancel")}

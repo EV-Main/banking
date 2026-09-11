@@ -78,7 +78,7 @@ export function ProductIcon({ icon, className }: { icon: string | undefined; cla
 
 // Three accent tints, so a rail of funds does not read as one undifferentiated column.
 // Decoration only — the glyph carries the identity, and the tint merely separates neighbours.
-const PRODUCT_TONES = ["bg-main-accent-t1/15 text-main-accent-t1", "bg-main-accent-t2/15 text-main-accent-t2", "bg-main-accent-t3/15 text-main-accent-t3"];
+const PRODUCT_TONES = ["bg-accent-debug/15 text-accent-debug", "bg-positive/15 text-positive", "bg-accent-warn/15 text-accent-warn"];
 
 /**
  * The tint framing a product's mark, keyed by the service id.

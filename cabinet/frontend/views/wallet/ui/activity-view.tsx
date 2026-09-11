@@ -25,12 +25,12 @@ import { useT } from "@evinvest/i18n/react";
 const COLUMNS = { "--activity-columns": "110px 1fr 150px 130px" } as CSSProperties;
 
 const STATUS_STYLES: Record<string, string> = {
-  queued: "bg-main-accent-t3/15 text-main-accent-t3",
-  processing: "bg-main-accent-t1/15 text-main-accent-t1",
-  completed: "bg-main-accent-t2/15 text-main-accent-t2",
-  credited: "bg-main-accent-t2/15 text-main-accent-t2",
-  failed: "bg-main-accent-t4/15 text-main-accent-t4",
-  cancelled: "bg-muted text-muted-foreground",
+  queued: "bg-accent-warn/15 text-accent-warn",
+  processing: "bg-accent-debug/15 text-accent-debug",
+  completed: "bg-positive/15 text-positive",
+  credited: "bg-positive/15 text-positive",
+  failed: "bg-accent-info/15 text-accent-info",
+  cancelled: "bg-muted text-ink-soft",
 };
 
 // One row of the merged feed. Withdrawals carry no timestamp on the wire, so a strict time
@@ -84,7 +84,7 @@ export function ActivityView() {
   return (
     <WalletScreen title={t("ui.activity")} subtitle={t("wallet.activitySub")} back="/wallet">
       {error && (
-        <StaggerItem as="p" className="text-sm text-destructive">
+        <StaggerItem as="p" className="text-sm text-accent-error">
           {error}
         </StaggerItem>
       )}
@@ -98,7 +98,7 @@ export function ActivityView() {
           <div className={cn(WALLET_CARD, "overflow-hidden lg:max-w-190")}>
             <div
               style={COLUMNS}
-              className="hidden grid-cols-(--activity-columns) items-center gap-3 border-b border-border px-5 py-3.5 text-xs font-medium text-muted-foreground lg:grid"
+              className="hidden grid-cols-(--activity-columns) items-center gap-3 border-b border-border px-5 py-3.5 text-xs font-medium text-ink-soft lg:grid"
             >
               {/* Hard pixel columns (110 / 1fr / 150 / 130). i18n-max: 12 on all four. */}
               <span>{t("wallet.networkCaps")}</span>
@@ -126,12 +126,12 @@ function Row({ entry, first, busy, onCancel }: { entry: Entry; first: boolean; b
         <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold lg:size-6", rail.tone)}>
           <NetworkMark network={entry.network} className="size-4 lg:size-3.5" />
         </span>
-        <span className="hidden text-sm text-foreground lg:inline">{rail.label}</span>
+        <span className="hidden text-sm text-ink lg:inline">{rail.label}</span>
       </span>
 
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium text-foreground">{entry.title}</span>
-        <span className="truncate text-xs text-muted-foreground">
+        <span className="truncate text-sm font-medium text-ink">{entry.title}</span>
+        <span className="truncate text-xs text-ink-soft">
           <span className="lg:hidden">
             {rail.label} · {entry.sub}
           </span>
@@ -140,13 +140,13 @@ function Row({ entry, first, busy, onCancel }: { entry: Entry; first: boolean; b
       </span>
 
       <span className="flex shrink-0 flex-col items-end gap-1 lg:contents">
-        <span className="text-sm font-medium tabular-nums text-foreground lg:text-right">{entry.amount}</span>
+        <span className="text-sm font-medium tabular-nums text-ink lg:text-right">{entry.amount}</span>
         <span className="flex items-center justify-end gap-2">
           {/* No `capitalize`: the label is a translated word now, not the lowercase wire
               identifier the class existed to dress up. i18n-max: 12 (130px column).
               The mark doubles the tint — a status must not reach the reader by colour
               alone — and is `aria-hidden` because the word beside it already names it. */}
-          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLES[entry.state] ?? "bg-muted text-muted-foreground")}>
+          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLES[entry.state] ?? "bg-muted text-ink-soft")}>
             {StateIcon && <StateIcon className="size-3 shrink-0" aria-hidden />}
             {entry.stateText}
           </span>
@@ -156,7 +156,7 @@ function Row({ entry, first, busy, onCancel }: { entry: Entry; first: boolean; b
               disabled={busy}
               onClick={onCancel}
               aria-label={t("wallet.cancelWithdrawal")}
-              className="rounded-md border border-border p-1 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              className="rounded-md border border-border p-1 text-ink-soft outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               {busy ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
             </button>
@@ -171,11 +171,11 @@ function EmptyState() {
   const t = useT();
   return (
     <div className={cn(WALLET_CARD, "flex flex-col items-center gap-3 px-6 py-12 text-center lg:max-w-100")}>
-      <span className="flex size-11 items-center justify-center rounded-xl bg-main-accent-t1/15">
-        <ArrowUpRight className="size-5 text-main-accent-t1" />
+      <span className="flex size-11 items-center justify-center rounded-xl bg-accent-debug/15">
+        <ArrowUpRight className="size-5 text-accent-debug" />
       </span>
-      <p className="text-sm font-semibold text-foreground">{t("wallet.noActivity")}</p>
-      <p className="max-w-65 text-xs text-muted-foreground">{t("wallet.noActivityHint")}</p>
+      <p className="text-sm font-semibold text-ink">{t("wallet.noActivity")}</p>
+      <p className="max-w-65 text-xs text-ink-soft">{t("wallet.noActivityHint")}</p>
       <Link href="/wallet/deposit" className={cn(WALLET_CTA, "mt-1 px-4 py-2.5 text-sm")}>
         {t("wallet.newDeposit")}
       </Link>

@@ -49,7 +49,7 @@ export function BottomNavbar() {
   const onTab = activeAt >= 0;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-[var(--cabinet-bottom-nav-h,64px)] items-center border-t border-border bg-main-surface px-2 pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-[var(--cabinet-bottom-nav-h,64px)] items-center border-t border-border bg-secondary px-2 pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
       {/* One marker for the whole bar, mounted once and translated — not a node
           per tab that mounts and unmounts.
 
@@ -73,7 +73,7 @@ export function BottomNavbar() {
         animate={{ x: `${Math.max(activeAt, 0) * 100}%`, opacity: onTab ? 1 : 0 }}
         transition={reduce ? { duration: 0 } : { duration: DUR.base, ease: EASE.out }}
       >
-        <span className="h-0.5 w-10 rounded-full bg-main-accent-t1" />
+        <span className="h-0.5 w-10 rounded-full bg-accent-debug" />
       </motion.span>
 
       {TABS.map((tab) => {
@@ -97,8 +97,8 @@ export function BottomNavbar() {
               "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-1 font-medium transition-colors",
               // The offset is what earns its keep here: the active tab's fill is the same
               // teal as the ring, so without a gap the ring reads as the pill growing.
-              "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-main-surface",
-              isActive ? "text-main-accent-t1" : "text-muted-foreground hover:text-foreground",
+              "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-secondary",
+              isActive ? "text-accent-debug" : "text-ink-soft hover:text-ink",
             )}
           >
             <Icon className="size-5 shrink-0" />

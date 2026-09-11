@@ -10,7 +10,7 @@
    it look like a layout bug rather than a build one. The theme emits variables only, so
    leaving it unlayered costs nothing.
 
-   Tokens come from the same source the app uses, so `text-main-mist` / `bg-main-accent-t1`
+   Tokens come from the same source the app uses, so `text-ink` / `bg-accent-debug`
    / `border-border` resolve identically. Anything the app-only entry point carries is
    invisible here, so a palette change that lands in globals.css alone leaves the remote
    painting the old colours against a host that has already moved. */

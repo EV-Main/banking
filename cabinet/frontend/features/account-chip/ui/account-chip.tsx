@@ -154,20 +154,20 @@ function AuthedChip({
     <div className={cn("flex items-center gap-2", className)}>
       <a
         href={cabinetPath(documentLocale(), "/profile")}
-        className={cn("flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-foreground/5", CHIP_FOCUS)}
+        className={cn("flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-ink/5", CHIP_FOCUS)}
       >
-        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-full bg-main-accent-t1/15 text-xs font-semibold text-main-accent-t1">
+        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-full bg-accent-debug/15 text-xs font-semibold text-accent-debug">
           {initialsOf(email)}
         </span>
         <div className="min-w-0">
           {name ? (
-            <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+            <p className="truncate text-sm font-semibold text-ink">{name}</p>
           ) : (
-            <span className="my-1 block h-3 w-24 animate-pulse rounded bg-foreground/10" aria-hidden />
+            <span className="my-1 block h-3 w-24 animate-pulse rounded bg-ink/10" aria-hidden />
           )}
           {/* i18n-max: 12 — sits under the name inside the chip's `min-w-0` column, which
               is what the conductor's central nav is centred against. */}
-          <p className="flex items-center gap-1 text-xs font-medium text-main-accent-t1">
+          <p className="flex items-center gap-1 text-xs font-medium text-accent-debug">
             <BadgeCheck className="size-3 shrink-0" /> {t("ui.verified")}
           </p>
         </div>
@@ -176,7 +176,7 @@ function AuthedChip({
         type="button"
         onClick={signOut}
         aria-label={t("auth.signOut")}
-        className={cn("shrink-0 rounded-md text-muted-foreground transition-colors hover:text-foreground", CHIP_FOCUS)}
+        className={cn("shrink-0 rounded-md text-ink-soft transition-colors hover:text-ink", CHIP_FOCUS)}
       >
         <LogOut className="size-4" />
       </button>
@@ -195,7 +195,7 @@ function SignInCta({ className }: { className?: string }) {
     <a
       href={cabinetPath(documentLocale(), "/login")}
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-md border border-main-accent-t1 bg-transparent px-4 font-mono-tech text-xs tracking-wider text-main-accent-t1 transition-all duration-300 hover:bg-primary hover:text-primary-foreground",
+        "inline-flex h-9 items-center justify-center rounded-md border border-accent-debug bg-transparent px-4 font-mono-tech text-xs tracking-wider text-accent-debug transition-all duration-300 hover:bg-primary hover:text-primary-foreground",
         CHIP_FOCUS,
         className,
       )}
@@ -208,8 +208,8 @@ function SignInCta({ className }: { className?: string }) {
 function ChipSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2.5 px-1.5 py-1", className)} aria-hidden>
-      <span className="size-8.5 shrink-0 animate-pulse rounded-full bg-foreground/10" />
-      <span className="h-3 w-20 animate-pulse rounded bg-foreground/10" />
+      <span className="size-8.5 shrink-0 animate-pulse rounded-full bg-ink/10" />
+      <span className="h-3 w-20 animate-pulse rounded bg-ink/10" />
     </div>
   );
 }

@@ -81,10 +81,10 @@ export function stateLabel(state: string | undefined, t: Translate): string {
 /** Token classes for a state pill. Neutral unless the state carries real news. */
 export function stateTone(state: string | undefined): string {
   const key = normalise(state);
-  if (key === "approved" || key === "executed" || key === "removed") return "text-main-accent-t2";
-  if (key === "open" || key === "pending") return "text-main-accent-t1";
-  if (key === "rejected" || key === "failed" || key === "executionfailed" || key === "void") return "text-destructive";
-  return "text-muted-foreground";
+  if (key === "approved" || key === "executed" || key === "removed") return "text-positive";
+  if (key === "open" || key === "pending") return "text-accent-debug";
+  if (key === "rejected" || key === "failed" || key === "executionfailed" || key === "void") return "text-accent-error";
+  return "text-ink-soft";
 }
 
 // Both take the RAW wire value and normalise on the way in, so no call site can forget to.
@@ -97,9 +97,9 @@ export function voteLabel(vote: string | null | undefined, t: Translate): string
 
 export function voteTone(vote: string | null | undefined): string {
   const cast = peerVote(vote);
-  if (cast === "remove") return "text-main-accent-t2";
-  if (cast === "keep") return "text-main-accent-t3";
-  return "text-muted-foreground";
+  if (cast === "remove") return "text-positive";
+  if (cast === "keep") return "text-accent-warn";
+  return "text-ink-soft";
 }
 
 /** The target's own answer, normalised. Null while they have not answered. */
@@ -188,9 +188,9 @@ export function admissionVoteLabel(vote: string | null | undefined, t: Translate
 
 export function admissionVoteTone(vote: string | null | undefined): string {
   const cast = admissionVote(vote);
-  if (cast === "admit") return "text-main-accent-t2";
-  if (cast === "reject") return "text-destructive";
-  return "text-muted-foreground";
+  if (cast === "admit") return "text-positive";
+  if (cast === "reject") return "text-accent-error";
+  return "text-ink-soft";
 }
 
 /**

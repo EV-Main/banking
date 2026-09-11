@@ -13,7 +13,7 @@ import { cn } from "@/shared/lib/cn";
 import { TipAnchor } from "@/shared/tips";
 import { compactUnits, fractionOfCap } from "@/views/invest/lib/format";
 
-export const TEAL_CTA = "bg-main-accent-t1 text-main-black hover:bg-main-accent-t1/90";
+export const TEAL_CTA = "bg-accent-debug text-background hover:bg-accent-debug/90";
 
 export function Stat({
   label,
@@ -31,9 +31,9 @@ export function Stat({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-main-surface p-3">
+    <div className="rounded-lg border border-border bg-secondary p-3">
       <div className="flex items-center gap-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-xs uppercase tracking-wide text-ink-soft">{label}</p>
         {tip && <TipAnchor anchor={tip} />}
       </div>
       <p className={cn("flex items-center gap-1 tabular-nums", emphasis ? "text-xl font-semibold" : "text-base", tone)}>
@@ -46,7 +46,7 @@ export function Stat({
 
 export function Note({ tone, children }: { tone: "amber" | "muted"; children: React.ReactNode }) {
   return (
-    <p className={cn("rounded-lg border px-3 py-2 text-xs", tone === "amber" ? "border-main-accent-t3/30 bg-main-accent-t3/5 text-main-accent-t3" : "border-border bg-foreground/5 text-muted-foreground")}>
+    <p className={cn("rounded-lg border px-3 py-2 text-xs", tone === "amber" ? "border-accent-warn/30 bg-accent-warn/5 text-accent-warn" : "border-border bg-ink/5 text-ink-soft")}>
       {children}
     </p>
   );
@@ -68,8 +68,8 @@ export function SupplyBar({ issued, cap, className }: { issued: string | undefin
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="text-muted-foreground">{t("invest.unitsIssued")}</span>
-        <span className={cn("tabular-nums", near ? "font-medium text-main-accent-t3" : "text-muted-foreground")}>
+        <span className="text-ink-soft">{t("invest.unitsIssued")}</span>
+        <span className={cn("tabular-nums", near ? "font-medium text-accent-warn" : "text-ink-soft")}>
           {compactUnits(issued)} / {compactUnits(cap)}
         </span>
       </div>
@@ -78,9 +78,9 @@ export function SupplyBar({ issued, cap, className }: { issued: string | undefin
             cap really is nothing, and floor-to-1% would overstate it a millionfold —
             "has this fund started issuing?" is a question for the figure above, which is
             exact, not for a bar whose job is "how full is it?". */}
-        <div className={cn("h-full rounded-full", near ? "bg-main-accent-t3" : "bg-main-accent-t1")} style={{ width: `${fraction * 100}%` }} />
+        <div className={cn("h-full rounded-full", near ? "bg-accent-warn" : "bg-accent-debug")} style={{ width: `${fraction * 100}%` }} />
       </div>
-      {full && <p className="text-xs text-main-accent-t3">{t("invest.fullyIssued")}</p>}
+      {full && <p className="text-xs text-accent-warn">{t("invest.fullyIssued")}</p>}
     </div>
   );
 }
@@ -94,12 +94,12 @@ export function ProductBadges({ closed, stale }: { closed: boolean; stale: boole
   return (
     <div className="flex flex-wrap items-center gap-2">
       {closed && (
-        <Badge variant="outline" className="gap-1 border-main-accent-t3/40 text-main-accent-t3">
+        <Badge variant="outline" className="gap-1 border-accent-warn/40 text-accent-warn">
           {t("invest.badge.redeemOnly")}
         </Badge>
       )}
       {stale && (
-        <Badge variant="outline" className="gap-1 border-main-accent-t3/40 text-main-accent-t3">
+        <Badge variant="outline" className="gap-1 border-accent-warn/40 text-accent-warn">
           <Clock className="size-3" /> {t("invest.badge.staleNav")}
           <TipAnchor anchor="invest.position.stale-nav" />
         </Badge>

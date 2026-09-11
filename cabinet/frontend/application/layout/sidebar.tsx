@@ -79,7 +79,7 @@ const ADMIN: NavItem[] = [
 // every surface in this theme, under the 3:1 SC 1.4.11 floor, where solid clears it
 // everywhere. The offset keeps the ring legible around the active row, whose fill is that
 // same teal.
-const NAV_FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-main-surface";
+const NAV_FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-secondary";
 
 // The signed-in app shell's left rail (Figma cabinet sidebar). Persistent across the
 // `(app)` route group; auth is enforced upstream in `proxy.ts`. Positioned by a
@@ -120,7 +120,7 @@ export function Sidebar() {
   const crossed = useCrossedSection(pathname, activeSection);
 
   return (
-    <aside className="flex h-full w-[var(--cabinet-rail-w)] flex-col gap-7 overflow-y-auto border-r border-border bg-main-surface px-4.5 pb-5 pt-6">
+    <aside className="flex h-full w-[var(--cabinet-rail-w)] flex-col gap-7 overflow-y-auto border-r border-border bg-secondary px-4.5 pb-5 pt-6">
       <nav aria-label={t("nav.a11y.primary")} className="flex flex-col gap-4.5">
         <Group label={t("nav.group.fund")}>
           {FUND.map((item) => (
@@ -146,7 +146,7 @@ export function Sidebar() {
                     // rail's own background rather than behind the label.
                     "relative isolate flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                     NAV_FOCUS,
-                    active ? "font-semibold text-primary-foreground" : "font-medium text-foreground hover:bg-foreground/5",
+                    active ? "font-semibold text-primary-foreground" : "font-medium text-ink hover:bg-ink/5",
                   )}
                 >
                   {active && <ActivePill section="products" appear={crossed} />}
@@ -187,7 +187,7 @@ export function Sidebar() {
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 pl-1">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{label}</p>
       {children}
     </div>
   );
@@ -274,7 +274,7 @@ function NavLink({ item, active, section, appear, trailing }: { item: NavItem; a
         // rail's own background, which is where it would land otherwise.
         "relative isolate flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
         NAV_FOCUS,
-        active ? "font-semibold text-primary-foreground" : "font-medium text-foreground hover:bg-foreground/5",
+        active ? "font-semibold text-primary-foreground" : "font-medium text-ink hover:bg-ink/5",
       )}
     >
       {active && <ActivePill section={section} appear={appear} />}
@@ -306,7 +306,7 @@ function UnreadPill({ count, active }: { count: number; active: boolean }) {
       aria-label={t("notif.unreadCount", { n: count })}
       className={cn(
         "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-        active ? "bg-main-black text-foreground" : "bg-main-accent-t1/15 text-main-accent-t1",
+        active ? "bg-background text-ink" : "bg-accent-debug/15 text-accent-debug",
       )}
     >
       {count > 99 ? "99+" : count}

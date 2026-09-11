@@ -34,7 +34,7 @@ export default function GlobalError({
 
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body className="min-h-screen bg-background text-ink antialiased">
         <ServerError homeHref={BASE_PATH} reset={reset} />
       </body>
     </html>

@@ -144,7 +144,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
             {/* The reason is someone else's words about the reader. It is shown whole, in
                 their own phrasing, with no summarising and no quotation marks that would
                 let the fund distance itself from it. */}
-            <p className="whitespace-pre-line rounded-lg bg-main-surface px-3.5 py-3 text-sm leading-relaxed text-foreground">
+            <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
               {invitation.reason?.trim() || t("approval.removal.noReason")}
             </p>
           </div>
@@ -156,7 +156,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
             <DetailRow
               label={t("approval.expires")}
               value={t("approval.expiresValue", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
-              tone={expired ? "text-destructive" : undefined}
+              tone={expired ? "text-accent-error" : undefined}
             />
           </div>
         </CardContent>
@@ -193,10 +193,10 @@ export function RemovalApprovalView({ token }: { token: string }) {
               // The second step. It restates the consequence in full rather than asking
               // "are you sure?" — a reader who has already decided is not helped by being
               // asked again, only by being told exactly what is about to happen.
-              <div className="flex flex-col gap-3.5 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+              <div className="flex flex-col gap-3.5 rounded-lg border border-accent-error/40 bg-accent-error/10 p-4">
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-sm font-semibold text-foreground">{t("approval.removal.confirmTitle")}</p>
-                  <p className="text-sm leading-relaxed text-foreground">{t("approval.removal.confirmBody")}</p>
+                  <p className="text-sm font-semibold text-ink">{t("approval.removal.confirmTitle")}</p>
+                  <p className="text-sm leading-relaxed text-ink">{t("approval.removal.confirmBody")}</p>
                 </div>
                 <div className="flex flex-col gap-2.5 sm:flex-row">
                   <Button variant="destructive" className="sm:flex-1" disabled={pending !== null} onClick={() => void decide("remove")}>
@@ -234,14 +234,14 @@ export function RemovalApprovalView({ token }: { token: string }) {
                     {t("approval.removal.accept")}
                   </Button>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">{t("approval.removal.irreversible")}</p>
+                <p className="text-xs leading-relaxed text-ink-soft">{t("approval.removal.irreversible")}</p>
               </>
             )}
           </CardContent>
         </Card>
       )}
 
-      <p className="text-center text-xs text-muted-foreground">{t("approval.footnote")}</p>
+      <p className="text-center text-xs text-ink-soft">{t("approval.footnote")}</p>
     </ApprovalPage>
   );
 }

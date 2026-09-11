@@ -14,13 +14,13 @@ const uikitTokens = createRequire(import.meta.url).resolve("@evinvest/uikit/styl
 const mfeEntry = new URL("../../mfe/account-chip/mfe.css", import.meta.url);
 
 test("the brand palette follows the semantic tokens rather than copying them", () => {
-  // `bg-main-card` is generated from @theme at build time while `bg-card` reads :root.
+  // `bg-card` is generated from @theme at build time while `bg-card` reads :root.
   // While the palette carried its own literal copies the two drifted the moment only one
   // side was retuned — dashboard surfaces moved to the new palette and profile, settings
   // and wallet stayed on the old one, so half the cabinet changed colour and half did not.
   const upstream = readFileSync(uikitTokens, "utf8");
-  assert.match(upstream, /--color-main-card:\s*var\(--card\)/, "--color-main-card must reference --card, not repeat its value");
-  assert.match(upstream, /--color-main-surface:\s*var\(--secondary\)/, "--color-main-surface must reference --secondary");
+  assert.match(upstream, /--color-card:\s*var\(--card\)/, "--color-card must reference --card, not repeat its value");
+  assert.match(upstream, /--color-secondary:\s*var\(--secondary\)/, "--color-secondary must reference --secondary");
 });
 
 test("the element remote is built against the shared tokens", () => {

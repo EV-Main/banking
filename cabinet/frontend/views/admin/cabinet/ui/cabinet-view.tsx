@@ -62,7 +62,7 @@ export function CabinetView() {
       <AdminHeader eyebrow={t("admin.eyebrow.administer")} title={t("nav.cabinet")} subtitle={t("admin.cabinet.subtitle")} />
 
       {error && (
-        <StaggerItem as="p" className="flex items-center gap-2 text-sm text-destructive">
+        <StaggerItem as="p" className="flex items-center gap-2 text-sm text-accent-error">
           <TriangleAlert className="size-4" /> {error}
         </StaggerItem>
       )}
@@ -72,17 +72,17 @@ export function CabinetView() {
           {!mfes ? (
             <Skeleton className="h-32 w-full" />
           ) : mfes.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">{t("admin.cabinet.noMfes")}</p>
+            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noMfes")}</p>
           ) : (
             <div className="divide-y divide-border">
               {mfes.map((m) => (
                 <div key={m.tag} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{m.name}</p>
-                    <p className="truncate font-mono-tech text-xs text-muted-foreground">{m.tag}</p>
+                    <p className="truncate font-mono-tech text-xs text-ink-soft">{m.tag}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
-                    <span className="rounded-md bg-foreground/5 px-2 py-0.5 text-xs capitalize text-muted-foreground">{m.kind}</span>
+                    <span className="rounded-md bg-ink/5 px-2 py-0.5 text-xs capitalize text-ink-soft">{m.kind}</span>
                     <StatusDot status="healthy" label={t("admin.cabinet.registered")} />
                   </div>
                 </div>
@@ -95,14 +95,14 @@ export function CabinetView() {
           {!platform ? (
             <Skeleton className="h-32 w-full" />
           ) : platform.flags.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">{t("admin.cabinet.noFlags")}</p>
+            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noFlags")}</p>
           ) : (
             <div className="divide-y divide-border">
               {platform.flags.map((f) => (
                 <div key={f.key} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
                     <p className="truncate font-mono-tech text-sm">{f.key}</p>
-                    <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1.5 truncate text-xs text-ink-soft">
                       {t("admin.cabinet.flagRollout", { pct: f.rollout })} {f.description ? `· ${f.description}` : ""}
                       <TipAnchor anchor="admin.cabinet.flags.rollout" />
                     </p>
@@ -154,7 +154,7 @@ function Panel({ title, subtitle, children }: { title: string; subtitle: string;
       <CardContent className="space-y-4 py-5">
         <div>
           <h2 className="text-base font-semibold">{title}</h2>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <p className="text-xs text-ink-soft">{subtitle}</p>
         </div>
         {children}
       </CardContent>
@@ -170,7 +170,7 @@ function ToggleRow({ label, hint, on, onChange, tip }: { label: string; hint: st
           <p className="text-sm">{label}</p>
           {tip && <TipAnchor anchor={tip} />}
         </div>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p className="text-xs text-ink-soft">{hint}</p>
       </div>
       <Toggle on={on} onChange={onChange} label={label} />
     </div>

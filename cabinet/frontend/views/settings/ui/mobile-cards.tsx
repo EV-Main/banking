@@ -29,7 +29,7 @@ export function ProfileSummaryCard({ loading, name, email, verified }: { loading
   return (
     <Link
       href="/profile"
-      className={cn(CARD, "flex items-center gap-3.5 py-3.5 pl-3.5 pr-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:bg-foreground/5")}
+      className={cn(CARD, "flex items-center gap-3.5 py-3.5 pl-3.5 pr-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:bg-ink/5")}
     >
       <InitialsAvatar initials={initialsOfName(name, email)} className="size-11.5 text-base" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -37,12 +37,12 @@ export function ProfileSummaryCard({ loading, name, email, verified }: { loading
           <Skeleton className="h-4 w-32" />
         ) : (
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-semibold text-foreground">{name}</span>
+            <span className="truncate text-sm font-semibold text-ink">{name}</span>
             {/* i18n-max: 12 — a `shrink-0` Pill beside the truncated display name. */}
             {verified && <Pill icon={BadgeCheck}>{t("ui.verified")}</Pill>}
           </div>
         )}
-        {loading ? <Skeleton className="h-3 w-40" /> : <span className="truncate text-xs text-muted-foreground">{formatEmail(email) || t("auth.notSignedIn")}</span>}
+        {loading ? <Skeleton className="h-3 w-40" /> : <span className="truncate text-xs text-ink-soft">{formatEmail(email) || t("auth.notSignedIn")}</span>}
       </div>
       <Chevron className="size-5" />
     </Link>
@@ -76,7 +76,7 @@ export function AccountRowsCard({
     <ListCard>
       {/* Email is the IdP's — displayed, never editable here. */}
       <Row>
-        <span className="shrink-0 text-sm font-medium text-foreground">{t("ui.email")}</span>
+        <span className="shrink-0 text-sm font-medium text-ink">{t("ui.email")}</span>
         {loading ? <Skeleton className="h-3.5 w-36" /> : <RowValue>{formatEmail(email) || "—"}</RowValue>}
       </Row>
       <Hairline />
@@ -123,7 +123,7 @@ function ExpandableRow({
         aria-expanded={open}
         className="flex min-w-0 items-center justify-between gap-3 rounded-md py-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="shrink-0 text-sm font-medium text-foreground">{label}</span>
+        <span className="shrink-0 text-sm font-medium text-ink">{label}</span>
         <span className="flex min-w-0 items-center gap-2">
           {loading ? <Skeleton className="h-3.5 w-28" /> : !open && <RowValue>{value || "—"}</RowValue>}
           <Chevron className={cn("transition-transform", open && "rotate-90")} />
@@ -169,7 +169,7 @@ export function MobileSecurityCard({
         </span>
       </button>
       <Hairline />
-      <p className="py-3 text-xs leading-relaxed text-muted-foreground">{t("settings.googleManagedShort")}</p>
+      <p className="py-3 text-xs leading-relaxed text-ink-soft">{t("settings.googleManagedShort")}</p>
     </ListCard>
   );
 }
@@ -212,7 +212,7 @@ export function SignOutButton() {
       type="button"
       onClick={signOut}
       disabled={busy}
-      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-3.5 text-sm font-semibold text-destructive outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:bg-destructive/10 disabled:opacity-60"
+      className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-3.5 text-sm font-semibold text-accent-error outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring active:bg-accent-error/10 disabled:opacity-60"
     >
       {busy ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />} {t("auth.signOut")}
     </button>

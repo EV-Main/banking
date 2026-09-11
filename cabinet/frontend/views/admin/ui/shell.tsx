@@ -18,8 +18,8 @@ import { statusTone } from "@/views/admin/lib/format";
 // the default "development" — reads as DEV. The badge carries a catalogue key rather than
 // a finished word: this map is module scope, where no hook can run.
 const ENV_BADGES: Record<string, { labelKey: string; tone: string }> = {
-  production: { labelKey: "admin.env.prod", tone: "text-main-accent-t2" },
-  staging: { labelKey: "admin.env.staging", tone: "text-main-accent-t3" },
+  production: { labelKey: "admin.env.prod", tone: "text-positive" },
+  staging: { labelKey: "admin.env.staging", tone: "text-accent-warn" },
 };
 
 /**
@@ -41,13 +41,13 @@ export function AdminScreen({ className, children }: { className?: string; child
 export function AdminHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: ReactNode }) {
   const t = useT();
   const environment = usePlatform()?.environment;
-  const badge = environment ? (ENV_BADGES[environment] ?? { labelKey: "admin.env.dev", tone: "text-muted-foreground" }) : null;
+  const badge = environment ? (ENV_BADGES[environment] ?? { labelKey: "admin.env.dev", tone: "text-ink-soft" }) : null;
   return (
     <StaggerItem as="header" className="flex flex-wrap items-start justify-between gap-4">
       <div className="space-y-1">
-        <p className="font-mono-tech text-xs uppercase tracking-widest text-main-accent-t1">{eyebrow}</p>
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
+        <p className="font-mono-tech text-xs uppercase tracking-widest text-accent-debug">{eyebrow}</p>
+        <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+        <p className="text-sm text-ink-soft">{subtitle}</p>
       </div>
       <div className="flex items-center gap-3">
         {badge && (
@@ -86,7 +86,7 @@ export function Toggle({ on, onChange, disabled, label }: { on: boolean; onChang
         on ? "bg-primary" : "bg-muted",
       )}
     >
-      <span className={cn("inline-block size-4 rounded-full bg-main-mist transition-transform", on ? "translate-x-4.5" : "translate-x-0.5")} />
+      <span className={cn("inline-block size-4 rounded-full bg-ink transition-transform", on ? "translate-x-4.5" : "translate-x-0.5")} />
     </button>
   );
 }

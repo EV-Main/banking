@@ -165,32 +165,32 @@ export function RevenueView() {
       {error && <ResourceError message={error} />}
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.revenue.earned")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.earned")}</p>
         <div className="grid gap-4 sm:grid-cols-3">
           <MoneyCard label={t("admin.revenue.earnedTotal")} value={data?.earned} hint={t("admin.revenue.earnedTotalHint")} loading={!data} />
           <MoneyCard label={t("admin.revenue.availableToPayOut")} value={data?.available} hint={t("admin.revenue.availableHint")} loading={!data} emphasis />
           <MoneyCard label={t("admin.revenue.pendingPayout")} value={data?.pending_payout} hint={t("admin.revenue.pendingHint")} loading={!data} />
         </div>
-        <p className="max-w-3xl text-xs text-muted-foreground">{t("admin.revenue.ownMoneyNote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.ownMoneyNote")}</p>
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.revenue.propose")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.propose")}</p>
         <Card>
           <CardContent className="space-y-4 py-5">
             {/* Stated before the form, not after it: an operator filling this in should know
                 what the button does before they reach it, not discover it in the receipt. */}
-            <p className="text-xs text-muted-foreground">{t("admin.revenue.consiliumNote")}</p>
+            <p className="text-xs text-ink-soft">{t("admin.revenue.consiliumNote")}</p>
 
             {owners.data?.below_payout_floor && (
               // The threshold is `floor(N/2)+1` of ALL owners, so below three it can never
               // be met and the plane refuses to open at all. Saying so here saves the
               // operator filling in a form that cannot succeed.
-              <div className="flex items-start gap-3 rounded-lg border border-main-accent-t3/40 bg-main-accent-t3/10 px-3.5 py-3">
-                <Users className="mt-0.5 size-4 shrink-0 text-main-accent-t3" />
+              <div className="flex items-start gap-3 rounded-lg border border-accent-warn/40 bg-accent-warn/10 px-3.5 py-3">
+                <Users className="mt-0.5 size-4 shrink-0 text-accent-warn" />
                 <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-semibold text-foreground">{t("admin.revenue.refusal.floorTitle")}</p>
-                  <p className="text-sm leading-relaxed text-foreground">
+                  <p className="text-sm font-semibold text-ink">{t("admin.revenue.refusal.floorTitle")}</p>
+                  <p className="text-sm leading-relaxed text-ink">
                     {t("admin.revenue.floorBody", { n: owners.data.items.length })}
                   </p>
                 </div>
@@ -218,7 +218,7 @@ export function RevenueView() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">{t("admin.rail")}</p>
+                    <p className="text-xs text-ink-soft">{t("admin.rail")}</p>
                     <div className="flex flex-wrap gap-2">
                       {rails.map((r) => (
                         <RailChip key={r.network} rail={r} selected={r.network === rail?.network} onSelect={() => setNetwork(r.network)} />
@@ -228,7 +228,7 @@ export function RevenueView() {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block space-y-1.5">
-                      <span className="block text-xs text-muted-foreground">{t("admin.revenue.destinationAddress")}</span>
+                      <span className="block text-xs text-ink-soft">{t("admin.revenue.destinationAddress")}</span>
                       <Input
                         value={address}
                         onChange={(e) => {
@@ -241,7 +241,7 @@ export function RevenueView() {
                       />
                     </label>
                     <label className="block space-y-1.5">
-                      <span className="block text-xs text-muted-foreground">{t("admin.revenue.amountUsdt")}</span>
+                      <span className="block text-xs text-ink-soft">{t("admin.revenue.amountUsdt")}</span>
                       <Input
                         value={amount}
                         onChange={(e) => {
@@ -256,7 +256,7 @@ export function RevenueView() {
                   </div>
 
                   <label className="block space-y-1.5">
-                    <span className="block text-xs text-muted-foreground">{t("admin.revenue.memoOptional")}</span>
+                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoOptional")}</span>
                     <Input
                       value={memo}
                       onChange={(e) => {
@@ -267,14 +267,14 @@ export function RevenueView() {
                       spellCheck={false}
                       className="font-mono-tech text-xs"
                     />
-                    <span className="block text-xs text-muted-foreground">{t("admin.revenue.memoHint")}</span>
+                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoHint")}</span>
                   </label>
 
-                  {amountProblem && <p className="text-xs text-destructive">{amountProblem}</p>}
+                  {amountProblem && <p className="text-xs text-accent-error">{amountProblem}</p>}
                   {!amountProblem && willQueue && (
                     // Reworded for the consilium: this describes what happens IF the owners
                     // approve, not what happens on submit. Nothing is queued by proposing.
-                    <p className="text-xs text-main-accent-t3">{t("admin.revenue.willQueueIfApproved", { instant: formatUsd(rail?.instant) })}</p>
+                    <p className="text-xs text-accent-warn">{t("admin.revenue.willQueueIfApproved", { instant: formatUsd(rail?.instant) })}</p>
                   )}
 
                   {/* A second, deliberate click. The terms are restated because they are
@@ -282,7 +282,7 @@ export function RevenueView() {
                       over — the request is immutable once open, so a typo here means
                       cancelling and starting again, not editing (docs/CONSILIUM.md). */}
                   {confirming ? (
-                    <div className="space-y-2 rounded-lg border border-main-accent-t3/40 bg-main-accent-t3/5 p-3">
+                    <div className="space-y-2 rounded-lg border border-accent-warn/40 bg-accent-warn/5 p-3">
                       {/* One sentence, one key: which order the amount, the rail and the
                           address fall in is a per-language decision, so the three are ICU
                           arguments rather than spans the sentence is cut around. The address
@@ -302,7 +302,7 @@ export function RevenueView() {
                           {t("admin.revenue.proposeMemoLine", { memo: memo.trim() })}
                         </p>
                       )}
-                      <p className="text-xs text-muted-foreground">{t("admin.revenue.proposeNote")}</p>
+                      <p className="text-xs text-ink-soft">{t("admin.revenue.proposeNote")}</p>
                       {/* i18n-max: 16 per verb — two `shrink-0` Buttons in a ≤400px panel. */}
                       <div className="flex gap-2">
                         <Button type="button" size="sm" disabled={busy !== null} onClick={submit}>
@@ -327,7 +327,7 @@ export function RevenueView() {
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("admin.revenue.payouts")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.payouts")}</p>
         <Card>
           <CardContent className="p-0">
             <Settled
@@ -358,7 +358,7 @@ export function RevenueView() {
                     <thead>
                       {/* i18n-max: 14 per header — the table scrolls inside `min-w-140`, so a
                           long header widens the scroll rather than clipping a cell. */}
-                      <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
                         <th className="px-5 py-3 font-medium">{t("ui.destination")}</th>
                         <th className="px-5 py-3 font-medium">{t("ui.amount")}</th>
                         <th className="px-5 py-3 font-medium">{t("admin.col.state")}</th>
@@ -377,7 +377,7 @@ export function RevenueView() {
             </Settled>
           </CardContent>
         </Card>
-        <p className="max-w-3xl text-xs text-muted-foreground">{t("admin.revenue.footnote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.footnote")}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -405,16 +405,16 @@ function ProposedReceipt({ consilium, onDismiss }: { consilium: Consilium; onDis
   const progress = threshold > 0 ? Math.min(100, Math.round((approvals / threshold) * 100)) : 0;
 
   return (
-    <div className="space-y-3 rounded-lg border border-main-accent-t2/40 bg-main-accent-t2/10 p-4" role="status">
+    <div className="space-y-3 rounded-lg border border-positive/40 bg-positive/10 p-4" role="status">
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">{t("admin.revenue.proposedTitle")}</p>
-        <p className="text-sm leading-relaxed text-foreground">
+        <p className="text-sm font-semibold text-ink">{t("admin.revenue.proposedTitle")}</p>
+        <p className="text-sm leading-relaxed text-ink">
           {t("admin.revenue.proposedBody", { threshold, owners: consilium.owner_count ?? 0 })}
         </p>
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-sm font-medium tabular-nums text-foreground">
+        <p className="text-sm font-medium tabular-nums text-ink">
           {t("admin.revenue.proposedTally", { approvals, threshold })}
         </p>
         {/* The sentence above states the tally; a second, unlabelled progressbar in the
@@ -422,7 +422,7 @@ function ProposedReceipt({ consilium, onDismiss }: { consilium: Consilium; onDis
         <Progress value={progress} className="h-1.5" aria-hidden />
       </div>
 
-      <p className="text-xs tabular-nums text-muted-foreground">
+      <p className="text-xs tabular-nums text-ink-soft">
         {t("admin.revenue.proposedExpires", {
           at: formatMoment(consilium.expires_at, locale),
           left: expiresIn(consilium.expires_at, t),
@@ -457,13 +457,13 @@ function RefusalNotice({ refusal, liftsAt }: { refusal: ConsiliumRefusal; liftsA
   const { icon, title, body } =
     refusal.kind === "mail-not-configured"
       ? {
-          icon: <MailWarning className="mt-0.5 size-4 shrink-0 text-main-accent-t3" />,
+          icon: <MailWarning className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
           title: t("admin.revenue.refusal.mailTitle"),
           body: t("admin.revenue.refusal.mailBody"),
         }
       : refusal.kind === "cooling-off"
         ? {
-            icon: <Clock className="mt-0.5 size-4 shrink-0 text-main-accent-t3" />,
+            icon: <Clock className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
             title: t("admin.revenue.refusal.coolingTitle"),
             // Without a parseable deadline the condition is still named — better than a
             // sentence with a hole in it where the time should be.
@@ -472,7 +472,7 @@ function RefusalNotice({ refusal, liftsAt }: { refusal: ConsiliumRefusal; liftsA
               : t("admin.revenue.refusal.coolingBodyNoTime"),
           }
         : {
-            icon: <ShieldAlert className="mt-0.5 size-4 shrink-0 text-main-accent-t3" />,
+            icon: <ShieldAlert className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
             title: t("admin.revenue.refusal.floorTitle"),
             body:
               refusal.ownerCount === null
@@ -481,11 +481,11 @@ function RefusalNotice({ refusal, liftsAt }: { refusal: ConsiliumRefusal; liftsA
           };
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-main-accent-t3/40 bg-main-accent-t3/10 px-3.5 py-3" role="status">
+    <div className="flex items-start gap-3 rounded-lg border border-accent-warn/40 bg-accent-warn/10 px-3.5 py-3" role="status">
       {icon}
       <div className="min-w-0 space-y-1">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        <p className="text-sm leading-relaxed text-foreground">{body}</p>
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        <p className="text-sm leading-relaxed text-ink">{body}</p>
       </div>
     </div>
   );
@@ -495,15 +495,15 @@ function MoneyCard({ label, value, hint, loading, emphasis }: { label: string; v
   return (
     <Card>
       <CardContent className="space-y-1 py-5">
-        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-xs text-ink-soft">{label}</p>
         {loading ? (
           <Skeleton className="mt-1 h-8 w-28" />
         ) : (
           // One step for every figure; the payable one carries the difference in colour,
           // not in size, so the row keeps a single baseline.
-          <p className={emphasis ? "text-3xl font-semibold tabular-nums text-main-accent-t2" : "text-3xl font-semibold tabular-nums"}>{formatUsd(value)}</p>
+          <p className={emphasis ? "text-3xl font-semibold tabular-nums text-positive" : "text-3xl font-semibold tabular-nums"}>{formatUsd(value)}</p>
         )}
-        {!loading && <p className="text-xs text-main-accent-t2">{hint}</p>}
+        {!loading && <p className="text-xs text-positive">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -517,14 +517,14 @@ function RailChip({ rail, selected, onSelect }: { rail: RevenueRail; selected: b
       onClick={onSelect}
       aria-pressed={selected}
       className={`rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
-        selected ? "border-primary bg-primary/10" : "border-border hover:bg-foreground/5"
+        selected ? "border-primary bg-primary/10" : "border-border hover:bg-ink/5"
       }`}
     >
       <span className="flex items-center gap-1.5 text-xs font-medium">
         <NetworkMark network={rail.network} className="size-3.5 shrink-0" />
         {railLabel(rail.network, t)}
       </span>
-      <span className="block text-xs tabular-nums text-muted-foreground">{t("admin.revenue.instantSuffix", { amount: formatUsd(rail.instant) })}</span>
+      <span className="block text-xs tabular-nums text-ink-soft">{t("admin.revenue.instantSuffix", { amount: formatUsd(rail.instant) })}</span>
     </button>
   );
 }
@@ -537,7 +537,7 @@ function PayoutRow({ payout, busy, onCancel }: { payout: RevenuePayout; busy: bo
       <td className="px-5 py-3">
         {/* Same change as the withdrawals queue: the shared short mark, not the raw
             wire id. */}
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-xs text-ink-soft">
           <NetworkMark network={payout.network} className="size-3.5 shrink-0" />
           {networkLabel(payout.network)}
         </p>
@@ -549,7 +549,7 @@ function PayoutRow({ payout, busy, onCancel }: { payout: RevenuePayout; busy: bo
       <td className="px-5 py-3">
         <span className={stateTone(payout.state)}>{stateLabel(payout.state, t)}</span>
       </td>
-      <td className="px-5 py-3 font-mono-tech text-xs text-muted-foreground" title={payout.tx_ref || undefined}>
+      <td className="px-5 py-3 font-mono-tech text-xs text-ink-soft" title={payout.tx_ref || undefined}>
         {payout.tx_ref ? shortAddr(payout.tx_ref) : "—"}
       </td>
       <td className="px-5 py-3">
@@ -560,7 +560,7 @@ function PayoutRow({ payout, busy, onCancel }: { payout: RevenuePayout; busy: bo
               {t("ui.cancel")}
             </Button>
           ) : (
-            <span className="text-xs text-muted-foreground">{open ? t("admin.revenue.inFlight") : "—"}</span>
+            <span className="text-xs text-ink-soft">{open ? t("admin.revenue.inFlight") : "—"}</span>
 
           )}
         </div>
@@ -572,14 +572,14 @@ function PayoutRow({ payout, busy, onCancel }: { payout: RevenuePayout; busy: bo
 function stateTone(state: string): string {
   switch (state) {
     case "completed":
-      return "text-main-accent-t2";
+      return "text-positive";
     case "queued":
     case "processing":
-      return "text-main-accent-t3";
+      return "text-accent-warn";
     case "failed":
-      return "text-destructive";
+      return "text-accent-error";
     default:
-      return "text-muted-foreground";
+      return "text-ink-soft";
   }
 }
 

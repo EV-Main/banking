@@ -22,23 +22,23 @@ export function WalletScreen({ title, subtitle, back, actions, children }: { tit
   const t = useT();
   return (
     <div className="flex flex-col">
-      <Reveal className="flex items-center gap-3 border-b border-border bg-main-surface px-5 pb-3.5 pt-4 lg:hidden">
+      <Reveal className="flex items-center gap-3 border-b border-border bg-secondary px-5 pb-3.5 pt-4 lg:hidden">
         {back && (
           <Link
             href={back}
             aria-label={t("ui.back")}
-            className="-m-1 shrink-0 rounded-md p-1 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="-m-1 shrink-0 rounded-md p-1 text-ink-soft outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronLeft className="size-6" />
           </Link>
         )}
-        <p className="truncate text-lg font-semibold text-foreground">{title}</p>
+        <p className="truncate text-lg font-semibold text-ink">{title}</p>
       </Reveal>
 
       <Reveal className="hidden items-center gap-4 px-8 pb-6 pt-6.5 lg:flex">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-          {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+          <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+          {subtitle && <p className="text-sm text-ink-soft">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 gap-2.5">{actions}</div>}
       </Reveal>
@@ -50,16 +50,16 @@ export function WalletScreen({ title, subtitle, back, actions, children }: { tit
   );
 }
 
-export const WALLET_CARD = "rounded-xl border border-border bg-main-card";
+export const WALLET_CARD = "rounded-xl border border-border bg-card";
 // The teal primary and the hairline-outlined secondary, shared by every wallet CTA. Both are
 // hand-written rather than uikit Buttons, so the keyboard focus ring rides along here — every
 // wallet CTA is a link or a button built from one of these two strings.
 export const WALLET_CTA =
   "flex items-center justify-center rounded-lg bg-primary font-medium text-primary-foreground outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 export const WALLET_CTA_GHOST =
-  "flex items-center justify-center rounded-lg border border-border font-medium text-foreground outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+  "flex items-center justify-center rounded-lg border border-border font-medium text-ink outline-none transition-colors hover:bg-ink/5 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
 
 // The all-caps field/section label used across the wallet cards.
 export function FieldLabel({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn("flex items-center gap-1.5 text-xs font-medium text-muted-foreground", className)}>{children}</span>;
+  return <span className={cn("flex items-center gap-1.5 text-xs font-medium text-ink-soft", className)}>{children}</span>;
 }

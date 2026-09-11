@@ -74,7 +74,7 @@ function Outcome({ state }: { state: State }) {
             {" "}
             <a
               href={`mailto:${state.contact}`}
-              className="font-medium text-main-accent-t1 underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="font-medium text-accent-debug underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t("profile.kyc.contact", { contact: state.contact })}
             </a>
@@ -92,7 +92,7 @@ function Outcome({ state }: { state: State }) {
 
 function Note({ tone, children }: { tone?: "destructive"; children: ReactNode }) {
   return (
-    <p className={cn("mt-2 text-xs leading-snug", tone === "destructive" ? "text-destructive" : "text-muted-foreground")}>
+    <p className={cn("mt-2 text-xs leading-snug", tone === "destructive" ? "text-accent-error" : "text-ink-soft")}>
       {children}
     </p>
   );

@@ -51,14 +51,14 @@ const KINDS: Record<string, KindMeta> = {
   // word is a noun ("a deposit"), while `ui.deposit` is the wallet button, where it is a
   // verb ("deposit funds"). English spells both "Deposit" and hid the difference; German
   // and Russian each have to pick one, and both translators raised it independently.
-  deposit: { icon: ArrowDownLeft, labelKey: "ops.kind.deposit", direction: "in", tone: "bg-main-accent-t2/15 text-main-accent-t2" },
-  withdrawal: { icon: ArrowUpRight, labelKey: "ops.kind.withdrawal", direction: "out", tone: "bg-destructive/15 text-destructive" },
-  subscription: { icon: Plus, labelKey: "ops.kind.subscription", direction: "move", tone: "bg-main-accent-t1/15 text-main-accent-t1" },
-  redemption: { icon: Minus, labelKey: "ops.kind.redemption", direction: "move", tone: "bg-main-accent-t3/15 text-main-accent-t3" },
-  fee: { icon: Percent, labelKey: "ops.kind.fee", direction: "out", tone: "bg-destructive/15 text-destructive" },
+  deposit: { icon: ArrowDownLeft, labelKey: "ops.kind.deposit", direction: "in", tone: "bg-positive/15 text-positive" },
+  withdrawal: { icon: ArrowUpRight, labelKey: "ops.kind.withdrawal", direction: "out", tone: "bg-accent-error/15 text-accent-error" },
+  subscription: { icon: Plus, labelKey: "ops.kind.subscription", direction: "move", tone: "bg-accent-debug/15 text-accent-debug" },
+  redemption: { icon: Minus, labelKey: "ops.kind.redemption", direction: "move", tone: "bg-accent-warn/15 text-accent-warn" },
+  fee: { icon: Percent, labelKey: "ops.kind.fee", direction: "out", tone: "bg-accent-error/15 text-accent-error" },
 };
 
-const UNKNOWN_KIND: KindMeta = { icon: null, labelKey: null, direction: "move", tone: "bg-muted text-muted-foreground" };
+const UNKNOWN_KIND: KindMeta = { icon: null, labelKey: null, direction: "move", tone: "bg-muted text-ink-soft" };
 
 /** An unrecognised kind renders neutrally rather than disappearing — a new hub kind is
  *  visible as an unstyled row instead of a silent gap in someone's history. */
@@ -87,9 +87,9 @@ export function kindLabel(kind: string | undefined, t: Translate): string {
 
 /** The amount colour that goes with a direction. Neutral moves keep the body colour. */
 export function amountTone(direction: Direction): string {
-  if (direction === "in") return "text-main-accent-t2";
-  if (direction === "out") return "text-destructive";
-  return "text-foreground";
+  if (direction === "in") return "text-positive";
+  if (direction === "out") return "text-accent-error";
+  return "text-ink";
 }
 
 // `partly_deferred` is settled too: the charge itself completed, and what it could not
@@ -132,22 +132,22 @@ export function stateLabel(state: string | undefined, t: Translate): string {
 export function stateTone(state: string | undefined): string {
   switch (state) {
     case "queued":
-      return "bg-main-accent-t3/15 text-main-accent-t3";
+      return "bg-accent-warn/15 text-accent-warn";
     case "processing":
-      return "bg-main-accent-t1/15 text-main-accent-t1";
+      return "bg-accent-debug/15 text-accent-debug";
     case "completed":
     case "credited":
     case "charged":
-      return "bg-main-accent-t2/15 text-main-accent-t2";
+      return "bg-positive/15 text-positive";
     // Part of the charge could not be collected and is carried to the next one — worth
     // the attention tint, since it is the only state where the row's figure is less than
     // what was actually assessed.
     case "partly_deferred":
-      return "bg-main-accent-t3/15 text-main-accent-t3";
+      return "bg-accent-warn/15 text-accent-warn";
     case "failed":
-      return "bg-destructive/15 text-destructive";
+      return "bg-accent-error/15 text-accent-error";
     default:
-      return "bg-muted text-muted-foreground";
+      return "bg-muted text-ink-soft";
   }
 }
 

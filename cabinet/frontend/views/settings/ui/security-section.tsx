@@ -32,19 +32,19 @@ export function SecuritySection({
   return (
     <section className={cn(CARD, "px-6 py-5.5")}>
       <SectionHeader title={t("ui.security")} sub={t("settings.securitySub")} />
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-main-surface px-4 py-3.5">
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary px-4 py-3.5">
         {/* Google's mark is only licensed on a white plate, so this one square stays off-theme. */}
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white">
           <GoogleMark />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">{t("ui.signedInGoogle")}</p>
-          {loading ? <Skeleton className="mt-1 h-3.5 w-44" /> : <p className="truncate text-xs text-muted-foreground">{formatEmail(email) || "—"}</p>}
+          <p className="text-sm font-medium text-ink">{t("ui.signedInGoogle")}</p>
+          {loading ? <Skeleton className="mt-1 h-3.5 w-44" /> : <p className="truncate text-xs text-ink-soft">{formatEmail(email) || "—"}</p>}
         </div>
         {/* i18n-max: 12 — a `shrink-0` badge beside the truncated account email. */}
-        <Badge className="border-transparent bg-main-accent-t1/15 text-main-accent-t1">{t("settings.connected")}</Badge>
+        <Badge className="border-transparent bg-accent-debug/15 text-accent-debug">{t("settings.connected")}</Badge>
       </div>
-      <p className="mb-1 mt-3 text-sm leading-relaxed text-muted-foreground">{t("settings.googleManaged")}</p>
+      <p className="mb-1 mt-3 text-sm leading-relaxed text-ink-soft">{t("settings.googleManaged")}</p>
       <Hairline />
       <Row>
         <RowLabel title={t("ui.sessionsDevices")} sub={summary} />

@@ -13,7 +13,7 @@ export function DepositQr({ value }: { value: string }) {
           must not follow a palette that can be retuned (or themed light) underneath it. */}
       <QRCode value={value} level="H" size={256} fgColor="#0c1626" bgColor="#ffffff" className="h-full w-full" />
       <span className="absolute flex size-7 items-center justify-center rounded-lg bg-white ring-3 ring-white">
-        <Logo className="h-3.5 w-auto text-main-accent-t1" />
+        <Logo className="h-3.5 w-auto text-accent-debug" />
       </span>
     </div>
   );

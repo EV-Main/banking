@@ -135,11 +135,11 @@ function FundPicker({
             onClick={() => onSelect(fund.service)}
             aria-pressed={active}
             className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-              active ? "border-main-accent-t1 bg-main-accent-t1/10" : "border-border hover:bg-muted/50"
+              active ? "border-accent-debug bg-accent-debug/10" : "border-border hover:bg-muted/50"
             }`}
           >
             <span className="block font-medium">{fund.title}</span>
-            <span className="block text-xs text-muted-foreground">
+            <span className="block text-xs text-ink-soft">
               {policy?.configured ? `${pct(policy.management_bps)} / ${pct(policy.performance_bps)}` : t("admin.fees.noFee")}
             </span>
           </button>
@@ -220,7 +220,7 @@ function PolicyCard({ service, policy }: { service: string; policy: FeePolicy | 
       <CardContent className="space-y-4 py-6">
         <div className="space-y-1">
           <p className="text-sm font-semibold">{t("admin.fees.terms")}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-ink-soft">
             {policy?.configured ? t("admin.fees.lastChanged", { when: ago(policy.updated_at, t) }) : t("admin.fees.notConfigured")}
           </p>
         </div>
@@ -234,14 +234,14 @@ function PolicyCard({ service, policy }: { service: string; policy: FeePolicy | 
         <Showcase bps={bps} />
 
         <Choice label={t("admin.fees.chargedOn")} value={basis} onChange={setBasis} options={BASES} />
-        <p className="text-xs text-muted-foreground">{t("admin.fees.basisNote")}</p>
+        <p className="text-xs text-ink-soft">{t("admin.fees.basisNote")}</p>
 
         <Choice label={t("admin.fees.lockedIn")} value={crystallization} onChange={setCrystallization} options={PERIODS} />
-        <p className="text-xs text-muted-foreground">{t("admin.fees.crystallizationNote")}</p>
+        <p className="text-xs text-ink-soft">{t("admin.fees.crystallizationNote")}</p>
 
-        {invalid && <p className="text-xs text-destructive">{invalid}</p>}
-        {problem && <p className="text-xs text-destructive">{problem}</p>}
-        {saved && !problem && <p className="text-xs text-main-accent-t2">{t("admin.fees.saved")}</p>}
+        {invalid && <p className="text-xs text-accent-error">{invalid}</p>}
+        {problem && <p className="text-xs text-accent-error">{problem}</p>}
+        {saved && !problem && <p className="text-xs text-positive">{t("admin.fees.saved")}</p>}
 
         <Button type="button" onClick={save} disabled={busy || invalid !== null}>
           {busy && <Loader2 className="size-4 animate-spin" />}
@@ -287,7 +287,7 @@ function CollectCard({ service }: { service: string }) {
       <CardContent className="space-y-4 py-6">
         <div className="space-y-1">
           <p className="text-sm font-semibold">{t("admin.fees.collected")}</p>
-          <p className="text-xs text-muted-foreground">{t("admin.fees.collectedSub")}</p>
+          <p className="text-xs text-ink-soft">{t("admin.fees.collectedSub")}</p>
         </div>
 
         {shares.isLoading ? (
@@ -299,20 +299,20 @@ function CollectCard({ service }: { service: string }) {
           </dl>
         )}
 
-        <p className="text-xs text-muted-foreground">{t("admin.fees.settleNote")}</p>
+        <p className="text-xs text-ink-soft">{t("admin.fees.settleNote")}</p>
 
-        {problem && <p className="text-xs text-destructive">{problem}</p>}
+        {problem && <p className="text-xs text-accent-error">{problem}</p>}
         {/* Two independently complete sentences, so the settlement line and the pointer to
             the payout screen stay separate keys; the screen's own name is interpolated so it
             tracks whatever the nav calls it. The emphasis on that name is the one casualty
             of keeping the sentence whole for translators. */}
-        {done && !problem && <p className="text-xs text-main-accent-t2">{`${done} ${t("admin.fees.withdrawableFrom", { screen: t("nav.revenue") })}`}</p>}
+        {done && !problem && <p className="text-xs text-positive">{`${done} ${t("admin.fees.withdrawableFrom", { screen: t("nav.revenue") })}`}</p>}
 
         <Button type="button" variant="outline" onClick={settle} disabled={busy || nothing}>
           {busy && <Loader2 className="size-4 animate-spin" />}
           {t("admin.fees.settleAll")}
         </Button>
-        {nothing && !shares.isLoading && <p className="text-xs text-muted-foreground">{t("admin.fees.nothingToSettle")}</p>}
+        {nothing && !shares.isLoading && <p className="text-xs text-ink-soft">{t("admin.fees.nothingToSettle")}</p>}
       </CardContent>
     </Card>
   );
@@ -346,7 +346,7 @@ function AssessmentsCard({ service }: { service: string }) {
               <thead>
                 {/* i18n-max: 14 per header — the wrapper scrolls, so a long header costs a
                     sideways drag rather than a clipped column. */}
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
                   <th className="pb-2 font-medium">{t("admin.col.when")}</th>
                   <th className="pb-2 font-medium">{t("admin.fees.col.trigger")}</th>
                   <th className="pb-2 text-right font-medium">{t("admin.fees.field.management")}</th>
@@ -358,7 +358,7 @@ function AssessmentsCard({ service }: { service: string }) {
               <tbody>
                 {rows.map((a, i) => (
                   <tr key={`${a.assessed_at}-${i}`} className="border-b border-border/50 last:border-0">
-                    <td className="py-2 text-muted-foreground">{ago(a.assessed_at, t)}</td>
+                    <td className="py-2 text-ink-soft">{ago(a.assessed_at, t)}</td>
                     <td className="py-2 capitalize">{a.trigger}</td>
                     <td className="py-2 text-right tabular-nums">{formatUsd(a.management)}</td>
                     <td className="py-2 text-right tabular-nums">{formatUsd(a.performance)}</td>
@@ -366,7 +366,7 @@ function AssessmentsCard({ service }: { service: string }) {
                     {/* Non-zero means the holding could not cover the charge and the rest
                         rides to the next one. Worth its own column: it is the only reason
                         a charge collects less than it assessed. */}
-                    <td className={`py-2 text-right tabular-nums ${Number(a.debt_carried) > 0 ? "text-main-accent-t3" : "text-muted-foreground"}`}>
+                    <td className={`py-2 text-right tabular-nums ${Number(a.debt_carried) > 0 ? "text-accent-warn" : "text-ink-soft"}`}>
                       {formatUsd(a.debt_carried)}
                     </td>
                   </tr>
@@ -394,9 +394,9 @@ function PercentField({ label, value, onChange, hint }: { label: string; value: 
         {/* Inside the `label`, so it joins the field's accessible name — "Management %
             per year". Not decorative: the unit is the whole point of this screen's
             change, and a reader who cannot see it is the one who most needs telling. */}
-        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">%</span>
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-soft">%</span>
       </div>
-      <span className="block text-xs text-muted-foreground">{hint}</span>
+      <span className="block text-xs text-ink-soft">{hint}</span>
     </label>
   );
 }
@@ -435,25 +435,25 @@ function Showcase({ bps }: { bps: { management: number | null; performance: numb
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
-      <p className="text-xs font-medium text-muted-foreground">{t("admin.fees.showcase.title")}</p>
+      <p className="text-xs font-medium text-ink-soft">{t("admin.fees.showcase.title")}</p>
       <dl className="grid gap-3 sm:grid-cols-3">
         {rows.map((row) => (
           <div key={row.key} className="space-y-0.5">
-            <dt className="text-xs text-muted-foreground">{t(row.key)}</dt>
+            <dt className="text-xs text-ink-soft">{t(row.key)}</dt>
             <dd className="text-sm tabular-nums">
               {row.value === null ? (
-                <span className="text-muted-foreground">—</span>
+                <span className="text-ink-soft">—</span>
               ) : (
                 <>
                   <span className="font-medium">{pct(row.value)}</span>{" "}
-                  <span className="text-xs text-muted-foreground">{t("admin.fees.showcase.bps", { n: row.value })}</span>
+                  <span className="text-xs text-ink-soft">{t("admin.fees.showcase.bps", { n: row.value })}</span>
                 </>
               )}
             </dd>
           </div>
         ))}
       </dl>
-      {example && <p className="text-xs text-muted-foreground">{example}</p>}
+      {example && <p className="text-xs text-ink-soft">{example}</p>}
     </div>
   );
 }
@@ -481,7 +481,7 @@ function Choice<T extends string>({
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
             className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
-              value === option.value ? "border-main-accent-t1 bg-main-accent-t1/10" : "border-border hover:bg-muted/50"
+              value === option.value ? "border-accent-debug bg-accent-debug/10" : "border-border hover:bg-muted/50"
             }`}
           >
             {t(option.labelKey)}
@@ -496,7 +496,7 @@ function Choice<T extends string>({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-ink-soft">{label}</dt>
       <dd className="font-medium tabular-nums">{value}</dd>
     </div>
   );

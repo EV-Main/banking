@@ -10,7 +10,7 @@ import { networkLabel } from "@/views/wallet/lib/format";
 // Hand-written — uikit has no equivalent, so the segments carry their own focus ring.
 export function NetworkSegments({ networks, value, onChange, label }: { networks: string[]; value: string; onChange: (network: string) => void; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex w-full rounded-lg bg-main-surface p-1">
+    <div role="radiogroup" aria-label={label} className="flex w-full rounded-lg bg-secondary p-1">
       {networks.map((network) => {
         const selected = network === value;
         return (
@@ -27,7 +27,7 @@ export function NetworkSegments({ networks, value, onChange, label }: { networks
               // own children. The rail names on offer today are network codes and never do,
               // but nothing here guarantees the next one won't.
               "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring lg:py-2.5 lg:text-sm",
-              selected ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              selected ? "bg-primary text-primary-foreground" : "text-ink-soft hover:text-ink",
             )}
           >
             {/* The name stays visible rather than being replaced by the mark: this is the

@@ -130,8 +130,8 @@ export function ProfileView() {
         {/* Desktop page heading — the mobile app bar owns this below `lg`. */}
         <StaggerItem className="hidden items-center justify-between gap-4 lg:flex">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-foreground">{t("ui.profile")}</h1>
-            <p className="text-sm text-muted-foreground">{t("profile.subtitle")}</p>
+            <h1 className="text-2xl font-semibold text-ink">{t("ui.profile")}</h1>
+            <p className="text-sm text-ink-soft">{t("profile.subtitle")}</p>
           </div>
           {/* `shrink-0` Buttons beside a `min-w-0` heading column — their width is taken
               out of the page title, so the labels stay short. */}
@@ -155,7 +155,7 @@ export function ProfileView() {
         </StaggerItem>
 
         {error && (
-          <StaggerItem as="p" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <StaggerItem as="p" className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">
             {error}
           </StaggerItem>
         )}
@@ -165,8 +165,8 @@ export function ProfileView() {
           <InitialsAvatar initials={initialsOfName(name, email)} className="size-16 text-2xl lg:text-xl" />
           <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center lg:items-start lg:text-left">
             <div className="flex min-w-0 flex-col items-center gap-1 lg:flex-row lg:items-baseline lg:gap-3">
-              {loading ? <Skeleton className="h-6 w-40" /> : <p className="truncate text-lg font-semibold text-foreground lg:text-xl">{name || t("ui.account")}</p>}
-              {loading ? <Skeleton className="h-4 w-48" /> : <p className="truncate text-sm text-muted-foreground">{email || t("auth.notSignedIn")}</p>}
+              {loading ? <Skeleton className="h-6 w-40" /> : <p className="truncate text-lg font-semibold text-ink lg:text-xl">{name || t("ui.account")}</p>}
+              {loading ? <Skeleton className="h-4 w-48" /> : <p className="truncate text-sm text-ink-soft">{email || t("auth.notSignedIn")}</p>}
             </div>
             {!loading && (
               // i18n-max: 12 per Pill — they sit beside the truncated display name.
@@ -203,7 +203,7 @@ export function ProfileView() {
         <StaggerItem className="flex flex-col gap-4 lg:hidden">
           <ListCard>
             <ListCardTitle
-              sub={profile?.role ? <span className="text-main-accent-t1/85">{t("profile.roleAccount", { role: enumLabel("admin.role", profile.role, t) })}</span> : undefined}
+              sub={profile?.role ? <span className="text-accent-debug/85">{t("profile.roleAccount", { role: enumLabel("admin.role", profile.role, t) })}</span> : undefined}
             >
               {t("profile.personalInformation")}
             </ListCardTitle>
@@ -221,13 +221,13 @@ export function ProfileView() {
                         <Input
                           value={form[key]}
                           onChange={(e) => set(key, e.target.value)}
-                          className={fieldErrors[key] ? "border-destructive bg-destructive/5" : "border-border bg-main-surface"}
+                          className={fieldErrors[key] ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"}
                         />
-                        {fieldErrors[key] && <p className="mt-1 text-xs text-destructive">{fieldErrors[key]}</p>}
+                        {fieldErrors[key] && <p className="mt-1 text-xs text-accent-error">{fieldErrors[key]}</p>}
                       </div>
                     )
                   ) : (
-                    <span className={cn("break-words text-sm font-medium", profile?.[key] ? "text-foreground" : "text-muted-foreground")}>
+                    <span className={cn("break-words text-sm font-medium", profile?.[key] ? "text-ink" : "text-ink-soft")}>
                       {(key === "phone" ? formatPhone(profile?.[key]) : profile?.[key]) || "—"}
                     </span>
                   )}
@@ -236,7 +236,7 @@ export function ProfileView() {
             ))}
             <Hairline />
             <StackRow label={t("ui.emailAddress")}>
-              {loading ? <Skeleton className="h-5 w-48" /> : <span className="break-words text-sm font-medium text-muted-foreground">{email || "—"}</span>}
+              {loading ? <Skeleton className="h-5 w-48" /> : <span className="break-words text-sm font-medium text-ink-soft">{email || "—"}</span>}
             </StackRow>
           </ListCard>
 
@@ -248,8 +248,8 @@ export function ProfileView() {
         <StaggerItem className="hidden items-start gap-5 lg:flex">
           <section className={cn(CARD, "w-full flex-1 space-y-4.5 px-6 py-5.5")}>
             <header>
-              <h2 className="text-sm font-semibold tracking-normal text-foreground">{t("profile.personalInformation")}</h2>
-              <p className="text-xs text-muted-foreground">{t("profile.personalInformationSub")}</p>
+              <h2 className="text-sm font-semibold tracking-normal text-ink">{t("profile.personalInformation")}</h2>
+              <p className="text-xs text-ink-soft">{t("profile.personalInformationSub")}</p>
             </header>
             <div className="flex flex-wrap gap-x-4.5 gap-y-4">
               {SHOWN.map(({ key, labelKey, tip }) => (
@@ -264,9 +264,9 @@ export function ProfileView() {
                         <Input
                           value={form[key]}
                           onChange={(e) => set(key, e.target.value)}
-                          className={fieldErrors[key] ? "border-destructive bg-destructive/5" : "border-border bg-main-surface"}
+                          className={fieldErrors[key] ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"}
                         />
-                        {fieldErrors[key] && <p className="mt-1 text-xs text-destructive">{fieldErrors[key]}</p>}
+                        {fieldErrors[key] && <p className="mt-1 text-xs text-accent-error">{fieldErrors[key]}</p>}
                       </div>
                     )
                   ) : (
@@ -305,7 +305,7 @@ function VerificationCard({ loading, profile, email }: { loading: boolean; profi
       <Hairline />
       <Row>
         <RowLabel title={t("ui.kycLevel")} sub={t("profile.kycRaisedBy")} />
-        {loading ? <Skeleton className="h-4 w-10" /> : <RowValue className="font-semibold tabular-nums text-foreground">{profile?.kyc_level ?? "—"}</RowValue>}
+        {loading ? <Skeleton className="h-4 w-10" /> : <RowValue className="font-semibold tabular-nums text-ink">{profile?.kyc_level ?? "—"}</RowValue>}
       </Row>
       <Hairline />
       <Row>
@@ -337,13 +337,13 @@ function SnapshotCard({ invested, strategies }: { invested: number; strategies: 
       <ListCardTitle>{t("profile.accountSnapshot")}</ListCardTitle>
       <Hairline />
       <Row>
-        <span className="text-sm font-medium text-muted-foreground">{t("profile.totalInvested")}</span>
-        <span className="text-sm font-semibold tabular-nums text-foreground">{formatUsd(invested)}</span>
+        <span className="text-sm font-medium text-ink-soft">{t("profile.totalInvested")}</span>
+        <span className="text-sm font-semibold tabular-nums text-ink">{formatUsd(invested)}</span>
       </Row>
       <Hairline />
       <Row>
-        <span className="text-sm font-medium text-muted-foreground">{t("dash.activeStrategies")}</span>
-        <span className="text-sm font-semibold tabular-nums text-foreground">{strategies}</span>
+        <span className="text-sm font-medium text-ink-soft">{t("dash.activeStrategies")}</span>
+        <span className="text-sm font-semibold tabular-nums text-ink">{strategies}</span>
       </Row>
     </ListCard>
   );
@@ -353,7 +353,7 @@ function FieldBox({ label, trailing, tip, children }: { label: string; trailing?
   return (
     <div className="flex min-w-65 flex-1 flex-col">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-xs text-ink-soft">
           {label}
           {tip && <TipAnchor anchor={tip} />}
         </span>
@@ -372,8 +372,8 @@ function ReadValue({ value, muted }: { value?: string; muted?: boolean }) {
   return (
     <div
       className={cn(
-        "flex min-h-10.5 items-center rounded-lg border border-border bg-main-surface px-3.5 py-3 text-sm",
-        v && !muted ? "text-foreground" : "text-muted-foreground",
+        "flex min-h-10.5 items-center rounded-lg border border-border bg-secondary px-3.5 py-3 text-sm",
+        v && !muted ? "text-ink" : "text-ink-soft",
       )}
       title={raw.length > MAX_DISPLAY_VALUE ? raw : undefined}
     >
@@ -385,7 +385,7 @@ function ReadValue({ value, muted }: { value?: string; muted?: boolean }) {
 function VerifiedTag() {
   const t = useT();
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold text-main-accent-t1">
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-debug">
       {/* i18n-max: 12 — beside a field label in a `justify-between` header row. */}
       <BadgeCheck className="size-3" /> {t("ui.verified")}
       <TipAnchor anchor="profile.email.verified" />
@@ -443,8 +443,8 @@ function PhoneField({ initial, onChange, error }: { initial: string; onChange: (
 
   return (
     <div className="min-w-0 flex-1">
-      <Input {...inputProps} className={error ? "border-destructive bg-destructive/5" : "border-border bg-main-surface"} />
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      <Input {...inputProps} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
+      {error && <p className="mt-1 text-xs text-accent-error">{error}</p>}
     </div>
   );
 }

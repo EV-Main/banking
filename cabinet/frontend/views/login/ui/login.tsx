@@ -36,7 +36,7 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
     <div className="flex min-h-[calc(100dvh-var(--ev-shell-offset,0px))]">
       {/* Brand panel — locked to the brand palette (white on navy, the fixed teal washes),
           so it deliberately does not follow the app's foreground token. */}
-      <aside className="relative hidden w-150 shrink-0 flex-col justify-between overflow-hidden bg-main-brand p-16 lg:flex">
+      <aside className="relative hidden w-150 shrink-0 flex-col justify-between overflow-hidden bg-brand p-16 lg:flex">
         {/* Both washes are bespoke art direction with no equivalent on the colour scale, so
             they are declared as CSS rather than smuggled in as arbitrary Tailwind values. */}
         {/* big soft teal wash */}
@@ -51,14 +51,14 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
         />
 
         <div className="relative">
-          <Logo className="h-10 w-auto text-main-mist" />
+          <Logo className="h-10 w-auto text-ink" />
         </div>
 
         <div className="relative flex max-w-md flex-col gap-5">
           {/* The brand mark itself, not a phrase — it reads "EV INVEST" in every locale. */}
-          <p className="text-xs font-semibold tracking-widest text-main-accent-t1">EV INVEST</p>
+          <p className="text-xs font-semibold tracking-widest text-accent-debug">EV INVEST</p>
           <h2 className="text-5xl font-semibold leading-tight text-white">{t("auth.brandHeadline")}</h2>
-          <p className="text-base leading-6 text-muted-foreground">{t("auth.brandBlurb")}</p>
+          <p className="text-base leading-6 text-ink-soft">{t("auth.brandBlurb")}</p>
         </div>
 
         <div className="relative flex gap-8">
@@ -71,20 +71,20 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
       <div className="flex flex-1 items-center justify-center px-6 py-16">
         <div className="flex w-full max-w-100 flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold text-foreground">{t("auth.welcomeBack")}</h1>
-            <p className="text-sm text-muted-foreground">{t("auth.signInSub")}</p>
+            <h1 className="text-3xl font-semibold text-ink">{t("auth.welcomeBack")}</h1>
+            <p className="text-sm text-ink-soft">{t("auth.signInSub")}</p>
           </div>
 
-          {message && <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{message}</p>}
+          {message && <p className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{message}</p>}
 
           <a
             href={href}
-            className="flex h-10 w-full items-center justify-center gap-3 rounded-md bg-main-brand px-6 text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-white/10 transition-colors hover:bg-main-brand/80 focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-10 w-full items-center justify-center gap-3 rounded-md bg-brand px-6 text-sm font-medium text-ink outline-none ring-1 ring-inset ring-white/10 transition-colors hover:bg-brand/80 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <GoogleMark /> {t("auth.continueWithGoogle")}
           </a>
 
-          <p className="text-center text-sm text-muted-foreground">{t("auth.newToEv")}</p>
+          <p className="text-center text-sm text-ink-soft">{t("auth.newToEv")}</p>
         </div>
       </div>
     </div>
@@ -94,8 +94,8 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
 function BrandStat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-2xl font-semibold text-main-accent-t3">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-2xl font-semibold text-accent-warn">{value}</p>
+      <p className="text-xs text-ink-soft">{label}</p>
     </div>
   );
 }

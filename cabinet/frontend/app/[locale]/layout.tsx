@@ -58,7 +58,7 @@ export default async function RootLayout({
   const locale = raw;
   return (
     <html lang={locale} className={`dark ${fontInter.variable}`} suppressHydrationWarning>
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body className="min-h-screen bg-background text-ink antialiased">
         <I18nProvider locale={locale} messages={messagesFor(locale)}>
           <Providers nonce={nonce}>{children}</Providers>
         </I18nProvider>

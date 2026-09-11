@@ -58,7 +58,7 @@ export function NotificationsSection() {
   }
 
   if (error && !settings) {
-    return <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>;
+    return <p className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{error}</p>;
   }
 
   return (
@@ -102,7 +102,7 @@ export function NotificationsSection() {
         <div className="flex items-start justify-between gap-4">
           <ListCardTitle sub={t("notif.topicsSub")}>{t("notif.whatYouFollow")}</ListCardTitle>
           {/* i18n-max: 12 — `shrink-0` uppercase column header with `tracking-widest`. */}
-          <p className="shrink-0 pt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("ui.email")}</p>
+          <p className="shrink-0 pt-3 text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("ui.email")}</p>
         </div>
         {settings
           ? // Named `topic`, not `t`: the translator is bound above and a `t` here would
@@ -130,7 +130,7 @@ export function NotificationsSection() {
                       onClick={() => void run(() => setTopicSubscription(topic.topic, !topic.subscribed, topic.email_enabled))}
                       className={cn(
                         "rounded-lg px-3 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
-                        topic.subscribed ? "border border-border/60 text-foreground hover:bg-foreground/5" : "border border-main-accent-t1/50 text-main-accent-t1 hover:bg-main-accent-t1/10",
+                        topic.subscribed ? "border border-border/60 text-ink hover:bg-ink/5" : "border border-accent-debug/50 text-accent-debug hover:bg-accent-debug/10",
                       )}
                     >
                       {topic.subscribed ? t("notif.following") : t("notif.follow")}
@@ -156,8 +156,8 @@ export function NotificationsSection() {
             ))}
       </ListCard>
 
-      {error && <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-      <p className="text-xs leading-relaxed text-muted-foreground">{t("notif.channelsFootnote")}</p>
+      {error && <p className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{error}</p>}
+      <p className="text-xs leading-relaxed text-ink-soft">{t("notif.channelsFootnote")}</p>
     </div>
   );
 }

@@ -161,8 +161,8 @@ export function ConsiliumView() {
     >
       <StaggerItem className="flex flex-wrap items-start justify-between gap-3 xl:col-span-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-2xl font-semibold leading-tight text-foreground">{t("consilium.title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("consilium.sub")}</p>
+          <h1 className="text-2xl font-semibold leading-tight text-ink">{t("consilium.title")}</h1>
+          <p className="text-sm text-ink-soft">{t("consilium.sub")}</p>
         </div>
         <StreamChip status={stream.status} />
       </StaggerItem>
@@ -172,13 +172,13 @@ export function ConsiliumView() {
       {roster?.below_payout_floor && (
         // Not styled as an error: nothing has failed. It is a standing fact about the fund
         // that changes what it can do, and it is the first thing an owner should know.
-        // Body copy is `text-foreground`, not muted — muted on a tinted ground is the
+        // Body copy is `text-ink`, not muted — muted on a tinted ground is the
         // contrast failure AGENTS.md calls out by name.
-        <StaggerItem className="flex items-start gap-3 rounded-xl border border-main-accent-t3/40 bg-main-accent-t3/10 px-4 py-3.5 xl:col-span-2">
-          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-main-accent-t3" />
+        <StaggerItem className="flex items-start gap-3 rounded-xl border border-accent-warn/40 bg-accent-warn/10 px-4 py-3.5 xl:col-span-2">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-accent-warn" />
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="text-sm font-semibold text-foreground">{t("consilium.floor.title")}</p>
-            <p className="text-sm leading-relaxed text-foreground">{t("consilium.floor.body", { n: roster.items?.length ?? 0 })}</p>
+            <p className="text-sm font-semibold text-ink">{t("consilium.floor.title")}</p>
+            <p className="text-sm leading-relaxed text-ink">{t("consilium.floor.body", { n: roster.items?.length ?? 0 })}</p>
           </div>
         </StaggerItem>
       )}
@@ -241,11 +241,11 @@ function StreamChip({ status }: { status: StreamStatus }) {
   if (status === "idle") return null;
   const live = status === "live";
   return (
-    <Badge variant="outline" className="gap-1.5 rounded-full font-medium text-muted-foreground">
+    <Badge variant="outline" className="gap-1.5 rounded-full font-medium text-ink-soft">
       <span
         className={cn(
           "size-1.5 rounded-full",
-          live ? "bg-main-accent-t2" : status === "paused" ? "bg-muted-foreground" : "animate-pulse bg-main-accent-t3",
+          live ? "bg-positive" : status === "paused" ? "bg-ink-soft" : "animate-pulse bg-accent-warn",
         )}
       />
       {t(live ? "consilium.stream.live" : status === "paused" ? "consilium.stream.paused" : "consilium.stream.reconnecting")}
@@ -276,7 +276,7 @@ function Roster({
             the roster arrived. Printed unconditionally, it reported a 404 as "0 owners" —
             in the same header as a card that was showing the reader nothing at all. */}
         {count !== null && (
-          <CardAction className="text-xs font-medium tabular-nums text-muted-foreground">
+          <CardAction className="text-xs font-medium tabular-nums text-ink-soft">
             {t("consilium.roster.count", { n: count })}
           </CardAction>
         )}
@@ -323,7 +323,7 @@ function Roster({
                 <EmptyDescription>{t("consilium.roster.emptyBody")}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <p className="text-sm leading-relaxed text-muted-foreground">{t("consilium.roster.emptyNext")}</p>
+                <p className="text-sm leading-relaxed text-ink-soft">{t("consilium.roster.emptyNext")}</p>
               </EmptyContent>
             </Empty>
           ) : (
@@ -333,7 +333,7 @@ function Roster({
                   {i > 0 && <ItemSeparator />}
                   <Item size="sm" className="px-0">
                     <ItemMedia>
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-main-accent-t1/15 text-xs font-semibold text-main-accent-t1">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-debug/15 text-xs font-semibold text-accent-debug">
                         {initialsOf(owner.email)}
                       </span>
                     </ItemMedia>
@@ -341,7 +341,7 @@ function Roster({
                       <ItemTitle className="block w-auto truncate font-medium">
                         {owner.display_name || owner.email}
                         {owner.user_id === userId && (
-                          <span className="ml-1.5 text-xs font-normal text-muted-foreground">{t("consilium.roster.you")}</span>
+                          <span className="ml-1.5 text-xs font-normal text-ink-soft">{t("consilium.roster.you")}</span>
                         )}
                       </ItemTitle>
                       <ItemDescription className="truncate text-xs tabular-nums">
@@ -421,7 +421,7 @@ function PayoutSection({
               {/* Nothing is deleted: a rejected, expired or failed request stays readable,
                   because the ledger and the governance record have to reconcile after the
                   fact (docs/CONSILIUM.md § Audit). */}
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{t("consilium.payout.past")}</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("consilium.payout.past")}</p>
               <ItemGroup>
                 {past.map((consilium, i) => (
                   <Fragment key={consilium.id}>
@@ -482,9 +482,9 @@ function OpenPayout({ consilium }: { consilium: Consilium }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-2xl font-semibold leading-none tabular-nums text-foreground">
+        <p className="text-2xl font-semibold leading-none tabular-nums text-ink">
           {formatExactUsdt(payout?.amount)}
-          <span className="ml-2 text-sm font-medium text-muted-foreground">USDT</span>
+          <span className="ml-2 text-sm font-medium text-ink-soft">USDT</span>
         </p>
         <Badge variant="outline" className={stateTone(consilium.state)}>
           {stateLabel(consilium.state, t)}
@@ -494,11 +494,11 @@ function OpenPayout({ consilium }: { consilium: Consilium }) {
       {/* Full, monospace, wrapped rather than truncated — the same rule as the approval
           email and the approval page. An owner who checks the address here and approves it
           there must be looking at the same characters (policy 13). */}
-      <p className="break-all rounded-lg border border-border bg-main-surface px-3 py-2.5 font-mono-tech text-xs leading-relaxed text-foreground">
+      <p className="break-all rounded-lg border border-border bg-secondary px-3 py-2.5 font-mono-tech text-xs leading-relaxed text-ink">
         {payout?.address || "—"}
       </p>
 
-      <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1.5 text-xs text-ink-soft">
         <span className="tabular-nums">{t("consilium.payout.network", { network: networkLabel(payout?.network) })}</span>
         <span className="font-mono-tech">{t("consilium.payout.fingerprint", { hash: hashPrefix(consilium.payload_hash) })}</span>
         <span>{t("consilium.payout.openedBy", { initiator: consilium.initiator_email })}</span>
@@ -509,13 +509,13 @@ function OpenPayout({ consilium }: { consilium: Consilium }) {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-sm font-medium tabular-nums text-foreground">
+          <span className="text-sm font-medium tabular-nums text-ink">
             {t("consilium.payout.tally", { approvals, threshold })}
           </span>
-          <span className="text-xs tabular-nums text-muted-foreground">{t("consilium.payout.owners", { n: consilium.owner_count ?? 0 })}</span>
+          <span className="text-xs tabular-nums text-ink-soft">{t("consilium.payout.owners", { n: consilium.owner_count ?? 0 })}</span>
         </div>
         <Progress value={progress} className="h-1.5" aria-hidden />
-        <p className="text-xs text-muted-foreground">{t("consilium.payout.voteByEmail")}</p>
+        <p className="text-xs text-ink-soft">{t("consilium.payout.voteByEmail")}</p>
       </div>
 
       {error !== null && <ResourceError message={errorMessage(error, t)} />}
@@ -524,8 +524,8 @@ function OpenPayout({ consilium }: { consilium: Consilium }) {
         // Cancelling voids every approval collected so far — votes are not carried over
         // when a request is reopened (policy 12), so this is not the reversible click its
         // single ghost button made it look like.
-        <div className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3.5">
-          <p className="text-sm leading-relaxed text-foreground">{t("consilium.payout.cancelWarning", { approvals })}</p>
+        <div className="flex flex-col gap-3 rounded-lg border border-accent-error/40 bg-accent-error/10 p-3.5">
+          <p className="text-sm leading-relaxed text-ink">{t("consilium.payout.cancelWarning", { approvals })}</p>
           <div className="flex flex-col gap-2.5 sm:flex-row">
             <Button variant="destructive" size="sm" disabled={busy} onClick={() => void cancel()}>
               {busy && <Loader2 className="size-4 animate-spin" />}
@@ -587,7 +587,7 @@ function ResignCard({ email, loadingProfile }: { email: string; loadingProfile: 
       </CardHeader>
       <CardContent className="flex flex-col gap-3.5">
         {done ? (
-          <p className="text-sm text-main-accent-t2" role="status">
+          <p className="text-sm text-positive" role="status">
             {t("consilium.resign.done")}
           </p>
         ) : loadingProfile ? (
@@ -595,11 +595,11 @@ function ResignCard({ email, loadingProfile }: { email: string; loadingProfile: 
         ) : email.length === 0 ? (
           // Without an email there is nothing to type and nothing to compare, so the button
           // would sit permanently disabled with no way to find out why.
-          <p className="text-sm text-muted-foreground">{t("consilium.resign.unavailable")}</p>
+          <p className="text-sm text-ink-soft">{t("consilium.resign.unavailable")}</p>
         ) : open ? (
           <>
-            <p className="text-sm leading-relaxed text-muted-foreground">{t("consilium.resign.warning")}</p>
-            <p className="text-xs text-muted-foreground">{t("consilium.resign.floorWarning")}</p>
+            <p className="text-sm leading-relaxed text-ink-soft">{t("consilium.resign.warning")}</p>
+            <p className="text-xs text-ink-soft">{t("consilium.resign.floorWarning")}</p>
             <div className="flex flex-col gap-2">
               <Label htmlFor="resign-confirm">{t("consilium.resign.confirmLabel", { email })}</Label>
               <Input

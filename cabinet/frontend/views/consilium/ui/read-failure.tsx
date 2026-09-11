@@ -49,15 +49,15 @@ export function ReadFailure({ title, body, onRetry, retrying = false, className 
     // Solid and tinted, against the dashed frame every zero state on this page uses: "this
     // did not load" and "there is nothing here yet" are opposite answers, and the reader
     // should be able to tell them apart before reading a word.
-    <Empty className={cn("border border-solid border-destructive/40 bg-destructive/10 md:p-6", className)}>
+    <Empty className={cn("border border-solid border-accent-error/40 bg-accent-error/10 md:p-6", className)}>
       <EmptyHeader>
-        <EmptyMedia variant="icon" className="text-destructive">
+        <EmptyMedia variant="icon" className="text-accent-error">
           <CloudOff />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
-        {/* `text-foreground`, not the muted default: muted on a tinted ground is the
+        {/* `text-ink`, not the muted default: muted on a tinted ground is the
             contrast failure AGENTS.md names, and it is measured under AA here. */}
-        <EmptyDescription className="text-foreground">{body}</EmptyDescription>
+        <EmptyDescription className="text-ink">{body}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         {/* i18n-max: 16 — the uikit Button is shrink-0. */}

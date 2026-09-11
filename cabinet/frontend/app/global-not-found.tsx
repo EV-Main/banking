@@ -36,7 +36,7 @@ export const metadata: Metadata = {
 export default function GlobalNotFound() {
   return (
     <html lang="en" className={`dark ${fontInter.variable}`} suppressHydrationWarning>
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body className="min-h-screen bg-background text-ink antialiased">
         <NotFound homeHref={BASE_PATH} contactHref="/contact" />
       </body>
     </html>

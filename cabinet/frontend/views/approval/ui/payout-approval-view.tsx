@@ -176,11 +176,11 @@ export function PayoutApprovalView({ token }: { token: string }) {
               and the whole address. Everything past the separator is context. */}
           <div className="flex flex-col gap-1.5">
             <FieldCaption>{t("approval.amount")}</FieldCaption>
-            <p className="text-4xl font-semibold leading-none tabular-nums text-foreground">
+            <p className="text-4xl font-semibold leading-none tabular-nums text-ink">
               {/* The wire string, digit for digit - `formatUsdt` caps at 6 dp and parses
                   through a float, and `payload_hash` covers the exact decimal. */}
               {formatExactUsdt(payout?.amount)}
-              <span className="ml-2 text-base font-medium text-muted-foreground">USDT</span>
+              <span className="ml-2 text-base font-medium text-ink-soft">USDT</span>
             </p>
           </div>
 
@@ -192,7 +192,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
             <DetailRow label={t("approval.payloadHash")} value={hashPrefix(invitation.payload_hash)} mono />
           </div>
 
-          <p className="text-xs text-muted-foreground">{t("approval.payloadHashHint")}</p>
+          <p className="text-xs text-ink-soft">{t("approval.payloadHashHint")}</p>
 
           <Separator />
 
@@ -202,7 +202,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
             <DetailRow
               label={t("approval.expires")}
               value={t("approval.expiresValue", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
-              tone={expired ? "text-destructive" : undefined}
+              tone={expired ? "text-accent-error" : undefined}
             />
           </div>
 
@@ -210,17 +210,17 @@ export function PayoutApprovalView({ token }: { token: string }) {
 
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-sm font-medium text-foreground tabular-nums">
+              <span className="text-sm font-medium text-ink tabular-nums">
                 {t("approval.tally", { approvals, threshold })}
               </span>
-              <span className="text-xs text-muted-foreground tabular-nums">
+              <span className="text-xs text-ink-soft tabular-nums">
                 {t("approval.tallyOwners", { owners: invitation.owner_count ?? 0 })}
               </span>
             </div>
             {/* The sentence above states the tally; a second, unlabelled progressbar in the
                 accessibility tree would only repeat it. */}
             <Progress value={progress} className="h-1.5" aria-hidden />
-            <p className="text-xs text-muted-foreground">{t("approval.tallyHint")}</p>
+            <p className="text-xs text-ink-soft">{t("approval.tallyHint")}</p>
           </div>
         </CardContent>
       </Card>
@@ -232,7 +232,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
       ) : settled ? (
         <ApprovalOutcome
           icon={settled === "approve" ? <CheckCircle2 /> : <XCircle />}
-          tone={settled === "approve" ? "text-main-accent-t2" : "text-muted-foreground"}
+          tone={settled === "approve" ? "text-positive" : "text-ink-soft"}
           title={t(settled === "approve" ? "approval.decided.approvedTitle" : "approval.decided.rejectedTitle")}
           description={t(justDecided ? "approval.decided.freshBody" : "approval.decided.body")}
         />
@@ -243,7 +243,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
             <CardDescription className="text-balance">{t("approval.decisionLead")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">{t("approval.votingAs", { email: invitation.voter_email })}</p>
+            <p className="text-xs text-ink-soft">{t("approval.votingAs", { email: invitation.voter_email })}</p>
 
             <CodeField value={code} onChange={setCode} disabled={pending !== null} attemptsRemaining={rejectedAttempts} />
 
@@ -269,7 +269,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
               <Button
                 size="lg"
                 variant="outline"
-                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:shrink-0"
+                className="border-accent-error/40 text-accent-error hover:bg-accent-error/10 hover:text-accent-error sm:shrink-0"
                 disabled={code.trim().length === 0 || pending !== null}
                 onClick={() => void decide("reject")}
               >
@@ -281,7 +281,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
         </Card>
       )}
 
-      <p className="text-center text-xs text-muted-foreground">{t("approval.footnote")}</p>
+      <p className="text-center text-xs text-ink-soft">{t("approval.footnote")}</p>
     </ApprovalPage>
   );
 }

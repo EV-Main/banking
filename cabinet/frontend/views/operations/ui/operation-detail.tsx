@@ -39,7 +39,7 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
           {/* Decorative — the panel title beside it names the kind. i18n-max: 4 on the
               text fallback, reached only for a kind with no mark. */}
           <Badge className={cn("font-semibold", meta.tone)}>{meta.icon ? <meta.icon aria-hidden /> : kindBadge(operation.kind)}</Badge>
-          <p className="min-w-0 flex-1 truncate text-base font-semibold text-foreground">{title}</p>
+          <p className="min-w-0 flex-1 truncate text-base font-semibold text-ink">{title}</p>
           {/* No `capitalize`, and the mark doubles the tint — see the notes on the same
               badges in `operations-view`. */}
           <Badge className={stateTone(operation.state)}>
@@ -47,25 +47,25 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
             {stateLabel(operation.state, t)}
           </Badge>
         </div>
-        <p className="text-xs text-muted-foreground">{context(operation, at, t, locale)}</p>
+        <p className="text-xs text-ink-soft">{context(operation, at, t, locale)}</p>
         <p className={cn("pt-1 text-2xl font-semibold tabular-nums", amountTone(meta.direction))}>{headline(operation, t)}</p>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+        {sub && <p className="text-xs text-ink-soft">{sub}</p>}
       </header>
 
       {steps.length > 0 && (
         <>
           <Separator />
           <section className="flex flex-col gap-3 px-4 py-4">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ui.progress")}</h3>
+            <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.progress")}</h3>
             {steps.map((step, i) => (
               <div key={i} className="flex items-center gap-2.5">
                 <span
                   aria-hidden
-                  className={cn("size-2.5 shrink-0 rounded-full", step.state === "done" ? "bg-main-accent-t2" : step.state === "active" ? "bg-main-accent-t3" : "bg-muted-foreground/40")}
+                  className={cn("size-2.5 shrink-0 rounded-full", step.state === "done" ? "bg-positive" : step.state === "active" ? "bg-accent-warn" : "bg-ink-soft/40")}
                 />
                 <span className="flex min-w-0 flex-col">
-                  <span className={cn("truncate text-sm", step.state === "todo" ? "text-muted-foreground" : "font-medium text-foreground")}>{step.label}</span>
-                  <span className="truncate text-xs text-muted-foreground">{step.meta}</span>
+                  <span className={cn("truncate text-sm", step.state === "todo" ? "text-ink-soft" : "font-medium text-ink")}>{step.label}</span>
+                  <span className="truncate text-xs text-ink-soft">{step.meta}</span>
                 </span>
               </div>
             ))}
@@ -75,7 +75,7 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
 
       <Separator />
       <section className="flex flex-col gap-2 px-4 py-4">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("ui.details")}</h3>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.details")}</h3>
         {/* The label is fixed and the value wraps, not the other way round. A deposit
             reference is ~50 characters and a TON address 48; letting the value size the
             row pushed it straight through the panel's right edge and over the row above. */}
@@ -83,8 +83,8 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
             locales are free to render two rows with the same word. */}
         {detailsFor(operation, t).map(([label, value], i) => (
           <div key={i} className="flex items-start gap-3">
-            <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-            <span className="min-w-0 flex-1 break-all text-right text-xs font-medium tabular-nums text-foreground">{value}</span>
+            <span className="shrink-0 text-xs text-ink-soft">{label}</span>
+            <span className="min-w-0 flex-1 break-all text-right text-xs font-medium tabular-nums text-ink">{value}</span>
           </div>
         ))}
       </section>

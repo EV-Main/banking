@@ -47,7 +47,7 @@ export default async function MfePage({ params }: { params: Promise<{ service: s
       scriptUrl={entry.scriptUrl}
       integrity={entry.integrity}
       className="block min-h-[60vh]"
-      fallback={<div className="container py-24 text-muted-foreground">{t("mfe.loading", { name: entry.name })}</div>}
+      fallback={<div className="container py-24 text-ink-soft">{t("mfe.loading", { name: entry.name })}</div>}
     />
   );
 }

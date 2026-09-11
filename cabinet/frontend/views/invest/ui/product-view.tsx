@@ -79,7 +79,7 @@ export function ProductView({ service }: { service: string }) {
       <div className="container max-w-4xl space-y-6 py-12">
         <BackLink />
         <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-16 text-center text-muted-foreground">
+          <CardContent className="flex flex-col items-center gap-2 py-16 text-center text-ink-soft">
             <TriangleAlert className="size-6" />
             <p className="text-sm">{error ?? t("invest.notRegistered", { service })}</p>
             <p className="max-w-sm text-xs">{t("invest.notRegisteredHint")}</p>
@@ -115,8 +115,8 @@ export function ProductView({ service }: { service: string }) {
             <h1 className="text-3xl font-semibold">{product.title}</h1>
             <ProductBadges closed={closed} stale={stale} />
           </div>
-          <p className="font-mono-tech text-xs text-muted-foreground">{product.service}</p>
-          {product.summary && <p className="max-w-xl pt-1 text-sm text-muted-foreground">{product.summary}</p>}
+          <p className="font-mono-tech text-xs text-ink-soft">{product.service}</p>
+          {product.summary && <p className="max-w-xl pt-1 text-sm text-ink-soft">{product.summary}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {!closed && (
@@ -173,7 +173,7 @@ export function ProductView({ service }: { service: string }) {
 function BackLink() {
   const t = useT();
   return (
-    <Link href="/invest" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+    <Link href="/invest" className="inline-flex items-center gap-1.5 text-sm text-ink-soft transition-colors hover:text-ink">
       <ArrowLeft className="size-4" />
       {t("invest.allProducts")}
     </Link>
@@ -193,7 +193,7 @@ function SupplyCard({ nav }: { nav: FundNav | null }) {
     return (
       <Card>
         <CardContent className="py-6">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+          <Loader2 className="size-4 animate-spin text-ink-soft" />
         </CardContent>
       </Card>
     );
@@ -211,7 +211,7 @@ function SupplyCard({ nav }: { nav: FundNav | null }) {
           <Row label={t("invest.navPerUnit")} value={`${formatUsdt(nav.nav)} USDT`} />
           <Row label={t("invest.fundAum")} value={nav.aum ? `${formatUsdt(nav.aum)} USDT` : t("invest.notYetValued")} />
         </dl>
-        <p className="text-xs text-muted-foreground">{t("invest.supplyNote")}</p>
+        <p className="text-xs text-ink-soft">{t("invest.supplyNote")}</p>
       </CardContent>
     </Card>
   );
@@ -258,7 +258,7 @@ function FeeCard({ policy, accrued }: { policy: FeePolicy | null; accrued: Accru
             {/* Its own heading, so the rows can be labelled `Management` and `Performance`
                 without colliding with the identically-named terms above. Long enough labels
                 to disambiguate inline would wrap onto two lines in this column. */}
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("invest.accruedOnHolding")}</p>
+            <p className="text-xs uppercase tracking-wide text-ink-soft">{t("invest.accruedOnHolding")}</p>
             <dl className="space-y-2.5 text-sm">
               <Row label={t("admin.fees.field.management")} value={`${formatUsdt(owed.management)} USDT`} />
               <Row label={t("admin.fees.field.performance")} value={`${formatUsdt(owed.performance)} USDT`} />
@@ -269,7 +269,7 @@ function FeeCard({ policy, accrued }: { policy: FeePolicy | null; accrued: Accru
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground">{t(owed ? "invest.feeNoteHolder" : "invest.feeNoteProspect")}</p>
+        <p className="text-xs text-ink-soft">{t(owed ? "invest.feeNoteHolder" : "invest.feeNoteProspect")}</p>
       </CardContent>
     </Card>
   );
@@ -292,7 +292,7 @@ const PERIOD_LABEL_KEYS: Record<string, string> = {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-ink-soft">{label}</dt>
       <dd className="font-medium tabular-nums">{value}</dd>
     </div>
   );
@@ -312,7 +312,7 @@ function HoldingStats({ position }: { position: Position }) {
         value={`${formatSignedUsdt(position.pnl)} USDT`}
         tip="invest.position.pnl"
         emphasis
-        tone={loss && !flat ? "text-main-accent-t4" : "text-main-accent-t2"}
+        tone={loss && !flat ? "text-accent-info" : "text-positive"}
         icon={<TrendingUp className={cn("size-3.5", loss && !flat && "rotate-180")} />}
       />
     </div>
@@ -326,13 +326,13 @@ function PriceOnly({ nav, unmarked }: { nav: FundNav | null; unmarked: boolean }
     <Card>
       <CardContent className="flex flex-wrap items-center justify-between gap-4 py-6">
         <div className="space-y-1">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-soft">
             {t("invest.navPerUnit")}
             <TipAnchor anchor="invest.position.nav" />
           </p>
           <p className="text-2xl font-semibold tabular-nums">{nav ? `${formatUsdt(nav.nav)} USDT` : "—"}</p>
         </div>
-        <p className="max-w-sm text-sm text-muted-foreground">{t(unmarked ? "invest.notYetValuedHint" : "invest.noUnitsInFund")}</p>
+        <p className="max-w-sm text-sm text-ink-soft">{t(unmarked ? "invest.notYetValuedHint" : "invest.noUnitsInFund")}</p>
       </CardContent>
     </Card>
   );

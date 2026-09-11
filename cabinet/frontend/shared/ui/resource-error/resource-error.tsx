@@ -125,10 +125,10 @@ export function ResourceError({ message, error, variant = "inline", title, onRet
 
   if (onRetry) {
     return (
-      <StaggerItem className={cn("flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5", className)}>
+      <StaggerItem className={cn("flex flex-wrap items-center gap-3 rounded-lg border border-accent-error/40 bg-accent-error/10 px-3 py-2.5", className)}>
         {/* The icon holds its size here: beside the button it is the first thing squeezed
             when the message is long, and a half-width triangle reads as a rendering fault. */}
-        <p className="flex min-w-0 items-center gap-2 text-sm text-destructive">
+        <p className="flex min-w-0 items-center gap-2 text-sm text-accent-error">
           <TriangleAlert className="size-4 shrink-0" /> {text}
         </p>
         {/* i18n-max: 16 — the uikit Button is shrink-0, so its label is taken out of the
@@ -141,7 +141,7 @@ export function ResourceError({ message, error, variant = "inline", title, onRet
   }
 
   return (
-    <StaggerItem as="p" className={cn("flex items-center gap-2 text-sm text-destructive", className)}>
+    <StaggerItem as="p" className={cn("flex items-center gap-2 text-sm text-accent-error", className)}>
       <TriangleAlert className="size-4" /> {text}
     </StaggerItem>
   );
