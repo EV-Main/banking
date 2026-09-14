@@ -134,7 +134,7 @@ export function ResourceError({ message, error, variant = "inline", title, onRet
         {/* i18n-max: 16 — the uikit Button is shrink-0, so its label is taken out of the
             message's share of the row before the row is allowed to wrap. */}
         <Button type="button" variant="outline" size="sm" disabled={retrying} onClick={onRetry}>
-          <RefreshCw className={retrying ? "size-4 animate-spin" : "size-4"} /> {t("status.tryAgain")}
+          <RefreshCw className={retrying ? "size-4 animate-spin" : "size-4"} /> {t("status.tryAgain", "Try again")}
         </Button>
       </StaggerItem>
     );

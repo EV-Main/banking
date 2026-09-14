@@ -165,9 +165,9 @@ export function PayoutApprovalView({ token }: { token: string }) {
     <ApprovalPage>
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">{t("approval.payout.title")}</CardTitle>
+          <CardTitle className="text-xl">{t("approval.payout.title", "Approve a fund payout")}</CardTitle>
           <CardDescription className="text-balance">
-            {t("approval.payout.lead", { initiator: invitation.initiator_email })}
+            {t("approval.payout.lead", "{initiator} has asked to pay out money the fund has earned. Paying the fund's own money out is never one person's decision, so it needs the owners to agree.", { initiator: invitation.initiator_email })}
           </CardDescription>
         </CardHeader>
 
@@ -175,7 +175,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
           {/* The two things being agreed to get the whole top of the card: the exact amount
               and the whole address. Everything past the separator is context. */}
           <div className="flex flex-col gap-1.5">
-            <FieldCaption>{t("approval.amount")}</FieldCaption>
+            <FieldCaption>{t("approval.amount", "Amount")}</FieldCaption>
             <p className="text-4xl font-semibold leading-none tabular-nums text-ink">
               {/* The wire string, digit for digit - `formatUsdt` caps at 6 dp and parses
                   through a float, and `payload_hash` covers the exact decimal. */}
@@ -184,24 +184,24 @@ export function PayoutApprovalView({ token }: { token: string }) {
             </p>
           </div>
 
-          <FullAddress label={t("approval.destination")} address={payout?.address ?? ""} />
+          <FullAddress label={t("approval.destination", "Destination address")} address={payout?.address ?? ""} />
 
           <div className="flex flex-col gap-2.5">
-            <DetailRow label={t("approval.network")} value={networkLabel(payout?.network)} />
-            {payout?.memo ? <DetailRow label={t("approval.memo")} value={payout.memo} mono /> : null}
-            <DetailRow label={t("approval.payloadHash")} value={hashPrefix(invitation.payload_hash)} mono />
+            <DetailRow label={t("approval.network", "Network")} value={networkLabel(payout?.network)} />
+            {payout?.memo ? <DetailRow label={t("approval.memo", "Memo")} value={payout.memo} mono /> : null}
+            <DetailRow label={t("approval.payloadHash", "Request fingerprint")} value={hashPrefix(invitation.payload_hash)} mono />
           </div>
 
-          <p className="text-xs text-ink-soft">{t("approval.payloadHashHint")}</p>
+          <p className="text-xs text-ink-soft">{t("approval.payloadHashHint", "The fingerprint is taken over the amount, the address, the network and the memo above. It is checked again before any money moves, so a request cannot be edited after you have agreed to it.")}</p>
 
           <Separator />
 
           <div className="flex flex-col gap-2.5">
-            <DetailRow label={t("approval.openedBy")} value={invitation.initiator_email} />
-            <DetailRow label={t("approval.openedAt")} value={formatMoment(invitation.created_at, locale)} />
+            <DetailRow label={t("approval.openedBy", "Opened by")} value={invitation.initiator_email} />
+            <DetailRow label={t("approval.openedAt", "Opened")} value={formatMoment(invitation.created_at, locale)} />
             <DetailRow
-              label={t("approval.expires")}
-              value={t("approval.expiresValue", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
+              label={t("approval.expires", "Expires")}
+              value={t("approval.expiresValue", "{at} · {left}", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
               tone={expired ? "text-accent-error" : undefined}
             />
           </div>
@@ -211,16 +211,16 @@ export function PayoutApprovalView({ token }: { token: string }) {
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-medium text-ink tabular-nums">
-                {t("approval.tally", { approvals, threshold })}
+                {t("approval.tally", "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far", { approvals, threshold })}
               </span>
               <span className="text-xs text-ink-soft tabular-nums">
-                {t("approval.tallyOwners", { owners: invitation.owner_count ?? 0 })}
+                {t("approval.tallyOwners", "{owners, plural, one {# owner} other {# owners}} in total", { owners: invitation.owner_count ?? 0 })}
               </span>
             </div>
             {/* The sentence above states the tally; a second, unlabelled progressbar in the
                 accessibility tree would only repeat it. */}
             <Progress value={progress} className="h-1.5" aria-hidden />
-            <p className="text-xs text-ink-soft">{t("approval.tallyHint")}</p>
+            <p className="text-xs text-ink-soft">{t("approval.tallyHint", "More than half of the owners must approve before any money moves. You are one of them.")}</p>
           </div>
         </CardContent>
       </Card>
@@ -233,17 +233,17 @@ export function PayoutApprovalView({ token }: { token: string }) {
         <ApprovalOutcome
           icon={settled === "approve" ? <CheckCircle2 /> : <XCircle />}
           tone={settled === "approve" ? "text-positive" : "text-ink-soft"}
-          title={t(settled === "approve" ? "approval.decided.approvedTitle" : "approval.decided.rejectedTitle")}
-          description={t(justDecided ? "approval.decided.freshBody" : "approval.decided.body")}
+          title={(settled === "approve" ? t("approval.decided.approvedTitle", "You approved this payout") : t("approval.decided.rejectedTitle", "You rejected this payout"))}
+          description={(justDecided ? t("approval.decided.freshBody", "Your answer has been recorded. There is nothing further to do here — the payout goes ahead once enough owners have agreed.") : t("approval.decided.body", "You answered this earlier, and that answer stands. An answer cannot be changed once it is given."))}
         />
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t("approval.decisionTitle")}</CardTitle>
-            <CardDescription className="text-balance">{t("approval.decisionLead")}</CardDescription>
+            <CardTitle className="text-base">{t("approval.decisionTitle", "Your decision")}</CardTitle>
+            <CardDescription className="text-balance">{t("approval.decisionLead", "Both answers need the code from your email. Enter it once, then choose.")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <p className="text-xs text-ink-soft">{t("approval.votingAs", { email: invitation.voter_email })}</p>
+            <p className="text-xs text-ink-soft">{t("approval.votingAs", "You are answering as {email}.", { email: invitation.voter_email })}</p>
 
             <CodeField value={code} onChange={setCode} disabled={pending !== null} attemptsRemaining={rejectedAttempts} />
 
@@ -264,7 +264,7 @@ export function PayoutApprovalView({ token }: { token: string }) {
                 onClick={() => void decide("approve")}
               >
                 {pending === "approve" && <Loader2 className="size-4 animate-spin" />}
-                {t("approval.approve")}
+                {t("approval.approve", "Approve this payout")}
               </Button>
               <Button
                 size="lg"
@@ -274,14 +274,14 @@ export function PayoutApprovalView({ token }: { token: string }) {
                 onClick={() => void decide("reject")}
               >
                 {pending === "reject" && <Loader2 className="size-4 animate-spin" />}
-                {t("approval.reject")}
+                {t("approval.reject", "Reject")}
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <p className="text-center text-xs text-ink-soft">{t("approval.footnote")}</p>
+      <p className="text-center text-xs text-ink-soft">{t("approval.footnote", "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.")}</p>
     </ApprovalPage>
   );
 }

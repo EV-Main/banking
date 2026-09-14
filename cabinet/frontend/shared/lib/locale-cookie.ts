@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, isLocale, type Locale } from "@evinvest/i18n";
+import { DEFAULT_LOCALE, isLocale, localeOfElement, type Locale } from "@evinvest/i18n";
 
 // Browser-side access to the `ev_locale` cookie — the one cookie this zone mints
 // rather than reads (shared/config/cookies.ts), and the carrier that lets the
@@ -55,6 +55,11 @@ export function writeLocaleCookie(locale: Locale): void {
  */
 export function documentLocale(): Locale {
   if (typeof document === "undefined") return DEFAULT_LOCALE;
-  const lang = document.documentElement.lang;
-  return isLocale(lang) ? lang : (readLocaleCookie() ?? DEFAULT_LOCALE);
+  // `localeOfElement` is the framework's reader — the same one an element remote uses to
+  // find its language (`ev_lib::mfe::host_locale` mirrors it in Rust) — so it also
+  // resolves a regional tag, which the bare guard did not. It answers `DEFAULT_LOCALE`
+  // for a language we do not publish as readily as for English, which is why the
+  // attribute is still what decides whether the cookie gets a turn.
+  const base = document.documentElement.lang.split("-")[0] ?? "";
+  return isLocale(base) ? localeOfElement(document.documentElement) : (readLocaleCookie() ?? DEFAULT_LOCALE);
 }

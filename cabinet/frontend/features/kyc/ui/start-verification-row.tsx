@@ -41,11 +41,11 @@ export function StartVerificationRow() {
       <Hairline />
       <div className="flex flex-col py-3.5">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <RowLabel title={t("profile.kyc.startTitle")} sub={t("profile.kyc.startSub")} />
+          <RowLabel title={t("profile.kyc.startTitle", "Verify your identity")} sub={t("profile.kyc.startSub", "A photo of your ID and a selfie — a few minutes")} />
           {/* i18n-max: 12 — a `shrink-0` Button beside the `min-w-0` row label. */}
           <Button type="button" size="sm" onClick={begin} disabled={starting} aria-busy={starting} className="rounded-lg font-semibold">
             {starting && <Loader2 className="size-4 animate-spin" aria-hidden />}
-            {t("profile.kyc.start")}
+            {t("profile.kyc.start", "Start")}
           </Button>
         </div>
         {/* The live region is mounted empty and stays mounted: a `role="status"` inserted
@@ -68,7 +68,7 @@ function Outcome({ state }: { state: State }) {
   if (state.kind === "unavailable") {
     return (
       <Note>
-        {t("profile.kyc.unavailable")}
+        {t("profile.kyc.unavailable", "Verification isn't available right now. Please try again later.")}
         {state.contact ? (
           <>
             {" "}
@@ -76,7 +76,7 @@ function Outcome({ state }: { state: State }) {
               href={`mailto:${state.contact}`}
               className="font-medium text-accent-debug underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {t("profile.kyc.contact", { contact: state.contact })}
+              {t("profile.kyc.contact", "Contact {contact}", { contact: state.contact })}
             </a>
           </>
         ) : null}
@@ -84,8 +84,8 @@ function Outcome({ state }: { state: State }) {
     );
   }
   // Not the user's doing and not ours to fix in this session — stated calmly, like the 503.
-  if (state.kind === "throttled") return <Note>{t("profile.kyc.tooManyAttempts")}</Note>;
-  if (state.kind === "stale") return <Note tone="destructive">{t("err.csrf")}</Note>;
+  if (state.kind === "throttled") return <Note>{t("profile.kyc.tooManyAttempts", "You've already started verification several times today. Please try again tomorrow.")}</Note>;
+  if (state.kind === "stale") return <Note tone="destructive">{t("err.csrf", "This page went stale. Reload it and try again.")}</Note>;
   if (state.kind === "failed") return <Note tone="destructive">{errorMessage(state.error, t)}</Note>;
   return null;
 }

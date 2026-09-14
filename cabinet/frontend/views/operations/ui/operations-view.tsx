@@ -78,25 +78,25 @@ const FILTERS: readonly Filter[] = ["all", ...KIND_FILTERS];
 // The bar's labels are the *plural* of each kind, and used to be built as `${label}s` —
 // which is English pluralisation hard-coded into the layout. Every locale gets its own
 // entry instead; the singular forms in `ops.kind.*` are a different word in most of them.
-const FILTER_LABEL_KEYS: Readonly<Record<Filter, string>> = {
-  all: "ui.all",
-  deposit: "ops.filter.deposits",
-  withdrawal: "ops.filter.withdrawals",
-  subscription: "ops.filter.subscriptions",
-  redemption: "ops.filter.redemptions",
-  fee: "ops.filter.fees",
+const FILTER_LABEL_KEYS: Readonly<Record<Filter, (t: Translate) => string>> = {
+  all: t => t("ui.all", "All"),
+  deposit: t => t("ops.filter.deposits", "Deposits"),
+  withdrawal: t => t("ops.filter.withdrawals", "Withdrawals"),
+  subscription: t => t("ops.filter.subscriptions", "Subscriptions"),
+  redemption: t => t("ops.filter.redemptions", "Redemptions"),
+  fee: t => t("ops.filter.fees", "Fees"),
 };
 
 // "No deposits yet" — again a whole sentence per kind rather than `No ${label.toLowerCase()}s`.
 // Lower-casing a translated noun is wrong in German, and the genitive a Russian sentence
 // needs here is not the nominative the filter button shows.
-const FILTER_EMPTY_KEYS: Readonly<Record<Filter, string>> = {
-  all: "ui.noOperations",
-  deposit: "ops.empty.deposits",
-  withdrawal: "ops.empty.withdrawals",
-  subscription: "ops.empty.subscriptions",
-  redemption: "ops.empty.redemptions",
-  fee: "ops.empty.fees",
+const FILTER_EMPTY_KEYS: Readonly<Record<Filter, (t: Translate) => string>> = {
+  all: t => t("ui.noOperations", "No operations yet"),
+  deposit: t => t("ops.empty.deposits", "No deposits yet"),
+  withdrawal: t => t("ops.empty.withdrawals", "No withdrawals yet"),
+  subscription: t => t("ops.empty.subscriptions", "No subscriptions yet"),
+  redemption: t => t("ops.empty.redemptions", "No redemptions yet"),
+  fee: t => t("ops.empty.fees", "No fees yet"),
 };
 
 // The activity timeline (Figma `ios/operations` · `android/operations`, and the desktop
@@ -123,7 +123,7 @@ export function OperationsView() {
 
   const titleOf = useMemo(() => {
     const byService = new Map((catalog ?? []).map((a) => [a.service, a.title]));
-    return (service: string | undefined) => (service ? (byService.get(service) ?? service) : t("dash.fundFallback"));
+    return (service: string | undefined) => (service ? (byService.get(service) ?? service) : t("dash.fundFallback", "Fund"));
   }, [catalog, t]);
 
   const loading = timeline.isLoading;
@@ -144,12 +144,12 @@ export function OperationsView() {
   return (
     <Stagger step={SECTION_STAGGER} className="px-4 pb-8 pt-6 lg:px-8">
       <StaggerItem as="header" className="mb-6 space-y-1">
-        <p className="font-mono-tech text-xs uppercase tracking-widest text-accent-debug">{t("ui.operations")}</p>
-        <h1 className="text-2xl font-semibold text-ink">{t("ui.operations")}</h1>
-        <p className="text-sm text-ink-soft">{t("ops.subtitle")}</p>
+        <p className="font-mono-tech text-xs uppercase tracking-widest text-accent-debug">{t("ui.operations", "Operations")}</p>
+        <h1 className="text-2xl font-semibold text-ink">{t("ui.operations", "Operations")}</h1>
+        <p className="text-sm text-ink-soft">{t("ops.subtitle", "Every deposit, withdrawal, subscription and redemption you have made, and every fee a fund has charged — one timeline.")}</p>
       </StaggerItem>
 
-      {error && <ResourceError variant="alert" title={t("err.opsLoad")} message={error} className="mb-6" />}
+      {error && <ResourceError variant="alert" title={t("err.opsLoad", "Couldn't load your operations")} message={error} className="mb-6" />}
 
       {/* The timeline is one section — the filter bar and the table it filters arrive
           together, because a bar that lands before the rows invites a click that has
@@ -172,15 +172,15 @@ export function OperationsView() {
                   <EmptyMedia variant="icon">
                     <ListChecks />
                   </EmptyMedia>
-                  <EmptyTitle>{t("ui.noOperations")}</EmptyTitle>
-                  <EmptyDescription>{t("ops.emptyHint")}</EmptyDescription>
+                  <EmptyTitle>{t("ui.noOperations", "No operations yet")}</EmptyTitle>
+                  <EmptyDescription>{t("ops.emptyHint", "Add funds to your wallet, then subscribe into a fund — every movement appears here from the moment you make it, not once it settles.")}</EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
                   <Button asChild>
-                    <Link href="/wallet/deposit">{t("ui.addFunds")}</Link>
+                    <Link href="/wallet/deposit">{t("ui.addFunds", "Add funds")}</Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href="/invest">{t("ui.browseFunds")}</Link>
+                    <Link href="/invest">{t("ui.browseFunds", "Browse funds")}</Link>
                   </Button>
                 </EmptyContent>
               </Empty>
@@ -203,7 +203,7 @@ export function OperationsView() {
                 default would compress them to fit and clip the text instead. */}
             <ButtonGroup
               role="radiogroup"
-              aria-label={t("ops.filterByKind")}
+              aria-label={t("ops.filterByKind", "Filter operations by kind")}
               className="max-w-full overflow-x-auto"
             >
               {FILTERS.map((value) => {
@@ -227,7 +227,7 @@ export function OperationsView() {
                       on && "bg-accent-debug/10 text-accent-debug hover:bg-accent-debug/15 hover:text-accent-debug",
                     )}
                   >
-                    {t(FILTER_LABEL_KEYS[value])}
+                    {FILTER_LABEL_KEYS[value](t)}
                   </Button>
                 );
               })}
@@ -241,8 +241,8 @@ export function OperationsView() {
                       <EmptyMedia variant="icon">
                         <ArrowLeftRight />
                       </EmptyMedia>
-                      <EmptyTitle>{t(FILTER_EMPTY_KEYS[filter])}</EmptyTitle>
-                      <EmptyDescription>{t("ops.filterEmptyHint")}</EmptyDescription>
+                      <EmptyTitle>{FILTER_EMPTY_KEYS[filter](t)}</EmptyTitle>
+                      <EmptyDescription>{t("ops.filterEmptyHint", "You have other activity — switch back to All to see it.")}</EmptyDescription>
                     </EmptyHeader>
                   </Empty>
                 </CardContent>
@@ -274,7 +274,7 @@ export function OperationsView() {
 
             {/* Says only what is true: the page is capped. There is no statements export to
                 point at yet, and promising one here would be inventing a feature. */}
-            {truncated && <p className="text-xs text-ink-soft">{t("ops.truncatedNote")}</p>}
+            {truncated && <p className="text-xs text-ink-soft">{t("ops.truncatedNote", "Showing your most recent operations — older activity isn't listed here yet.")}</p>}
           </div>
         )}
         </Settled>
@@ -291,7 +291,7 @@ function InProgress({ operations, titleOf }: { operations: Operation[]; titleOf:
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("ui.inProgress")}</CardTitle>
+        <CardTitle>{t("ui.inProgress", "In progress")}</CardTitle>
       </CardHeader>
       {/* The rows carry the inset instead of the card, so a hover (and the separator
           between rows) reaches the card's edges rather than stopping 24px short. */}
@@ -323,7 +323,7 @@ function Row({ operation, titleOf }: { operation: Operation; titleOf: (service: 
     <Item asChild size="sm" className="rounded-none px-6 py-3 lg:py-4">
       <button
         type="button"
-        aria-label={t("ops.a11y.rowDetails", { title })}
+        aria-label={t("ops.a11y.rowDetails", "{title} — details", { title })}
         className="w-full cursor-pointer text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ItemMedia>
@@ -412,15 +412,15 @@ function rowTitle(operation: Operation, titleOf: (service: string | undefined) =
     case "deposit":
       // The noun, not the button verb — this titles a timeline row. See the note on
       // `KINDS.deposit` in `views/operations/lib/format.ts`.
-      return t("ops.kind.deposit");
+      return t("ops.kind.deposit", "Deposit");
     case "withdrawal":
-      return t("ops.kind.withdrawal");
+      return t("ops.kind.withdrawal", "Withdrawal");
     case "subscription":
-      return t("dash.op.subscribed", { fund: titleOf(operation.service) });
+      return t("dash.op.subscribed", "{fund} — subscribed", { fund: titleOf(operation.service) });
     case "redemption":
-      return t("dash.op.redeemed", { fund: titleOf(operation.service) });
+      return t("dash.op.redeemed", "{fund} — redeemed", { fund: titleOf(operation.service) });
     case "fee":
-      return t("ops.op.feeCharged", { fund: titleOf(operation.service) });
+      return t("ops.op.feeCharged", "{fund} — fee charged", { fund: titleOf(operation.service) });
     default:
       return kindLabel(operation.kind, t);
   }
@@ -436,7 +436,7 @@ function rowSub(operation: Operation, t: Translate): string {
   switch (operation.kind) {
     case "deposit":
       // `USDT` is the ticker, not a word — it is the same mark in every locale.
-      return t("ops.sub.deposit", { network: networkLabel(operation.network), ref: operation.tx_ref ? shortAddress(operation.tx_ref) : "USDT" });
+      return t("ops.sub.deposit", "{network} · {ref}", { network: networkLabel(operation.network), ref: operation.tx_ref ? shortAddress(operation.tx_ref) : "USDT" });
     case "withdrawal": {
       // `shortAddress` already renders an absent address as an em dash — falling back to
       // the network label instead would print the rail twice on the same line.
@@ -445,21 +445,21 @@ function rowSub(operation: Operation, t: Translate): string {
       // What actually ships is the net; the row's figure is the gross debited, so the
       // fee is stated rather than left as an unexplained gap between the two.
       return operation.net_amount
-        ? t("ops.sub.withdrawalNet", { network, destination, amount: formatUsdt(operation.net_amount) })
-        : t("ops.sub.withdrawal", { network, destination });
+        ? t("ops.sub.withdrawalNet", "{network} · {destination} · {amount} USDT net", { network, destination, amount: formatUsdt(operation.net_amount) })
+        : t("ops.sub.withdrawal", "{network} · {destination}", { network, destination });
     }
     case "subscription":
     case "redemption":
-      return t("dash.unitsAmount", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
+      return t("dash.unitsAmount", "{n, plural, one {{units} unit} other {{units} units}}", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
     case "fee": {
       // The two legs answer the question the amount alone cannot: whether this was rent
       // on the capital or a share of the gain. A zero leg is omitted rather than printed,
       // because "0 performance" reads as a fee that was somehow waived.
       const legs = [
-        nonZero(operation.management) ? t("ops.sub.managementLeg", { amount: formatUsdt(operation.management) }) : null,
-        nonZero(operation.performance) ? t("ops.sub.performanceLeg", { amount: formatUsdt(operation.performance) }) : null,
+        nonZero(operation.management) ? t("ops.sub.managementLeg", "{amount} management", { amount: formatUsdt(operation.management) }) : null,
+        nonZero(operation.performance) ? t("ops.sub.performanceLeg", "{amount} performance", { amount: formatUsdt(operation.performance) }) : null,
       ].filter(Boolean);
-      const taken = t("dash.unitsAmount", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
+      const taken = t("dash.unitsAmount", "{n, plural, one {{units} unit} other {{units} units}}", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
       return legs.length ? `${taken} · ${legs.join(" + ")}` : taken;
     }
     default:

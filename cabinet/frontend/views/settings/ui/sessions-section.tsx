@@ -39,9 +39,9 @@ export function SessionsSection({
   return (
     <ListCard className="lg:px-6 lg:pb-5.5 lg:pt-2">
       {titled ? (
-        <ListCardTitle sub={t("settings.sessionsSub")}>{t("ui.sessionsDevices")}</ListCardTitle>
+        <ListCardTitle sub={t("settings.sessionsSub", "Where you're signed in — revoke anything you don't recognise")}>{t("ui.sessionsDevices", "Sessions & devices")}</ListCardTitle>
       ) : (
-        <p className="pb-2 pt-3 text-xs font-medium text-ink-soft">{t("settings.sessionsSub")}</p>
+        <p className="pb-2 pt-3 text-xs font-medium text-ink-soft">{t("settings.sessionsSub", "Where you're signed in — revoke anything you don't recognise")}</p>
       )}
 
       {error && <p className="mb-2 rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{error}</p>}
@@ -58,7 +58,7 @@ export function SessionsSection({
           </div>
         ))
       ) : list.length === 0 ? (
-        <p className="py-6 text-center text-sm text-ink-soft">{t("settings.noSessions")}</p>
+        <p className="py-6 text-center text-sm text-ink-soft">{t("settings.noSessions", "No active sessions.")}</p>
       ) : (
         list.map((s, i) => {
           const { label, icon: Icon } = deviceOf(s.user_agent, t);
@@ -81,7 +81,7 @@ export function SessionsSection({
                   {s.current ? (
                     <>
                       {/* i18n-max: 12 — a `shrink-0` Pill in the row's action slot. */}
-                      <Pill>{t("settings.thisDevice")}</Pill>
+                      <Pill>{t("settings.thisDevice", "This device")}</Pill>
                       <TipAnchor anchor="settings.sessions.this-device" />
                     </>
                   ) : (
@@ -94,7 +94,7 @@ export function SessionsSection({
                         onClick={() => s.id && onRevoke(s.id)}
                         className="border-accent-info/40 text-accent-info hover:text-accent-info"
                       >
-                        {t("settings.revoke")}
+                        {t("settings.revoke", "Revoke")}
                       </Button>
                       <TipAnchor anchor="settings.sessions.revoke" />
                     </>
@@ -119,7 +119,7 @@ export function SessionsSection({
             onClick={onRevokeOthers}
             className="w-full min-w-0 shrink truncate border-accent-info/40 text-accent-info hover:text-accent-info"
           >
-            {busy && <Loader2 className="mr-1.5 size-4 animate-spin" />} {t("settings.signOutOthers")}
+            {busy && <Loader2 className="mr-1.5 size-4 animate-spin" />} {t("settings.signOutOthers", "Sign out all other devices")}
           </Button>
           <TipAnchor anchor="settings.sessions.revoke-others" />
         </div>

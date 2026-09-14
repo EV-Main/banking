@@ -14,14 +14,15 @@
     "gen:api": "openapi-ts",
     "build:mfe": "node mfe/build.mjs && tailwindcss -i mfe/account-chip/mfe.css -o public/mfe/account-chip.css --minify",
     "predev": "npm run build:mfe",
-    "prebuild": "npm run build:mfe",
-    "i18n:check": "tsx scripts/i18n-check.mts"
+    "prebuild": "npm run i18n:check && npm run build:mfe",
+    "i18n:extract": "evinvest-i18n-extract --exclude public,mfe,scripts,messages",
+    "i18n:check": "evinvest-i18n-check --exclude public,mfe,scripts,messages"
   },
   "dependencies": {
     "@evinvest/analytics": "^0.1.2",
     "@evinvest/error-monitoring": "^0.1.0",
     "@evinvest/experiments": "^0.1.0",
-    "@evinvest/i18n": "^0.6.0",
+    "@evinvest/i18n": "^0.7.0",
     "@evinvest/settings": "^0.2.0",
     "@evinvest/types": "^0.2.0",
     "@evinvest/uikit": "^0.12.1",

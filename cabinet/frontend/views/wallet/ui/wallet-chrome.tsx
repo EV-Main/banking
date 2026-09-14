@@ -26,7 +26,7 @@ export function WalletScreen({ title, subtitle, back, actions, children }: { tit
         {back && (
           <Link
             href={back}
-            aria-label={t("ui.back")}
+            aria-label={t("ui.back", "Back")}
             className="-m-1 shrink-0 rounded-md p-1 text-ink-soft outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronLeft className="size-6" />

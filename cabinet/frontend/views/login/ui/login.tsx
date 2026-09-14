@@ -1,4 +1,4 @@
-import { translator } from "@evinvest/i18n";
+import { translator, type Translate } from "@evinvest/i18n";
 
 import { Logo } from "@/application/layout/logo";
 import { safeReturnTo } from "@/features/auth/lib/return-to";
@@ -7,10 +7,13 @@ import { messagesFor } from "@/shared/config/i18n";
 import { currentLocale } from "@/shared/config/locale";
 
 // The `?error=` values the shell's auth callback redirects with, mapped to catalogue keys.
-const ERROR_KEYS: Record<string, string> = {
-  denied: "auth.err.denied",
-  invalid: "auth.err.invalid",
-  exchange: "auth.err.exchange",
+// Named per code rather than interpolated: the `?error=` value is a query param, so the
+// set of messages this screen can show has to be written out to be translatable at all.
+// An unlisted code falls through to the generic line.
+const ERRORS: Record<string, (t: Translate) => string> = {
+  denied: t => t("auth.err.denied", "Sign-in was cancelled."),
+  invalid: t => t("auth.err.invalid", "That sign-in attempt expired. Please try again."),
+  exchange: t => t("auth.err.exchange", "We couldn't complete sign-in. Please try again."),
 };
 
 // The cabinet sign-in (Figma `cabinet/login`): a branded left panel + the sign-in panel.
@@ -24,7 +27,7 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
   const { error, returnTo } = await searchParams;
   const locale = await currentLocale();
   const t = translator(messagesFor(locale), locale);
-  const message = error ? t(ERROR_KEYS[error] ?? "auth.err.generic") : null;
+  const message = error ? (ERRORS[error]?.(t) ?? t("auth.err.generic", "Sign-in failed. Please try again.")) : null;
   const dest = safeReturnTo(returnTo ?? null);
   // Full navigation to the SHELL-owned login (site-root /api/auth, not the zone's
   // BFF — the cabinet runs no OAuth); returnTo is site-root-relative, so it carries
@@ -57,13 +60,13 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
         <div className="relative flex max-w-md flex-col gap-5">
           {/* The brand mark itself, not a phrase — it reads "EV INVEST" in every locale. */}
           <p className="text-xs font-semibold tracking-widest text-accent-debug">EV INVEST</p>
-          <h2 className="text-5xl font-semibold leading-tight text-white">{t("auth.brandHeadline")}</h2>
-          <p className="text-base leading-6 text-ink-soft">{t("auth.brandBlurb")}</p>
+          <h2 className="text-5xl font-semibold leading-tight text-white">{t("auth.brandHeadline", "Private capital for Vietnam's coastal economy.")}</h2>
+          <p className="text-base leading-6 text-ink-soft">{t("auth.brandBlurb", "Institutional-grade access to vetted coastal real-estate and infrastructure funds — managed end to end.")}</p>
         </div>
 
         <div className="relative flex gap-8">
-          <BrandStat value="18.4%" label={t("auth.stat.targetIrr")} />
-          <BrandStat value="$120M+" label={t("auth.stat.aum")} />
+          <BrandStat value="18.4%" label={t("auth.stat.targetIrr", "Avg. target IRR")} />
+          <BrandStat value="$120M+" label={t("auth.stat.aum", "Assets under mgmt")} />
         </div>
       </aside>
 
@@ -71,8 +74,8 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
       <div className="flex flex-1 items-center justify-center px-6 py-16">
         <div className="flex w-full max-w-100 flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold text-ink">{t("auth.welcomeBack")}</h1>
-            <p className="text-sm text-ink-soft">{t("auth.signInSub")}</p>
+            <h1 className="text-3xl font-semibold text-ink">{t("auth.welcomeBack", "Welcome back")}</h1>
+            <p className="text-sm text-ink-soft">{t("auth.signInSub", "Sign in to manage your investments.")}</p>
           </div>
 
           {message && <p className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{message}</p>}
@@ -81,10 +84,10 @@ export async function LoginView({ searchParams }: { searchParams: Promise<{ erro
             href={href}
             className="flex h-10 w-full items-center justify-center gap-3 rounded-md bg-brand px-6 text-sm font-medium text-ink outline-none ring-1 ring-inset ring-white/10 transition-colors hover:bg-brand/80 focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <GoogleMark /> {t("auth.continueWithGoogle")}
+            <GoogleMark /> {t("auth.continueWithGoogle", "Continue with Google")}
           </a>
 
-          <p className="text-center text-sm text-ink-soft">{t("auth.newToEv")}</p>
+          <p className="text-center text-sm text-ink-soft">{t("auth.newToEv", "New to EV Invest? Continuing with Google sets up your cabinet.")}</p>
         </div>
       </div>
     </div>

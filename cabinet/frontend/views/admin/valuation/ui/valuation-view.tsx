@@ -29,8 +29,8 @@ const TEAL_CTA = "bg-accent-debug text-background hover:bg-accent-debug/90";
 function allocationLabel(a: Allocation, t: Translate): string {
   const values = { title: a.title, service: a.service };
   return a.state === "open"
-    ? t("admin.valuation.allocationLabel", values)
-    : t("admin.valuation.allocationLabelWithState", { ...values, state: stateLabel(a.state, t) });
+    ? t("admin.valuation.allocationLabel", "{title} ({service})", values)
+    : t("admin.valuation.allocationLabelWithState", "{title} ({service}) — {state}", { ...values, state: stateLabel(a.state, t) });
 }
 
 export function ValuationView() {
@@ -120,17 +120,17 @@ export function ValuationView() {
 
   return (
     <AdminScreen className="space-y-8">
-      <AdminHeader eyebrow={t("admin.eyebrow.administer")} title={t("nav.valuation")} subtitle={t("admin.valuation.subtitle")} />
+      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.valuation", "Valuation & redemptions")} subtitle={t("admin.valuation.subtitle", "Post fund NAV and clear the redemption queue")} />
 
       {error && <ResourceError message={error} />}
 
       <StaggerItem as="section" className="space-y-3" id="post-valuation">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.valuation.postValuation")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.valuation.postValuation", "Post valuation")}</p>
         <Card>
           <CardContent className="space-y-5 py-6">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-ink-soft">{t("admin.valuation.fundService")}</span>
+                <span className="text-sm text-ink-soft">{t("admin.valuation.fundService", "Fund (service)")}</span>
                 <Select
                   value={service || undefined}
                   onValueChange={setService}
@@ -141,7 +141,7 @@ export function ValuationView() {
                     {/* Not `SelectValue`: the uikit's renders the raw stored value, so the
                         trigger would read the bare slug instead of the product's title. */}
                     <span className={cn("truncate", !selected && "text-ink-soft")}>
-                      {selected ? allocationLabel(selected, t) : !allocations ? t("ui.loading") : t("admin.valuation.noAllocations")}
+                      {selected ? allocationLabel(selected, t) : !allocations ? t("ui.loading", "Loading…") : t("admin.valuation.noAllocations", "No allocations registered")}
                     </span>
                   </SelectTrigger>
                   <SelectContent>
@@ -155,14 +155,14 @@ export function ValuationView() {
               </div>
               <label className="flex flex-col gap-1.5">
                 <span className="flex items-center gap-1.5 text-sm text-ink-soft">
-                  {t("admin.valuation.aumUsdt")}
+                  {t("admin.valuation.aumUsdt", "AUM (USDT)")}
                   <TipAnchor anchor="admin.valuation.post.aum" />
                 </span>
                 <Input value={aum} onChange={(e) => setAum(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full" />
               </label>
               <div className="flex flex-col gap-1.5">
                 <span className="flex items-center gap-1.5 text-sm text-ink-soft">
-                  {t("admin.valuation.derivedNav")}
+                  {t("admin.valuation.derivedNav", "Derived NAV / share")}
                   <TipAnchor anchor="admin.valuation.post.derived-nav" />
                 </span>
                 {/* Read-only on purpose: NAV is derived (AUM / units read live from the
@@ -172,7 +172,7 @@ export function ValuationView() {
                   <span className="font-semibold text-accent-debug tabular-nums">{derivedNav ? formatNav(derivedNav) : "—"}</span>
                   {/* An ICU plural, so `units` agrees with the count and `#` groups the
                       digits in the reader's convention — the hard-coded `en-US` is gone. */}
-                  {units > 0 && <span className="ml-2 text-xs tabular-nums text-ink-soft">{t("admin.valuation.derivedFormula", { n: units })}</span>}
+                  {units > 0 && <span className="ml-2 text-xs tabular-nums text-ink-soft">{t("admin.valuation.derivedFormula", "= AUM / {n, plural, one {# unit} other {# units}}", { n: units })}</span>}
                 </div>
               </div>
             </div>
@@ -182,29 +182,29 @@ export function ValuationView() {
                 <TriangleAlert className="mr-2 inline size-4" />
                 {/* The emphasised fragment is the formula, mid-sentence — an ICU argument
                     rather than a cut, so a translator gets the whole thought. */}
-                {t("admin.valuation.noUnitsNote", { formula: t("admin.valuation.navFormula") })}
+                {t("admin.valuation.noUnitsNote", "No units outstanding — NAV is {formula}, so it is undefined until someone subscribes. The fund prices at the seed NAV 1.0 until the first subscription; there is nothing to mark yet.", { formula: t("admin.valuation.navFormula", "AUM / units") })}
               </div>
             ) : (
               <div className="rounded-lg border border-accent-warn/30 bg-accent-warn/5 px-4 py-2.5 text-sm text-accent-warn">
                 <TriangleAlert className="mr-2 inline size-4" />
-                {t("admin.valuation.navGuardNote")}
+                {t("admin.valuation.navGuardNote", "NAV-move guard — a post is rejected if NAV moves more than 50% from the last mark, unless override is on.")}
               </div>
             )}
 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <Toggle on={override} onChange={setOverride} label={t("admin.valuation.overrideGuard")} />
+                <Toggle on={override} onChange={setOverride} label={t("admin.valuation.overrideGuard", "Override guard")} />
                 <div className="text-sm">
                   <p className="flex items-center gap-1.5">
-                    {t("admin.valuation.overrideGuard")}
+                    {t("admin.valuation.overrideGuard", "Override guard")}
                     <TipAnchor anchor="admin.valuation.post.override" />
                   </p>
-                  <p className="text-xs text-ink-soft">{t("admin.valuation.overrideGuardHint")}</p>
+                  <p className="text-xs text-ink-soft">{t("admin.valuation.overrideGuardHint", "Allow a >50% NAV move")}</p>
                 </div>
               </div>
               <Button type="button" className={cn("ml-auto", TEAL_CTA)} disabled={posting || !aum || !service || noUnits} onClick={post}>
                 {posting ? <Loader2 className="size-4 animate-spin" /> : null}
-                {t("admin.valuation.postValuation")}
+                {t("admin.valuation.postValuation", "Post valuation")}
               </Button>
             </div>
           </CardContent>
@@ -213,7 +213,7 @@ export function ValuationView() {
 
       <StaggerItem as="section" className="space-y-3">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-ink-soft">
-          {t("admin.valuation.unitSupply")}
+          {t("admin.valuation.unitSupply", "Unit supply")}
           <TipAnchor anchor="admin.valuation.post.derived-nav" />
         </p>
         <SupplyCapCard
@@ -234,12 +234,12 @@ export function ValuationView() {
 
       <StaggerItem as="section" className="space-y-3">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-ink-soft">
-          {t("admin.valuation.redemptionQueue")}
+          {t("admin.valuation.redemptionQueue", "Redemption queue")}
           {/* The count pill lands on the same step as the label it trails, so its fill and
               accent colour — not a smaller size — are what set it apart. */}
           {queue && (
             <span className="whitespace-nowrap rounded-full bg-accent-warn/15 px-2 py-0.5 text-xs font-semibold text-accent-warn">
-              {t("admin.valuation.queuedCount", { n: queue.length })}
+              {t("admin.valuation.queuedCount", "{n, plural, one {# queued} other {# queued}}", { n: queue.length })}
             </span>
           )}
         </p>
@@ -254,22 +254,22 @@ export function ValuationView() {
               }
             >
               {!queue ? null : queue.length === 0 ? (
-                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.valuation.queueEmpty")}</p>
+                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.valuation.queueEmpty", "The redemption queue is empty.")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     {/* i18n-max: 14 per header — auto-layout table with no scroll wrapper. */}
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                      <th className="px-5 py-3 font-medium">{t("admin.col.user")}</th>
-                      <th className="px-5 py-3 font-medium">{t("invest.units")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.col.user", "User")}</th>
+                      <th className="px-5 py-3 font-medium">{t("invest.units", "Units")}</th>
                       <th className="px-5 py-3 font-medium">
                         <span className="flex items-center gap-1.5">
-                          {t("admin.valuation.col.estCash")}
+                          {t("admin.valuation.col.estCash", "Est. cash")}
                           <TipAnchor anchor="admin.valuation.queue.est-cash" />
                         </span>
                       </th>
-                      <th className="px-5 py-3 font-medium">{t("admin.col.age")}</th>
-                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.col.age", "Age")}</th>
+                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions", "Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -285,7 +285,7 @@ export function ValuationView() {
                               `en-US` — it is not money, so `shared/lib/money.ts` has no
                               say here. */}
                           <td className="px-5 py-3 tabular-nums">{Number(item.units).toLocaleString(locale)}</td>
-                          <td className="px-5 py-3 tabular-nums text-ink-soft">{est ? t("admin.valuation.approx", { amount: formatUsd(est) }) : "—"}</td>
+                          <td className="px-5 py-3 tabular-nums text-ink-soft">{est ? t("admin.valuation.approx", "≈ {amount}", { amount: formatUsd(est) }) : "—"}</td>
                           <td className="px-5 py-3 text-ink-soft">{ago(item.created_at, t)}</td>
                           <td className="px-5 py-3">
                             {/* i18n-max: 12 per verb — two `shrink-0` Buttons, each with a
@@ -293,7 +293,7 @@ export function ValuationView() {
                             <div className="flex justify-end gap-2">
                               <span className="inline-flex items-center gap-1">
                                 <Button type="button" variant="outline" size="sm" disabled={busy === item.redemption_id} onClick={() => act(settleRedemption, item.redemption_id)}>
-                                  {t("admin.settle")}
+                                  {t("admin.settle", "Settle")}
                                 </Button>
                                 <TipAnchor anchor="admin.valuation.queue.settle" />
                               </span>
@@ -306,7 +306,7 @@ export function ValuationView() {
                                   disabled={busy === item.redemption_id}
                                   onClick={() => act(failRedemption, item.redemption_id)}
                                 >
-                                  {t("admin.fail")}
+                                  {t("admin.fail", "Fail")}
                                 </Button>
                                 <TipAnchor anchor="admin.valuation.queue.fail" />
                               </span>
@@ -321,7 +321,7 @@ export function ValuationView() {
             </Settled>
           </CardContent>
         </Card>
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.valuation.queueFootnote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.valuation.queueFootnote", "Settle pays at settle-time NAV once the fund claim is liquid; if the rail is short the payout queues until treasury tops up. Fail voids the request and refunds the units.")}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -377,7 +377,7 @@ function SupplyCapCard({
   if (!allocation) {
     return (
       <Card>
-        <CardContent className="py-6 text-sm text-ink-soft">{t("admin.valuation.pickAFund")}</CardContent>
+        <CardContent className="py-6 text-sm text-ink-soft">{t("admin.valuation.pickAFund", "Pick a fund above to see and resize its authorised unit supply.")}</CardContent>
       </Card>
     );
   }
@@ -387,9 +387,9 @@ function SupplyCapCard({
       <CardContent className="space-y-5 py-6">
         <div className="space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-sm text-ink-soft">{t("admin.valuation.unitsIssuedIn", { service: allocation.service })}</span>
+            <span className="text-sm text-ink-soft">{t("admin.valuation.unitsIssuedIn", "Units issued in {service}", { service: allocation.service })}</span>
             <span className={cn("text-sm font-semibold tabular-nums", nearCap ? "text-accent-warn" : "text-ink")}>
-              {t("admin.valuation.issuedOfCap", { issued: compactUnits(issued), cap: compactUnits(cap) })}
+              {t("admin.valuation.issuedOfCap", "{issued} / {cap} units", { issued: compactUnits(issued), cap: compactUnits(cap) })}
             </span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
@@ -401,31 +401,31 @@ function SupplyCapCard({
               fragment no translator could place, and the loading branch reads differently
               from the figure branch in most languages. */}
           <p className="text-xs text-ink-soft">
-            {nav ? t("admin.valuation.stillIssuable", { units: formatUnits(nav.remaining_capacity) }) : t("admin.valuation.loadingSupply")}
+            {nav ? t("admin.valuation.stillIssuable", "{units} units still issuable — a subscription that would mint past the cap is refused.", { units: formatUnits(nav.remaining_capacity) }) : t("admin.valuation.loadingSupply", "Loading supply… — a subscription that would mint past the cap is refused.")}
           </p>
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex w-56 flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">{t("admin.valuation.capUnits")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.valuation.capUnits", "Cap (units)")}</span>
             <Input value={value} onChange={(e) => setDraft(e.target.value)} inputMode="decimal" placeholder="100000000" className="w-full" />
           </label>
           <Button type="button" className={cn(TEAL_CTA)} disabled={saving || invalid || !changed} onClick={save}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-            {t("admin.valuation.saveCap")}
+            {t("admin.valuation.saveCap", "Save cap")}
           </Button>
           {/* i18n-max: 12 per verb — both Buttons are `shrink-0` in a wrapping row. */}
           {draft !== null && (
             <Button type="button" variant="outline" onClick={() => setDraft(null)}>
-              {t("ui.reset")}
+              {t("ui.reset", "Reset")}
             </Button>
           )}
           <p className={cn("min-w-48 flex-1 text-xs", invalid ? "text-accent-error" : belowIssued ? "text-accent-warn" : "text-ink-soft")}>
             {invalid
-              ? t("admin.valuation.capInvalid")
+              ? t("admin.valuation.capInvalid", "Must be greater than zero — to stop new money entirely, close the allocation instead.")
               : belowIssued
-                ? t("admin.valuation.capBelowIssued", { n: compactUnits(issued) })
-                : t("admin.valuation.capHint")}
+                ? t("admin.valuation.capBelowIssued", "Below the {n} units already issued: this stops further issuance. Nothing minted is affected and redemptions keep working.", { n: compactUnits(issued) })
+                : t("admin.valuation.capHint", "Takes effect on the next subscription. Redemptions are never affected.")}
           </p>
 
         </div>

@@ -12,19 +12,16 @@ import type { Locale, Messages } from "@evinvest/i18n";
 // was downloading the German translation of the admin treasury invariant note to
 // render the word "Verified".
 //
-// Four keys times five locales is small enough to inline, so it is inlined. The
-// values here are copies, which is a real duplication — `chip-messages.test.ts`
-// exists to make it a checked one: it fails if any of these drifts from
-// `messages/<locale>/common.json`.
+// Four keys times four locales is small enough to inline, so it is inlined. The values
+// here are copies, which is a real duplication — `chip-messages.test.ts` exists to make it
+// a checked one: it fails if any of these drifts from `messages/<locale>/common.json`.
+//
+// No `en` block. English is written at the call site now — `t("ui.account", "Account")` in
+// `account-chip.tsx` — and `translator()` does not consult a catalogue for the default
+// locale at all, so an English block here would be a fourth copy nothing reads.
 export const CHIP_KEYS = ["auth.investorPortal", "auth.signOut", "ui.account", "ui.verified"] as const;
 
-const CHIP_MESSAGES: Record<Locale, Messages> = {
-  en: {
-    "auth.investorPortal": "Investor Portal",
-    "auth.signOut": "Sign out",
-    "ui.account": "Account",
-    "ui.verified": "Verified"
-  },
+const CHIP_MESSAGES: Record<Exclude<Locale, "en">, Messages> = {
   ru: {
     "auth.investorPortal": "Кабинет инвестора",
     "auth.signOut": "Выйти",
@@ -51,7 +48,8 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
   }
 };
 
-/** The chip's catalogue for `locale`, falling back to English. */
+/** The chip's catalogue for `locale`. Empty for English and for a locale we do not
+ *  publish — `translator()` serves the inline English in both cases. */
 export function chipMessages(locale: Locale): Messages {
-  return CHIP_MESSAGES[locale] ?? CHIP_MESSAGES.en;
+  return CHIP_MESSAGES[locale as Exclude<Locale, "en">] ?? {};
 }

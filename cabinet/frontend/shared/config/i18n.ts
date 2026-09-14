@@ -1,8 +1,7 @@
 // Catalogues and policy only — deliberately no cookie, config or `next/headers`
-// import. Reading the locale needs the app config (cookie names depend on the
-// Secure prefix), and pulling that in here made `npm run i18n:check` boot the
-// whole env-validated config just to diff some JSON. The request-scoped lookup
-// lives in ./locale.ts instead.
+// import; the request-scoped locale lookup lives in ./locale.ts. The gate that used
+// to reach in here for a policy report is now `evinvest-i18n-check`, which reads
+// `messages/` off disk and boots nothing.
 import type { Locale, Messages } from "@evinvest/i18n";
 import {
   resolveCatalogue,
@@ -35,7 +34,4 @@ const RESOLVED = Object.fromEntries(
 
 export const messagesFor = (locale: Locale): Messages =>
   locale === "en" ? en : (RESOLVED[locale]?.messages ?? en);
-
-/** Per-locale policy outcome — read by `npm run i18n:check`. */
-export const catalogueReport = () => Object.values(RESOLVED);
 

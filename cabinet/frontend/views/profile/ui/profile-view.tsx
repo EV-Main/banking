@@ -3,6 +3,8 @@
 import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
+import { roleLabel, statusLabel } from "@/views/admin/lib/format";
+
 import { BadgeCheck, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
@@ -44,14 +46,14 @@ type Form = Record<(typeof EDITABLE)[number], string>;
 
 // Module scope, so the labels are catalogue keys rather than finished English; both
 // breakpoints resolve them at render. `tip` is a TipKey (a compile-time id), not a label.
-const SHOWN: { key: (typeof EDITABLE)[number]; labelKey: string; tip?: TipKey }[] = [
-  { key: "legal_name", labelKey: "profile.legalName", tip: "profile.field.legal-name" },
-  { key: "preferred_name", labelKey: "profile.preferredName" },
-  { key: "phone", labelKey: "profile.phoneNumber" },
-  { key: "date_of_birth", labelKey: "profile.dateOfBirth" },
-  { key: "nationality", labelKey: "profile.nationality", tip: "profile.field.nationality" },
-  { key: "tax_residence", labelKey: "profile.taxResidence", tip: "profile.field.tax-residence" },
-  { key: "residential_address", labelKey: "profile.residentialAddress" },
+const SHOWN: { key: (typeof EDITABLE)[number]; label: (t: Translate) => string; tip?: TipKey }[] = [
+  { key: "legal_name", label: t => t("profile.legalName", "Legal name"), tip: "profile.field.legal-name" },
+  { key: "preferred_name", label: t => t("profile.preferredName", "Preferred name") },
+  { key: "phone", label: t => t("profile.phoneNumber", "Phone number") },
+  { key: "date_of_birth", label: t => t("profile.dateOfBirth", "Date of birth") },
+  { key: "nationality", label: t => t("profile.nationality", "Nationality"), tip: "profile.field.nationality" },
+  { key: "tax_residence", label: t => t("profile.taxResidence", "Tax residence"), tip: "profile.field.tax-residence" },
+  { key: "residential_address", label: t => t("profile.residentialAddress", "Residential address") },
 ];
 
 function formFrom(p: UserProfile): Form {
@@ -100,7 +102,7 @@ export function ProfileView() {
     const errors = validateProfileForm(form, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setSaveError(t("settings.fixHighlighted"));
+      setSaveError(t("settings.fixHighlighted", "Please fix the highlighted fields"));
       return;
     }
     setFieldErrors({});
@@ -124,14 +126,14 @@ export function ProfileView() {
 
   return (
     <>
-      <MobileAppBar title={t("ui.profile")} backHref="/settings" />
+      <MobileAppBar title={t("ui.profile", "Profile")} backHref="/settings" />
 
       <Stagger delay={SECTION_STAGGER} step={SECTION_STAGGER} className="flex flex-col gap-4 px-5 pb-6 pt-4.5 lg:gap-5 lg:px-8 lg:pb-8 lg:pt-6">
         {/* Desktop page heading — the mobile app bar owns this below `lg`. */}
         <StaggerItem className="hidden items-center justify-between gap-4 lg:flex">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-ink">{t("ui.profile")}</h1>
-            <p className="text-sm text-ink-soft">{t("profile.subtitle")}</p>
+            <h1 className="text-2xl font-semibold text-ink">{t("ui.profile", "Profile")}</h1>
+            <p className="text-sm text-ink-soft">{t("profile.subtitle", "Your personal details and verification status")}</p>
           </div>
           {/* `shrink-0` Buttons beside a `min-w-0` heading column — their width is taken
               out of the page title, so the labels stay short. */}
@@ -140,15 +142,15 @@ export function ProfileView() {
             {editing ? (
               <>
                 <Button variant="outline" size="sm" className="border-border" onClick={cancel} disabled={saving}>
-                  {t("ui.cancel")}
+                  {t("ui.cancel", "Cancel")}
                 </Button>
                 <Button type="button" onClick={save} disabled={saving} className="rounded-lg font-semibold">
-                  {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.save")}
+                  {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.save", "Save")}
                 </Button>
               </>
             ) : (
               <Button type="button" onClick={() => setEditing(true)} disabled={loading || profile === null} className="rounded-lg font-semibold">
-                {t("profile.editProfile")}
+                {t("profile.editProfile", "Edit profile")}
               </Button>
             )}
           </div>
@@ -165,15 +167,15 @@ export function ProfileView() {
           <InitialsAvatar initials={initialsOfName(name, email)} className="size-16 text-2xl lg:text-xl" />
           <div className="flex min-w-0 flex-1 flex-col items-center gap-1 text-center lg:items-start lg:text-left">
             <div className="flex min-w-0 flex-col items-center gap-1 lg:flex-row lg:items-baseline lg:gap-3">
-              {loading ? <Skeleton className="h-6 w-40" /> : <p className="truncate text-lg font-semibold text-ink lg:text-xl">{name || t("ui.account")}</p>}
-              {loading ? <Skeleton className="h-4 w-48" /> : <p className="truncate text-sm text-ink-soft">{email || t("auth.notSignedIn")}</p>}
+              {loading ? <Skeleton className="h-6 w-40" /> : <p className="truncate text-lg font-semibold text-ink lg:text-xl">{name || t("ui.account", "Account")}</p>}
+              {loading ? <Skeleton className="h-4 w-48" /> : <p className="truncate text-sm text-ink-soft">{email || t("auth.notSignedIn", "Not signed in")}</p>}
             </div>
             {!loading && (
               // i18n-max: 12 per Pill — they sit beside the truncated display name.
               <div className="mt-1 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
-                {profile?.email_verified && <Pill icon={BadgeCheck}>{t("ui.verified")}</Pill>}
-                {profile?.status && <Pill tone={statusTone(profile.status)}>{enumLabel("admin.status", profile.status, t)}</Pill>}
-                {profile?.kyc_level !== undefined && <Pill tone="neutral">{t("profile.kycLevelPill", { n: profile.kyc_level })}</Pill>}
+                {profile?.email_verified && <Pill icon={BadgeCheck}>{t("ui.verified", "Verified")}</Pill>}
+                {profile?.status && <Pill tone={statusTone(profile.status)}>{statusLabel(profile.status, t)}</Pill>}
+                {profile?.kyc_level !== undefined && <Pill tone="neutral">{t("profile.kycLevelPill", "KYC level {n}", { n: profile.kyc_level })}</Pill>}
               </div>
             )}
           </div>
@@ -182,15 +184,15 @@ export function ProfileView() {
             {editing ? (
               <>
                 <Button variant="outline" className="h-9 flex-1 border-input" onClick={cancel} disabled={saving}>
-                  {t("ui.cancel")}
+                  {t("ui.cancel", "Cancel")}
                 </Button>
                 <Button type="button" onClick={save} disabled={saving} className="h-9 flex-1 gap-1.5 font-semibold">
-                  {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.save")}
+                  {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.save", "Save")}
                 </Button>
               </>
             ) : (
               <Button variant="outline" className="h-9 w-full border-input" onClick={() => setEditing(true)} disabled={loading || profile === null}>
-                {t("profile.editProfile")}
+                {t("profile.editProfile", "Edit profile")}
               </Button>
             )}
           </div>
@@ -203,14 +205,14 @@ export function ProfileView() {
         <StaggerItem className="flex flex-col gap-4 lg:hidden">
           <ListCard>
             <ListCardTitle
-              sub={profile?.role ? <span className="text-accent-debug/85">{t("profile.roleAccount", { role: enumLabel("admin.role", profile.role, t) })}</span> : undefined}
+              sub={profile?.role ? <span className="text-accent-debug/85">{t("profile.roleAccount", "{role} account", { role: roleLabel(profile.role, t) })}</span> : undefined}
             >
-              {t("profile.personalInformation")}
+              {t("profile.personalInformation", "Personal information")}
             </ListCardTitle>
-            {SHOWN.map(({ key, labelKey }, i) => (
+            {SHOWN.map(({ key, label }, i) => (
               <div key={key}>
                 {i > 0 && <Hairline />}
-                <StackRow label={t(labelKey)}>
+                <StackRow label={label(t)}>
                   {loading || !form ? (
                     <Skeleton className="h-5 w-40" />
                   ) : editing ? (
@@ -235,7 +237,7 @@ export function ProfileView() {
               </div>
             ))}
             <Hairline />
-            <StackRow label={t("ui.emailAddress")}>
+            <StackRow label={t("ui.emailAddress", "Email address")}>
               {loading ? <Skeleton className="h-5 w-48" /> : <span className="break-words text-sm font-medium text-ink-soft">{email || "—"}</span>}
             </StackRow>
           </ListCard>
@@ -248,12 +250,12 @@ export function ProfileView() {
         <StaggerItem className="hidden items-start gap-5 lg:flex">
           <section className={cn(CARD, "w-full flex-1 space-y-4.5 px-6 py-5.5")}>
             <header>
-              <h2 className="text-sm font-semibold tracking-normal text-ink">{t("profile.personalInformation")}</h2>
-              <p className="text-xs text-ink-soft">{t("profile.personalInformationSub")}</p>
+              <h2 className="text-sm font-semibold tracking-normal text-ink">{t("profile.personalInformation", "Personal information")}</h2>
+              <p className="text-xs text-ink-soft">{t("profile.personalInformationSub", "Used for compliance and statements")}</p>
             </header>
             <div className="flex flex-wrap gap-x-4.5 gap-y-4">
-              {SHOWN.map(({ key, labelKey, tip }) => (
-                <FieldBox key={key} label={t(labelKey)} tip={tip}>
+              {SHOWN.map(({ key, label, tip }) => (
+                <FieldBox key={key} label={label(t)} tip={tip}>
                   {loading || !form ? (
                     <Skeleton className="h-10.5 w-full rounded-lg" />
                   ) : editing ? (
@@ -274,7 +276,7 @@ export function ProfileView() {
                   )}
                 </FieldBox>
               ))}
-              <FieldBox label={t("ui.emailAddress")} trailing={profile?.email_verified ? <VerifiedTag /> : undefined}>
+              <FieldBox label={t("ui.emailAddress", "Email address")} trailing={profile?.email_verified ? <VerifiedTag /> : undefined}>
                 {loading ? <Skeleton className="h-10.5 w-full rounded-lg" /> : <ReadValue value={email} muted />}
               </FieldBox>
             </div>
@@ -295,22 +297,22 @@ function VerificationCard({ loading, profile, email }: { loading: boolean; profi
   const t = useT();
   return (
     <ListCard className="lg:px-5.5">
-      <ListCardTitle sub={t("profile.identityAndStanding")}>{t("profile.identityVerification")}</ListCardTitle>
+      <ListCardTitle sub={t("profile.identityAndStanding", "Identity and account standing")}>{t("profile.identityVerification", "Identity verification")}</ListCardTitle>
       <Hairline />
       <Row>
-        <RowLabel title={t("ui.emailAddress")} sub={loading ? "…" : email || "—"} />
+        <RowLabel title={t("ui.emailAddress", "Email address")} sub={loading ? "…" : email || "—"} />
         {/* i18n-max: 12 — `shrink-0` Pills beside the `min-w-0` row label. */}
-        {loading ? <Skeleton className="h-5 w-16 rounded-full" /> : profile?.email_verified ? <Pill icon={BadgeCheck}>{t("ui.verified")}</Pill> : <Pill tone="pending">{t("profile.unverified")}</Pill>}
+        {loading ? <Skeleton className="h-5 w-16 rounded-full" /> : profile?.email_verified ? <Pill icon={BadgeCheck}>{t("ui.verified", "Verified")}</Pill> : <Pill tone="pending">{t("profile.unverified", "Unverified")}</Pill>}
       </Row>
       <Hairline />
       <Row>
-        <RowLabel title={t("ui.kycLevel")} sub={t("profile.kycRaisedBy")} />
+        <RowLabel title={t("ui.kycLevel", "KYC level")} sub={t("profile.kycRaisedBy", "Raised by verification and review")} />
         {loading ? <Skeleton className="h-4 w-10" /> : <RowValue className="font-semibold tabular-nums text-ink">{profile?.kyc_level ?? "—"}</RowValue>}
       </Row>
       <Hairline />
       <Row>
-        <RowLabel title={t("ui.accountStatus")} sub={t("profile.platformAccess")} />
-        {loading ? <Skeleton className="h-5 w-16 rounded-full" /> : profile?.status ? <Pill tone={statusTone(profile.status)}>{enumLabel("admin.status", profile.status, t)}</Pill> : <RowValue>—</RowValue>}
+        <RowLabel title={t("ui.accountStatus", "Account status")} sub={t("profile.platformAccess", "Platform access")} />
+        {loading ? <Skeleton className="h-5 w-16 rounded-full" /> : profile?.status ? <Pill tone={statusTone(profile.status)}>{statusLabel(profile.status, t)}</Pill> : <RowValue>—</RowValue>}
       </Row>
       {canStartVerification(profile) && <StartVerificationRow />}
     </ListCard>
@@ -334,15 +336,15 @@ function SnapshotCard({ invested, strategies }: { invested: number; strategies: 
   const t = useT();
   return (
     <ListCard className="lg:px-5.5">
-      <ListCardTitle>{t("profile.accountSnapshot")}</ListCardTitle>
+      <ListCardTitle>{t("profile.accountSnapshot", "Account snapshot")}</ListCardTitle>
       <Hairline />
       <Row>
-        <span className="text-sm font-medium text-ink-soft">{t("profile.totalInvested")}</span>
+        <span className="text-sm font-medium text-ink-soft">{t("profile.totalInvested", "Total invested")}</span>
         <span className="text-sm font-semibold tabular-nums text-ink">{formatUsd(invested)}</span>
       </Row>
       <Hairline />
       <Row>
-        <span className="text-sm font-medium text-ink-soft">{t("dash.activeStrategies")}</span>
+        <span className="text-sm font-medium text-ink-soft">{t("dash.activeStrategies", "Active strategies")}</span>
         <span className="text-sm font-semibold tabular-nums text-ink">{strategies}</span>
       </Row>
     </ListCard>
@@ -387,30 +389,12 @@ function VerifiedTag() {
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-debug">
       {/* i18n-max: 12 — beside a field label in a `justify-between` header row. */}
-      <BadgeCheck className="size-3" /> {t("ui.verified")}
+      <BadgeCheck className="size-3" /> {t("ui.verified", "Verified")}
       <TipAnchor anchor="profile.email.verified" />
     </span>
   );
 }
 
-/** `status`/`role` arrive as lower snake_case from the hub. */
-function titleCase(value: string): string {
-  const s = value.replace(/_/g, " ");
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/**
- * A wire enum as words. `titleCase` alone is English capitalisation applied to an
- * English wire value, so it stayed English under every locale; these resolve through the
- * shared `admin.status.*` / `admin.role.*` entries instead. The translator hands back the
- * key itself for a value no entry names — a hub enum we have not catalogued yet — so that
- * case falls back to the old capitalisation rather than printing a key on screen.
- */
-function enumLabel(namespace: "admin.status" | "admin.role", value: string, t: Translate): string {
-  const key = `${namespace}.${value}`;
-  const label = t(key);
-  return label === key ? titleCase(value) : label;
-}
 
 function statusTone(status: string): PillTone {
   const s = status.toLowerCase();

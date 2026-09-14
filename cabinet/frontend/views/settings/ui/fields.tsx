@@ -48,7 +48,7 @@ export function VerifiedTag() {
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-debug">
       {/* i18n-max: 12 — sits beside a field label in a `justify-between` header row. */}
-      <BadgeCheck className="size-3" /> {t("ui.verified")}
+      <BadgeCheck className="size-3" /> {t("ui.verified", "Verified")}
     </span>
   );
 }

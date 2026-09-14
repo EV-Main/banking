@@ -1,5 +1,6 @@
 "use client";
 
+import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
 import { Home, LineChart, ListChecks, Settings, Wallet, type LucideIcon } from "lucide-react";
@@ -13,9 +14,8 @@ import { DUR, EASE } from "@/shared/ui/motion";
 
 interface TabItem {
   href: `/${string}`;
-  label: string;
-  /** Catalogue key; `label` is what it resolves to in English. */
-  key: string;
+  /** The tab's label, in the reader's language. */
+  label: (t: Translate) => string;
   icon: LucideIcon;
   active: (path: string) => boolean;
 }
@@ -31,11 +31,11 @@ interface TabItem {
 // tab of its own) took the slot. Operations no longer claims /wallet either,
 // which was the other half of that collision.
 const TABS: TabItem[] = [
-  { href: "/", label: "Home", key: "nav.home", icon: Home, active: (p) => p === "/" },
-  { href: "/invest", label: "Invest", key: "nav.invest", icon: LineChart, active: (p) => p.startsWith("/invest") },
-  { href: "/operations", label: "Operations", key: "nav.operations", icon: ListChecks, active: (p) => p.startsWith("/operations") },
-  { href: "/wallet", label: "Wallet", key: "nav.wallet", icon: Wallet, active: (p) => p.startsWith("/wallet") },
-  { href: "/settings", label: "Settings", key: "nav.settings", icon: Settings, active: (p) => p.startsWith("/settings") },
+  { href: "/", label: t => t("nav.home", "Home"), icon: Home, active: (p) => p === "/" },
+  { href: "/invest", label: t => t("nav.invest", "Invest"), icon: LineChart, active: (p) => p.startsWith("/invest") },
+  { href: "/operations", label: t => t("nav.operations", "Operations"), icon: ListChecks, active: (p) => p.startsWith("/operations") },
+  { href: "/wallet", label: t => t("nav.wallet", "Wallet"), icon: Wallet, active: (p) => p.startsWith("/wallet") },
+  { href: "/settings", label: t => t("nav.settings", "Settings"), icon: Settings, active: (p) => p.startsWith("/settings") },
 ];
 
 /** Horizontal padding of the bar, as a length the marker's width math can use. */
@@ -79,9 +79,10 @@ export function BottomNavbar() {
       {TABS.map((tab) => {
         const Icon = tab.icon;
         const isActive = tab.active(pathname);
+        const label = tab.label(t);
         return (
           <Link
-            key={tab.label}
+            key={tab.href}
             href={tab.href}
             {...prefetchOn(tab.href)}
             aria-current={isActive ? "page" : undefined}
@@ -115,8 +116,8 @@ export function BottomNavbar() {
                 width — not a touch affordance, since neither iOS nor Android surfaces
                 one, and this bar is `lg:hidden`. The label is authored to fit; nothing
                 here depends on the tooltip. */}
-            <span className="w-full truncate text-center text-xs" title={t(tab.key)}>
-              {t(tab.key)}
+            <span className="w-full truncate text-center text-xs" title={label}>
+              {label}
             </span>
           </Link>
         );

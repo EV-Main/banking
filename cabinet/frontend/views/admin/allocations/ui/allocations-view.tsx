@@ -1,5 +1,6 @@
 "use client";
 
+import type { Translate } from "@evinvest/i18n";
 import { Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 
@@ -32,10 +33,25 @@ const STATE_TONE: Record<AllocationState, string> = {
 
 // Catalogue keys, not finished prose: this map is module scope, so it holds what to say
 // rather than the words, and the row resolves it against the reader's locale.
-const STATE_HINT: Record<AllocationState, string> = {
-  draft: "admin.alloc.hint.draft",
-  open: "admin.alloc.hint.open",
-  closed: "admin.alloc.hint.closed",
+// Named per icon rather than `t(`admin.alloc.icon.${value}`)`: an interpolated key is
+// invisible to the extractor, so these ten never reached a translator.
+const ICON_LABELS: Record<AllocationIcon, (t: Translate) => string> = {
+  "fund": t => t("admin.alloc.icon.fund", "Fund"),
+  "real_estate": t => t("admin.alloc.icon.real_estate", "Real estate"),
+  "trading": t => t("admin.alloc.icon.trading", "Trading"),
+  "yield": t => t("admin.alloc.icon.yield", "Yield"),
+  "venture": t => t("admin.alloc.icon.venture", "Venture"),
+  "treasury": t => t("admin.alloc.icon.treasury", "Treasury"),
+  "commodity": t => t("admin.alloc.icon.commodity", "Commodity"),
+  "credit": t => t("admin.alloc.icon.credit", "Credit"),
+  "index": t => t("admin.alloc.icon.index", "Index"),
+  "arbitrage": t => t("admin.alloc.icon.arbitrage", "Arbitrage"),
+};
+
+const STATE_HINT: Record<AllocationState, (t: Translate) => string> = {
+  draft: t => t("admin.alloc.hint.draft", "Registered — accepts no money until opened"),
+  open: t => t("admin.alloc.hint.open", "Accepting subscriptions and redemptions"),
+  closed: t => t("admin.alloc.hint.closed", "Closed to new money; redemptions still settle"),
 };
 
 /**
@@ -64,14 +80,14 @@ function IconSelect({ value, onChange, className }: { value: AllocationIcon; onC
       <SelectTrigger className={cn("w-full border-border bg-secondary", className)}>
         <span className="flex min-w-0 items-center gap-1.5">
           <ProductIcon icon={value} className="size-3.5 shrink-0" />
-          <span className="truncate">{t(`admin.alloc.icon.${value}`)}</span>
+          <span className="truncate">{ICON_LABELS[value](t)}</span>
         </span>
       </SelectTrigger>
       <SelectContent>
         {ALLOCATION_ICONS.map((icon) => (
           <SelectItem key={icon} value={icon}>
             <ProductIcon icon={icon} className="size-3.5 shrink-0" />
-            {t(`admin.alloc.icon.${icon}`)}
+            {ICON_LABELS[icon](t)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -113,13 +129,13 @@ export function AllocationsView() {
   return (
     <AdminScreen className="space-y-8">
       <AdminHeader
-        eyebrow={t("admin.eyebrow.administer")}
-        title={t("nav.allocations")}
-        subtitle={t("admin.alloc.subtitle")}
+        eyebrow={t("admin.eyebrow.administer", "Administer")}
+        title={t("nav.allocations", "Allocations")}
+        subtitle={t("admin.alloc.subtitle", "The registry of investable products — a fund exists only once it is registered here")}
         action={
           <Button type="button" className={cn(TEAL_CTA)} onClick={() => setAdding((v) => !v)}>
             <Plus className="size-4" />
-            {t("admin.alloc.register")}
+            {t("admin.alloc.register", "Register allocation")}
           </Button>
         }
       />
@@ -130,7 +146,7 @@ export function AllocationsView() {
 
       <StaggerItem as="section" className="space-y-3">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-ink-soft">
-          {t("admin.alloc.registry")}
+          {t("admin.alloc.registry", "Registry")}
           {rows && <span className="rounded-full bg-accent-debug/15 px-2 py-0.5 text-xs font-semibold text-accent-debug">{rows.length}</span>}
         </p>
         <Card>
@@ -144,18 +160,18 @@ export function AllocationsView() {
               }
             >
               {!rows ? null : rows.length === 0 ? (
-                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.alloc.empty")}</p>
+                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.alloc.empty", "No allocations registered yet — until one is, every subscription is refused.")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     {/* i18n-max: 14 per header — auto-layout table with no scroll wrapper;
                         a long header widens its column and squeezes the Product cell. */}
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.product")}</th>
-                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.serviceId")}</th>
-                      <th className="px-5 py-3 font-medium">{t("admin.col.state")}</th>
-                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.unitCap")}</th>
-                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.product", "Product")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.serviceId", "Service id")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.col.state", "State")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.alloc.col.unitCap", "Unit cap")}</th>
+                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions", "Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -189,7 +205,7 @@ export function AllocationsView() {
             has to be able to move `draft` to wherever the sentence puts it in their
             language, which splitting the note around the `<span>` would forbid. The cost
             is the word's mono styling, which is decoration rather than meaning here. */}
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.alloc.footnote", { state: t("admin.state.draft") })}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.alloc.footnote", "Registration lands in {state}, which takes no money — opening is a separate decision. Closing stops new subscriptions only: investors can always redeem out of a closed product, so winding one down never strands their units. The service id is permanent once registered. The unit cap bounds how many units may ever be issued — resize it on the Valuation screen, where the issued figure it is judged against is on the same page.", { state: t("admin.state.draft", "Draft") })}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -241,7 +257,7 @@ function AllocationRow({
               case rather than lowercased and fixed with CSS `capitalize`: that rule
               title-cases every word, which is invisible on a one-word English enum and
               wrong the moment it is translated ("en cours" → "En Cours"). */}
-          <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium", STATE_TONE[row.state])} title={t(STATE_HINT[row.state])}>
+          <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium", STATE_TONE[row.state])} title={STATE_HINT[row.state](t)}>
             {stateLabel(row.state, t)}
           </span>
         </td>
@@ -253,10 +269,10 @@ function AllocationRow({
               character widens the Actions column at the Product column's expense. */}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onEdit}>
-              {editing ? t("ui.cancel") : t("ui.edit")}
+              {editing ? t("ui.cancel", "Cancel") : t("ui.edit", "Edit")}
             </Button>
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onToggle}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : row.state === "open" ? t("admin.alloc.close") : t("admin.alloc.open")}
+              {busy ? <Loader2 className="size-4 animate-spin" /> : row.state === "open" ? t("admin.alloc.close", "Close") : t("admin.alloc.open", "Open")}
             </Button>
           </div>
         </td>
@@ -269,21 +285,21 @@ function AllocationRow({
                   so a narrow one shares the line with its label unless the column is
                   explicit. */}
               <label className="flex w-56 flex-col gap-1.5">
-                <span className="text-xs text-ink-soft">{t("admin.alloc.field.title")}</span>
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.title", "Title")}</span>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full" />
               </label>
               <label className="flex min-w-56 flex-1 flex-col gap-1.5">
-                <span className="text-xs text-ink-soft">{t("admin.alloc.field.summary")}</span>
-                <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary")} className="w-full" />
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.summary", "Summary")}</span>
+                <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary", "One line for the catalog card")} className="w-full" />
               </label>
               {/* Not a `<label>`: the trigger is a button, and wrapping it would make the
                   caption a second click target that reopens the popup it just closed. */}
               <div className="flex w-44 flex-col gap-1.5">
-                <span className="text-xs text-ink-soft">{t("admin.alloc.field.icon")}</span>
+                <span className="text-xs text-ink-soft">{t("admin.alloc.field.icon", "Icon")}</span>
                 <IconSelect value={icon} onChange={setIcon} />
               </div>
               <Button type="button" className={cn(TEAL_CTA)} disabled={busy || !title.trim()} onClick={() => onSave({ service: row.service, title, summary, icon })}>
-                {t("ui.save")}
+                {t("ui.save", "Save")}
               </Button>
             </div>
           </td>
@@ -313,38 +329,38 @@ function RegisterForm({ busy, onCancel, onSubmit }: { busy: boolean; onCancel: (
       <CardContent className="space-y-4 py-6">
         <div className="grid gap-4 md:grid-cols-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">{t("admin.alloc.col.serviceId")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.col.serviceId", "Service id")}</span>
             {/* The two placeholders are format examples, not prose — a slug and a proper
                 noun — so they stay as they are in every locale. */}
             <Input value={service} onChange={(e) => setService(e.target.value.trim())} placeholder="quy-nhon-fund" spellCheck={false} className="w-full font-mono-tech" />
             <span className={cn("text-xs", service && !slugOk ? "text-accent-error" : "text-ink-soft")}>
-              {service && !slugOk ? t("admin.alloc.slugInvalid") : t("admin.alloc.slugHint")}
+              {service && !slugOk ? t("admin.alloc.slugInvalid", "Letters, digits, - and _ only (1–64)") : t("admin.alloc.slugHint", "Permanent — every fund RPC keys on it")}
             </span>
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">{t("admin.alloc.field.title")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.title", "Title")}</span>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Quy Nhon Fund" className="w-full" />
           </label>
           {/* Not a `<label>` — see the row editor: the trigger is a button, so a wrapping
               label would toggle the popup a second time. */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">{t("admin.alloc.field.icon")}</span>
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.icon", "Icon")}</span>
             <IconSelect value={icon} onChange={setIcon} />
           </div>
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm text-ink-soft">{t("admin.alloc.field.summary")}</span>
-            <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary")} className="w-full" />
+            <span className="text-sm text-ink-soft">{t("admin.alloc.field.summary", "Summary")}</span>
+            <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder={t("admin.alloc.placeholder.summary", "One line for the catalog card")} className="w-full" />
           </label>
         </div>
         <div className="flex items-center gap-3">
-          <p className="min-w-0 text-xs text-ink-soft">{t("admin.alloc.registerHint")}</p>
+          <p className="min-w-0 text-xs text-ink-soft">{t("admin.alloc.registerHint", "Registers in draft — open it when the product is ready to take money.")}</p>
           {/* i18n-max: 12 per verb — both Buttons are `shrink-0` beside the hint above. */}
           <Button type="button" variant="outline" className="ml-auto" onClick={onCancel}>
-            {t("ui.cancel")}
+            {t("ui.cancel", "Cancel")}
           </Button>
           <Button type="button" className={cn(TEAL_CTA)} disabled={busy || !slugOk || !title.trim()} onClick={() => onSubmit({ service, title, summary, icon })}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            {t("admin.alloc.registerSubmit")}
+            {t("admin.alloc.registerSubmit", "Register")}
           </Button>
         </div>
       </CardContent>

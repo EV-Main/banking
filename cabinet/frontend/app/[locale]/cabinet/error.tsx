@@ -46,13 +46,13 @@ export default function Error({
     <StatusScreen
       accent="red"
       code="500"
-      eyebrow={t("status.serverError.eyebrow")}
-      headlineLead={t("status.serverError.headlineLead")}
-      headlineAccent={t("status.serverError.headlineAccent")}
-      subtext={t("status.serverError.subtext")}
+      eyebrow={t("status.serverError.eyebrow", "Server error")}
+      headlineLead={t("status.serverError.headlineLead", "Our systems are ")}
+      headlineAccent={t("status.serverError.headlineAccent", "recalibrating")}
+      subtext={t("status.serverError.subtext", "Something broke on our end — not yours. We've been alerted and are restoring service. Please try again in a moment.")}
       links={[
         {
-          label: t("status.backHome"),
+          label: t("status.backHome", "Back to home"),
           href: cabinetPath(locale, "/"),
           variant: "outline",
           leadingArrow: true,
@@ -60,7 +60,7 @@ export default function Error({
       ]}
     >
       <button type="button" className={statusButtonClass("red", "filled")} onClick={reset}>
-        {t("status.tryAgain")}
+        {t("status.tryAgain", "Try again")}
       </button>
     </StatusScreen>
   );

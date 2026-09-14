@@ -82,12 +82,12 @@ export function OverviewView() {
   return (
     <AdminScreen className="space-y-8">
       <AdminHeader
-        eyebrow={t("admin.eyebrow.administer")}
-        title={t("nav.overview")}
-        subtitle={t("admin.overview.subtitle")}
+        eyebrow={t("admin.eyebrow.administer", "Administer")}
+        title={t("nav.overview", "Overview")}
+        subtitle={t("admin.overview.subtitle", "Central service and microservices — health and throughput")}
         action={
           <Button type="button" variant="outline" size="sm" disabled={refreshing} onClick={load}>
-            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} /> {t("admin.overview.runHealthCheck")}
+            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} /> {t("admin.overview.runHealthCheck", "Run health check")}
           </Button>
         }
       />
@@ -95,25 +95,25 @@ export function OverviewView() {
       {error && <ResourceError message={error} />}
 
       <StaggerItem className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Kpi label={t("admin.overview.kpi.servicesHealthy")} value={overview ? `${healthy}/${totalServices}` : undefined} tone="text-positive" />
+        <Kpi label={t("admin.overview.kpi.servicesHealthy", "Services healthy")} value={overview ? `${healthy}/${totalServices}` : undefined} tone="text-positive" />
         <Kpi
-          label={t("admin.overview.kpi.parkedRows")}
+          label={t("admin.overview.kpi.parkedRows", "Parked rows")}
           value={overview?.parked_rows}
-          hint={t("admin.overview.kpi.parkedRowsHint")}
+          hint={t("admin.overview.kpi.parkedRowsHint", "Money the relay couldn't apply")}
           tone={overview && overview.parked_rows !== "0" ? "text-accent-error" : undefined}
           tip="admin.overview.kpi.parked-rows"
         />
-        <Kpi label={t("admin.overview.kpi.dispatchBacklog")} value={overview?.backlog} hint={t("admin.overview.kpi.dispatchBacklogHint")} tip="admin.overview.kpi.dispatch-backlog" />
+        <Kpi label={t("admin.overview.kpi.dispatchBacklog", "Dispatch backlog")} value={overview?.backlog} hint={t("admin.overview.kpi.dispatchBacklogHint", "Undispatched outbox rows")} tip="admin.overview.kpi.dispatch-backlog" />
         <Kpi
-          label={t("admin.overview.kpi.oldestBacklog")}
-          value={overview ? t("admin.overview.kpi.oldestBacklogValue", { n: overview.oldest_backlog_age_secs }) : undefined}
-          hint={t("admin.overview.kpi.oldestBacklogHint")}
+          label={t("admin.overview.kpi.oldestBacklog", "Oldest backlog")}
+          value={overview ? t("admin.overview.kpi.oldestBacklogValue", "{n}s", { n: overview.oldest_backlog_age_secs }) : undefined}
+          hint={t("admin.overview.kpi.oldestBacklogHint", "Age of the oldest undispatched row")}
           tip="admin.overview.kpi.oldest-backlog"
         />
         <Kpi
-          label={t("admin.overview.kpi.deadKeySignings")}
+          label={t("admin.overview.kpi.deadKeySignings", "Dead-key signings")}
           value={overview?.unseal_failures}
-          hint={t("admin.overview.kpi.deadKeySigningsHint")}
+          hint={t("admin.overview.kpi.deadKeySigningsHint", "Signer couldn't unseal a key — funds stranded")}
           tone={overview && overview.unseal_failures !== "0" ? "text-accent-error" : undefined}
           tip="admin.overview.kpi.dead-key-signings"
         />
@@ -123,8 +123,8 @@ export function OverviewView() {
         <Card className="lg:col-span-2">
           <CardContent className="space-y-4 py-5">
             <div>
-              <h2 className="text-base font-semibold">{t("admin.overview.fleetHealth")}</h2>
-              <p className="text-xs text-ink-soft">{t("admin.overview.fleetHealthSub")}</p>
+              <h2 className="text-base font-semibold">{t("admin.overview.fleetHealth", "Fleet health")}</h2>
+              <p className="text-xs text-ink-soft">{t("admin.overview.fleetHealthSub", "Central hub · datastores · microservices")}</p>
             </div>
             {!overview ? (
               <Skeleton className="h-48 w-full" />
@@ -134,9 +134,9 @@ export function OverviewView() {
                   {/* i18n-max: 14 per header — an auto-layout table; a long header widens
                       its column at the expense of the two beside it. */}
                   <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                    <th className="py-2 font-medium">{t("admin.overview.col.service")}</th>
-                    <th className="py-2 font-medium">{t("admin.overview.col.kind")}</th>
-                    <th className="py-2 font-medium">{t("admin.col.status")}</th>
+                    <th className="py-2 font-medium">{t("admin.overview.col.service", "Service")}</th>
+                    <th className="py-2 font-medium">{t("admin.overview.col.kind", "Kind")}</th>
+                    <th className="py-2 font-medium">{t("admin.col.status", "Status")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -159,12 +159,12 @@ export function OverviewView() {
           <CardContent className="space-y-3 py-5">
             <div className="flex items-center gap-2">
               <Activity className="size-4 text-accent-debug" />
-              <h2 className="text-base font-semibold">{t("admin.overview.errorsAnalytics")}</h2>
+              <h2 className="text-base font-semibold">{t("admin.overview.errorsAnalytics", "Errors & analytics")}</h2>
             </div>
             {/* `Sentry` and `PostHog` are product names and stay English by policy. */}
-            <ObsPanel label="Sentry" hint={t("admin.overview.obs.sentry")} />
-            <ObsPanel label="PostHog" hint={t("admin.overview.obs.posthog")} />
-            <ObsPanel label={t("admin.overview.obs.eventStreamLabel")} hint={t("admin.overview.obs.eventStream")} />
+            <ObsPanel label="Sentry" hint={t("admin.overview.obs.sentry", "Unresolved issues across the fleet surface here once SENTRY_DSN is configured.")} />
+            <ObsPanel label="PostHog" hint={t("admin.overview.obs.posthog", "Active investors, sessions and top events surface here once POSTHOG_KEY is configured.")} />
+            <ObsPanel label={t("admin.overview.obs.eventStreamLabel", "Event stream")} hint={t("admin.overview.obs.eventStream", "A live outbox/event feed renders here when streaming is enabled.")} />
           </CardContent>
         </Card>
       </StaggerItem>
@@ -172,8 +172,8 @@ export function OverviewView() {
       <StaggerItem as={Card}>
         <CardContent className="space-y-4 py-5">
           <div>
-            <h2 className="text-base font-semibold">{t("admin.overview.parkedEvents")}</h2>
-            <p className="text-xs text-ink-soft">{t("admin.overview.parkedEventsSub")}</p>
+            <h2 className="text-base font-semibold">{t("admin.overview.parkedEvents", "Parked events")}</h2>
+            <p className="text-xs text-ink-soft">{t("admin.overview.parkedEventsSub", "Outbox rows the relay couldn't apply — fix the cause, then unpark to re-drive")}</p>
           </div>
           {unparkError && (
             <p className="flex items-center gap-2 text-xs text-accent-error">
@@ -182,7 +182,7 @@ export function OverviewView() {
           )}
           {refetchError && (
             <p className="flex items-center gap-2 text-xs text-accent-warn">
-              <TriangleAlert className="size-3.5" /> {t("admin.overview.unparkRefetchFailed", { error: refetchError })}
+              <TriangleAlert className="size-3.5" /> {t("admin.overview.unparkRefetchFailed", "Unparked, but refreshing the list failed: {error} — run a health check to resync.", { error: refetchError })}
             </p>
           )}
           {!parked ? (
@@ -190,22 +190,22 @@ export function OverviewView() {
           ) : parkedHint ? (
             <p className="text-sm text-ink-soft">{parkedHint}</p>
           ) : parked.length === 0 ? (
-            <p className="text-sm text-ink-soft">{t("admin.overview.noParkedEvents")}</p>
+            <p className="text-sm text-ink-soft">{t("admin.overview.noParkedEvents", "No parked events — the relay is clean.")}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 {/* i18n-max: 14 per header — auto-layout table; the Reason cell is the one
                     that gives width back, and it is already `truncate`d. */}
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                  <th className="py-2 font-medium">{t("admin.overview.col.seq")}</th>
-                  <th className="py-2 font-medium">{t("admin.overview.col.event")}</th>
+                  <th className="py-2 font-medium">{t("admin.overview.col.seq", "Seq")}</th>
+                  <th className="py-2 font-medium">{t("admin.overview.col.event", "Event")}</th>
                   <th className="py-2 font-medium">
                     <span className="flex items-center gap-1.5">
-                      {t("admin.overview.col.reason")}
+                      {t("admin.overview.col.reason", "Reason")}
                       <TipAnchor anchor="admin.overview.parked.reason" />
                     </span>
                   </th>
-                  <th className="py-2 font-medium">{t("admin.overview.col.parked")}</th>
+                  <th className="py-2 font-medium">{t("admin.overview.col.parked", "Parked")}</th>
                   <th className="py-2 font-medium" />
                 </tr>
               </thead>
@@ -230,12 +230,12 @@ export function OverviewView() {
                         {/* i18n-max: 12 per badge — three chips and a button share this cell. */}
                         {e.compensated && (
                           <span className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink/5 px-2 py-0.5 text-xs font-medium text-ink">
-                            {t("admin.overview.compensated")}
+                            {t("admin.overview.compensated", "compensated")}
                             <TipAnchor anchor="admin.overview.parked.compensated" />
                           </span>
                         )}
                         {unparked.has(e.seq) && (
-                          <span className="whitespace-nowrap rounded-full bg-positive/15 px-2 py-0.5 text-xs font-medium text-positive">{t("admin.overview.unparked")}</span>
+                          <span className="whitespace-nowrap rounded-full bg-positive/15 px-2 py-0.5 text-xs font-medium text-positive">{t("admin.overview.unparked", "unparked")}</span>
                         )}
                         <Button
                           type="button"
@@ -245,7 +245,7 @@ export function OverviewView() {
                           onClick={() => void unpark(e.seq)}
                         >
                           {unparking === e.seq ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                          {t("admin.overview.unpark")}
+                          {t("admin.overview.unpark", "Unpark")}
                         </Button>
                         <TipAnchor anchor="admin.overview.parked.unpark" />
                       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import type { Translate } from "@evinvest/i18n";
 import { Bell, Check, Loader2, type LucideIcon, Monitor, Shield, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -45,11 +46,11 @@ type Section = "general" | "security" | "sessions" | "notifications";
 
 // Module-scope, so the labels are catalogue keys rather than finished English — the rail
 // resolves them at render.
-const NAV: { id: Section; labelKey: string; icon: LucideIcon }[] = [
-  { id: "general", labelKey: "settings.nav.general", icon: User },
-  { id: "security", labelKey: "ui.security", icon: Shield },
-  { id: "sessions", labelKey: "ui.sessionsDevices", icon: Monitor },
-  { id: "notifications", labelKey: "nav.notifications", icon: Bell },
+const NAV: { id: Section; label: (t: Translate) => string; icon: LucideIcon }[] = [
+  { id: "general", label: t => t("settings.nav.general", "General"), icon: User },
+  { id: "security", label: t => t("ui.security", "Security"), icon: Shield },
+  { id: "sessions", label: t => t("ui.sessionsDevices", "Sessions & devices"), icon: Monitor },
+  { id: "notifications", label: t => t("nav.notifications", "Notifications"), icon: Bell },
 ];
 
 export function SettingsView() {
@@ -99,7 +100,7 @@ export function SettingsView() {
     const errors = validateProfileForm(form, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setSaveError(t("settings.fixHighlighted"));
+      setSaveError(t("settings.fixHighlighted", "Please fix the highlighted fields"));
       return;
     }
     setFieldErrors({});
@@ -181,13 +182,13 @@ export function SettingsView() {
   return (
     <>
       <MobileAppBar
-        title={t(pushed === "sessions" ? "ui.sessionsDevices" : pushed === "notifications" ? "nav.notifications" : "nav.settings")}
+        title={(pushed === "sessions" ? t("ui.sessionsDevices", "Sessions & devices") : pushed === "notifications" ? t("nav.notifications", "Notifications") : t("nav.settings", "Settings"))}
         onBack={pushed ? () => setPushed(null) : undefined}
         right={
           dirty ? (
             // i18n-max: 11 — a `shrink-0` Button in the app bar, beside the truncated title.
             <Button type="button" size="sm" onClick={save} disabled={saving} className="rounded-full font-semibold">
-              {saving && <Loader2 className="size-3.5 animate-spin" />} {t("ui.save")}
+              {saving && <Loader2 className="size-3.5 animate-spin" />} {t("ui.save", "Save")}
             </Button>
           ) : pushed ? undefined : (
             <InitialsAvatar initials={initialsOfName(name, email)} className="size-8.5 text-sm" />
@@ -199,8 +200,8 @@ export function SettingsView() {
         {/* Desktop page heading — the mobile app bar owns this below `lg`. */}
         <StaggerItem className="hidden items-center justify-between gap-4 lg:flex">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-ink">{t("nav.settings")}</h1>
-            <p className="text-sm text-ink-soft">{t("settings.subtitle")}</p>
+            <h1 className="text-2xl font-semibold text-ink">{t("nav.settings", "Settings")}</h1>
+            <p className="text-sm text-ink-soft">{t("settings.subtitle", "Manage your account, security and access")}</p>
           </div>
           {section === "general" && (
             // Both children are `shrink-0` beside a `min-w-0` heading column, so their
@@ -209,12 +210,12 @@ export function SettingsView() {
               {saved && (
                 // i18n-max: 11
                 <span className="inline-flex items-center gap-1 text-sm font-medium text-positive">
-                  <Check className="size-4" /> {t("ui.saved")}
+                  <Check className="size-4" /> {t("ui.saved", "Saved")}
                 </span>
               )}
               {/* i18n-max: 20 */}
               <Button type="button" onClick={save} disabled={loading || saving || !dirty} className="rounded-lg font-semibold">
-                {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.saveChanges")}
+                {saving && <Loader2 className="size-4 animate-spin" />} {t("ui.saveChanges", "Save changes")}
               </Button>
             </div>
           )}
@@ -229,7 +230,7 @@ export function SettingsView() {
             arrived, and belongs to the save rather than to the screen. */}
         {saved && (
           <p className="inline-flex items-center gap-1 text-sm font-medium text-positive lg:hidden">
-            <Check className="size-4" /> {t("ui.saved")}
+            <Check className="size-4" /> {t("ui.saved", "Saved")}
           </p>
         )}
 
@@ -261,7 +262,7 @@ export function SettingsView() {
         {/* ── Desktop (Figma cabinet/settings) ─────────────────────────────── */}
         <StaggerItem className="hidden gap-6 lg:flex">
           {/* Hand-written rail — uikit has no section-nav component, so the items carry their own focus ring. */}
-          <nav aria-label={t("settings.a11y.sections")} className="flex w-53 shrink-0 flex-col gap-1">
+          <nav aria-label={t("settings.a11y.sections", "Settings sections")} className="flex w-53 shrink-0 flex-col gap-1">
             {NAV.map((item) => {
               const Icon = item.icon;
               const active = section === item.id;
@@ -278,7 +279,7 @@ export function SettingsView() {
                 >
                   <Icon className="size-4.5" />
                   {/* i18n-max: 20 — a 212px rail row less the icon and padding. */}
-                  <span className="truncate">{t(item.labelKey)}</span>
+                  <span className="truncate">{item.label(t)}</span>
                 </button>
               );
             })}

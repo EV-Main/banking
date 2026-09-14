@@ -82,7 +82,7 @@ export function ActivityView() {
   const entries: Entry[] = loading ? [] : buildEntries(rows, credits, t);
 
   return (
-    <WalletScreen title={t("ui.activity")} subtitle={t("wallet.activitySub")} back="/wallet">
+    <WalletScreen title={t("ui.activity", "Activity")} subtitle={t("wallet.activitySub", "Deposits and withdrawals — queued, processing, completed")} back="/wallet">
       {error && (
         <StaggerItem as="p" className="text-sm text-accent-error">
           {error}
@@ -101,10 +101,10 @@ export function ActivityView() {
               className="hidden grid-cols-(--activity-columns) items-center gap-3 border-b border-border px-5 py-3.5 text-xs font-medium text-ink-soft lg:grid"
             >
               {/* Hard pixel columns (110 / 1fr / 150 / 130). i18n-max: 12 on all four. */}
-              <span>{t("wallet.networkCaps")}</span>
-              <span>{t("wallet.destinationCaps")}</span>
-              <span className="text-right">{t("wallet.amountCaps")}</span>
-              <span className="text-right">{t("wallet.statusCaps")}</span>
+              <span>{t("wallet.networkCaps", "NETWORK")}</span>
+              <span>{t("wallet.destinationCaps", "DESTINATION")}</span>
+              <span className="text-right">{t("wallet.amountCaps", "AMOUNT")}</span>
+              <span className="text-right">{t("wallet.statusCaps", "STATUS")}</span>
             </div>
             {entries.map((entry, i) => (
               <Row key={entry.key} entry={entry} first={i === 0} busy={busy === entry.id} onCancel={() => cancel(entry.id)} />
@@ -155,7 +155,7 @@ function Row({ entry, first, busy, onCancel }: { entry: Entry; first: boolean; b
               type="button"
               disabled={busy}
               onClick={onCancel}
-              aria-label={t("wallet.cancelWithdrawal")}
+              aria-label={t("wallet.cancelWithdrawal", "Cancel withdrawal")}
               className="rounded-md border border-border p-1 text-ink-soft outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             >
               {busy ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
@@ -174,10 +174,10 @@ function EmptyState() {
       <span className="flex size-11 items-center justify-center rounded-xl bg-accent-debug/15">
         <ArrowUpRight className="size-5 text-accent-debug" />
       </span>
-      <p className="text-sm font-semibold text-ink">{t("wallet.noActivity")}</p>
-      <p className="max-w-65 text-xs text-ink-soft">{t("wallet.noActivityHint")}</p>
+      <p className="text-sm font-semibold text-ink">{t("wallet.noActivity", "No activity yet")}</p>
+      <p className="max-w-65 text-xs text-ink-soft">{t("wallet.noActivityHint", "Your deposits and withdrawals will appear here once you make your first transfer.")}</p>
       <Link href="/wallet/deposit" className={cn(WALLET_CTA, "mt-1 px-4 py-2.5 text-sm")}>
-        {t("wallet.newDeposit")}
+        {t("wallet.newDeposit", "New deposit")}
       </Link>
     </div>
   );
@@ -189,7 +189,7 @@ function buildEntries(withdrawals: Withdrawal[], deposits: Deposit[], t: Transla
     id: w.id ?? "",
     network: w.network ?? "",
     title: shortAddress(w.address),
-    sub: w.tx_ref ? t("wallet.txRef", { ref: shortAddress(w.tx_ref) }) : t("wallet.railUsdt", { network: networkLabel(w.network) }),
+    sub: w.tx_ref ? t("wallet.txRef", "tx {ref}", { ref: shortAddress(w.tx_ref) }) : t("wallet.railUsdt", "{network} · USDT", { network: networkLabel(w.network) }),
     amount: `−${formatUsdt(w.amount)} USDT`,
     state: w.state ?? "queued",
     stateText: stateLabel(w.state ?? "queued", t),
@@ -205,8 +205,8 @@ function buildEntries(withdrawals: Withdrawal[], deposits: Deposit[], t: Transla
       id: d.tx_ref ?? "",
       network: d.network ?? "",
       // A row title is a noun ("a deposit"), not the wallet button's verb.
-      title: d.tx_ref ? shortAddress(d.tx_ref) : t("ops.kind.deposit"),
-      sub: t("wallet.railUsdt", { network: networkLabel(d.network) }),
+      title: d.tx_ref ? shortAddress(d.tx_ref) : t("ops.kind.deposit", "Deposit"),
+      sub: t("wallet.railUsdt", "{network} · USDT", { network: networkLabel(d.network) }),
       amount: `+${formatUsdt(d.amount)} USDT`,
       state: "credited",
       stateText: stateLabel("credited", t),

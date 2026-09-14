@@ -64,16 +64,16 @@ export function NotificationsSection() {
   return (
     <div className="flex flex-col gap-4 lg:gap-4.5">
       <ListCard className="lg:px-5.5">
-        <ListCardTitle sub={t("notif.deliverySub")}>{t("notif.delivery")}</ListCardTitle>
+        <ListCardTitle sub={t("notif.deliverySub", "Choose where notifications reach you. Both can be off.")}>{t("notif.delivery", "Delivery")}</ListCardTitle>
         <Hairline />
         <Row>
-          <RowLabel title={t("ui.inYourCabinet")} sub={t("notif.inAppSub")} />
+          <RowLabel title={t("ui.inYourCabinet", "In your cabinet")} sub={t("notif.inAppSub", "On by default. Turn this off and notifications stop appearing in your cabinet.")} />
           {settings ? (
             <Switch
               checked={settings.in_app_enabled}
               disabled={busy}
               onCheckedChange={(v) => void run(() => setChannelEnabled("in_app", v))}
-              aria-label={t("notif.a11y.inApp")}
+              aria-label={t("notif.a11y.inApp", "In-app notifications")}
             />
           ) : (
             <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
@@ -82,15 +82,15 @@ export function NotificationsSection() {
         <Hairline />
         <Row>
           <RowLabel
-            title={t("ui.email")}
-            sub={settings ? t(settings.email_verified ? "notif.emailVerified" : "notif.emailUnverified", { email: settings.email }) : undefined}
+            title={t("ui.email", "Email")}
+            sub={settings ? (settings.email_verified ? t("notif.emailVerified", "Sent to {email} · verified", { email: settings.email }) : t("notif.emailUnverified", "{email} · unverified, so email is not sent", { email: settings.email })) : undefined}
           />
           {settings ? (
             <Switch
               checked={settings.email_enabled}
               disabled={busy || !settings.email_verified}
               onCheckedChange={(v) => void run(() => setChannelEnabled("email", v))}
-              aria-label={t("notif.a11y.email")}
+              aria-label={t("notif.a11y.email", "Email notifications")}
             />
           ) : (
             <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
@@ -100,9 +100,9 @@ export function NotificationsSection() {
 
       <ListCard className="lg:px-5.5">
         <div className="flex items-start justify-between gap-4">
-          <ListCardTitle sub={t("notif.topicsSub")}>{t("notif.whatYouFollow")}</ListCardTitle>
+          <ListCardTitle sub={t("notif.topicsSub", "Email a copy for these. Unsubscribing is one click — no confirmation step.")}>{t("notif.whatYouFollow", "What you follow")}</ListCardTitle>
           {/* i18n-max: 12 — `shrink-0` uppercase column header with `tracking-widest`. */}
-          <p className="shrink-0 pt-3 text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("ui.email")}</p>
+          <p className="shrink-0 pt-3 text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("ui.email", "Email")}</p>
         </div>
         {settings
           ? // Named `topic`, not `t`: the translator is bound above and a `t` here would
@@ -133,13 +133,13 @@ export function NotificationsSection() {
                         topic.subscribed ? "border border-border/60 text-ink hover:bg-ink/5" : "border border-accent-debug/50 text-accent-debug hover:bg-accent-debug/10",
                       )}
                     >
-                      {topic.subscribed ? t("notif.following") : t("notif.follow")}
+                      {topic.subscribed ? t("notif.following", "Following") : t("notif.follow", "Follow")}
                     </button>
                     <Switch
                       checked={topic.subscribed && topic.email_enabled && settings.email_enabled}
                       disabled={busy || !topic.subscribed || !settings.email_enabled}
                       onCheckedChange={(v) => void run(() => setTopicSubscription(topic.topic, true, v))}
-                      aria-label={t("notif.a11y.emailCopyFor", { topic: topic.label })}
+                      aria-label={t("notif.a11y.emailCopyFor", "Email copy for {topic}", { topic: topic.label })}
                     />
                   </div>
                 </div>
@@ -157,7 +157,7 @@ export function NotificationsSection() {
       </ListCard>
 
       {error && <p className="rounded-md border border-accent-error/40 bg-accent-error/10 px-3 py-2 text-sm text-accent-error">{error}</p>}
-      <p className="text-xs leading-relaxed text-ink-soft">{t("notif.channelsFootnote")}</p>
+      <p className="text-xs leading-relaxed text-ink-soft">{t("notif.channelsFootnote", "Turn a channel off and we stop sending on it. Turn both off and we stop notifying you altogether — updates still live on the fund pages whenever you want them.")}</p>
     </div>
   );
 }

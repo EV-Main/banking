@@ -58,8 +58,8 @@ export function BreakGlassNotice({ className }: { className?: string }) {
   return (
     <Alert className={cn("border-accent-warn/40 bg-accent-warn/10", className)}>
       <KeyRound className="size-4 text-accent-warn" />
-      <AlertTitle>{t("session.breakGlass.title")}</AlertTitle>
-      <AlertDescription className="text-ink">{t("session.breakGlass.body")}</AlertDescription>
+      <AlertTitle>{t("session.breakGlass.title", "You are working under emergency access")}</AlertTitle>
+      <AlertDescription className="text-ink">{t("session.breakGlass.body", "This fund has no owner in the register yet, so your role comes from the OWNER_SUBJECTS emergency allowlist and not from the register itself. It is real authority over this console, but it seats nobody: you hold no vote in the consilium. A seat is written once by the genesis seed when the service starts, or granted afterwards by a consilium of the existing owners — and this notice goes away for good the moment the first owner is seated.")}</AlertDescription>
     </Alert>
   );
 }

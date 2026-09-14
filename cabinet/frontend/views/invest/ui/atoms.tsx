@@ -68,7 +68,7 @@ export function SupplyBar({ issued, cap, className }: { issued: string | undefin
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="text-ink-soft">{t("invest.unitsIssued")}</span>
+        <span className="text-ink-soft">{t("invest.unitsIssued", "Units issued")}</span>
         <span className={cn("tabular-nums", near ? "font-medium text-accent-warn" : "text-ink-soft")}>
           {compactUnits(issued)} / {compactUnits(cap)}
         </span>
@@ -80,7 +80,7 @@ export function SupplyBar({ issued, cap, className }: { issued: string | undefin
             exact, not for a bar whose job is "how full is it?". */}
         <div className={cn("h-full rounded-full", near ? "bg-accent-warn" : "bg-accent-debug")} style={{ width: `${fraction * 100}%` }} />
       </div>
-      {full && <p className="text-xs text-accent-warn">{t("invest.fullyIssued")}</p>}
+      {full && <p className="text-xs text-accent-warn">{t("invest.fullyIssued", "Fully issued — not minting new units.")}</p>}
     </div>
   );
 }
@@ -95,12 +95,12 @@ export function ProductBadges({ closed, stale }: { closed: boolean; stale: boole
     <div className="flex flex-wrap items-center gap-2">
       {closed && (
         <Badge variant="outline" className="gap-1 border-accent-warn/40 text-accent-warn">
-          {t("invest.badge.redeemOnly")}
+          {t("invest.badge.redeemOnly", "Redeem only")}
         </Badge>
       )}
       {stale && (
         <Badge variant="outline" className="gap-1 border-accent-warn/40 text-accent-warn">
-          <Clock className="size-3" /> {t("invest.badge.staleNav")}
+          <Clock className="size-3" /> {t("invest.badge.staleNav", "Stale NAV")}
           <TipAnchor anchor="invest.position.stale-nav" />
         </Badge>
       )}

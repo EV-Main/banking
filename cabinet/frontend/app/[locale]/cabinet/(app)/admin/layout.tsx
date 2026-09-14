@@ -34,14 +34,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <StatusScreen
         accent="gold"
         code="403"
-        eyebrow={t("status.forbidden.eyebrow")}
-        headlineLead={t("status.forbidden.headlineLead")}
-        headlineAccent={t("status.forbidden.headlineAccent")}
-        subtext={t("status.forbidden.subtext")}
+        eyebrow={t("status.forbidden.eyebrow", "Access forbidden")}
+        headlineLead={t("status.forbidden.headlineLead", "This harbour is ")}
+        headlineAccent={t("status.forbidden.headlineAccent", "private")}
+        subtext={t("status.forbidden.subtext", "You don't have the credentials to view this page. If you believe you should, our team can open the right doors.")}
         links={[
-          { label: t("status.backHome"), href: cabinetPath(locale, "/"), leadingArrow: true },
+          { label: t("status.backHome", "Back to home"), href: cabinetPath(locale, "/"), leadingArrow: true },
           {
-            label: t("status.requestAccess"),
+            label: t("status.requestAccess", "Request access"),
             href: localePath(locale, "/contact"),
             variant: "outline",
           },

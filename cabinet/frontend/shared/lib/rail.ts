@@ -1,3 +1,5 @@
+import type { Translate } from "@evinvest/i18n";
+
 // Per-rail display chrome: the chain's own name, the badge glyph, and the accent tier its
 // badge is tinted with.
 //
@@ -22,21 +24,22 @@
 
 export interface RailMeta {
   label: string;
-  chainKey: string;
+  /** The chain's name in the reader's language. */
+  chain: (t: Translate) => string;
   badge: string;
   tone: string;
 }
 
 const RAILS: Record<string, RailMeta> = {
-  bep20: { label: "BEP20", chainKey: "wallet.chain.bep20", badge: "B", tone: "bg-accent-warn/15 text-accent-warn" },
-  trc20: { label: "TRC20", chainKey: "wallet.chain.trc20", badge: "T", tone: "bg-accent-info/15 text-accent-info" },
-  ton: { label: "TON", chainKey: "wallet.chain.ton", badge: "◆", tone: "bg-accent-debug/15 text-accent-debug" },
-  polygon: { label: "Polygon", chainKey: "wallet.chain.polygon", badge: "P", tone: "bg-accent-debug/15 text-accent-debug" },
+  bep20: { label: "BEP20", chain: t => t("wallet.chain.bep20", "BNB Smart Chain"), badge: "B", tone: "bg-accent-warn/15 text-accent-warn" },
+  trc20: { label: "TRC20", chain: t => t("wallet.chain.trc20", "TRON"), badge: "T", tone: "bg-accent-info/15 text-accent-info" },
+  ton: { label: "TON", chain: t => t("wallet.chain.ton", "The Open Network"), badge: "◆", tone: "bg-accent-debug/15 text-accent-debug" },
+  polygon: { label: "Polygon", chain: t => t("wallet.chain.polygon", "Polygon PoS"), badge: "P", tone: "bg-accent-debug/15 text-accent-debug" },
 };
 
 export function railMeta(network: string | undefined): RailMeta {
   const id = network ?? "";
-  return RAILS[id] ?? { label: id.toUpperCase(), chainKey: "wallet.chain.unknown", badge: (id[0] ?? "?").toUpperCase(), tone: "bg-muted text-ink-soft" };
+  return RAILS[id] ?? { label: id.toUpperCase(), chain: t => t("wallet.chain.unknown", "Network"), badge: (id[0] ?? "?").toUpperCase(), tone: "bg-muted text-ink-soft" };
 }
 
 export function networkLabel(network: string | undefined): string {

@@ -90,9 +90,9 @@ export function RevenueView() {
   // spending a round trip on it. The hub still decides.
   const amountProblem = useMemo(() => {
     if (!amount.trim()) return null;
-    if (!Number.isFinite(requested) || requested <= 0) return t("admin.revenue.err.enterAmount");
-    if (rail && requested < minimum) return t("admin.revenue.err.belowMinimum", { min: formatUsd(rail.minimum) });
-    if (requested > available) return t("admin.revenue.err.overAvailable", { available: formatUsd(data?.available) });
+    if (!Number.isFinite(requested) || requested <= 0) return t("admin.revenue.err.enterAmount", "Enter an amount.");
+    if (rail && requested < minimum) return t("admin.revenue.err.belowMinimum", "Below the {min} minimum for this rail.", { min: formatUsd(rail.minimum) });
+    if (requested > available) return t("admin.revenue.err.overAvailable", "Only {available} of earned revenue is available.", { available: formatUsd(data?.available) });
     return null;
   }, [amount, requested, rail, minimum, available, data?.available, t]);
 
@@ -160,27 +160,27 @@ export function RevenueView() {
 
   return (
     <AdminScreen className="space-y-8">
-      <AdminHeader eyebrow={t("admin.eyebrow.administer")} title={t("nav.revenue")} subtitle={t("admin.revenue.subtitle")} />
+      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.revenue", "Fund revenue")} subtitle={t("admin.revenue.subtitle", "What the fund earned — fees and the settled 2-and-20 — and proposing that it be paid out")} />
 
       {error && <ResourceError message={error} />}
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.earned")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.earned", "Earned")}</p>
         <div className="grid gap-4 sm:grid-cols-3">
-          <MoneyCard label={t("admin.revenue.earnedTotal")} value={data?.earned} hint={t("admin.revenue.earnedTotalHint")} loading={!data} />
-          <MoneyCard label={t("admin.revenue.availableToPayOut")} value={data?.available} hint={t("admin.revenue.availableHint")} loading={!data} emphasis />
-          <MoneyCard label={t("admin.revenue.pendingPayout")} value={data?.pending_payout} hint={t("admin.revenue.pendingHint")} loading={!data} />
+          <MoneyCard label={t("admin.revenue.earnedTotal", "Earned · total")} value={data?.earned} hint={t("admin.revenue.earnedTotalHint", "fees + settled 2-and-20")} loading={!data} />
+          <MoneyCard label={t("admin.revenue.availableToPayOut", "Available to pay out")} value={data?.available} hint={t("admin.revenue.availableHint", "free of in-flight payouts")} loading={!data} emphasis />
+          <MoneyCard label={t("admin.revenue.pendingPayout", "Pending payout")} value={data?.pending_payout} hint={t("admin.revenue.pendingHint", "queued + in-flight")} loading={!data} />
         </div>
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.ownMoneyNote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.ownMoneyNote", "This is the fund's own money. Client balances and the fund's seed capital are separate ledger claims and are not included here — and cannot be reached from this screen.")}</p>
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.propose")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.propose", "Propose a payout")}</p>
         <Card>
           <CardContent className="space-y-4 py-5">
             {/* Stated before the form, not after it: an operator filling this in should know
                 what the button does before they reach it, not discover it in the receipt. */}
-            <p className="text-xs text-ink-soft">{t("admin.revenue.consiliumNote")}</p>
+            <p className="text-xs text-ink-soft">{t("admin.revenue.consiliumNote", "Paying the fund's revenue out is not one person's decision. Submitting here proposes a payout and emails every other owner a link to confirm it; the money moves only once enough of them have.")}</p>
 
             {owners.data?.below_payout_floor && (
               // The threshold is `floor(N/2)+1` of ALL owners, so below three it can never
@@ -189,9 +189,9 @@ export function RevenueView() {
               <div className="flex items-start gap-3 rounded-lg border border-accent-warn/40 bg-accent-warn/10 px-3.5 py-3">
                 <Users className="mt-0.5 size-4 shrink-0 text-accent-warn" />
                 <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-semibold text-ink">{t("admin.revenue.refusal.floorTitle")}</p>
+                  <p className="text-sm font-semibold text-ink">{t("admin.revenue.refusal.floorTitle", "This fund cannot authorise a payout")}</p>
                   <p className="text-sm leading-relaxed text-ink">
-                    {t("admin.revenue.floorBody", { n: owners.data.items.length })}
+                    {t("admin.revenue.floorBody", "A payout needs more than half of the owners to agree, and with {n, plural, one {# owner} other {# owners}} that bar cannot be met. A proposal made now will be refused; adding owners restores it.", { n: owners.data.items.length })}
                   </p>
                 </div>
               </div>
@@ -211,14 +211,14 @@ export function RevenueView() {
                     <EmptyMedia variant="icon">
                       <Banknote />
                     </EmptyMedia>
-                    <EmptyTitle>{t("admin.revenue.noRail")}</EmptyTitle>
-                    <EmptyDescription>{t("admin.revenue.noRailHint")}</EmptyDescription>
+                    <EmptyTitle>{t("admin.revenue.noRail", "No rail is configured")}</EmptyTitle>
+                    <EmptyDescription>{t("admin.revenue.noRailHint", "A payout ships on a chain rail with a running watcher. Configure one to enable payouts.")}</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               ) : (
                 <>
                   <div className="space-y-2">
-                    <p className="text-xs text-ink-soft">{t("admin.rail")}</p>
+                    <p className="text-xs text-ink-soft">{t("admin.rail", "Rail")}</p>
                     <div className="flex flex-wrap gap-2">
                       {rails.map((r) => (
                         <RailChip key={r.network} rail={r} selected={r.network === rail?.network} onSelect={() => setNetwork(r.network)} />
@@ -228,20 +228,20 @@ export function RevenueView() {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block space-y-1.5">
-                      <span className="block text-xs text-ink-soft">{t("admin.revenue.destinationAddress")}</span>
+                      <span className="block text-xs text-ink-soft">{t("admin.revenue.destinationAddress", "Destination address")}</span>
                       <Input
                         value={address}
                         onChange={(e) => {
                           setAddress(e.target.value);
                           setConfirming(false);
                         }}
-                        placeholder={t("admin.revenue.placeholder.address")}
+                        placeholder={t("admin.revenue.placeholder.address", "The wallet that receives the payout")}
                         spellCheck={false}
                         className="font-mono-tech text-xs"
                       />
                     </label>
                     <label className="block space-y-1.5">
-                      <span className="block text-xs text-ink-soft">{t("admin.revenue.amountUsdt")}</span>
+                      <span className="block text-xs text-ink-soft">{t("admin.revenue.amountUsdt", "Amount (USDT)")}</span>
                       <Input
                         value={amount}
                         onChange={(e) => {
@@ -249,32 +249,32 @@ export function RevenueView() {
                           setConfirming(false);
                         }}
                         inputMode="decimal"
-                        placeholder={rail ? t("admin.revenue.placeholder.minAmount", { n: formatAmount(rail.minimum) }) : "0.00"}
+                        placeholder={rail ? t("admin.revenue.placeholder.minAmount", "min {n}", { n: formatAmount(rail.minimum) }) : "0.00"}
                         className="tabular-nums"
                       />
                     </label>
                   </div>
 
                   <label className="block space-y-1.5">
-                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoOptional")}</span>
+                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoOptional", "Memo (optional)")}</span>
                     <Input
                       value={memo}
                       onChange={(e) => {
                         setMemo(e.target.value);
                         setConfirming(false);
                       }}
-                      placeholder={t("admin.revenue.placeholder.memo")}
+                      placeholder={t("admin.revenue.placeholder.memo", "Required by some rails to credit the destination")}
                       spellCheck={false}
                       className="font-mono-tech text-xs"
                     />
-                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoHint")}</span>
+                    <span className="block text-xs text-ink-soft">{t("admin.revenue.memoHint", "Part of what the owners are asked to approve, and covered by the request fingerprint — it cannot be changed afterwards.")}</span>
                   </label>
 
                   {amountProblem && <p className="text-xs text-accent-error">{amountProblem}</p>}
                   {!amountProblem && willQueue && (
                     // Reworded for the consilium: this describes what happens IF the owners
                     // approve, not what happens on submit. Nothing is queued by proposing.
-                    <p className="text-xs text-accent-warn">{t("admin.revenue.willQueueIfApproved", { instant: formatUsd(rail?.instant) })}</p>
+                    <p className="text-xs text-accent-warn">{t("admin.revenue.willQueueIfApproved", "Above the {instant} that ships immediately on this rail — if the owners approve it, the remainder is queued until the treasury is topped up.", { instant: formatUsd(rail?.instant) })}</p>
                   )}
 
                   {/* A second, deliberate click. The terms are restated because they are
@@ -291,7 +291,7 @@ export function RevenueView() {
                           The amount is the exact wire decimal, because it is the figure the
                           owners will be asked to authorize and the one the hash covers. */}
                       <p className="text-sm break-words">
-                        {t("admin.revenue.proposeSentence", {
+                        {t("admin.revenue.proposeSentence", "Propose paying {amount} on {network} to {address}?", {
                           amount: `${formatExactUsdt(amount.trim())} USDT`,
                           network: (rail?.network ?? "").toUpperCase(),
                           address: address.trim(),
@@ -299,24 +299,24 @@ export function RevenueView() {
                       </p>
                       {memo.trim() && (
                         <p className="text-sm break-words">
-                          {t("admin.revenue.proposeMemoLine", { memo: memo.trim() })}
+                          {t("admin.revenue.proposeMemoLine", "With memo: {memo}", { memo: memo.trim() })}
                         </p>
                       )}
-                      <p className="text-xs text-ink-soft">{t("admin.revenue.proposeNote")}</p>
+                      <p className="text-xs text-ink-soft">{t("admin.revenue.proposeNote", "The terms are fixed once proposed. Every owner is emailed exactly these, and they are checked again before any money moves — so changing anything means cancelling and starting over, and votes are not carried across.")}</p>
                       {/* i18n-max: 16 per verb — two `shrink-0` Buttons in a ≤400px panel. */}
                       <div className="flex gap-2">
                         <Button type="button" size="sm" disabled={busy !== null} onClick={submit}>
                           {busy === "request" ? <Loader2 className="size-4 animate-spin" /> : null}
-                          {t("admin.revenue.confirmPropose")}
+                          {t("admin.revenue.confirmPropose", "Propose payout")}
                         </Button>
                         <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={() => setConfirming(false)}>
-                          {t("ui.back")}
+                          {t("ui.back", "Back")}
                         </Button>
                       </div>
                     </div>
                   ) : (
                     <Button type="button" size="sm" disabled={!canSubmit} onClick={() => setConfirming(true)}>
-                      {t("admin.revenue.reviewPropose")}
+                      {t("admin.revenue.reviewPropose", "Review proposal")}
                     </Button>
                   )}
                 </>
@@ -327,7 +327,7 @@ export function RevenueView() {
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.payouts")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.revenue.payouts", "Payouts")}</p>
         <Card>
           <CardContent className="p-0">
             <Settled
@@ -345,8 +345,8 @@ export function RevenueView() {
                       <EmptyMedia variant="icon">
                         <Banknote />
                       </EmptyMedia>
-                      <EmptyTitle>{t("admin.revenue.noPayouts")}</EmptyTitle>
-                      <EmptyDescription>{t("admin.revenue.noPayoutsHintConsilium")}</EmptyDescription>
+                      <EmptyTitle>{t("admin.revenue.noPayouts", "No payouts yet")}</EmptyTitle>
+                      <EmptyDescription>{t("admin.revenue.noPayoutsHintConsilium", "Revenue the fund has earned stays on the ledger until the owners approve a payout. Approved payouts appear here once they execute.")}</EmptyDescription>
                     </EmptyHeader>
                   </Empty>
                 </div>
@@ -359,11 +359,11 @@ export function RevenueView() {
                       {/* i18n-max: 14 per header — the table scrolls inside `min-w-140`, so a
                           long header widens the scroll rather than clipping a cell. */}
                       <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                        <th className="px-5 py-3 font-medium">{t("ui.destination")}</th>
-                        <th className="px-5 py-3 font-medium">{t("ui.amount")}</th>
-                        <th className="px-5 py-3 font-medium">{t("admin.col.state")}</th>
-                        <th className="px-5 py-3 font-medium">{t("admin.col.transaction")}</th>
-                        <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions")}</th>
+                        <th className="px-5 py-3 font-medium">{t("ui.destination", "Destination")}</th>
+                        <th className="px-5 py-3 font-medium">{t("ui.amount", "Amount")}</th>
+                        <th className="px-5 py-3 font-medium">{t("admin.col.state", "State")}</th>
+                        <th className="px-5 py-3 font-medium">{t("admin.col.transaction", "Transaction")}</th>
+                        <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions", "Actions")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -377,7 +377,7 @@ export function RevenueView() {
             </Settled>
           </CardContent>
         </Card>
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.footnote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.footnote", "A payout runs the same saga as a user withdrawal, so it also appears on the Withdrawals queue for dispatch and settle. Only a still-queued payout can be cancelled — once processing, a broadcast may have landed and voiding it would double-pay.")}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -407,15 +407,15 @@ function ProposedReceipt({ consilium, onDismiss }: { consilium: Consilium; onDis
   return (
     <div className="space-y-3 rounded-lg border border-positive/40 bg-positive/10 p-4" role="status">
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-ink">{t("admin.revenue.proposedTitle")}</p>
+        <p className="text-sm font-semibold text-ink">{t("admin.revenue.proposedTitle", "Proposed — no money has moved")}</p>
         <p className="text-sm leading-relaxed text-ink">
-          {t("admin.revenue.proposedBody", { threshold, owners: consilium.owner_count ?? 0 })}
+          {t("admin.revenue.proposedBody", "{threshold} of the fund's {owners, plural, one {# owner} other {# owners}} must confirm this from their own mailbox, and each has been emailed a link. Nothing is paid out until enough of them answer.", { threshold, owners: consilium.owner_count ?? 0 })}
         </p>
       </div>
 
       <div className="space-y-1.5">
         <p className="text-sm font-medium tabular-nums text-ink">
-          {t("admin.revenue.proposedTally", { approvals, threshold })}
+          {t("admin.revenue.proposedTally", "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far", { approvals, threshold })}
         </p>
         {/* The sentence above states the tally; a second, unlabelled progressbar in the
             accessibility tree would only repeat it. */}
@@ -423,7 +423,7 @@ function ProposedReceipt({ consilium, onDismiss }: { consilium: Consilium; onDis
       </div>
 
       <p className="text-xs tabular-nums text-ink-soft">
-        {t("admin.revenue.proposedExpires", {
+        {t("admin.revenue.proposedExpires", "Expires {at} · {left}", {
           at: formatMoment(consilium.expires_at, locale),
           left: expiresIn(consilium.expires_at, t),
         })}
@@ -431,10 +431,10 @@ function ProposedReceipt({ consilium, onDismiss }: { consilium: Consilium; onDis
 
       <div className="flex flex-wrap gap-2">
         <Button asChild size="sm" variant="outline">
-          <Link href="/consilium">{t("admin.revenue.proposedOpenConsilium")}</Link>
+          <Link href="/consilium">{t("admin.revenue.proposedOpenConsilium", "Open the consilium")}</Link>
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
-          {t("ui.close")}
+          {t("ui.close", "Close")}
         </Button>
       </div>
     </div>
@@ -458,26 +458,26 @@ function RefusalNotice({ refusal, liftsAt }: { refusal: ConsiliumRefusal; liftsA
     refusal.kind === "mail-not-configured"
       ? {
           icon: <MailWarning className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
-          title: t("admin.revenue.refusal.mailTitle"),
-          body: t("admin.revenue.refusal.mailBody"),
+          title: t("admin.revenue.refusal.mailTitle", "Governance mail is not configured"),
+          body: t("admin.revenue.refusal.mailBody", "Owners receive their approval link by email, and no mailer is wired — so a proposal opened now could never be voted on and would simply expire. This has to be configured before the fund can pay itself out."),
         }
       : refusal.kind === "cooling-off"
         ? {
             icon: <Clock className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
-            title: t("admin.revenue.refusal.coolingTitle"),
+            title: t("admin.revenue.refusal.coolingTitle", "Payouts are paused while the roster settles"),
             // Without a parseable deadline the condition is still named — better than a
             // sentence with a hole in it where the time should be.
             body: liftsAt
-              ? t("admin.revenue.refusal.coolingBody", { at: formatMoment(liftsAt, locale) })
-              : t("admin.revenue.refusal.coolingBodyNoTime"),
+              ? t("admin.revenue.refusal.coolingBody", "The list of owners changed within the last 48 hours. Payouts resume at {at}. The pause is deliberate: it keeps a change of ownership and a payout as two separate, visible events rather than one motion.", { at: formatMoment(liftsAt, locale) })
+              : t("admin.revenue.refusal.coolingBodyNoTime", "The list of owners changed within the last 48 hours, and payouts stay paused until that period lifts. The pause is deliberate: it keeps a change of ownership and a payout as two separate, visible events rather than one motion."),
           }
         : {
             icon: <ShieldAlert className="mt-0.5 size-4 shrink-0 text-accent-warn" />,
-            title: t("admin.revenue.refusal.floorTitle"),
+            title: t("admin.revenue.refusal.floorTitle", "This fund cannot authorise a payout"),
             body:
               refusal.ownerCount === null
-                ? t("admin.revenue.refusal.floorBodyNoCount")
-                : t("admin.revenue.refusal.floorBody", { n: refusal.ownerCount }),
+                ? t("admin.revenue.refusal.floorBodyNoCount", "A payout needs more than half of the owners to agree, and this fund has too few owners for that bar to be met. Adding owners restores it.")
+                : t("admin.revenue.refusal.floorBody", "A payout needs more than half of the owners to agree, and with {n, plural, one {# owner} other {# owners}} that bar can never be met. Adding owners restores it.", { n: refusal.ownerCount }),
           };
 
   return (
@@ -524,7 +524,7 @@ function RailChip({ rail, selected, onSelect }: { rail: RevenueRail; selected: b
         <NetworkMark network={rail.network} className="size-3.5 shrink-0" />
         {railLabel(rail.network, t)}
       </span>
-      <span className="block text-xs tabular-nums text-ink-soft">{t("admin.revenue.instantSuffix", { amount: formatUsd(rail.instant) })}</span>
+      <span className="block text-xs tabular-nums text-ink-soft">{t("admin.revenue.instantSuffix", "{amount} instant", { amount: formatUsd(rail.instant) })}</span>
     </button>
   );
 }
@@ -557,10 +557,10 @@ function PayoutRow({ payout, busy, onCancel }: { payout: RevenuePayout; busy: bo
           {payout.state === "queued" ? (
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onCancel}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-              {t("ui.cancel")}
+              {t("ui.cancel", "Cancel")}
             </Button>
           ) : (
-            <span className="text-xs text-ink-soft">{open ? t("admin.revenue.inFlight") : "—"}</span>
+            <span className="text-xs text-ink-soft">{open ? t("admin.revenue.inFlight", "In flight") : "—"}</span>
 
           )}
         </div>

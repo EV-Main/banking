@@ -56,7 +56,7 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
         <>
           <Separator />
           <section className="flex flex-col gap-3 px-4 py-4">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.progress")}</h3>
+            <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.progress", "Progress")}</h3>
             {steps.map((step, i) => (
               <div key={i} className="flex items-center gap-2.5">
                 <span
@@ -75,7 +75,7 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
 
       <Separator />
       <section className="flex flex-col gap-2 px-4 py-4">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.details")}</h3>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-ink-soft">{t("ui.details", "Details")}</h3>
         {/* The label is fixed and the value wraps, not the other way round. A deposit
             reference is ~50 characters and a TON address 48; letting the value size the
             row pushed it straight through the panel's right edge and over the row above. */}
@@ -96,7 +96,7 @@ export function OperationDetail({ operation, title, onManage }: { operation: Ope
           <Separator />
           <div className="flex justify-end px-2 py-2">
             <Button asChild variant="ghost" size="sm">
-              <Link href={onManage}>{t("ui.manage")}</Link>
+              <Link href={onManage}>{t("ui.manage", "Manage")}</Link>
             </Button>
           </div>
         </>
@@ -117,35 +117,35 @@ interface Step {
 function progressFor(operation: Operation, t: Translate, locale: Locale): Step[] {
   const state = operation.state ?? "";
   const at = seconds(operation.created_at);
-  const requested: Step = { label: t("ops.step.requested"), meta: at > 0 ? `${dayLabel(at, t, locale)} ${timeLabel(at, locale)}` : "—", state: "done" };
+  const requested: Step = { label: t("ops.step.requested", "Requested"), meta: at > 0 ? `${dayLabel(at, t, locale)} ${timeLabel(at, locale)}` : "—", state: "done" };
 
   if (operation.kind === "withdrawal") {
     if (state === "cancelled" || state === "failed") {
-      return [requested, { label: t(state === "cancelled" ? "ops.step.wdCancelled" : "ops.step.wdFailed"), meta: t("ops.step.reservationVoided"), state: "done" }];
+      return [requested, { label: (state === "cancelled" ? t("ops.step.wdCancelled", "Cancelled — balance returned") : t("ops.step.wdFailed", "Failed — balance returned")), meta: t("ops.step.reservationVoided", "the reservation was voided"), state: "done" }];
     }
     return [
       requested,
       state === "queued"
-        ? { label: t("ops.step.awaitingRail"), meta: t("ops.step.awaitingRailMeta"), state: "active" }
-        : { label: t("ops.step.broadcast"), meta: t("ops.step.inFlight"), state: "done" },
+        ? { label: t("ops.step.awaitingRail", "Awaiting a liquid rail"), meta: t("ops.step.awaitingRailMeta", "ships as soon as the rail is topped up"), state: "active" }
+        : { label: t("ops.step.broadcast", "Broadcast to the network"), meta: t("ops.step.inFlight", "in flight"), state: "done" },
       state === "completed"
-        ? { label: t("ops.step.settledOnChain"), meta: t("ops.step.leftCustody"), state: "done" }
-        : { label: t("ops.step.settledOnChain"), meta: t("ops.step.waiting"), state: "todo" },
+        ? { label: t("ops.step.settledOnChain", "Settled on-chain"), meta: t("ops.step.leftCustody", "funds have left custody"), state: "done" }
+        : { label: t("ops.step.settledOnChain", "Settled on-chain"), meta: t("ops.step.waiting", "waiting"), state: "todo" },
     ];
   }
 
   if (operation.kind === "redemption") {
     if (state === "cancelled" || state === "failed") {
-      return [requested, { label: t(state === "cancelled" ? "ops.step.redCancelled" : "ops.step.redFailed"), meta: t("ops.step.burnVoided"), state: "done" }];
+      return [requested, { label: (state === "cancelled" ? t("ops.step.redCancelled", "Cancelled — units returned") : t("ops.step.redFailed", "Failed — units returned")), meta: t("ops.step.burnVoided", "the reserved burn was voided"), state: "done" }];
     }
     return [
       requested,
       state === "queued"
-        ? { label: t("ops.step.awaitingFund"), meta: t("ops.step.awaitingFundMeta"), state: "active" }
-        : { label: t("ops.step.pricedAtSettle"), meta: operation.nav ? t("ops.step.perUnit", { nav: formatUsdt(operation.nav) }) : "—", state: "done" },
+        ? { label: t("ops.step.awaitingFund", "Awaiting fund liquidity"), meta: t("ops.step.awaitingFundMeta", "priced at the NAV when it settles"), state: "active" }
+        : { label: t("ops.step.pricedAtSettle", "Priced at the settle NAV"), meta: operation.nav ? t("ops.step.perUnit", "{nav} per unit", { nav: formatUsdt(operation.nav) }) : "—", state: "done" },
       state === "completed"
-        ? { label: t("ops.step.cashPaidOut"), meta: t("ops.step.creditedToBalance"), state: "done" }
-        : { label: t("ops.step.cashPaidOut"), meta: t("ops.step.waiting"), state: "todo" },
+        ? { label: t("ops.step.cashPaidOut", "Cash paid out"), meta: t("ops.step.creditedToBalance", "credited to your balance"), state: "done" }
+        : { label: t("ops.step.cashPaidOut", "Cash paid out"), meta: t("ops.step.waiting", "waiting"), state: "todo" },
     ];
   }
 
@@ -155,26 +155,26 @@ function progressFor(operation: Operation, t: Translate, locale: Locale): Step[]
 function context(operation: Operation, at: number, t: Translate, locale: Locale): string {
   // `dayLabelInline` rather than `dayLabel(...).toLowerCase()` — see the note on it.
   const when = at > 0 ? `${dayLabelInline(at, t, locale)} ${timeLabel(at, locale)}` : "—";
-  if (operation.kind === "deposit" || operation.kind === "withdrawal") return t("ops.context.network", { network: networkLabel(operation.network), when });
-  return t("ops.context.fund", { when });
+  if (operation.kind === "deposit" || operation.kind === "withdrawal") return t("ops.context.network", "{network} · {when}", { network: networkLabel(operation.network), when });
+  return t("ops.context.fund", "Fund · {when}", { when });
 }
 
 function headline(operation: Operation, t: Translate): string {
   // An unsettled redemption has no cash figure at all, so the units it reserved are the
   // only true headline available.
-  if (!operation.amount) return t("dash.unitsAmount", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
+  if (!operation.amount) return t("dash.unitsAmount", "{n, plural, one {{units} unit} other {{units} units}}", { n: Number(operation.units ?? 0), units: formatUnits(operation.units) });
   const { direction } = kindMeta(operation.kind);
   const sign = direction === "in" ? "+" : direction === "out" ? "−" : "";
   return `${sign}${formatUsdt(operation.amount)} USDT`;
 }
 
 function subheadline(operation: Operation, t: Translate): string | null {
-  if (operation.kind === "withdrawal" && operation.net_amount) return t("ops.detail.netArrives", { amount: formatUsdt(operation.net_amount) });
-  if (operation.kind === "redemption" && !operation.amount) return t("ops.detail.pricedAtSettle");
+  if (operation.kind === "withdrawal" && operation.net_amount) return t("ops.detail.netArrives", "{amount} USDT arrives after the network fee", { amount: formatUsdt(operation.net_amount) });
+  if (operation.kind === "redemption" && !operation.amount) return t("ops.detail.pricedAtSettle", "Priced when the fund settles it");
   // A fee moves units between holders on the share ledger — no cash leaves the account and
   // NAV per unit does not move, so nobody else in the fund pays for it either.
   if (operation.kind === "fee") {
-    return t(operation.state === "partly_deferred" ? "ops.detail.feeDeferred" : "ops.detail.feeTaken");
+    return (operation.state === "partly_deferred" ? t("ops.detail.feeDeferred", "Taken in units — the rest is carried to the next charge") : t("ops.detail.feeTaken", "Taken in units, not from your wallet"));
   }
   return null;
 }
@@ -199,38 +199,38 @@ function detailsFor(operation: Operation, t: Translate): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [];
   switch (operation.kind) {
     case "deposit":
-      rows.push([t("ops.detail.amountCredited"), `${formatUsdt(operation.amount)} USDT`]);
-      rows.push([t("ui.network"), <NetworkRow key="network" network={operation.network} />]);
-      if (operation.tx_ref) rows.push([t("ops.detail.reference"), operation.tx_ref]);
+      rows.push([t("ops.detail.amountCredited", "Amount credited"), `${formatUsdt(operation.amount)} USDT`]);
+      rows.push([t("ui.network", "Network"), <NetworkRow key="network" network={operation.network} />]);
+      if (operation.tx_ref) rows.push([t("ops.detail.reference", "Reference"), operation.tx_ref]);
       break;
     case "withdrawal":
-      rows.push([t("ops.detail.amountDebited"), `${formatUsdt(operation.amount)} USDT`]);
-      if (operation.fee) rows.push([t("wallet.networkFee"), `${formatUsdt(operation.fee)} USDT`]);
-      if (operation.net_amount) rows.push([t("ops.detail.netSent"), `${formatUsdt(operation.net_amount)} USDT`]);
-      rows.push([t("ui.network"), <NetworkRow key="network" network={operation.network} />]);
-      if (operation.address) rows.push([t("ops.detail.toAddress"), operation.address]);
-      rows.push([t("ops.detail.reference"), operation.tx_ref || t("ops.detail.notYetBroadcast")]);
+      rows.push([t("ops.detail.amountDebited", "Amount debited"), `${formatUsdt(operation.amount)} USDT`]);
+      if (operation.fee) rows.push([t("wallet.networkFee", "Network fee"), `${formatUsdt(operation.fee)} USDT`]);
+      if (operation.net_amount) rows.push([t("ops.detail.netSent", "Net sent"), `${formatUsdt(operation.net_amount)} USDT`]);
+      rows.push([t("ui.network", "Network"), <NetworkRow key="network" network={operation.network} />]);
+      if (operation.address) rows.push([t("ops.detail.toAddress", "To address"), operation.address]);
+      rows.push([t("ops.detail.reference", "Reference"), operation.tx_ref || t("ops.detail.notYetBroadcast", "not yet broadcast")]);
       break;
     case "subscription":
-      rows.push([t("ops.detail.cashIn"), `${formatUsdt(operation.amount)} USDT`]);
-      rows.push([t("ops.detail.unitsMinted"), formatUnits(operation.units)]);
-      if (operation.nav) rows.push([t("ops.detail.pricePerUnit"), `${formatUsdt(operation.nav)} USDT`]);
+      rows.push([t("ops.detail.cashIn", "Cash in"), `${formatUsdt(operation.amount)} USDT`]);
+      rows.push([t("ops.detail.unitsMinted", "Units minted"), formatUnits(operation.units)]);
+      if (operation.nav) rows.push([t("ops.detail.pricePerUnit", "Price per unit"), `${formatUsdt(operation.nav)} USDT`]);
       break;
     case "redemption":
-      rows.push([t("ops.detail.unitsRedeemed"), formatUnits(operation.units)]);
-      rows.push([t("ops.detail.pricePerUnit"), operation.nav ? `${formatUsdt(operation.nav)} USDT` : t("ops.detail.setAtSettle")]);
-      rows.push([t("ops.detail.cashOut"), operation.amount ? `${formatUsdt(operation.amount)} USDT` : t("ops.detail.setAtSettle")]);
+      rows.push([t("ops.detail.unitsRedeemed", "Units redeemed"), formatUnits(operation.units)]);
+      rows.push([t("ops.detail.pricePerUnit", "Price per unit"), operation.nav ? `${formatUsdt(operation.nav)} USDT` : t("ops.detail.setAtSettle", "set at settle")]);
+      rows.push([t("ops.detail.cashOut", "Cash out"), operation.amount ? `${formatUsdt(operation.amount)} USDT` : t("ops.detail.setAtSettle", "set at settle")]);
       break;
     case "fee":
       // The legs first, because they are what the charge WAS; the units are how it was
       // taken. Both legs are listed even at zero here (unlike the timeline row, where
       // space is short) — on a detail panel an explicit "0.00 performance" is the answer
       // to "was I charged for the gain?", not noise.
-      rows.push([t("ops.detail.managementFee"), `${formatUsdt(operation.management)} USDT`]);
-      rows.push([t("ops.detail.performanceFee"), `${formatUsdt(operation.performance)} USDT`]);
-      rows.push([t("admin.fees.col.unitsTaken"), formatUnits(operation.units)]);
-      if (operation.nav) rows.push([t("ops.detail.pricePerUnit"), `${formatUsdt(operation.nav)} USDT`]);
-      rows.push([t("ops.detail.valueTaken"), `${formatUsdt(operation.amount)} USDT`]);
+      rows.push([t("ops.detail.managementFee", "Management fee"), `${formatUsdt(operation.management)} USDT`]);
+      rows.push([t("ops.detail.performanceFee", "Performance fee"), `${formatUsdt(operation.performance)} USDT`]);
+      rows.push([t("admin.fees.col.unitsTaken", "Units taken"), formatUnits(operation.units)]);
+      if (operation.nav) rows.push([t("ops.detail.pricePerUnit", "Price per unit"), `${formatUsdt(operation.nav)} USDT`]);
+      rows.push([t("ops.detail.valueTaken", "Value taken"), `${formatUsdt(operation.amount)} USDT`]);
       break;
     default:
       break;

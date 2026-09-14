@@ -63,7 +63,7 @@ export function ReadFailure({ title, body, onRetry, retrying = false, className 
         {/* i18n-max: 16 — the uikit Button is shrink-0. */}
         <Button type="button" variant="outline" disabled={retrying} onClick={onRetry}>
           <RefreshCw className={retrying ? "size-4 animate-spin" : "size-4"} />
-          {t("status.tryAgain")}
+          {t("status.tryAgain", "Try again")}
         </Button>
       </EmptyContent>
     </Empty>

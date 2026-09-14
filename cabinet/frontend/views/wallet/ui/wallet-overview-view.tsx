@@ -38,21 +38,21 @@ export function WalletOverviewView() {
 
   return (
     <WalletScreen
-      title={t("ui.wallet")}
-      subtitle={t("wallet.overviewSub")}
+      title={t("ui.wallet", "Wallet")}
+      subtitle={t("wallet.overviewSub", "One USDT balance · networks are deposit / withdrawal rails")}
       actions={
         <>
           <Link href="/wallet/deposit" className={cn(WALLET_CTA, "px-4 py-2.5 text-sm")}>
-            {t("ui.deposit")}
+            {t("ui.deposit", "Deposit")}
           </Link>
           <Link href="/wallet/withdraw" className={cn(WALLET_CTA_GHOST, "px-4 py-2.5 text-sm")}>
-            {t("ui.withdraw")}
+            {t("ui.withdraw", "Withdraw")}
           </Link>
           <Link href="/invest" className={cn(WALLET_CTA_GHOST, "px-4 py-2.5 text-sm")}>
-            {t("ui.allocate")}
+            {t("ui.allocate", "Allocate")}
           </Link>
           <Link href="/wallet/activity" className={cn(WALLET_CTA_GHOST, "px-4 py-2.5 text-sm")}>
-            {t("ui.activity")}
+            {t("ui.activity", "Activity")}
           </Link>
         </>
       }
@@ -61,7 +61,7 @@ export function WalletOverviewView() {
         <StaggerItem className={cn(WALLET_CARD, "flex gap-3 border-accent-error/50 p-4.5 lg:p-6")}>
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-accent-error" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-ink">{t("err.walletLoad")}</p>
+            <p className="text-sm font-semibold text-ink">{t("err.walletLoad", "Couldn't load your wallet")}</p>
             <p className="text-xs text-ink-soft">{error}</p>
           </div>
         </StaggerItem>
@@ -69,7 +69,7 @@ export function WalletOverviewView() {
 
       <StaggerItem className={cn(WALLET_CARD, "flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:px-7 lg:py-6")}>
         <div className="flex flex-col gap-2">
-          <FieldLabel className="tracking-wider">{t("wallet.totalBalance")}</FieldLabel>
+          <FieldLabel className="tracking-wider">{t("wallet.totalBalance", "TOTAL BALANCE")}</FieldLabel>
           <div className="flex items-baseline gap-2">
             {loading ? (
               <Skeleton className="h-9 w-44 lg:h-12 lg:w-64" />
@@ -80,38 +80,38 @@ export function WalletOverviewView() {
           </div>
           {/* `wallet.balance.model` is a section-type tip (a descriptor block, not an inline ⓘ),
               so it would break this row — the chips carry the inline tips instead. */}
-          <p className="hidden whitespace-nowrap text-sm text-ink-soft lg:block">{t("wallet.oneFungibleBalance", { amount: formatUsdt(balance?.total) })}</p>
+          <p className="hidden whitespace-nowrap text-sm text-ink-soft lg:block">{t("wallet.oneFungibleBalance", "≈ ${amount} · one fungible balance", { amount: formatUsdt(balance?.total) })}</p>
         </div>
         {/* Three equal columns at 390px leave ~76px for a label, which is why the short
             forms exist at all. i18n-max: 7 on every `label`; the `wideLabel` forms only
             render from `lg`, where the chips size to their content. */}
         <div className="grid grid-cols-3 gap-2.5 lg:flex lg:shrink-0">
-          <Chip label={t("wallet.chip.availShort")} wideLabel={t("wallet.chip.avail")} dot="bg-positive" value={balance?.available} loading={loading} tip="wallet.balance.available" />
-          <Chip label={t("wallet.chip.investShort")} wideLabel={t("wallet.chip.invest")} dot="bg-accent-warn" value={balance?.invested} loading={loading} tip="wallet.balance.invested" />
-          <Chip label={t("wallet.pendWd")} wideLabel={t("wallet.chip.pendingWd")} dot="bg-accent-debug" value={balance?.pending_withdrawal} loading={loading} tip="wallet.balance.pending-withdrawal" />
+          <Chip label={t("wallet.chip.availShort", "AVAIL")} wideLabel={t("wallet.chip.avail", "AVAILABLE")} dot="bg-positive" value={balance?.available} loading={loading} tip="wallet.balance.available" />
+          <Chip label={t("wallet.chip.investShort", "INVEST")} wideLabel={t("wallet.chip.invest", "INVESTED")} dot="bg-accent-warn" value={balance?.invested} loading={loading} tip="wallet.balance.invested" />
+          <Chip label={t("wallet.pendWd", "PEND WD")} wideLabel={t("wallet.chip.pendingWd", "PENDING WD")} dot="bg-accent-debug" value={balance?.pending_withdrawal} loading={loading} tip="wallet.balance.pending-withdrawal" />
         </div>
       </StaggerItem>
 
       {/* Three equal buttons across a 390px phone, ~113px each. i18n-max: 11 on all three. */}
       <StaggerItem className="grid grid-cols-3 gap-2 lg:hidden">
         <Link href="/wallet/deposit" className={cn(WALLET_CTA, "py-2.5 text-sm")}>
-          {t("ui.deposit")}
+          {t("ui.deposit", "Deposit")}
         </Link>
         <Link href="/wallet/withdraw" className={cn(WALLET_CTA_GHOST, "py-2.5 text-sm")}>
-          {t("ui.withdraw")}
+          {t("ui.withdraw", "Withdraw")}
         </Link>
         <Link href="/invest" className={cn(WALLET_CTA_GHOST, "py-2.5 text-sm")}>
-          {t("ui.allocate")}
+          {t("ui.allocate", "Allocate")}
         </Link>
       </StaggerItem>
 
       <StaggerItem className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-ink">{t("ui.networks")}</p>
+        <p className="text-sm font-semibold text-ink">{t("ui.networks", "Networks")}</p>
         {/* The Figma frames leave the activity screen with no entry point; this is it. */}
         <Link href="/wallet/activity" className="rounded-md text-xs text-accent-debug outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring lg:hidden">
-          {t("ui.activity")}
+          {t("ui.activity", "Activity")}
         </Link>
-        <p className="hidden text-xs text-ink-soft lg:block">{t("wallet.railsCaption")}</p>
+        <p className="hidden text-xs text-ink-soft lg:block">{t("wallet.railsCaption", "deposit & withdrawal rails")}</p>
       </StaggerItem>
 
       {/* One item for all three branches: the rails are a single section of this screen
@@ -125,7 +125,7 @@ export function WalletOverviewView() {
             <Skeleton className="hidden h-31 rounded-xl xl:block" />
           </div>
         ) : rails.length === 0 ? (
-          <p className="text-sm text-ink-soft">{t("wallet.noRails")}</p>
+          <p className="text-sm text-ink-soft">{t("wallet.noRails", "No deposit or withdrawal rails are available right now — check back soon.")}</p>
         ) : (
           <div className="grid gap-3.5 lg:grid-cols-2 lg:gap-5 xl:grid-cols-3">
             {rails.map((network) => (
@@ -167,15 +167,15 @@ function RailCard({ network, canDeposit, canWithdraw }: { network: string; canDe
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-ink">{rail.label}</p>
-          <p className="truncate text-xs text-ink-soft">{t(rail.chainKey)}</p>
+          <p className="truncate text-xs text-ink-soft">{rail.chain(t)}</p>
         </div>
       </div>
       <div className="flex gap-2">
         <RailAction href={`/wallet/deposit?network=${network}`} enabled={canDeposit} className={WALLET_CTA}>
-          {t("ui.deposit")}
+          {t("ui.deposit", "Deposit")}
         </RailAction>
         <RailAction href={`/wallet/withdraw?network=${network}`} enabled={canWithdraw} className={WALLET_CTA_GHOST}>
-          {t("ui.withdraw")}
+          {t("ui.withdraw", "Withdraw")}
         </RailAction>
       </div>
     </div>
@@ -188,7 +188,7 @@ function RailAction({ href, enabled, className, children }: { href: `/${string}`
   const t = useT();
   if (!enabled) {
     return (
-      <span aria-disabled className={cn(className, "flex-1 cursor-not-allowed py-2 text-xs opacity-40")} title={t("wallet.railActionUnavailable", { action: children })}>
+      <span aria-disabled className={cn(className, "flex-1 cursor-not-allowed py-2 text-xs opacity-40")} title={t("wallet.railActionUnavailable", "{action} is not available on this rail yet", { action: children })}>
         {children}
       </span>
     );

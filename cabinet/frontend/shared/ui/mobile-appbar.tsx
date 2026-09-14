@@ -42,12 +42,12 @@ export function MobileAppBar({
     // has no positioned descendants to lose either.
     <Reveal as="header" className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-secondary px-5 pb-3.5 pt-4 lg:hidden">
       {backHref ? (
-        <Link href={backHref} aria-label={t("ui.back")} className={cn("-ml-1 flex size-6 shrink-0 items-center justify-center text-ink", BACK_FOCUS)}>
+        <Link href={backHref} aria-label={t("ui.back", "Back")} className={cn("-ml-1 flex size-6 shrink-0 items-center justify-center text-ink", BACK_FOCUS)}>
           <ChevronLeft className="size-6" />
         </Link>
       ) : (
         onBack && (
-          <button type="button" onClick={onBack} aria-label={t("ui.back")} className={cn("-ml-1 flex size-6 shrink-0 items-center justify-center text-ink", BACK_FOCUS)}>
+          <button type="button" onClick={onBack} aria-label={t("ui.back", "Back")} className={cn("-ml-1 flex size-6 shrink-0 items-center justify-center text-ink", BACK_FOCUS)}>
             <ChevronLeft className="size-6" />
           </button>
         )

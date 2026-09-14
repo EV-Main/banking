@@ -17,15 +17,15 @@ export async function LoggedOutView() {
         <Logo className="mx-auto h-8 w-auto text-ink" />
 
         <div className="space-y-1">
-          <h1 className="text-2xl">{t("auth.signedOut")}</h1>
-          <p className="text-sm text-ink-soft">{t("auth.signedOutSub")}</p>
+          <h1 className="text-2xl">{t("auth.signedOut", "Signed out")}</h1>
+          <p className="text-sm text-ink-soft">{t("auth.signedOutSub", "You've been signed out of your cabinet.")}</p>
         </div>
 
         <Link
           href="/login"
           className="flex w-full items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {t("auth.signInAgain")}
+          {t("auth.signInAgain", "Sign in again")}
         </Link>
       </div>
     </div>

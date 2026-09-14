@@ -62,18 +62,18 @@ export function WithdrawalsView() {
 
   return (
     <AdminScreen className="space-y-8">
-      <AdminHeader eyebrow={t("admin.eyebrow.administer")} title={t("nav.withdrawals")} subtitle={t("admin.withdrawals.subtitle")} />
+      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.withdrawals", "Withdrawals")} subtitle={t("admin.withdrawals.subtitle", "Dispatch, settle, or fail withdrawals — investors' and the fund's own payouts")} />
 
       {error && <ResourceError message={error} />}
 
       <StaggerItem as="section" className="space-y-3">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-ink-soft">
-          {t("admin.withdrawals.awaitingAction")}
+          {t("admin.withdrawals.awaitingAction", "Awaiting action")}
           {/* The count pill lands on the same step as the label it trails, so its fill and
               accent colour — not a smaller size — are what set it apart. */}
           {queue && (
             <span className="whitespace-nowrap rounded-full bg-accent-warn/15 px-2 py-0.5 text-xs font-semibold text-accent-warn">
-              {t("admin.withdrawals.openCount", { n: queue.length })}
+              {t("admin.withdrawals.openCount", "{n, plural, one {# open} other {# open}}", { n: queue.length })}
             </span>
           )}
         </p>
@@ -88,34 +88,34 @@ export function WithdrawalsView() {
               }
             >
               {!queue ? null : queue.length === 0 ? (
-                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.withdrawals.empty")}</p>
+                <p className="p-8 text-center text-sm text-ink-soft">{t("admin.withdrawals.empty", "No withdrawals are awaiting action.")}</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     {/* i18n-max: 14 per header — auto-layout table with no scroll wrapper;
                         the address cell is the one that gives width back. */}
                     <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-ink-soft">
-                      <th className="px-5 py-3 font-medium">{t("admin.col.user")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.col.user", "User")}</th>
                       <th className="px-5 py-3 font-medium">
                         <span className="flex items-center gap-1.5">
-                          {t("ui.destination")}
+                          {t("ui.destination", "Destination")}
                           <TipAnchor anchor="admin.withdrawals.destination" />
                         </span>
                       </th>
                       <th className="px-5 py-3 font-medium">
                         <span className="flex items-center gap-1.5">
-                          {t("admin.withdrawals.col.grossNet")}
+                          {t("admin.withdrawals.col.grossNet", "Gross / net")}
                           <TipAnchor anchor="admin.withdrawals.gross-net" />
                         </span>
                       </th>
                       <th className="px-5 py-3 font-medium">
                         <span className="flex items-center gap-1.5">
-                          {t("admin.col.state")}
+                          {t("admin.col.state", "State")}
                           <TipAnchor anchor="admin.withdrawals.state" />
                         </span>
                       </th>
-                      <th className="px-5 py-3 font-medium">{t("admin.col.age")}</th>
-                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions")}</th>
+                      <th className="px-5 py-3 font-medium">{t("admin.col.age", "Age")}</th>
+                      <th className="px-5 py-3 text-right font-medium">{t("admin.col.actions", "Actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -145,7 +145,7 @@ export function WithdrawalsView() {
             </Settled>
           </CardContent>
         </Card>
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.withdrawals.footnote")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.withdrawals.footnote", "Dispatch broadcasts a queued withdrawal once its rail has liquidity. Settle records the mined transaction and releases the reservation. Fail voids and refunds — ONLY safe when nothing reached the chain; the hub refuses it while a broadcast record exists.")}</p>
       </StaggerItem>
     </AdminScreen>
   );
@@ -186,7 +186,7 @@ function WithdrawalRow({
               earnings out. Naming that beats rendering a blank User cell, and it tells
               the operator whose money the dispatch/settle below is about to move. */}
           {item.source === "revenue" ? (
-            <p className="font-medium text-positive">{t("nav.revenue")}</p>
+            <p className="font-medium text-positive">{t("nav.revenue", "Fund revenue")}</p>
           ) : (
             <p className="font-medium">{item.email || item.user_id.slice(0, 8)}</p>
           )}
@@ -208,7 +208,7 @@ function WithdrawalRow({
         </td>
         <td className="px-5 py-3 tabular-nums">
           <p>{formatUsd(item.amount)}</p>
-          <p className="text-xs text-ink-soft">{t("admin.withdrawals.netSuffix", { amount: formatUsd(item.net_amount) })}</p>
+          <p className="text-xs text-ink-soft">{t("admin.withdrawals.netSuffix", "{amount} net", { amount: formatUsd(item.net_amount) })}</p>
         </td>
         <td className="px-5 py-3">
           <span className={queued ? "text-accent-warn" : "text-positive"}>{stateLabel(item.state, t)}</span>
@@ -220,12 +220,12 @@ function WithdrawalRow({
             {queued ? (
               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onDispatch}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-                {t("admin.dispatch")}
+                {t("admin.dispatch", "Dispatch")}
               </Button>
             ) : (
               <>
                 <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onOpen({ id: item.withdrawal_id, kind: "settle" })}>
-                  {t("admin.settle")}
+                  {t("admin.settle", "Settle")}
                 </Button>
                 <Button
                   type="button"
@@ -235,7 +235,7 @@ function WithdrawalRow({
                   disabled={busy}
                   onClick={() => onOpen({ id: item.withdrawal_id, kind: "fail" })}
                 >
-                  {t("admin.fail")}
+                  {t("admin.fail", "Fail")}
                 </Button>
               </>
             )}
@@ -250,23 +250,23 @@ function WithdrawalRow({
                 <Input
                   value={txRef}
                   onChange={(e) => onTxRef(e.target.value)}
-                  placeholder={t("admin.withdrawals.placeholder.txHash")}
+                  placeholder={t("admin.withdrawals.placeholder.txHash", "Mined transaction hash (0x…)")}
                   spellCheck={false}
                   className="max-w-xl font-mono-tech text-xs"
                 />
                 <TipAnchor anchor="admin.withdrawals.settle.tx-hash" />
                 <Button type="button" size="sm" disabled={busy || !txRef.trim()} onClick={onSettle}>
                   {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-                  {t("admin.withdrawals.confirmSettle")}
+                  {t("admin.withdrawals.confirmSettle", "Confirm settle")}
                 </Button>
               </div>
             ) : (
               <div className="space-y-2">
                 <p className="flex items-center gap-2 text-xs text-accent-error">
-                  <TriangleAlert className="size-4" /> {t("admin.withdrawals.failWarning")}
+                  <TriangleAlert className="size-4" /> {t("admin.withdrawals.failWarning", "Failing refunds the user. If the broadcast reached the chain this would double-pay — the hub refuses while a broadcast record exists, but verify on-chain first.")}
                 </p>
                 <div className="flex items-center gap-3">
-                  <Input value={reason} onChange={(e) => onReason(e.target.value)} placeholder={t("admin.withdrawals.placeholder.reason")} className="max-w-xl text-xs" />
+                  <Input value={reason} onChange={(e) => onReason(e.target.value)} placeholder={t("admin.withdrawals.placeholder.reason", "Reason (audit note, optional)")} className="max-w-xl text-xs" />
                   <Button
                     type="button"
                     size="sm"
@@ -276,7 +276,7 @@ function WithdrawalRow({
                     onClick={onFail}
                   >
                     {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-                    {t("admin.withdrawals.confirmFail")}
+                    {t("admin.withdrawals.confirmFail", "Confirm fail")}
                   </Button>
 
                 </div>

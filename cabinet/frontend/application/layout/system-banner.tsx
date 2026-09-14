@@ -48,8 +48,8 @@ export function SystemBanner() {
 
   return (
     <div className="space-y-2 px-8 pt-4">
-      {platform.maintenance_mode && <AmberStrip>{t("sys.maintenance")}</AmberStrip>}
-      {platform.read_only && <AmberStrip>{t("sys.readOnly")}</AmberStrip>}
+      {platform.maintenance_mode && <AmberStrip>{t("sys.maintenance", "Scheduled maintenance — some actions may be briefly unavailable.")}</AmberStrip>}
+      {platform.read_only && <AmberStrip>{t("sys.readOnly", "Withdrawals and investments are temporarily paused (read-only mode). Balances are unaffected.")}</AmberStrip>}
       {showAnnouncement && (
         <div className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-2.5 text-sm">
           <div className="min-w-0 flex-1">
@@ -58,7 +58,7 @@ export function SystemBanner() {
           </div>
           <button
             type="button"
-            aria-label={t("sys.a11y.dismiss")}
+            aria-label={t("sys.a11y.dismiss", "Dismiss announcement")}
             onClick={dismiss}
             className="shrink-0 rounded-md text-ink-soft outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
           >

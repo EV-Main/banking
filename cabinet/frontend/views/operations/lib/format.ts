@@ -2,10 +2,11 @@
 // one money module (`@/shared/lib/money`); everything here is the mapping from a wire
 // `kind`/`state` onto the badge, tone and wording the Figma `operations` screens use.
 //
-// The wording is carried as *catalogue keys*, not as English: this is a plain module and
-// cannot call `useT()`, so a label resolves at the render site (`kindLabel`, `stateLabel`)
-// or takes the translator as an argument. Tone, direction and the settled/failed sets stay
-// literal — they are logic, not copy, and no locale changes what a withdrawal is.
+// The wording is carried as thunks over the translator: this is a plain module and cannot
+// call `useT()`, so a label resolves at the render site (`kindLabel`, `stateLabel`) with
+// the caller's `t`. The English sits beside its key here — a bare key would be invisible
+// to `evinvest-i18n-extract`. Tone, direction and the settled/failed sets stay literal —
+// they are logic, not copy, and no locale changes what a withdrawal is.
 
 import { ArrowDownLeft, ArrowUpRight, Ban, Check, Clock, type LucideIcon, Minus, Percent, Plus, RefreshCw, TriangleAlert, X } from "lucide-react";
 
@@ -39,8 +40,8 @@ export interface KindMeta {
    *  the rail marks use. The direction the arrow points is the direction of the money, so
    *  the badge stops depending on the reader knowing what `IN` and `BUY` were shorthand for. */
   icon: LucideIcon | null;
-  /** Catalogue key for the kind's name, or `null` for an unrecognised kind. */
-  labelKey: string | null;
+  /** The kind's name in the reader's language, or `null` for an unrecognised kind. */
+  label: ((t: Translate) => string) | null;
   direction: Direction;
   /** Badge tint. Semantic tokens only — these are the accent tiers, not raw colour. */
   tone: string;
@@ -51,14 +52,14 @@ const KINDS: Record<string, KindMeta> = {
   // word is a noun ("a deposit"), while `ui.deposit` is the wallet button, where it is a
   // verb ("deposit funds"). English spells both "Deposit" and hid the difference; German
   // and Russian each have to pick one, and both translators raised it independently.
-  deposit: { icon: ArrowDownLeft, labelKey: "ops.kind.deposit", direction: "in", tone: "bg-positive/15 text-positive" },
-  withdrawal: { icon: ArrowUpRight, labelKey: "ops.kind.withdrawal", direction: "out", tone: "bg-accent-error/15 text-accent-error" },
-  subscription: { icon: Plus, labelKey: "ops.kind.subscription", direction: "move", tone: "bg-accent-debug/15 text-accent-debug" },
-  redemption: { icon: Minus, labelKey: "ops.kind.redemption", direction: "move", tone: "bg-accent-warn/15 text-accent-warn" },
-  fee: { icon: Percent, labelKey: "ops.kind.fee", direction: "out", tone: "bg-accent-error/15 text-accent-error" },
+  deposit: { icon: ArrowDownLeft, label: t => t("ops.kind.deposit", "Deposit"), direction: "in", tone: "bg-positive/15 text-positive" },
+  withdrawal: { icon: ArrowUpRight, label: t => t("ops.kind.withdrawal", "Withdrawal"), direction: "out", tone: "bg-accent-error/15 text-accent-error" },
+  subscription: { icon: Plus, label: t => t("ops.kind.subscription", "Subscription"), direction: "move", tone: "bg-accent-debug/15 text-accent-debug" },
+  redemption: { icon: Minus, label: t => t("ops.kind.redemption", "Redemption"), direction: "move", tone: "bg-accent-warn/15 text-accent-warn" },
+  fee: { icon: Percent, label: t => t("ops.kind.fee", "Fee"), direction: "out", tone: "bg-accent-error/15 text-accent-error" },
 };
 
-const UNKNOWN_KIND: KindMeta = { icon: null, labelKey: null, direction: "move", tone: "bg-muted text-ink-soft" };
+const UNKNOWN_KIND: KindMeta = { icon: null, label: null, direction: "move", tone: "bg-muted text-ink-soft" };
 
 /** An unrecognised kind renders neutrally rather than disappearing — a new hub kind is
  *  visible as an unstyled row instead of a silent gap in someone's history. */
@@ -81,8 +82,7 @@ export function kindBadge(kind: string | undefined): string {
  *  one, and a generic noun only when the hub sent no kind at all. */
 export function kindLabel(kind: string | undefined, t: Translate): string {
   const id = kind ?? "";
-  const key = KINDS[id]?.labelKey;
-  return key ? t(key) : id || t("ops.kind.unknown");
+  return KINDS[id]?.label?.(t) ?? (id || t("ops.kind.unknown", "Operation"));
 }
 
 /** The amount colour that goes with a direction. Neutral moves keep the body colour. */
@@ -103,19 +103,19 @@ export function isPending(operation: Operation): boolean {
   return !SETTLED.has(state) && !FAILED.has(state);
 }
 
-// Every lifecycle state the hub sends, as a catalogue key. It used to be the wire
-// identifier with its underscores swapped for spaces, leaned on by a `capitalize` class —
-// English-shaped twice over: `capitalize` left "Partly Deferred" on a compound state, and
-// a translated label is not a lowercase identifier waiting to be title-cased.
-const STATES: Record<string, string> = {
-  queued: "ops.state.queued",
-  processing: "ops.state.processing",
-  completed: "ops.state.completed",
-  credited: "ops.state.credited",
-  charged: "ops.state.charged",
-  partly_deferred: "ops.state.partlyDeferred",
-  failed: "ops.state.failed",
-  cancelled: "ops.state.cancelled",
+// Every lifecycle state the hub sends, with its English beside its key. It used to be the
+// wire identifier with its underscores swapped for spaces, leaned on by a `capitalize`
+// class — English-shaped twice over: `capitalize` left "Partly Deferred" on a compound
+// state, and a translated label is not a lowercase identifier waiting to be title-cased.
+const STATES: Record<string, (t: Translate) => string> = {
+  queued: t => t("ops.state.queued", "Queued"),
+  processing: t => t("ops.state.processing", "Processing"),
+  completed: t => t("ops.state.completed", "Completed"),
+  credited: t => t("ops.state.credited", "Credited"),
+  charged: t => t("ops.state.charged", "Charged"),
+  partly_deferred: t => t("ops.state.partlyDeferred", "Partly deferred"),
+  failed: t => t("ops.state.failed", "Failed"),
+  cancelled: t => t("ops.state.cancelled", "Cancelled"),
 };
 
 /** A lifecycle state as a human reads it. An unmapped state falls back to the wire
@@ -124,8 +124,7 @@ const STATES: Record<string, string> = {
  *  i18n-max: 12 — badge in a `shrink-0` column; a longer label eats the row title. */
 export function stateLabel(state: string | undefined, t: Translate): string {
   const id = state ?? "";
-  const key = STATES[id];
-  return key ? t(key) : id.replace(/_/g, " ");
+  return STATES[id]?.(t) ?? id.replace(/_/g, " ");
 }
 
 /** Badge tint for a lifecycle state, matching the wallet activity screen's vocabulary. */
@@ -201,10 +200,10 @@ function calendarDate(unixSeconds: number, locale: Locale): string {
 
 /** The date heading a run of rows sits under: `Today`, `Yesterday`, or `12 Mar 2026`. */
 export function dayLabel(unixSeconds: number, t: Translate, locale: Locale, now: Date = new Date()): string {
-  if (!unixSeconds) return t("ops.day.undated");
+  if (!unixSeconds) return t("ops.day.undated", "Undated");
   const days = daysAgo(unixSeconds, now);
-  if (days === 0) return t("ops.day.today");
-  if (days === 1) return t("ops.day.yesterday");
+  if (days === 0) return t("ops.day.today", "Today");
+  if (days === 1) return t("ops.day.yesterday", "Yesterday");
   return calendarDate(unixSeconds, locale);
 }
 
@@ -215,10 +214,10 @@ export function dayLabel(unixSeconds: number, t: Translate, locale: Locale, now:
  *  mangled the dated case into "12 mar 2026" — a calendar date is not a word, so it is
  *  left exactly as the locale formatted it. */
 export function dayLabelInline(unixSeconds: number, t: Translate, locale: Locale, now: Date = new Date()): string {
-  if (!unixSeconds) return t("ops.day.undated");
+  if (!unixSeconds) return t("ops.day.undated", "Undated");
   const days = daysAgo(unixSeconds, now);
-  if (days === 0) return t("ops.day.todayInline");
-  if (days === 1) return t("ops.day.yesterdayInline");
+  if (days === 0) return t("ops.day.todayInline", "today");
+  if (days === 1) return t("ops.day.yesterdayInline", "yesterday");
   return calendarDate(unixSeconds, locale);
 }
 

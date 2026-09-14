@@ -116,7 +116,7 @@ export function CodeField({
   const t = useT();
   return (
     <Field>
-      <FieldLabel htmlFor={CODE_FIELD_ID}>{t("approval.codeLabel")}</FieldLabel>
+      <FieldLabel htmlFor={CODE_FIELD_ID}>{t("approval.codeLabel", "Code from your email")}</FieldLabel>
       <Input
         id={CODE_FIELD_ID}
         value={value}
@@ -138,11 +138,11 @@ export function CodeField({
         // importantly, the burned-an-attempt count) is announced with the field rather
         // than being visible only to people who can see it.
         aria-describedby={attemptsRemaining === null ? CODE_HINT_ID : CODE_ERROR_ID}
-        placeholder={t("approval.codePlaceholder")}
+        placeholder={t("approval.codePlaceholder", "e.g. K3M9XR2Q7T")}
         className="font-mono-tech text-base uppercase tracking-widest tabular-nums"
       />
       {attemptsRemaining === null ? (
-        <FieldDescription id={CODE_HINT_ID}>{t("approval.codeHint")}</FieldDescription>
+        <FieldDescription id={CODE_HINT_ID}>{t("approval.codeHint", "Ten characters, printed in the message that brought you here. It is what tells us a person opened this, and not an automatic link checker.")}</FieldDescription>
       ) : (
         // The count is the server's, read back from the authoritative summary — never a
         // number this page decremented for itself. The attempt is recorded before the
@@ -151,7 +151,7 @@ export function CodeField({
         // `role="alert"` because losing an attempt is news: four wrong codes and the link
         // burns, and a reader who cannot see the field turning red gets no other warning.
         <FieldError id={CODE_ERROR_ID} role="alert" className="tabular-nums">
-          {t("approval.codeWrong", { n: attemptsRemaining })}
+          {t("approval.codeWrong", "That code didn't match. {n, plural, one {# attempt remains} other {# attempts remain}} before this link closes for good.", { n: attemptsRemaining })}
         </FieldError>
       )}
     </Field>
@@ -217,8 +217,8 @@ export function ApprovalUnavailable() {
   return (
     <ApprovalOutcome
       icon={<Link2Off />}
-      title={t("approval.gone.title")}
-      description={t("approval.gone.body")}
+      title={t("approval.gone.title", "This link can no longer be used")}
+      description={t("approval.gone.body", "Approval links work once and expire after 72 hours. This one may have been used already, run out of time, or been closed — which of those it was cannot be told from here. Ask whoever opened the request to send a new one.")}
     />
   );
 }
@@ -235,8 +235,8 @@ export function ApprovalExpired() {
   return (
     <ApprovalOutcome
       icon={<Clock />}
-      title={t("approval.expired.title")}
-      description={t("approval.expiredNote")}
+      title={t("approval.expired.title", "The deadline for this request has passed")}
+      description={t("approval.expiredNote", "The deadline for this request has passed, so it can no longer be answered. Nothing was decided.")}
     />
   );
 }
@@ -248,8 +248,8 @@ export function ApprovalBurned() {
     <ApprovalOutcome
       icon={<ShieldX />}
       tone="text-accent-error"
-      title={t("approval.burned.title")}
-      description={t("approval.burned.body")}
+      title={t("approval.burned.title", "This link has been closed")}
+      description={t("approval.burned.body", "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.")}
     />
   );
 }
@@ -278,10 +278,10 @@ export function ApprovalSkeleton() {
 export function ApprovalUnreachable({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
   const t = useT();
   return (
-    <ApprovalOutcome icon={<Unplug />} title={t("approval.loadFailed")} description={t("approval.loadFailedHint")}>
+    <ApprovalOutcome icon={<Unplug />} title={t("approval.loadFailed", "We couldn't load this request")} description={t("approval.loadFailedHint", "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.")}>
       <Button variant="outline" onClick={onRetry} disabled={retrying}>
         {retrying && <Loader2 className="size-4 animate-spin" />}
-        {t("status.tryAgain")}
+        {t("status.tryAgain", "Try again")}
       </Button>
     </ApprovalOutcome>
   );
@@ -298,10 +298,10 @@ export function ApprovalUnreachable({ onRetry, retrying }: { onRetry: () => void
 export function ApprovalUnrenderable({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
   const t = useT();
   return (
-    <ApprovalOutcome icon={<Unplug />} title={t("approval.unavailableTitle")} description={t("approval.unavailableBody")}>
+    <ApprovalOutcome icon={<Unplug />} title={t("approval.unavailableTitle", "We can't show this request")} description={t("approval.unavailableBody", "The terms of this payout didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.")}>
       <Button variant="outline" onClick={onRetry} disabled={retrying}>
         {retrying && <Loader2 className="size-4 animate-spin" />}
-        {t("status.tryAgain")}
+        {t("status.tryAgain", "Try again")}
       </Button>
     </ApprovalOutcome>
   );

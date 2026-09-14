@@ -22,6 +22,8 @@
 // keeper picks the same answer up and moves to /login). An unreachable session endpoint
 // is left as an ordinary failure, so a blip never bounces anyone out of the cabinet.
 
+import type { Translate } from "@evinvest/i18n";
+
 import { apiPath } from "@/shared/config/base-path";
 import { csrfHeader } from "@/shared/lib/csrf-client";
 import { cachedSession, refreshIfStale, refreshSession, sessionGeneration } from "@/shared/lib/session";
@@ -75,11 +77,41 @@ export class RequestError extends Error {
  * locale at paint time. Anything that is not one of our errors — a thrown string,
  * a bug — degrades to the generic key rather than leaking a stack trace into the UI.
  */
-export function errorMessage(error: unknown, t: (key: string) => string): string {
-  if (error instanceof SessionExpiredError) return t(error.code);
-  if (error instanceof RequestError) return error.code ? t(error.code) : error.message;
-  return t("err.requestFailed");
+export function errorMessage(error: unknown, t: Translate): string {
+  const code = error instanceof SessionExpiredError || error instanceof RequestError ? error.code : null;
+  const render = code === null || code === undefined ? undefined : WIRE_ERRORS[code];
+  if (render !== undefined) return render(t);
+  // A code this build has no sentence for falls back to the English the thrower fixed at
+  // request time, then to the generic line — the same two steps as before, minus the
+  // third that used to print the code itself on screen.
+  if (error instanceof RequestError && error.message) return error.message;
+  return t("err.requestFailed", "Something went wrong on our side. Please try again.");
 }
+
+// Every code the BFF can name, with its English. A wire code is data, so nothing at a
+// call site could carry these sentences — which is exactly why they need writing out
+// somewhere the extractor reads, or they are never handed to a translator.
+const WIRE_ERRORS: Record<string, (t: Translate) => string> = {
+  "err.authNotConfigured": t => t("err.authNotConfigured", "Sign-in is unavailable right now. Please try again shortly."),
+  "err.csrf": t => t("err.csrf", "This page went stale. Reload it and try again."),
+  "err.feePolicySave": t => t("err.feePolicySave", "Could not save these terms."),
+  "err.feeSettle": t => t("err.feeSettle", "Could not settle these units."),
+  "err.forbidden": t => t("err.forbidden", "You don't have access to this."),
+  "err.fundRefresh": t => t("err.fundRefresh", "Couldn't refresh this fund"),
+  "err.fundServiceRequired": t => t("err.fundServiceRequired", "Select a fund to continue."),
+  "err.kycStartFailed": t => t("err.kycStartFailed", "We couldn't start verification. Please try again."),
+  "err.network": t => t("err.network", "Can't reach the server. Check your connection and try again."),
+  "err.notFound": t => t("err.notFound", "Not found."),
+  "err.opsLoad": t => t("err.opsLoad", "Couldn't load your operations"),
+  "err.positionsLoad": t => t("err.positionsLoad", "Couldn't load your positions"),
+  "err.rateLimited": t => t("err.rateLimited", "Too many requests — give it a moment and try again."),
+  "err.requestFailed": t => t("err.requestFailed", "Something went wrong on our side. Please try again."),
+  "err.serverUnavailable": t => t("err.serverUnavailable", "The service is temporarily unavailable. Please try again."),
+  "err.sessionExpired": t => t("err.sessionExpired", "Your session has ended. Sign in again to continue."),
+  "err.unauthenticated": t => t("err.unauthenticated", "We couldn't confirm your session. Reload the page or sign in again."),
+  "err.unparkDeclined": t => t("err.unparkDeclined", "The hub declined the unpark."),
+  "err.walletLoad": t => t("err.walletLoad", "Couldn't load your wallet"),
+};
 
 type Method = "GET" | "POST" | "PATCH" | "DELETE";
 

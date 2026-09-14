@@ -23,10 +23,10 @@ export function ago(unixSecs: string | undefined, t: Translate): string {
   const stamped = Number(unixSecs ?? "0");
   if (!stamped) return "—";
   const secs = Math.max(0, Math.floor(Date.now() / 1000) - stamped);
-  if (secs < 60) return t("admin.ago.seconds", { n: secs });
-  if (secs < 3600) return t("admin.ago.minutes", { n: Math.floor(secs / 60) });
-  if (secs < 86_400) return t("admin.ago.hours", { n: Math.floor(secs / 3600) });
-  return t("admin.ago.days", { n: Math.floor(secs / 86_400) });
+  if (secs < 60) return t("admin.ago.seconds", "{n, plural, one {#s ago} other {#s ago}}", { n: secs });
+  if (secs < 3600) return t("admin.ago.minutes", "{n, plural, one {#m ago} other {#m ago}}", { n: Math.floor(secs / 60) });
+  if (secs < 86_400) return t("admin.ago.hours", "{n, plural, one {#h ago} other {#h ago}}", { n: Math.floor(secs / 3600) });
+  return t("admin.ago.days", "{n, plural, one {#d ago} other {#d ago}}", { n: Math.floor(secs / 86_400) });
 }
 
 /**
@@ -73,46 +73,49 @@ export type KycLevel = (typeof KYC_LEVELS)[number];
 // Wire vocabularies that also reach the screen as labels. The wire value is what goes
 // back to the API and never changes; these maps only decide what a reader sees.
 //
-// Each lookup is guarded by the set rather than interpolated straight into `t()`: a
-// missing key resolves to the key itself, so an unrecognised state the hub adds later
-// would render as `admin.state.reconciling` in a table cell. Falling back to the raw
-// value keeps that failure to the same shape it has today — a bare lowercase word.
-const KNOWN_ROLES: ReadonlySet<string> = new Set(ROLES);
-
-const KNOWN_STATUSES: ReadonlySet<string> = new Set([
-  "healthy",
-  "degraded",
-  "error",
-  "active",
-  "disabled",
-  "onboarding",
-  "staged",
-  "blocked",
-  // `statusTone` in `views/profile/ui/profile-view.tsx` already branches on these two,
-  // so they are statuses the UI expects to see even though the hub does not emit them
-  // yet. Without them here the guard falls through and the reader gets the bare wire
-  // word — which is the safe failure, but a needless one for a value we can name.
-  "pending",
-  "review",
-]);
-
-const KYC_LEVEL_KEYS: Record<number, string> = {
-  0: "admin.kyc.registered",
-  1: "admin.kyc.verified",
-  2: "admin.kyc.enhanced",
-  3: "admin.kyc.elevated",
+// One entry per wire value, each holding its own English — rather than a guard set and
+// an interpolated key. Interpolation had two costs the table does not: the English lived
+// only in the catalogue, so `evinvest-i18n-extract` could not see these at all, and an
+// unguarded lookup would render `admin.state.reconciling` in a table cell. A value the
+// hub adds tomorrow still falls back to the raw wire word, which is the shape the failure
+// has today — a bare lowercase word.
+const ROLE_LABELS: Record<string, (t: Translate) => string> = {
+  investor: t => t("admin.role.investor", "Investor"),
+  operator: t => t("admin.role.operator", "Operator"),
+  admin: t => t("admin.role.admin", "Admin"),
+  owner: t => t("admin.role.owner", "Owner"),
 };
 
-const KNOWN_STATES: ReadonlySet<string> = new Set([
-  "draft",
-  "open",
-  "closed",
-  "queued",
-  "processing",
-  "completed",
-  "failed",
-  "cancelled",
-]);
+const STATUS_LABELS: Record<string, (t: Translate) => string> = {
+  healthy: t => t("admin.status.healthy", "Healthy"),
+  degraded: t => t("admin.status.degraded", "Degraded"),
+  error: t => t("admin.status.error", "Error"),
+  active: t => t("admin.status.active", "Active"),
+  disabled: t => t("admin.status.disabled", "Disabled"),
+  onboarding: t => t("admin.status.onboarding", "Onboarding"),
+  staged: t => t("admin.status.staged", "Staged"),
+  blocked: t => t("admin.status.blocked", "Blocked"),
+  pending: t => t("admin.status.pending", "Pending"),
+  review: t => t("admin.status.review", "Review"),
+};
+
+const KYC_LEVEL_LABELS: Record<number, (t: Translate) => string> = {
+  0: t => t("admin.kyc.registered", "Registered"),
+  1: t => t("admin.kyc.verified", "Verified"),
+  2: t => t("admin.kyc.enhanced", "Enhanced"),
+  3: t => t("admin.kyc.elevated", "Elevated"),
+};
+
+const STATE_LABELS: Record<string, (t: Translate) => string> = {
+  draft: t => t("admin.state.draft", "Draft"),
+  open: t => t("admin.state.open", "Open"),
+  closed: t => t("admin.state.closed", "Closed"),
+  queued: t => t("admin.state.queued", "Queued"),
+  processing: t => t("admin.state.processing", "Processing"),
+  completed: t => t("admin.state.completed", "Completed"),
+  failed: t => t("admin.state.failed", "Failed"),
+  cancelled: t => t("admin.state.cancelled", "Cancelled"),
+};
 
 /** A `Role` wire value as a reader sees it.
  *
@@ -126,7 +129,7 @@ const KNOWN_STATES: ReadonlySet<string> = new Set([
  *  An unrecognised value falls back to the raw wire word rather than `t()`, so a status the
  *  hub adds tomorrow shows as `reconciling` and not as `admin.status.reconciling`. */
 export function roleLabel(role: string, t: Translate): string {
-  return KNOWN_ROLES.has(role) ? t(`admin.role.${role}`) : role;
+  return ROLE_LABELS[role]?.(t) ?? role;
 }
 
 /** A KYC tier as a reader sees it: the tier's NAME, not its ordinal.
@@ -137,35 +140,33 @@ export function roleLabel(role: string, t: Translate): string {
  *  already use. That fallback is translated, unlike {@link roleLabel}'s: a role has a wire
  *  word to fall back ON, and a level has only a number. */
 export function kycLevelLabel(level: number, t: Translate): string {
-  const key = KYC_LEVEL_KEYS[level];
-  return key ? t(key) : t("admin.users.kycLevelShort", { n: level });
+  return KYC_LEVEL_LABELS[level]?.(t) ?? t("admin.users.kycLevelShort", "L{n}", { n: level });
 }
 
 /** A health/lifecycle status as a reader sees it (see {@link roleLabel} on casing and fallback). */
 export function statusLabel(status: string, t: Translate): string {
-  return KNOWN_STATUSES.has(status) ? t(`admin.status.${status}`) : status;
+  return STATUS_LABELS[status]?.(t) ?? status;
 }
 
 /** An allocation / withdrawal / payout state as a reader sees it. */
 export function stateLabel(state: string, t: Translate): string {
-  return KNOWN_STATES.has(state) ? t(`admin.state.${state}`) : state;
+  return STATE_LABELS[state]?.(t) ?? state;
 }
 
 // Chain rails, as the console names them. The network codes are proper nouns, but the
 // words beside them ("Chain", "Open Network") are prose, so the whole label goes through
 // the catalogue rather than being half-translated. Two screens render these — Revenue's
 // rail chips and Treasury's per-rail cards — and they must agree.
-const RAIL_LABEL_KEYS: Record<string, string> = {
-  bep20: "admin.rail.bep20",
-  trc20: "admin.rail.trc20",
-  ton: "admin.rail.ton",
-  polygon: "admin.rail.polygon",
+const RAIL_LABELS: Record<string, (t: Translate) => string> = {
+  bep20: t => t("admin.rail.bep20", "BEP20 · BNB Chain"),
+  trc20: t => t("admin.rail.trc20", "TRC20 · TRON"),
+  ton: t => t("admin.rail.ton", "TON · Open Network"),
+  polygon: t => t("admin.rail.polygon", "Polygon · PoS"),
 };
 
 /** A rail's display name; a rail the hub adds later falls back to its bare wire code. */
 export function railLabel(network: string, t: Translate): string {
-  const key = RAIL_LABEL_KEYS[network];
-  return key ? t(key) : network;
+  return RAIL_LABELS[network]?.(t) ?? network;
 }
 
 /** Tailwind token classes for a lifecycle/health status pill. */

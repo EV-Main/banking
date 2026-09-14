@@ -28,11 +28,11 @@ import { amountTone, kindBadge, kindLabel, kindMeta, networkLabel, stateLabel } 
 // keys — a locale that spells its months differently should be able to say so.
 // i18n-max: 4 — four equal columns of a grid segmented control on mobile.
 const RANGES = ["1m", "6m", "1y", "all"] as const;
-const RANGE_LABEL_KEYS: Readonly<Record<(typeof RANGES)[number], string>> = {
-  "1m": "dash.range.1m",
-  "6m": "dash.range.6m",
-  "1y": "dash.range.1y",
-  all: "dash.range.all",
+const RANGE_LABEL_KEYS: Readonly<Record<(typeof RANGES)[number], (t: Translate) => string>> = {
+  "1m": t => t("dash.range.1m", "1M"),
+  "6m": t => t("dash.range.6m", "6M"),
+  "1y": t => t("dash.range.1y", "1Y"),
+  all: t => t("dash.range.all", "All"),
 };
 
 // Allocation slices cycle the brand accent tiers. The bar names its tier twice because
@@ -84,10 +84,10 @@ export function DashboardView() {
   const walletLoading = wallet.isLoading;
   const posLoading = positions.isLoading;
 
-  const allocations = pos.map((p, i) => ({ name: p.service ?? t("dash.fundFallback"), value: num(p.value), accent: ACCENTS[i % ACCENTS.length]! }));
+  const allocations = pos.map((p, i) => ({ name: p.service ?? t("dash.fundFallback", "Fund"), value: num(p.value), accent: ACCENTS[i % ACCENTS.length]! }));
   const allocTotal = allocations.reduce((s, a) => s + a.value, 0) || 1;
 
-  const titleOf = (service: string | undefined) => (service ? (catalog.find((a) => a.service === service)?.title ?? service) : t("dash.fundFallback"));
+  const titleOf = (service: string | undefined) => (service ? (catalog.find((a) => a.service === service)?.title ?? service) : t("dash.fundFallback", "Fund"));
   // The hub honours `limit`, so the slice is only a shape guarantee for the card.
   const ops = (operations.data?.operations ?? []).slice(0, RECENT_OPS).map((operation, i) => toOp(operation, i, titleOf, t));
 
@@ -111,8 +111,8 @@ export function DashboardView() {
       {/* topbar — desktop only; on mobile the shell app bar plus the hero label carry the page */}
       <StaggerItem className="hidden items-center justify-between gap-4 lg:flex xl:col-span-2 xl:row-start-1">
         <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-2xl font-semibold leading-tight text-ink">{t("dash.portfolio")}</h1>
-          <p className="text-sm text-ink-soft">{t("dash.portfolioSub")}</p>
+          <h1 className="text-2xl font-semibold leading-tight text-ink">{t("dash.portfolio", "Portfolio")}</h1>
+          <p className="text-sm text-ink-soft">{t("dash.portfolioSub", "All-time performance and your participation")}</p>
         </div>
         {/* Shortcuts to the same two actions the Move money card offers, so they stay
             outline: one solid accent per screen, and that one belongs to the card that
@@ -120,10 +120,10 @@ export function DashboardView() {
             loud rather than emphatic. */}
         <div className="flex shrink-0 gap-2.5">
           <Button asChild variant="outline">
-            <Link href="/wallet/withdraw">{t("ui.withdraw")}</Link>
+            <Link href="/wallet/withdraw">{t("ui.withdraw", "Withdraw")}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/wallet/deposit">{t("ui.deposit")}</Link>
+            <Link href="/wallet/deposit">{t("ui.deposit", "Deposit")}</Link>
           </Button>
         </div>
       </StaggerItem>
@@ -132,13 +132,13 @@ export function DashboardView() {
 
       {/* stat strip — a 2×2 card grid on mobile, one divided strip from `lg` */}
       <StaggerItem as={Card} className={cn("grid grid-cols-2 gap-3 lg:flex lg:flex-row lg:flex-wrap lg:items-stretch lg:gap-x-7 lg:gap-y-4 lg:px-6", CARD_FROM_LG, "lg:order-4 xl:col-span-2 xl:col-start-1 xl:row-start-4")}>
-        <Stat label={t("dash.unrealizedPnl")} value={walletLoading || posLoading ? null : pnlSum} format={formatSignedUsd} tone={pnlSum < 0 ? "loss" : "gain"} hint={t("dash.hintAcrossPositions")} tip="dashboard.stats.unrealized-pnl" />
+        <Stat label={t("dash.unrealizedPnl", "Unrealized P&L")} value={walletLoading || posLoading ? null : pnlSum} format={formatSignedUsd} tone={pnlSum < 0 ? "loss" : "gain"} hint={t("dash.hintAcrossPositions", "across all positions")} tip="dashboard.stats.unrealized-pnl" />
         <Separator orientation="vertical" className="hidden self-stretch lg:block" />
-        <Stat label={t("dash.available")} value={walletLoading ? null : num(balance?.available)} format={formatUsd} hint={t("dash.hintAutoDeploysEod")} tip="dashboard.stats.available" />
+        <Stat label={t("dash.available", "Available")} value={walletLoading ? null : num(balance?.available)} format={formatUsd} hint={t("dash.hintAutoDeploysEod", "auto-deploys at EOD")} tip="dashboard.stats.available" />
         <Separator orientation="vertical" className="hidden self-stretch lg:block" />
-        <Stat label={t("dash.activeStrategies")} value={posLoading ? null : pos.length} format={formatCount} hint={t("dash.hintFundPositions")} />
+        <Stat label={t("dash.activeStrategies", "Active strategies")} value={posLoading ? null : pos.length} format={formatCount} hint={t("dash.hintFundPositions", "fund positions")} />
         <Separator orientation="vertical" className="hidden self-stretch lg:block" />
-        <Stat label={t("dash.netContributed")} value={posLoading ? null : netContributed} format={formatUsd} hint={t("dash.hintAtCostBasis")} tip="dashboard.stats.net-invested" />
+        <Stat label={t("dash.netContributed", "Net contributed")} value={posLoading ? null : netContributed} format={formatUsd} hint={t("dash.hintAtCostBasis", "at cost basis")} tip="dashboard.stats.net-invested" />
       </StaggerItem>
 
       {/* Below `xl` the DOM order is the mobile order; `lg:order-*` restores the desktop
@@ -149,10 +149,10 @@ export function DashboardView() {
       {/* operations */}
       <StaggerItem as={Card} className="gap-3 py-4 lg:order-5 lg:gap-4 lg:py-5 xl:col-span-2 xl:col-start-1 xl:row-start-5">
         <CardHeader className={CARD_PAD}>
-          <CardTitle>{t("dash.recentOperations")}</CardTitle>
+          <CardTitle>{t("dash.recentOperations", "Recent operations")}</CardTitle>
           <CardAction>
             <Button asChild variant="link" size="sm" className="px-0">
-              <Link href="/operations">{t("ui.viewAll")}</Link>
+              <Link href="/operations">{t("ui.viewAll", "View all")}</Link>
             </Button>
           </CardAction>
         </CardHeader>
@@ -163,14 +163,14 @@ export function DashboardView() {
                 <EmptyMedia variant="icon">
                   <ArrowLeftRight />
                 </EmptyMedia>
-                <EmptyTitle>{t("ui.noOperations")}</EmptyTitle>
-                <EmptyDescription>{t("dash.noOperationsHint")}</EmptyDescription>
+                <EmptyTitle>{t("ui.noOperations", "No operations yet")}</EmptyTitle>
+                <EmptyDescription>{t("dash.noOperationsHint", "Deposits, subscriptions, redemptions and withdrawals land here the moment you make them.")}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 {/* Same destination as the Move money card's filled Deposit, which is
                     already on screen — so this one stays outline. */}
                 <Button asChild variant="outline">
-                  <Link href="/wallet/deposit">{t("ui.addFunds")}</Link>
+                  <Link href="/wallet/deposit">{t("ui.addFunds", "Add funds")}</Link>
                 </Button>
               </EmptyContent>
             </Empty>
@@ -219,7 +219,7 @@ function PerfCard({ value, loading, allTimePct, className }: { value: string | u
       <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start lg:justify-between lg:gap-4 lg:px-6">
         <div className="flex min-w-0 flex-col gap-2">
           <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-accent-debug">
-            {t("dash.portfolioValue")}
+            {t("dash.portfolioValue", "Portfolio value")}
             <TipAnchor anchor="dashboard.performance.portfolio-value" />
           </p>
           <div className="flex flex-col items-start gap-2.5 lg:flex-row lg:items-center lg:gap-3.5">
@@ -227,7 +227,7 @@ function PerfCard({ value, loading, allTimePct, className }: { value: string | u
             {allTimePct !== null && (
               <Badge variant="outline" className={cn("gap-1 rounded-full tabular-nums", down ? "border-accent-error/40 text-accent-error" : "border-accent-warn/40 text-accent-warn")}>
                 {down ? <TrendingDown /> : <TrendingUp />}
-                {t("dash.allTimeSuffix", { pct: formatPct(allTimePct) })}
+                {t("dash.allTimeSuffix", "{pct} all-time", { pct: formatPct(allTimePct) })}
                 <TipAnchor anchor="dashboard.performance.all-time-return" />
               </Badge>
             )}
@@ -246,15 +246,15 @@ function PerfCard({ value, loading, allTimePct, className }: { value: string | u
                 r === range ? "bg-accent-debug/15 font-semibold text-accent-debug" : "font-medium text-ink-soft hover:text-ink",
               )}
             >
-              {t(RANGE_LABEL_KEYS[r])}
+              {RANGE_LABEL_KEYS[r](t)}
             </button>
           ))}
         </div>
       </div>
       <CardContent className="flex flex-col gap-3 px-0 lg:gap-5 lg:px-6 xl:flex-1">
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 lg:order-2">
-          <Legend dot="bg-accent-warn" label={t("dash.fundPerformance")} />
-          <Legend dot="bg-positive" label={t("dash.yourParticipation")} />
+          <Legend dot="bg-accent-warn" label={t("dash.fundPerformance", "Fund performance")} />
+          <Legend dot="bg-positive" label={t("dash.yourParticipation", "Your participation")} />
         </div>
         {/* No performance series exists in `shared/contracts` yet, so the plot area says so
             rather than drawing a line that traces back to nothing. */}
@@ -263,8 +263,8 @@ function PerfCard({ value, loading, allTimePct, className }: { value: string | u
             <EmptyMedia variant="icon">
               <LineChart />
             </EmptyMedia>
-            <EmptyTitle>{t("dash.noHistory")}</EmptyTitle>
-            <EmptyDescription>{t("dash.noHistoryHint")}</EmptyDescription>
+            <EmptyTitle>{t("dash.noHistory", "No performance history yet")}</EmptyTitle>
+            <EmptyDescription>{t("dash.noHistoryHint", "The fund curve and your participation appear here once there is activity to plot.")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       </CardContent>
@@ -287,24 +287,24 @@ function MoveMoney({ className }: { className?: string }) {
   return (
     <StaggerItem as={Card} className={cn("gap-3.5 py-4 lg:gap-4 lg:py-5", className)}>
       <CardHeader className={CARD_PAD}>
-        <CardTitle>{t("dash.moveMoney")}</CardTitle>
+        <CardTitle>{t("dash.moveMoney", "Move money")}</CardTitle>
       </CardHeader>
       <CardContent className={cn("flex flex-col gap-3.5 lg:gap-4", CARD_PAD)}>
         <div className="flex gap-2.5">
           <Button asChild className="flex-1">
-            <Link href="/wallet/deposit">{t("ui.deposit")}</Link>
+            <Link href="/wallet/deposit">{t("ui.deposit", "Deposit")}</Link>
           </Button>
           <Button asChild variant="outline" className="flex-1">
-            <Link href="/wallet/withdraw">{t("ui.withdraw")}</Link>
+            <Link href="/wallet/withdraw">{t("ui.withdraw", "Withdraw")}</Link>
           </Button>
         </div>
         <Item variant="outline" size="sm" className="rounded-lg bg-secondary">
           <ItemContent className="gap-0.5">
             <ItemTitle id="auto-deploy-label" className="gap-1.5">
-              {t("dash.autoDeploy")}
+              {t("dash.autoDeploy", "Auto-deploy idle cash")}
               <TipAnchor anchor="dashboard.move-money.auto-deploy" />
             </ItemTitle>
-            <ItemDescription className="text-xs">{t("dash.autoDeployHint")}</ItemDescription>
+            <ItemDescription className="text-xs">{t("dash.autoDeployHint", "Available balance commits at end of day")}</ItemDescription>
           </ItemContent>
           <ItemActions>
             <Switch checked={auto} onCheckedChange={setAuto} aria-labelledby="auto-deploy-label" />
@@ -321,10 +321,10 @@ function WhatIOwn({ allocations, total, loading, className }: { allocations: { n
     <StaggerItem as={Card} className={cn("gap-3.5 py-4 lg:gap-4 lg:py-5", className)}>
       <CardHeader className={CARD_PAD}>
         <CardTitle className="flex items-center gap-1.5">
-          {t("dash.investedWhatIOwn")}
+          {t("dash.investedWhatIOwn", "Invested · what I own")}
           <TipAnchor anchor="dashboard.invested.allocation" />
         </CardTitle>
-        <CardAction className="text-xs font-medium tabular-nums text-ink-soft">{t("dash.strategyCount", { n: allocations.length })}</CardAction>
+        <CardAction className="text-xs font-medium tabular-nums text-ink-soft">{t("dash.strategyCount", "{n, plural, one {# strategy} other {# strategies}}", { n: allocations.length })}</CardAction>
       </CardHeader>
       <CardContent className={CARD_PAD}>
         <Settled loading={loading} skeleton={<Skeleton className="h-24 w-full" />}>
@@ -334,12 +334,12 @@ function WhatIOwn({ allocations, total, loading, className }: { allocations: { n
                 <EmptyMedia variant="icon">
                   <PieChart />
                 </EmptyMedia>
-                <EmptyTitle>{t("dash.nothingInvested")}</EmptyTitle>
-                <EmptyDescription>{t("dash.nothingInvestedHint")}</EmptyDescription>
+                <EmptyTitle>{t("dash.nothingInvested", "Nothing invested yet")}</EmptyTitle>
+                <EmptyDescription>{t("dash.nothingInvestedHint", "Subscribe to a strategy and the split of what you own shows up here.")}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button asChild variant="outline">
-                  <Link href="/invest">{t("dash.browseStrategies")}</Link>
+                  <Link href="/invest">{t("dash.browseStrategies", "Browse strategies")}</Link>
                 </Button>
               </EmptyContent>
             </Empty>
@@ -418,16 +418,16 @@ function toOp(operation: Operation, index: number, titleOf: (service: string | u
     sub: opSub(operation, t),
     // A queued redemption is not yet priced, so it shows the units it reserved — a
     // formatted zero would claim the user was paid nothing.
-    amount: operation.amount ? `${sign}${formatUsd(operation.amount)}` : t("dash.unitsAmount", { n: Number(operation.units ?? 0), units: operation.units ?? "0" }),
+    amount: operation.amount ? `${sign}${formatUsd(operation.amount)}` : t("dash.unitsAmount", "{n, plural, one {{units} unit} other {{units} units}}", { n: Number(operation.units ?? 0), units: operation.units ?? "0" }),
     amountClass: operation.amount ? amountTone(meta.direction) : "text-ink-soft",
   };
 }
 
 function opTitle(operation: Operation, titleOf: (service: string | undefined) => string, t: Translate): string {
-  if (operation.kind === "subscription") return t("dash.op.subscribed", { fund: titleOf(operation.service) });
-  if (operation.kind === "redemption") return t("dash.op.redeemed", { fund: titleOf(operation.service) });
-  if (operation.kind === "withdrawal") return t("dash.op.withdrawal", { network: networkLabel(operation.network) });
-  if (operation.kind === "deposit") return t("dash.op.deposit", { network: networkLabel(operation.network) });
+  if (operation.kind === "subscription") return t("dash.op.subscribed", "{fund} — subscribed", { fund: titleOf(operation.service) });
+  if (operation.kind === "redemption") return t("dash.op.redeemed", "{fund} — redeemed", { fund: titleOf(operation.service) });
+  if (operation.kind === "withdrawal") return t("dash.op.withdrawal", "Withdrawal · {network}", { network: networkLabel(operation.network) });
+  if (operation.kind === "deposit") return t("dash.op.deposit", "Deposit · {network}", { network: networkLabel(operation.network) });
   return kindLabel(operation.kind, t);
 }
 
@@ -435,7 +435,7 @@ function opSub(operation: Operation, t: Translate): string {
   // The lifecycle state reaches the reader through the same vocabulary the operations
   // timeline uses \u2014 it used to be the bare wire identifier, English by construction.
   const state = stateLabel(operation.state, t);
-  if (operation.kind === "withdrawal") return t("dash.op.sub", { ref: shortAddress(operation.address, DASH_ADDRESS), state });
-  if (operation.kind === "deposit") return t("dash.op.sub", { ref: shortAddress(operation.tx_ref, DASH_ADDRESS), state });
+  if (operation.kind === "withdrawal") return t("dash.op.sub", "{ref} · {state}", { ref: shortAddress(operation.address, DASH_ADDRESS), state });
+  if (operation.kind === "deposit") return t("dash.op.sub", "{ref} · {state}", { ref: shortAddress(operation.tx_ref, DASH_ADDRESS), state });
   return state;
 }

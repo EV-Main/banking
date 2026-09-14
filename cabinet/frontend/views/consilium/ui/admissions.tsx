@@ -93,14 +93,14 @@ export function AdmissionList({
   return (
     <ProposalList
       read={read}
-      title={t("consilium.admissions.title")}
-      description={t("consilium.admissions.sub")}
+      title={t("consilium.admissions.title", "Admissions")}
+      description={t("consilium.admissions.sub", "Granting a seat is the only way to become an owner, and it is decided here.")}
       skeleton={<AdmissionsSkeleton />}
-      failedTitle={t("consilium.admissions.failedTitle")}
-      failedBody={t("consilium.admissions.failedBody")}
+      failedTitle={t("consilium.admissions.failedTitle", "Admissions did not load")}
+      failedBody={t("consilium.admissions.failedBody", "Until it loads, the page cannot say whether anyone is being let into the fund, so it says nothing rather than guessing at it. The rest of the page is unaffected.")}
       emptyIcon={<UserPlus />}
-      emptyTitle={t("consilium.admissions.emptyTitle")}
-      emptyBody={t("consilium.admissions.emptyBody")}
+      emptyTitle={t("consilium.admissions.emptyTitle", "Nobody is being admitted")}
+      emptyBody={t("consilium.admissions.emptyBody", "No admission is open. Proposing one is what starts it, and every other owner then has to agree.")}
       onRetry={onRetry}
       retrying={retrying}
       itemKey={(admission) => admission.id}
@@ -140,10 +140,10 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-base font-semibold text-ink">
-            {t("consilium.admission.heading", { candidate: admission.candidate_email || admission.candidate_user_id })}
+            {t("consilium.admission.heading", "Admit {candidate}", { candidate: admission.candidate_email || admission.candidate_user_id })}
           </p>
           <p className="text-sm text-ink-soft">
-            {t("consilium.admission.openedBy", { initiator: admission.initiator_email, at: formatMoment(admission.created_at, locale) })}
+            {t("consilium.admission.openedBy", "Proposed by {initiator} · {at}", { initiator: admission.initiator_email, at: formatMoment(admission.created_at, locale) })}
           </p>
         </div>
         <Badge variant="outline" className={cn("shrink-0", stateTone(admission.state))}>
@@ -153,9 +153,9 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
 
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider text-ink-soft">{t("consilium.admission.reason")}</span>
+          <span className="text-xs font-medium uppercase tracking-wider text-ink-soft">{t("consilium.admission.reason", "Reason")}</span>
           <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
-            {admission.reason?.trim() || t("consilium.admission.noReason")}
+            {admission.reason?.trim() || t("consilium.admission.noReason", "No reason was given.")}
           </p>
         </div>
 
@@ -167,16 +167,16 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
                 progress toward a majority. There is no majority here and no second path:
                 one reject ends it. */}
             <span className="text-sm font-medium tabular-nums text-ink">
-              {t("consilium.admission.peerTally", { admitted: tally.toAdmit, total: tally.total })}
+              {t("consilium.admission.peerTally", "{admitted} of {total} owners have agreed", { admitted: tally.toAdmit, total: tally.total })}
             </span>
-            <span className="text-xs text-ink-soft">{t("consilium.admission.unanimityNote")}</span>
+            <span className="text-xs text-ink-soft">{t("consilium.admission.unanimityNote", "All of them must agree")}</span>
           </div>
 
           {tally.total === 0 ? (
             // The plane refuses to open an admission with nobody to agree, so this is a
             // proposal that has lost its peers since — not one waiting on a mailbox. There
             // is no second path to fall back on, unlike a removal.
-            <p className="text-xs text-accent-warn">{t("consilium.admission.noPeers")}</p>
+            <p className="text-xs text-accent-warn">{t("consilium.admission.noPeers", "There is no owner left to agree, so this admission can no longer pass. Unlike a removal, it has no second route.")}</p>
           ) : (
             <ItemGroup>
               {peers.map((peer, i) => (
@@ -197,12 +197,12 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
 
           {/* Only once someone has actually refused. Said while every peer is still to
               answer it would read as a warning about a proposal that is going fine. */}
-          {tally.toReject > 0 && !settled && <p className="text-xs text-accent-error">{t("consilium.admission.oneRejectEnds")}</p>}
+          {tally.toReject > 0 && !settled && <p className="text-xs text-accent-error">{t("consilium.admission.oneRejectEnds", "One refusal ends an admission — this one can no longer pass.")}</p>}
         </div>
 
         {!settled && (
           <p className="text-xs tabular-nums text-ink-soft">
-            {t("consilium.admission.expires", { at: formatMoment(admission.expires_at, locale), left: expiresIn(admission.expires_at, t) })}
+            {t("consilium.admission.expires", "Expires {at} · {left}", { at: formatMoment(admission.expires_at, locale), left: expiresIn(admission.expires_at, t) })}
           </p>
         )}
 
@@ -223,11 +223,11 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
                   onClick={() => void act("reject")}
                 >
                   {busy === "reject" && <Loader2 className="size-4 animate-spin" />}
-                  {t("consilium.admission.voteReject")}
+                  {t("consilium.admission.voteReject", "Refuse")}
                 </Button>
                 <Button variant="outline" className="sm:flex-1" disabled={busy !== null} onClick={() => void act("admit")}>
                   {busy === "admit" && <Loader2 className="size-4 animate-spin" />}
-                  {t("consilium.admission.voteAdmit")}
+                  {t("consilium.admission.voteAdmit", "Admit as an owner")}
                 </Button>
               </div>
             ) : (
@@ -239,7 +239,7 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
             {standing.role === "initiator" && (
               <Button variant="ghost" size="sm" className="self-start" disabled={busy !== null} onClick={() => void act("cancel")}>
                 {busy === "cancel" && <Loader2 className="size-4 animate-spin" />}
-                {t("consilium.admission.cancel")}
+                {t("consilium.admission.cancel", "Withdraw this proposal")}
               </Button>
             )}
           </>
@@ -260,12 +260,12 @@ function AdmissionCard({ admission, userId }: { admission: OwnerAdmission; userI
  */
 function WhyNoVote({ standing, admission }: { standing: ReturnType<typeof standingInAdmission>; admission: OwnerAdmission }) {
   const t = useT();
-  if (standing.role === "peer") return <>{t("consilium.admission.youVoted", { vote: admissionVoteLabel(standing.vote, t) })}</>;
-  if (standing.role === "candidate") return <>{t("consilium.admission.youAreCandidate")}</>;
+  if (standing.role === "peer") return <>{t("consilium.admission.youVoted", "You answered: {vote}.", { vote: admissionVoteLabel(standing.vote, t) })}</>;
+  if (standing.role === "candidate") return <>{t("consilium.admission.youAreCandidate", "This admission is about your own seat, so you take no part in deciding it.")}</>;
   if (standing.role === "initiator") {
-    return <>{t("consilium.admission.youOpened", { candidate: admission.candidate_email || admission.candidate_user_id })}</>;
+    return <>{t("consilium.admission.youOpened", "You proposed admitting {candidate}, so you have no vote on it — the bar you have to clear is every other owner agreeing, and opening a proposal must not be a way to lower it.", { candidate: admission.candidate_email || admission.candidate_user_id })}</>;
   }
-  return <>{t("consilium.admission.notAVoter")}</>;
+  return <>{t("consilium.admission.notAVoter", "The owners who may vote were fixed when this was proposed, and you were not among them. An owner seated since cannot be added to that set — otherwise new owners could be created to carry a vote.")}</>;
 }
 
 /**
@@ -331,15 +331,15 @@ export function ProposeAdmission({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{t("consilium.admit.title")}</CardTitle>
-        <CardDescription className="text-balance">{t("consilium.admit.sub")}</CardDescription>
+        <CardTitle className="text-base">{t("consilium.admit.title", "Admit an owner")}</CardTitle>
+        <CardDescription className="text-balance">{t("consilium.admit.sub", "The only way a seat is granted. Every other owner has to agree.")}</CardDescription>
       </CardHeader>
       <CardContent>
         <Settled className="flex flex-col gap-4" loading={roster.status === "loading"} skeleton={<ProposeSkeleton />}>
           {roster.status === "loading" ? null : roster.status === "failed" ? (
             <ReadFailure
-              title={t("consilium.admit.unknownTitle")}
-              body={t("consilium.admit.unknownBody")}
+              title={t("consilium.admit.unknownTitle", "The owner list did not load")}
+              body={t("consilium.admit.unknownBody", "Without it the page cannot say how many owners would have to agree, so it is not offering the form rather than offering one it cannot explain.")}
               onRetry={onRetry}
               retrying={retrying}
             />
@@ -353,12 +353,12 @@ export function ProposeAdmission({
                   `owner` unconditionally (docs/CONSILIUM.md, § Genesis, policy 21). */}
               {seated !== null && seated < 2 && (
                 <p className="rounded-lg border border-accent-warn/40 bg-accent-warn/10 px-3.5 py-3 text-sm leading-relaxed text-ink">
-                  {t("consilium.admit.genesis", { n: seated })}
+                  {t("consilium.admit.genesis", "This fund has {n, plural, =0 {no seated owners} one {# seated owner} other {# seated owners}}. An admission needs at least one owner besides whoever proposes it, so it cannot seat the founders: they are written by the service itself at start-up, from the genesis list, and only while the register is empty. That boot closes the window for good, and from then on this form is the only way in.", { n: seated })}
                 </p>
               )}
 
               <Field>
-                <FieldLabel htmlFor="admission-candidate">{t("consilium.admit.candidateLabel")}</FieldLabel>
+                <FieldLabel htmlFor="admission-candidate">{t("consilium.admit.candidateLabel", "Account")}</FieldLabel>
                 <Input
                   id="admission-candidate"
                   value={candidate}
@@ -370,13 +370,13 @@ export function ProposeAdmission({
                   autoCapitalize="none"
                   spellCheck={false}
                   className="font-mono-tech"
-                  placeholder={t("consilium.admit.candidatePlaceholder")}
+                  placeholder={t("consilium.admit.candidatePlaceholder", "User ID")}
                 />
-                <FieldDescription>{t("consilium.admit.candidateHint")}</FieldDescription>
+                <FieldDescription>{t("consilium.admit.candidateHint", "A candidate is not an owner yet, so the roster cannot list them. Their user ID is on their row in Users.")}</FieldDescription>
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="admission-reason">{t("consilium.admit.reasonLabel")}</FieldLabel>
+                <FieldLabel htmlFor="admission-reason">{t("consilium.admit.reasonLabel", "Reason")}</FieldLabel>
                 <Textarea
                   id="admission-reason"
                   value={reason}
@@ -386,21 +386,21 @@ export function ProposeAdmission({
                   }}
                   rows={3}
                   maxLength={1000}
-                  placeholder={t("consilium.admit.reasonPlaceholder")}
+                  placeholder={t("consilium.admit.reasonPlaceholder", "Why this person should hold a seat")}
                 />
-                <FieldDescription>{t("consilium.admit.reasonHint")}</FieldDescription>
+                <FieldDescription>{t("consilium.admit.reasonHint", "Every owner reads this before answering, in these words.")}</FieldDescription>
               </Field>
 
               {/* Stated unconditionally, because it is the rule rather than a verdict about
                   this roster — and because it is STRICTER than the removal rule a reader
                   has just met further up the page. Assuming a majority is enough is the
                   natural mistake, so it is the one the copy pre-empts. */}
-              <p className="text-xs text-ink-soft">{t("consilium.admit.unanimityWarning")}</p>
+              <p className="text-xs text-ink-soft">{t("consilium.admit.unanimityWarning", "An admission passes only if every owner except you agrees, and there has to be at least one of them. This is stricter than a removal: a majority is not enough, and a single refusal ends it. A minority must never be able to grow itself into a majority.")}</p>
 
               {error !== null && <ResourceError message={errorMessage(error, t)} />}
               {opened && (
                 <p className="text-sm text-positive" role="status">
-                  {t("consilium.admit.opened")}
+                  {t("consilium.admit.opened", "Proposed. Every other owner has been asked to answer.")}
                 </p>
               )}
 
@@ -411,7 +411,7 @@ export function ProposeAdmission({
                 onClick={() => void submit()}
               >
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Users className="size-4" />}
-                {t("consilium.admit.submit")}
+                {t("consilium.admit.submit", "Propose admission")}
               </Button>
             </FieldGroup>
           )}

@@ -67,12 +67,12 @@ export function expiresIn(stamp: string | null | undefined, t: Translate): strin
   const at = toDate(stamp);
   if (!at) return "—";
   const ms = at.getTime() - Date.now();
-  if (ms <= 0) return t("approval.expiry.passed");
+  if (ms <= 0) return t("approval.expiry.passed", "The deadline has passed");
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return t("approval.expiry.minutes", { n: Math.max(1, minutes) });
+  if (minutes < 60) return t("approval.expiry.minutes", "{n, plural, one {# minute left} other {# minutes left}}", { n: Math.max(1, minutes) });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t("approval.expiry.hours", { n: hours });
-  return t("approval.expiry.days", { n: Math.floor(hours / 24) });
+  if (hours < 24) return t("approval.expiry.hours", "{n, plural, one {# hour left} other {# hours left}}", { n: hours });
+  return t("approval.expiry.days", "{n, plural, one {# day left} other {# days left}}", { n: Math.floor(hours / 24) });
 }
 
 const toDate = unixStampToDate;

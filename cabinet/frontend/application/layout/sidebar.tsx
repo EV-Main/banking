@@ -1,5 +1,6 @@
 "use client";
 
+import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
 import { ArrowUpFromLine, Bell, Boxes, Gavel, Home, Landmark, LayoutGrid, LineChart, ListChecks, PanelsTopLeft, Percent, PiggyBank, Receipt, Settings, UsersRound, Wallet, type LucideIcon } from "lucide-react";
@@ -19,10 +20,8 @@ import { DUR, EASE } from "@/shared/ui/motion";
 
 interface NavItem {
   href: `/${string}`;
-  /** English source, kept as the catalogue key's twin — see messages/en. */
-  label: string;
-  /** Catalogue key; `label` is what it resolves to in English. */
-  key: string;
+  /** The item's label, in the reader's language. */
+  label: (t: Translate) => string;
   icon: LucideIcon;
   active: (path: string) => boolean;
 }
@@ -32,14 +31,14 @@ interface NavItem {
 // into. The mobile tab bar has no room for a sixth tab, so there /wallet still lights up
 // Operations.
 const FUND: NavItem[] = [
-  { href: "/", label: "Home", key: "nav.home", icon: Home, active: (p) => p === "/" },
+  { href: "/", label: t => t("nav.home", "Home"), icon: Home, active: (p) => p === "/" },
   // Exactly `/invest`, not everything beneath it: each product has its own row in
   // PRODUCTS, and a prefix match here lit both that row and this one on a product
   // page. Two highlighted rows is not a state the rail should be able to reach —
   // and with the pill scoped per section it would mean two pills at once.
-  { href: "/invest", label: "Invest", key: "nav.invest", icon: LineChart, active: (p) => p === "/invest" },
-  { href: "/wallet", label: "Wallet", key: "nav.wallet", icon: Wallet, active: (p) => p.startsWith("/wallet") },
-  { href: "/operations", label: "Operations", key: "nav.operations", icon: ListChecks, active: (p) => p.startsWith("/operations") },
+  { href: "/invest", label: t => t("nav.invest", "Invest"), icon: LineChart, active: (p) => p === "/invest" },
+  { href: "/wallet", label: t => t("nav.wallet", "Wallet"), icon: Wallet, active: (p) => p.startsWith("/wallet") },
+  { href: "/operations", label: t => t("nav.operations", "Operations"), icon: ListChecks, active: (p) => p.startsWith("/operations") },
 ];
 
 // PRODUCTS is the open allocation registry, not a fixed list: a fund appears in the rail
@@ -53,25 +52,25 @@ const FUND: NavItem[] = [
 // role (the BFF's `/api/auth/session` `isAdmin`); every screen is also authorized
 // server-side, so hiding the nav is cosmetic, not the security boundary.
 const ADMIN: NavItem[] = [
-  { href: "/admin/overview", label: "Overview", key: "nav.overview", icon: LayoutGrid, active: (p) => p.startsWith("/admin/overview") },
-  { href: "/admin/users", label: "Users", key: "nav.users", icon: UsersRound, active: (p) => p.startsWith("/admin/users") },
-  { href: "/admin/cabinet", label: "Cabinet", key: "nav.cabinet", icon: PanelsTopLeft, active: (p) => p.startsWith("/admin/cabinet") },
-  { href: "/admin/treasury", label: "Treasury", key: "nav.treasury", icon: Landmark, active: (p) => p.startsWith("/admin/treasury") },
-  { href: "/admin/withdrawals", label: "Withdrawals", key: "nav.withdrawals", icon: ArrowUpFromLine, active: (p) => p.startsWith("/admin/withdrawals") },
+  { href: "/admin/overview", label: t => t("nav.overview", "Overview"), icon: LayoutGrid, active: (p) => p.startsWith("/admin/overview") },
+  { href: "/admin/users", label: t => t("nav.users", "Users"), icon: UsersRound, active: (p) => p.startsWith("/admin/users") },
+  { href: "/admin/cabinet", label: t => t("nav.cabinet", "Cabinet"), icon: PanelsTopLeft, active: (p) => p.startsWith("/admin/cabinet") },
+  { href: "/admin/treasury", label: t => t("nav.treasury", "Treasury"), icon: Landmark, active: (p) => p.startsWith("/admin/treasury") },
+  { href: "/admin/withdrawals", label: t => t("nav.withdrawals", "Withdrawals"), icon: ArrowUpFromLine, active: (p) => p.startsWith("/admin/withdrawals") },
   // Sits next to Treasury, not to Withdrawals: the question it answers is "what did the
   // fund earn", which belongs with the chart of accounts rather than with the user queue.
-  { href: "/admin/revenue", label: "Fund revenue", key: "nav.revenue", icon: PiggyBank, active: (p) => p.startsWith("/admin/revenue") },
+  { href: "/admin/revenue", label: t => t("nav.revenue", "Fund revenue"), icon: PiggyBank, active: (p) => p.startsWith("/admin/revenue") },
   // Directly under Fund revenue, because the consilium is what authorizes money leaving it
   // — the page and the balance it governs read as one thought. Shown to every operator
   // session like its neighbours; only owners have a room to be in, and the BFF answers 403
   // to anyone else (the page renders that as its own state, not as an error).
-  { href: "/consilium", label: "Consilium", key: "nav.consilium", icon: Gavel, active: (p) => p.startsWith("/consilium") },
-  { href: "/admin/allocations", label: "Allocations", key: "nav.allocations", icon: Boxes, active: (p) => p.startsWith("/admin/allocations") },
-  { href: "/admin/valuation", label: "Valuation & redemptions", key: "nav.valuation", icon: Receipt, active: (p) => p.startsWith("/admin/valuation") },
+  { href: "/consilium", label: t => t("nav.consilium", "Consilium"), icon: Gavel, active: (p) => p.startsWith("/consilium") },
+  { href: "/admin/allocations", label: t => t("nav.allocations", "Allocations"), icon: Boxes, active: (p) => p.startsWith("/admin/allocations") },
+  { href: "/admin/valuation", label: t => t("nav.valuation", "Valuation & redemptions"), icon: Receipt, active: (p) => p.startsWith("/admin/valuation") },
   // After Allocations, because a fee is a property OF a product: you register the fund
   // first and then price it. Distinct from Fund revenue, which is where the money ends up
   // once these terms have been charged and settled.
-  { href: "/admin/fees", label: "Fees", key: "nav.fees", icon: Percent, active: (p) => p.startsWith("/admin/fees") },
+  { href: "/admin/fees", label: t => t("nav.fees", "Fees"), icon: Percent, active: (p) => p.startsWith("/admin/fees") },
 ];
 
 // Every rail row is a hand-written Link, so keyboard focus rides on this string. It runs
@@ -121,14 +120,14 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-[var(--cabinet-rail-w)] flex-col gap-7 overflow-y-auto border-r border-border bg-secondary px-4.5 pb-5 pt-6">
-      <nav aria-label={t("nav.a11y.primary")} className="flex flex-col gap-4.5">
-        <Group label={t("nav.group.fund")}>
+      <nav aria-label={t("nav.a11y.primary", "Primary")} className="flex flex-col gap-4.5">
+        <Group label={t("nav.group.fund", "Fund")}>
           {FUND.map((item) => (
-            <NavLink key={item.label} item={item} active={item.active(pathname)} section="fund" appear={crossed} />
+            <NavLink key={item.href} item={item} active={item.active(pathname)} section="fund" appear={crossed} />
           ))}
         </Group>
         {products.length > 0 && (
-          <Group label={t("invest.products")}>
+          <Group label={t("invest.products", "Products")}>
             {products.map((p) => {
               // Every row pointed at `/invest`, so naming a product in the rail took you to
               // the list of all of them. The product's own page is keyed by its service id.
@@ -160,9 +159,9 @@ export function Sidebar() {
           </Group>
         )}
         {isAdmin && (
-          <Group label={t("admin.eyebrow.administer")}>
+          <Group label={t("admin.eyebrow.administer", "Administer")}>
             {ADMIN.map((item) => (
-              <NavLink key={item.label} item={item} active={item.active(pathname)} section="administer" appear={crossed} />
+              <NavLink key={item.href} item={item} active={item.active(pathname)} section="administer" appear={crossed} />
             ))}
           </Group>
         )}
@@ -170,15 +169,15 @@ export function Sidebar() {
 
       <div className="flex-1" />
 
-      <nav aria-label={t("nav.a11y.secondary")} className="flex flex-col gap-1">
+      <nav aria-label={t("nav.a11y.secondary", "Secondary")} className="flex flex-col gap-1">
         <NavLink
-          item={{ href: "/notifications", label: "Notifications", key: "nav.notifications", icon: Bell, active: (p) => p.startsWith("/notifications") }}
+          item={{ href: "/notifications", label: t => t("nav.notifications", "Notifications"), icon: Bell, active: (p) => p.startsWith("/notifications") }}
           active={pathname.startsWith("/notifications")}
           section="secondary"
           appear={crossed}
           trailing={unread ? <UnreadPill count={unread} active={pathname.startsWith("/notifications")} /> : undefined}
         />
-        <NavLink item={{ href: "/settings", label: "Settings", key: "nav.settings", icon: Settings, active: (p) => p.startsWith("/settings") }} active={pathname.startsWith("/settings")} section="secondary" appear={crossed} />
+        <NavLink item={{ href: "/settings", label: t => t("nav.settings", "Settings"), icon: Settings, active: (p) => p.startsWith("/settings") }} active={pathname.startsWith("/settings")} section="secondary" appear={crossed} />
       </nav>
     </aside>
   );
@@ -263,6 +262,7 @@ function ActivePill({ section, appear }: { section: Section; appear: boolean }) 
 function NavLink({ item, active, section, appear, trailing }: { item: NavItem; active: boolean; section: Section; appear: boolean; trailing?: ReactNode }) {
   const t = useT();
   const Icon = item.icon;
+  const label = item.label(t);
   return (
     <Link
       href={item.href}
@@ -284,8 +284,8 @@ function NavLink({ item, active, section, appear, trailing }: { item: NavItem; a
           the longest translation instead of the label truncating inside it —
           German "Benachrichtigungen" and "Bewertung & Rücknahmen" are both wider
           than the rail. `title` keeps the full label reachable. */}
-      <span className="min-w-0 flex-1 truncate" title={t(item.key)}>
-        {t(item.key)}
+      <span className="min-w-0 flex-1 truncate" title={label}>
+        {label}
       </span>
       {trailing}
     </Link>
@@ -303,7 +303,7 @@ function UnreadPill({ count, active }: { count: number; active: boolean }) {
   const t = useT();
   return (
     <span
-      aria-label={t("notif.unreadCount", { n: count })}
+      aria-label={t("notif.unreadCount", "Unread · {n}", { n: count })}
       className={cn(
         "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
         active ? "bg-background text-ink" : "bg-accent-debug/15 text-accent-debug",

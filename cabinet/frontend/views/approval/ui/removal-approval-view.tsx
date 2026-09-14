@@ -132,30 +132,30 @@ export function RemovalApprovalView({ token }: { token: string }) {
     <ApprovalPage>
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">{t("approval.removal.title")}</CardTitle>
+          <CardTitle className="text-xl">{t("approval.removal.title", "A request to end your ownership")}</CardTitle>
           <CardDescription className="text-balance">
-            {t("approval.removal.lead", { initiator: invitation.initiator_email })}
+            {t("approval.removal.lead", "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.", { initiator: invitation.initiator_email })}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <FieldCaption>{t("approval.removal.reasonLabel")}</FieldCaption>
+            <FieldCaption>{t("approval.removal.reasonLabel", "Reason given")}</FieldCaption>
             {/* The reason is someone else's words about the reader. It is shown whole, in
                 their own phrasing, with no summarising and no quotation marks that would
                 let the fund distance itself from it. */}
             <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
-              {invitation.reason?.trim() || t("approval.removal.noReason")}
+              {invitation.reason?.trim() || t("approval.removal.noReason", "No reason was given.")}
             </p>
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <DetailRow label={t("approval.removal.proposedBy")} value={invitation.initiator_email} />
-            <DetailRow label={t("approval.removal.about")} value={invitation.target_email} />
-            <DetailRow label={t("approval.openedAt")} value={formatMoment(invitation.created_at, locale)} />
+            <DetailRow label={t("approval.removal.proposedBy", "Proposed by")} value={invitation.initiator_email} />
+            <DetailRow label={t("approval.removal.about", "About")} value={invitation.target_email} />
+            <DetailRow label={t("approval.openedAt", "Opened")} value={formatMoment(invitation.created_at, locale)} />
             <DetailRow
-              label={t("approval.expires")}
-              value={t("approval.expiresValue", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
+              label={t("approval.expires", "Expires")}
+              value={t("approval.expiresValue", "{at} · {left}", { at: formatMoment(invitation.expires_at, locale), left: expiresIn(invitation.expires_at, t) })}
               tone={expired ? "text-accent-error" : undefined}
             />
           </div>
@@ -169,20 +169,14 @@ export function RemovalApprovalView({ token }: { token: string }) {
       ) : settled ? (
         <ApprovalOutcome
           icon={settled === "remove" ? <CheckCircle2 /> : <ShieldCheck />}
-          title={t(settled === "remove" ? "approval.removal.accepted.title" : "approval.removal.refused.title")}
-          description={t(
-            settled === "remove"
-              ? justDecided
-                ? "approval.removal.accepted.freshBody"
-                : "approval.removal.accepted.body"
-              : "approval.removal.refused.body",
-          )}
+          title={(settled === "remove" ? t("approval.removal.accepted.title", "You gave up your seat") : t("approval.removal.refused.title", "You refused this"))}
+          description={(settled === "remove" ? justDecided ? t("approval.removal.accepted.freshBody", "Your ownership has ended and the other owners have been told. Nothing else about your account has changed.") : t("approval.removal.accepted.body", "You accepted this earlier. Your ownership has ended.") : t("approval.removal.refused.body", "Your answer has been recorded. You keep your seat unless every other eligible owner agrees to end it, and you will be told either way."))}
         />
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t("approval.removal.decisionTitle")}</CardTitle>
-            <CardDescription className="text-balance">{t("approval.removal.decisionLead")}</CardDescription>
+            <CardTitle className="text-base">{t("approval.removal.decisionTitle", "Your answer")}</CardTitle>
+            <CardDescription className="text-balance">{t("approval.removal.decisionLead", "You can accept this or refuse it, and either answer needs the code from your email. Refusing does not end the matter: the other owners can still decide it between them, and that takes all of them agreeing.")}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <CodeField value={code} onChange={setCode} disabled={pending !== null} attemptsRemaining={rejectedAttempts} />
@@ -195,16 +189,16 @@ export function RemovalApprovalView({ token }: { token: string }) {
               // asked again, only by being told exactly what is about to happen.
               <div className="flex flex-col gap-3.5 rounded-lg border border-accent-error/40 bg-accent-error/10 p-4">
                 <div className="flex flex-col gap-1.5">
-                  <p className="text-sm font-semibold text-ink">{t("approval.removal.confirmTitle")}</p>
-                  <p className="text-sm leading-relaxed text-ink">{t("approval.removal.confirmBody")}</p>
+                  <p className="text-sm font-semibold text-ink">{t("approval.removal.confirmTitle", "This ends your ownership")}</p>
+                  <p className="text-sm leading-relaxed text-ink">{t("approval.removal.confirmBody", "Your owner seat ends immediately and cannot be restored from here. You would need the remaining owners to make you an owner again. Nothing else about your account changes.")}</p>
                 </div>
                 <div className="flex flex-col gap-2.5 sm:flex-row">
                   <Button variant="destructive" className="sm:flex-1" disabled={pending !== null} onClick={() => void decide("remove")}>
                     {pending === "remove" && <Loader2 className="size-4 animate-spin" />}
-                    {t("approval.removal.confirmAction")}
+                    {t("approval.removal.confirmAction", "Give up my seat")}
                   </Button>
                   <Button variant="ghost" disabled={pending !== null} onClick={() => setConfirming(false)}>
-                    {t("ui.cancel")}
+                    {t("ui.cancel", "Cancel")}
                   </Button>
                 </div>
               </div>
@@ -224,24 +218,24 @@ export function RemovalApprovalView({ token }: { token: string }) {
                     onClick={() => void decide("keep")}
                   >
                     {pending === "keep" && <Loader2 className="size-4 animate-spin" />}
-                    {t("approval.removal.refuse")}
+                    {t("approval.removal.refuse", "Refuse — keep my seat")}
                   </Button>
                   <Button
                     variant="destructive"
                     disabled={code.trim().length === 0 || pending !== null}
                     onClick={() => setConfirming(true)}
                   >
-                    {t("approval.removal.accept")}
+                    {t("approval.removal.accept", "Accept and give up my seat")}
                   </Button>
                 </div>
-                <p className="text-xs leading-relaxed text-ink-soft">{t("approval.removal.irreversible")}</p>
+                <p className="text-xs leading-relaxed text-ink-soft">{t("approval.removal.irreversible", "Accepting is final. Your ownership ends as soon as it is recorded, and it cannot be undone from this page or any other.")}</p>
               </>
             )}
           </CardContent>
         </Card>
       )}
 
-      <p className="text-center text-xs text-ink-soft">{t("approval.footnote")}</p>
+      <p className="text-center text-xs text-ink-soft">{t("approval.footnote", "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.")}</p>
     </ApprovalPage>
   );
 }

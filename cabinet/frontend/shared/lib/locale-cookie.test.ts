@@ -16,11 +16,16 @@ import { documentLocale, readLocaleCookie, writeLocaleCookie } from "./locale-co
 // browser), so a test has to supply them. Assigned onto globalThis rather than mocked
 // through a seam, because the seam would be the thing under test.
 function browser(protocol: "https:" | "http:", cookie = "") {
-  (globalThis as Record<string, unknown>).location = { protocol };
-  (globalThis as Record<string, unknown>).document = {
-    cookie,
-    documentElement: { lang: "" },
+  // `closest` as well as `lang`: `documentLocale` resolves through `localeOfElement`,
+  // which walks up to the nearest `[lang]` ancestor. On `documentElement` that walk
+  // either finds the element itself or nothing, which is what this models.
+  const documentElement = {
+    lang: "",
+    getAttribute: (name: string) => (name === "lang" ? documentElement.lang : null),
+    closest: () => (documentElement.lang === "" ? null : documentElement),
   };
+  (globalThis as Record<string, unknown>).location = { protocol };
+  (globalThis as Record<string, unknown>).document = { cookie, documentElement };
   return globalThis.document as unknown as { cookie: string; documentElement: { lang: string } };
 }
 
@@ -81,8 +86,16 @@ test("with no usable lang the cookie is the fallback, then English", () => {
   assert.equal(documentLocale(), "fr");
 
   const bare = browser("https:", "");
-  bare.documentElement.lang = "en-US";
-  // A regional tag is not one of the five routable locales and there is no cookie, so
-  // the floor applies rather than a half-match.
+  bare.documentElement.lang = "ja";
+  // A language we do not publish is not a usable answer, and there is no cookie, so the
+  // floor applies.
   assert.equal(documentLocale(), "en");
+});
+
+test("a regional tag resolves to its base language", () => {
+  // `localeOfElement` reads `ru-RU` as `ru`, which the bare `isLocale` guard could not.
+  // A host that writes the full BCP 47 tag is doing nothing wrong.
+  const doc = browser("https:", "__Host-ev_locale=en");
+  doc.documentElement.lang = "ru-RU";
+  assert.equal(documentLocale(), "ru");
 });

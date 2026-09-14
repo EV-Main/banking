@@ -59,7 +59,7 @@ export function CabinetView() {
 
   return (
     <AdminScreen className="space-y-8">
-      <AdminHeader eyebrow={t("admin.eyebrow.administer")} title={t("nav.cabinet")} subtitle={t("admin.cabinet.subtitle")} />
+      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.cabinet", "Cabinet")} subtitle={t("admin.cabinet.subtitle", "Host shell — microfrontend registry, feature flags and content")} />
 
       {error && (
         <StaggerItem as="p" className="flex items-center gap-2 text-sm text-accent-error">
@@ -68,11 +68,11 @@ export function CabinetView() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title={t("admin.cabinet.mfeRegistry")} subtitle={t("admin.cabinet.mfeRegistrySub")}>
+        <Panel title={t("admin.cabinet.mfeRegistry", "Microfrontend registry")} subtitle={t("admin.cabinet.mfeRegistrySub", "Resolved by clients/core · /api/mfe-registry")}>
           {!mfes ? (
             <Skeleton className="h-32 w-full" />
           ) : mfes.length === 0 ? (
-            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noMfes")}</p>
+            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noMfes", "No microfrontends registered.")}</p>
           ) : (
             <div className="divide-y divide-border">
               {mfes.map((m) => (
@@ -83,7 +83,7 @@ export function CabinetView() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="rounded-md bg-ink/5 px-2 py-0.5 text-xs capitalize text-ink-soft">{m.kind}</span>
-                    <StatusDot status="healthy" label={t("admin.cabinet.registered")} />
+                    <StatusDot status="healthy" label={t("admin.cabinet.registered", "Registered")} />
                   </div>
                 </div>
               ))}
@@ -91,11 +91,11 @@ export function CabinetView() {
           )}
         </Panel>
 
-        <Panel title={t("admin.cabinet.featureFlags")} subtitle={t("admin.cabinet.featureFlagsSub")}>
+        <Panel title={t("admin.cabinet.featureFlags", "Feature flags")} subtitle={t("admin.cabinet.featureFlagsSub", "Gating cabinet features & MFE mounts")}>
           {!platform ? (
             <Skeleton className="h-32 w-full" />
           ) : platform.flags.length === 0 ? (
-            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noFlags")}</p>
+            <p className="py-6 text-center text-sm text-ink-soft">{t("admin.cabinet.noFlags", "No flags yet. PostHog experiments render here when configured.")}</p>
           ) : (
             <div className="divide-y divide-border">
               {platform.flags.map((f) => (
@@ -103,7 +103,7 @@ export function CabinetView() {
                   <div className="min-w-0">
                     <p className="truncate font-mono-tech text-sm">{f.key}</p>
                     <p className="flex items-center gap-1.5 truncate text-xs text-ink-soft">
-                      {t("admin.cabinet.flagRollout", { pct: f.rollout })} {f.description ? `· ${f.description}` : ""}
+                      {t("admin.cabinet.flagRollout", "{pct}%", { pct: f.rollout })} {f.description ? `· ${f.description}` : ""}
                       <TipAnchor anchor="admin.cabinet.flags.rollout" />
                     </p>
                   </div>
@@ -114,25 +114,25 @@ export function CabinetView() {
           )}
         </Panel>
 
-        <Panel title={t("admin.cabinet.announcement")} subtitle={t("admin.cabinet.announcementSub")}>
+        <Panel title={t("admin.cabinet.announcement", "Announcement")} subtitle={t("admin.cabinet.announcementSub", "The live banner across the cabinet")}>
           {!config ? <Skeleton className="h-28 w-full" /> : <AnnouncementForm config={config} onSaved={(next) => publish({ platform: next })} onError={setWriteError} />}
         </Panel>
 
-        <Panel title={t("admin.cabinet.maintenanceOps")} subtitle={t("admin.cabinet.maintenanceOpsSub")}>
+        <Panel title={t("admin.cabinet.maintenanceOps", "Maintenance & operations")} subtitle={t("admin.cabinet.maintenanceOpsSub", "Cabinet holding page + money-plane kill-switch")}>
           {!config ? (
             <Skeleton className="h-28 w-full" />
           ) : (
             <div className="space-y-4">
               <ToggleRow
-                label={t("admin.cabinet.maintenanceMode")}
-                hint={t("admin.cabinet.maintenanceModeHint")}
+                label={t("admin.cabinet.maintenanceMode", "Maintenance mode")}
+                hint={t("admin.cabinet.maintenanceModeHint", "Holding page on the cabinet (identity plane)")}
                 on={config.platform.maintenance_mode}
                 onChange={toggleMaintenance}
                 tip="admin.cabinet.maintenance"
               />
               <ToggleRow
-                label={t("admin.cabinet.readOnlyMode")}
-                hint={t("admin.cabinet.readOnlyModeHint")}
+                label={t("admin.cabinet.readOnlyMode", "Read-only mode")}
+                hint={t("admin.cabinet.readOnlyModeHint", "Pause deposits & withdrawals (money plane)")}
                 on={config.read_only}
                 onChange={toggleReadOnly}
                 tip="admin.cabinet.readonly"
@@ -198,13 +198,13 @@ function AnnouncementForm({ config, onSaved, onError }: { config: CabinetConfig;
 
   return (
     <div className="space-y-3">
-      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("admin.cabinet.placeholder.announcementTitle")} />
-      <Input value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("admin.cabinet.placeholder.announcementBody")} />
+      <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("admin.cabinet.placeholder.announcementTitle", "Announcement title")} />
+      <Input value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("admin.cabinet.placeholder.announcementBody", "Body")} />
       <div className="flex items-center justify-between">
-        <ToggleRow label={t("admin.cabinet.live")} hint={t("admin.cabinet.liveHint")} on={active} onChange={setActive} tip="admin.cabinet.announcement.live" />
+        <ToggleRow label={t("admin.cabinet.live", "Live")} hint={t("admin.cabinet.liveHint", "Show the banner now")} on={active} onChange={setActive} tip="admin.cabinet.announcement.live" />
       </div>
       <Button type="button" variant="outline" size="sm" disabled={saving} onClick={save}>
-        {t("admin.cabinet.saveAnnouncement")}
+        {t("admin.cabinet.saveAnnouncement", "Save announcement")}
       </Button>
     </div>
   );

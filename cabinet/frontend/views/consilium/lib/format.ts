@@ -58,24 +58,23 @@ export function isSettled(state: string | undefined, decidedAt?: string | null):
 // States that have a name in the catalogue. Anything else falls back to the bare wire word,
 // which is legible — `admin/lib/format.ts` makes the same call and for the same reason: a
 // reader seeing `reconciling` is better served than one seeing `consilium.state.reconciling`.
-const KNOWN_STATES: ReadonlySet<string> = new Set([
-  "open",
-  "pending",
-  "approved",
-  "rejected",
-  "removed",
-  "kept",
-  "expired",
-  "cancelled",
-  "void",
-  "executed",
-  "executionfailed",
-  "failed",
-]);
+const STATE_LABELS: Record<string, (t: Translate) => string> = {
+  open: t => t("consilium.state.open", "Open"),
+  pending: t => t("consilium.state.pending", "Pending"),
+  approved: t => t("consilium.state.approved", "Approved"),
+  rejected: t => t("consilium.state.rejected", "Rejected"),
+  removed: t => t("consilium.state.removed", "Removed"),
+  kept: t => t("consilium.state.kept", "Seat kept"),
+  expired: t => t("consilium.state.expired", "Expired"),
+  cancelled: t => t("consilium.state.cancelled", "Cancelled"),
+  void: t => t("consilium.state.void", "Void"),
+  executed: t => t("consilium.state.executed", "Paid out"),
+  executionfailed: t => t("consilium.state.executionfailed", "Payout failed"),
+  failed: t => t("consilium.state.failed", "Failed"),
+};
 
 export function stateLabel(state: string | undefined, t: Translate): string {
-  const key = normalise(state);
-  return KNOWN_STATES.has(key) ? t(`consilium.state.${key}`) : (state ?? "—");
+  return STATE_LABELS[normalise(state)]?.(t) ?? state ?? "—";
 }
 
 /** Token classes for a state pill. Neutral unless the state carries real news. */
@@ -90,9 +89,9 @@ export function stateTone(state: string | undefined): string {
 // Both take the RAW wire value and normalise on the way in, so no call site can forget to.
 export function voteLabel(vote: string | null | undefined, t: Translate): string {
   const cast = peerVote(vote);
-  if (cast === "remove") return t("consilium.vote.remove");
-  if (cast === "keep") return t("consilium.vote.keep");
-  return t("consilium.vote.waiting");
+  if (cast === "remove") return t("consilium.vote.remove", "To remove");
+  if (cast === "keep") return t("consilium.vote.keep", "To keep");
+  return t("consilium.vote.waiting", "Not answered");
 }
 
 export function voteTone(vote: string | null | undefined): string {
@@ -181,9 +180,9 @@ export function standingIn(removal: OwnerRemoval, userId: string | null): Standi
 /** An admission vote as a reader sees it. Takes the RAW wire value and normalises on entry. */
 export function admissionVoteLabel(vote: string | null | undefined, t: Translate): string {
   const cast = admissionVote(vote);
-  if (cast === "admit") return t("consilium.admissionVote.admit");
-  if (cast === "reject") return t("consilium.admissionVote.reject");
-  return t("consilium.vote.waiting");
+  if (cast === "admit") return t("consilium.admissionVote.admit", "Admit");
+  if (cast === "reject") return t("consilium.admissionVote.reject", "Refuse");
+  return t("consilium.vote.waiting", "Not answered");
 }
 
 export function admissionVoteTone(vote: string | null | undefined): string {

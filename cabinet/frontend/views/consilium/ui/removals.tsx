@@ -89,14 +89,14 @@ export function RemovalList({
   return (
     <ProposalList
       read={read}
-      title={t("consilium.removals.title")}
-      description={t("consilium.removals.sub")}
+      title={t("consilium.removals.title", "Owner removals")}
+      description={t("consilium.removals.sub", "Proposals to end someone's ownership.")}
       skeleton={<RemovalsSkeleton />}
-      failedTitle={t("consilium.removals.failedTitle")}
-      failedBody={t("consilium.removals.failedBody")}
+      failedTitle={t("consilium.removals.failedTitle", "Owner removals did not load")}
+      failedBody={t("consilium.removals.failedBody", "Until it loads, the page cannot tell you whether anyone's ownership is being decided right now — so do not read this as nothing being underway. The rest of the page is unaffected.")}
       emptyIcon={<ScrollText />}
-      emptyTitle={t("consilium.removals.emptyTitle")}
-      emptyBody={t("consilium.removals.emptyBody")}
+      emptyTitle={t("consilium.removals.emptyTitle", "Nothing is being decided")}
+      emptyBody={t("consilium.removals.emptyBody", "No removal has been proposed. If one is, it appears here with every vote on it, and the person it concerns is told at the same time as everyone else.")}
       onRetry={onRetry}
       retrying={retrying}
       itemKey={(removal) => removal.id}
@@ -136,9 +136,9 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-base font-semibold text-ink">{t("consilium.removal.heading", { target: removal.target_email })}</p>
+          <p className="text-base font-semibold text-ink">{t("consilium.removal.heading", "Removing {target}", { target: removal.target_email })}</p>
           <p className="text-sm text-ink-soft">
-            {t("consilium.removal.openedBy", { initiator: removal.initiator_email, at: formatMoment(removal.created_at, locale) })}
+            {t("consilium.removal.openedBy", "Opened by {initiator} on {at}", { initiator: removal.initiator_email, at: formatMoment(removal.created_at, locale) })}
           </p>
         </div>
         <Badge variant="outline" className={cn("shrink-0", stateTone(removal.state))}>
@@ -148,9 +148,9 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
 
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wider text-ink-soft">{t("consilium.removal.reason")}</span>
+          <span className="text-xs font-medium uppercase tracking-wider text-ink-soft">{t("consilium.removal.reason", "Reason given")}</span>
           <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
-            {removal.reason?.trim() || t("consilium.removal.noReason")}
+            {removal.reason?.trim() || t("consilium.removal.noReason", "No reason was given.")}
           </p>
         </div>
 
@@ -162,16 +162,16 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <span className="text-sm font-medium tabular-nums text-ink">
-              {t("consilium.removal.peerTally", { removed: tally.toRemove, total: tally.total })}
+              {t("consilium.removal.peerTally", "{removed} of {total, plural, one {# owner} other {# owners}} voted to remove", { removed: tally.toRemove, total: tally.total })}
             </span>
-            <span className="text-xs text-ink-soft">{t("consilium.removal.unanimityNote")}</span>
+            <span className="text-xs text-ink-soft">{t("consilium.removal.unanimityNote", "All of them must agree")}</span>
           </div>
 
           {tally.total === 0 ? (
             // With two owners the eligible set is empty, and "everyone in an empty set
             // agreed" would let either owner expel the other. The rule requires at least one
             // peer voter, so this removal can only ever carry on the target's own answer.
-            <p className="text-xs text-accent-warn">{t("consilium.removal.noPeers")}</p>
+            <p className="text-xs text-accent-warn">{t("consilium.removal.noPeers", "With this few owners there is nobody eligible to vote, so this can only carry if the person it concerns accepts it themselves. That is deliberate: otherwise either of two owners could remove the other unopposed.")}</p>
           ) : (
             <ItemGroup>
               {peers.map((peer, i) => (
@@ -192,7 +192,7 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
 
         {!settled && (
           <p className="text-xs text-ink-soft tabular-nums">
-            {t("consilium.removal.expires", { at: formatMoment(removal.expires_at, locale), left: expiresIn(removal.expires_at, t) })}
+            {t("consilium.removal.expires", "Expires {at} · {left}", { at: formatMoment(removal.expires_at, locale), left: expiresIn(removal.expires_at, t) })}
           </p>
         )}
 
@@ -210,7 +210,7 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
               <div className="flex flex-col gap-2.5 sm:flex-row">
                 <Button variant="outline" className="sm:flex-1" disabled={busy !== null} onClick={() => void act("keep")}>
                   {busy === "keep" && <Loader2 className="size-4 animate-spin" />}
-                  {t("consilium.removal.voteKeep")}
+                  {t("consilium.removal.voteKeep", "Keep the seat")}
                 </Button>
                 <Button
                   variant="outline"
@@ -219,7 +219,7 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
                   onClick={() => void act("remove")}
                 >
                   {busy === "remove" && <Loader2 className="size-4 animate-spin" />}
-                  {t("consilium.removal.voteRemove")}
+                  {t("consilium.removal.voteRemove", "Vote to remove")}
                 </Button>
               </div>
             ) : (
@@ -231,7 +231,7 @@ function RemovalCard({ removal, userId }: { removal: OwnerRemoval; userId: strin
             {standing.role === "initiator" && (
               <Button variant="ghost" size="sm" className="self-start" disabled={busy !== null} onClick={() => void act("cancel")}>
                 {busy === "cancel" && <Loader2 className="size-4 animate-spin" />}
-                {t("consilium.removal.cancel")}
+                {t("consilium.removal.cancel", "Withdraw this proposal")}
               </Button>
             )}
           </>
@@ -249,16 +249,16 @@ function TargetAnswer({ removal }: { removal: OwnerRemoval }) {
   if (answer === "remove") {
     return (
       <p className="text-sm text-positive">
-        {t("consilium.removal.targetAccepted", { target: removal.target_email, at: formatMoment(removal.target_decided_at ?? undefined, locale) })}
+        {t("consilium.removal.targetAccepted", "{target} accepted this on {at}.", { target: removal.target_email, at: formatMoment(removal.target_decided_at ?? undefined, locale) })}
       </p>
     );
   }
   if (answer === "keep") {
-    return <p className="text-sm text-accent-warn">{t("consilium.removal.targetRefused", { target: removal.target_email })}</p>;
+    return <p className="text-sm text-accent-warn">{t("consilium.removal.targetRefused", "{target} has refused this.", { target: removal.target_email })}</p>;
   }
   return (
     <p className="text-sm text-ink-soft">
-      {t(removal.target_notified ? "consilium.removal.targetPending" : "consilium.removal.targetNotYetTold", { target: removal.target_email })}
+      {(removal.target_notified ? t("consilium.removal.targetPending", "{target} has been emailed and has not answered yet.", { target: removal.target_email }) : t("consilium.removal.targetNotYetTold", "{target} has not been notified yet.", { target: removal.target_email }))}
     </p>
   );
 }
@@ -273,10 +273,10 @@ function TargetAnswer({ removal }: { removal: OwnerRemoval }) {
  */
 function WhyNoVote({ standing, removal }: { standing: ReturnType<typeof standingIn>; removal: OwnerRemoval }) {
   const t = useT();
-  if (standing.role === "peer") return <>{t("consilium.removal.youVoted", { vote: voteLabel(standing.vote, t) })}</>;
-  if (standing.role === "target") return <>{t("consilium.removal.youAreTarget")}</>;
-  if (standing.role === "initiator") return <>{t("consilium.removal.youOpened", { target: removal.target_email })}</>;
-  return <>{t("consilium.removal.notAVoter")}</>;
+  if (standing.role === "peer") return <>{t("consilium.removal.youVoted", "You voted: {vote}. A vote cannot be changed once it is cast.", { vote: voteLabel(standing.vote, t) })}</>;
+  if (standing.role === "target") return <>{t("consilium.removal.youAreTarget", "This is about your seat. Your answer is not given here — it is in the message sent to your own mailbox, so it stays yours alone to give.")}</>;
+  if (standing.role === "initiator") return <>{t("consilium.removal.youOpened", "You opened this, so you have no vote on removing {target}. You are still counted in the number it has to clear: if opening a request took you out of that count, opening one would be a way to lower the bar.", { target: removal.target_email })}</>;
+  return <>{t("consilium.removal.notAVoter", "The owners who may vote on this were fixed when it was opened, so it is not yours to answer. That is what stops new owners being added to reach a result. Nothing is hidden from you — everything about it is on this page.")}</>;
 }
 
 /**
@@ -333,8 +333,8 @@ export function ProposeRemoval({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{t("consilium.propose.title")}</CardTitle>
-        <CardDescription className="text-balance">{t("consilium.propose.sub")}</CardDescription>
+        <CardTitle className="text-base">{t("consilium.propose.title", "Propose a removal")}</CardTitle>
+        <CardDescription className="text-balance">{t("consilium.propose.sub", "Ends someone's ownership if it carries. They are told at once, in your words.")}</CardDescription>
       </CardHeader>
       <CardContent>
         <Settled
@@ -344,8 +344,8 @@ export function ProposeRemoval({
         >
           {roster.status === "loading" ? null : candidates === null ? (
             <ReadFailure
-              title={t("consilium.propose.unknownTitle")}
-              body={t("consilium.propose.unknownBody")}
+              title={t("consilium.propose.unknownTitle", "This cannot be offered right now")}
+              body={t("consilium.propose.unknownBody", "Proposing a removal means choosing an owner, and the owner list did not load — so the page does not know who could be proposed, or whether there is anyone here but you. Load it and this form comes back.")}
               onRetry={onRetry}
               retrying={retrying}
             />
@@ -355,14 +355,14 @@ export function ProposeRemoval({
                 <EmptyMedia variant="icon">
                   <UserMinus />
                 </EmptyMedia>
-                <EmptyTitle>{t("consilium.propose.noneTitle")}</EmptyTitle>
-                <EmptyDescription>{t("consilium.propose.noneBody")}</EmptyDescription>
+                <EmptyTitle>{t("consilium.propose.noneTitle", "There is nobody to propose")}</EmptyTitle>
+                <EmptyDescription>{t("consilium.propose.noneBody", "You are the only owner listed. A removal is always about someone else — to stand down yourself, use Stand down as an owner.")}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
             <>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="removal-target">{t("consilium.propose.targetLabel")}</Label>
+                <Label htmlFor="removal-target">{t("consilium.propose.targetLabel", "Owner")}</Label>
                 <Select
                   value={target}
                   onValueChange={(next) => {
@@ -371,7 +371,7 @@ export function ProposeRemoval({
                   }}
                 >
                   <SelectTrigger id="removal-target" className="w-full">
-                    <SelectValue placeholder={t("consilium.propose.targetPlaceholder")} />
+                    <SelectValue placeholder={t("consilium.propose.targetPlaceholder", "Choose an owner")} />
                   </SelectTrigger>
                   <SelectContent>
                     {candidates.map((owner) => (
@@ -384,7 +384,7 @@ export function ProposeRemoval({
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="removal-reason">{t("consilium.propose.reasonLabel")}</Label>
+                <Label htmlFor="removal-reason">{t("consilium.propose.reasonLabel", "Reason")}</Label>
                 <Textarea
                   id="removal-reason"
                   value={reason}
@@ -394,23 +394,23 @@ export function ProposeRemoval({
                   }}
                   rows={3}
                   maxLength={1000}
-                  placeholder={t("consilium.propose.reasonPlaceholder")}
+                  placeholder={t("consilium.propose.reasonPlaceholder", "Why this seat should end")}
                 />
                 {/* The reason is emailed to the person it is about, in these words. Saying so
                     before it is written is worth more than any amount of moderation after. */}
-                <p className="text-xs text-ink-soft">{t("consilium.propose.reasonHint")}</p>
+                <p className="text-xs text-ink-soft">{t("consilium.propose.reasonHint", "This is emailed to them, in these words, and stays on the record. Write it as though they are reading it, because they are.")}</p>
               </div>
 
               {/* Stated unconditionally, because it is the rule rather than a verdict about
                   this roster. Re-deriving "would this breach the floor?" in the browser means
                   a client that can disagree with the server — and the direction it would be
                   wrong in is blocking a removal the fund is entitled to make. */}
-              <p className="text-xs text-ink-soft">{t("consilium.propose.floorWarning")}</p>
+              <p className="text-xs text-ink-soft">{t("consilium.propose.floorWarning", "A fund needs at least three owners to authorise a payout, so a removal that would leave fewer than three is refused.")}</p>
 
               {error !== null && <ResourceError message={errorMessage(error, t)} />}
               {opened && (
                 <p className="text-sm text-positive" role="status">
-                  {t("consilium.propose.opened")}
+                  {t("consilium.propose.opened", "Proposed. Everyone who can vote has been emailed, and so has the person it concerns.")}
                 </p>
               )}
 
@@ -421,7 +421,7 @@ export function ProposeRemoval({
                 onClick={() => void submit()}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
-                {t("consilium.propose.submit")}
+                {t("consilium.propose.submit", "Propose removal")}
               </Button>
             </>
           )}

@@ -30,7 +30,7 @@ export async function generateMetadata({
   const { locale: raw } = await params;
   const locale = isLocale(raw) ? raw : "en";
   const t = translator(messagesFor(locale), locale);
-  return { title: t("meta.title"), description: t("meta.description") };
+  return { title: t("meta.title", "EV Investment — Cabinet"), description: t("meta.description", "Your investor cabinet — portfolio, funds and wallet.") };
 }
 
 // Root layout: html/body + cross-cutting providers only. The visible chrome belongs to

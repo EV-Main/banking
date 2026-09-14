@@ -8,7 +8,9 @@ import { CHIP_KEYS, chipMessages } from "./chip-messages.ts";
 // chip bundle does not have to carry all five of them (see the note in that
 // file). Duplication is only acceptable while something checks it, which is this.
 
-const LOCALES = ["en", "ru", "vi", "fr", "de"] as const;
+// `en` is not here: the chip carries no English block any more (the call sites do),
+// and `translator()` never looks one up for the default locale.
+const LOCALES = ["ru", "vi", "fr", "de"] as const;
 
 const load = (locale: string): Record<string, unknown> =>
   JSON.parse(readFileSync(new URL(`../../../messages/${locale}/common.json`, import.meta.url), "utf8"));
@@ -26,16 +28,11 @@ test("chip copy matches the main catalogue in every locale", () => {
     const messages = chipMessages(locale);
     const catalogue = load(locale);
     for (const key of CHIP_KEYS) {
-      const expected =
-        locale === "en"
-          ? en[key]
-          : // A translation whose stored English has drifted is served as English by
-            // the policy, so that is what the chip must show too.
-            (() => {
-              const entry = catalogue[key] as { en: string; t: string } | undefined;
-              assert.ok(entry, `${locale}/${key} missing`);
-              return entry.en === en[key] ? entry.t : en[key];
-            })();
+      // A translation whose stored English has drifted is served as English by the
+      // policy, so that is what the chip must show too.
+      const entry = catalogue[key] as { en: string; t: string } | undefined;
+      assert.ok(entry, `${locale}/${key} missing`);
+      const expected = entry.en === en[key] ? entry.t : en[key];
       assert.equal(
         messages[key],
         expected,
@@ -55,7 +52,8 @@ test("the chip carries only the keys it renders", () => {
   }
 });
 
-test("an unknown locale falls back to English rather than throwing", () => {
-  // The chip reads its locale from a cookie on a page it does not control.
-  assert.equal(chipMessages("xx" as never)["ui.account"], en["ui.account"]);
+test("an unknown locale yields an empty catalogue rather than throwing", () => {
+  // The chip reads its locale off a page it does not control. An empty catalogue is
+  // exactly right: `translator()` then renders the English the call site passed in.
+  assert.deepEqual(chipMessages("xx" as never), {});
 });

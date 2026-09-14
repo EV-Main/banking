@@ -23,7 +23,7 @@ export function truncateName(name: string, max: number = MAX_DISPLAY): string {
  *  component that already holds one, so this module stays React-free. */
 export function displayName(email: string | null | undefined, t: Translate): string {
   if (email === undefined) return "…";
-  if (!email) return t("ui.account");
+  if (!email) return t("ui.account", "Account");
   const handle = email.split("@")[0] ?? email;
   const parts = handle.split(/[._-]+/).filter(Boolean);
   const first = parts[0] ? cap(parts[0]) : handle;

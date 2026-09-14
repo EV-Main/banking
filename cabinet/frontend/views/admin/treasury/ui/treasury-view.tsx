@@ -46,12 +46,12 @@ export function TreasuryView() {
   return (
     <AdminScreen className="space-y-8">
       <AdminHeader
-        eyebrow={t("admin.eyebrow.administer")}
-        title={t("nav.treasury")}
-        subtitle={t("admin.treasury.subtitle")}
+        eyebrow={t("admin.eyebrow.administer", "Administer")}
+        title={t("nav.treasury", "Treasury")}
+        subtitle={t("admin.treasury.subtitle", "Two layers — user claims (USDT) vs on-chain liquidity by rail")}
         action={
           <Button type="button" variant="outline" size="sm" disabled={loading} onClick={retry}>
-            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} /> {t("ui.refresh")}
+            <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} /> {t("ui.refresh", "Refresh")}
           </Button>
         }
       />
@@ -59,28 +59,28 @@ export function TreasuryView() {
       {error && <ResourceError message={error} onRetry={retry} retrying={loading} />}
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer1")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer1", "Layer 1 · Ledger — user claims (USDT)")}</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MoneyCard label={t("admin.treasury.claimsTotal")} value={treasury?.total_custody} hint={t("admin.treasury.claimsTotalHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.claims-total" />
-          <MoneyCard label={t("admin.treasury.heldForClients")} value={treasury?.held_for_clients} hint={t("admin.treasury.heldForClientsHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.held-for-clients" />
-          <MoneyCard label={t("admin.treasury.fundCapital")} value={treasury?.fund_capital} hint={t("admin.treasury.fundCapitalHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.fund-capital" />
+          <MoneyCard label={t("admin.treasury.claimsTotal", "Claims · total (USDT)")} value={treasury?.total_custody} hint={t("admin.treasury.claimsTotalHint", "= on-chain custody · backed")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.claims-total" />
+          <MoneyCard label={t("admin.treasury.heldForClients", "Held for clients")} value={treasury?.held_for_clients} hint={t("admin.treasury.heldForClientsHint", "user + service balances")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.held-for-clients" />
+          <MoneyCard label={t("admin.treasury.fundCapital", "Fund capital")} value={treasury?.fund_capital} hint={t("admin.treasury.fundCapitalHint", "company's own")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.fund-capital" />
           {/* The fee claim was load-bearing but invisible here: `held_for_clients` is
               derived as total − fund capital − THIS, so without it the figures above
               don't add up. It is also exactly what the Fund revenue screen pays out. */}
-          <MoneyCard label={t("nav.revenue")} value={treasury?.fee_revenue} hint={t("admin.treasury.feeRevenueHint")} loading={loading && !treasury} unavailable={!loading && !treasury} />
-          <MoneyCard label={t("admin.treasury.reservedWithdrawals")} value={treasury?.reserved_for_withdrawals} hint={t("admin.treasury.reservedWithdrawalsHint")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.reserved-withdrawals" />
+          <MoneyCard label={t("nav.revenue", "Fund revenue")} value={treasury?.fee_revenue} hint={t("admin.treasury.feeRevenueHint", "earned — fees + settled 2-and-20")} loading={loading && !treasury} unavailable={!loading && !treasury} />
+          <MoneyCard label={t("admin.treasury.reservedWithdrawals", "Reserved · withdrawals")} value={treasury?.reserved_for_withdrawals} hint={t("admin.treasury.reservedWithdrawalsHint", "queued + in-flight (clearing)")} loading={loading && !treasury} unavailable={!loading && !treasury} tip="admin.treasury.layer1.reserved-withdrawals" />
         </div>
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer2")}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer2", "Layer 2 · Treasury — liquidity by rail")}</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {treasury ? (
             <>
               {treasury.rails.map((rail) => (
                 <MoneyCard key={rail.network} network={rail.network} label={railLabel(rail.network, t)} value={rail.custody} loading={false} footer={<RailFunding rail={rail} />} />
               ))}
-              <MoneyCard label={t("admin.treasury.bank")} value={treasury.bank} hint={t("admin.treasury.bankHint")} loading={false} tip="admin.treasury.bank" />
+              <MoneyCard label={t("admin.treasury.bank", "Bank · USD")} value={treasury.bank} hint={t("admin.treasury.bankHint", "off-ramp · FX")} loading={false} tip="admin.treasury.bank" />
             </>
           ) : (
             Array.from({ length: 4 }).map((_, i) => <MoneyCard key={i} label="" value={undefined} loading={loading} unavailable={!loading} />)
@@ -97,7 +97,7 @@ export function TreasuryView() {
           something someone wrote, not as something the system enforces. */}
       <StaggerItem as="p" className="max-w-3xl text-xs text-ink-soft">
         <RichMessage
-          id="admin.treasury.invariantNote"
+          message={(t, v) => t("admin.treasury.invariantNote", "Per-rail backing is the treasury's job, not the ledger's: a shortfall on one rail is accept-and-queue, then rebalanced via CEX / alt-rail / top-up. The global invariant is {invariant}.", v)}
           values={{ invariant: <code className="font-mono-tech">sum(custody) == sum(claims)</code> }}
         />
       </StaggerItem>
@@ -142,13 +142,13 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
 
   return (
     <StaggerItem as="section" className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.recordArrival")}</p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.recordArrival", "Record an out-of-band arrival")}</p>
       <Card>
         <CardContent className="space-y-5 py-6">
-          <p className="max-w-3xl text-sm text-ink-soft">{t("admin.treasury.recordArrivalIntro")}</p>
+          <p className="max-w-3xl text-sm text-ink-soft">{t("admin.treasury.recordArrivalIntro", "USDT sent straight to a treasury hot wallet is real money the ledger never saw. Give its on-chain reference and the hub reads the transfer back off the chain — the amount and the party credited come from there, so this records an arrival rather than asserting one.")}</p>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">{t("admin.rail")}</span>
+              <span className="text-sm text-ink-soft">{t("admin.rail", "Rail")}</span>
               <Select value={network} onValueChange={setNetwork}>
                 <SelectTrigger className="w-full border-border bg-secondary" disabled={options.length === 0}>
                   {/* The placeholder is trigger text, not a selectable item — "Select a
@@ -156,7 +156,7 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
                   <span className={cn("flex min-w-0 items-center gap-1.5", !network && "text-ink-soft")}>
                     {network && <NetworkMark network={network} className="size-3.5 shrink-0" />}
                     <span className="truncate">
-                      {network ? railLabel(network, t) : options.length === 0 ? t("admin.treasury.noRailWithTreasury") : t("admin.treasury.selectRail")}
+                      {network ? railLabel(network, t) : options.length === 0 ? t("admin.treasury.noRailWithTreasury", "No rail with a treasury") : t("admin.treasury.selectRail", "Select a rail…")}
                     </span>
                   </span>
                 </SelectTrigger>
@@ -171,11 +171,11 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
               </Select>
             </div>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">{t("admin.treasury.expectedAmount")}</span>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder={t("admin.treasury.placeholder.any")} className="w-full" />
+              <span className="text-sm text-ink-soft">{t("admin.treasury.expectedAmount", "Expected amount (USDT) · optional")}</span>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder={t("admin.treasury.placeholder.any", "any")} className="w-full" />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-ink-soft">{t("admin.treasury.onchainRef")}</span>
+              <span className="text-sm text-ink-soft">{t("admin.treasury.onchainRef", "On-chain reference")}</span>
               {/* A format literal, not prose — it reads the same in every locale. */}
               <Input value={txRef} onChange={(e) => setTxRef(e.target.value)} placeholder="0xhash:logIndex" className="w-full" />
             </label>
@@ -186,7 +186,7 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
               splitting around the two spans would hand them three fragments instead. */}
           <p className="text-xs text-ink-soft">
             <RichMessage
-              id="admin.treasury.refNote"
+              message={(t, v) => t("admin.treasury.refNote", "The reference is both what gets verified and the idempotency key — {evmRef} on an EVM rail, {tonRef} on TON. A reference that names no confirmed transfer to one of our addresses is refused, and a re-submission of one already recorded is a no-op. Fill the amount only to assert what you expect; a mismatch is then an error instead of a surprise.", v)}
               values={{
                 evmRef: <code className="font-mono-tech">txhash:logIndex</code>,
                 tonRef: <code className="font-mono-tech">txhash:piggybank</code>,
@@ -201,14 +201,14 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
           )}
           {state.result?.recorded && (
             <p className="text-sm text-accent-debug">
-              {t("admin.treasury.recorded", { amount: formatUsd(state.result.amount), party: partyLabel(state.result, t) })}
+              {t("admin.treasury.recorded", "Recorded — the chain reported {amount}, credited to {party}.", { amount: formatUsd(state.result.amount), party: partyLabel(state.result, t) })}
             </p>
           )}
-          {state.result && !state.result.recorded && <p className="text-sm text-accent-warn">{t("admin.treasury.alreadyRecorded")}</p>}
+          {state.result && !state.result.recorded && <p className="text-sm text-accent-warn">{t("admin.treasury.alreadyRecorded", "Already recorded — that reference was credited before, nothing changed.")}</p>}
 
           <Button type="button" className={cn("ml-auto flex", TEAL_CTA)} disabled={state.busy || !network || !txRef.trim()} onClick={submit}>
             {state.busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            {t("admin.treasury.recordArrivalSubmit")}
+            {t("admin.treasury.recordArrivalSubmit", "Record arrival")}
           </Button>
         </CardContent>
       </Card>
@@ -220,8 +220,8 @@ function RecordArrival({ rails, onRecorded }: { rails: RailLiquidity[] | undefin
  *  a reference that turns out to be a user's deposit credits that user, and the operator
  *  should see that happened instead of reading it as company capital. */
 function partyLabel({ party_kind, party_id }: RecordedArrival, t: Translate): string {
-  if (party_kind === "piggybank") return t("admin.treasury.party.fundCapital");
-  return party_id ? t("admin.treasury.party.generic", { kind: party_kind, id: party_id }) : party_kind;
+  if (party_kind === "piggybank") return t("admin.treasury.party.fundCapital", "fund capital");
+  return party_id ? t("admin.treasury.party.generic", "{kind} {id}", { kind: party_kind, id: party_id }) : party_kind;
 }
 
 /** `unavailable` is the read-failed state: a muted dash, never a formatted `$0.00` —
@@ -266,30 +266,30 @@ function RailFunding({ rail }: { rail: RailLiquidity }) {
       {rail.treasury_address ? (
         <div className="space-y-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-xs text-ink-soft">{t("nav.treasury")}</p>
+            <p className="text-xs text-ink-soft">{t("nav.treasury", "Treasury")}</p>
             <TipAnchor anchor="admin.treasury.rail.address" />
           </div>
           <CopyableAddress address={show(rail.treasury_address)} />
         </div>
       ) : (
-        <p className="text-xs text-ink-soft">{t("admin.treasury.custodyUnconfigured")}</p>
+        <p className="text-xs text-ink-soft">{t("admin.treasury.custodyUnconfigured", "— · custody unconfigured")}</p>
       )}
-      <FundingRow label={t("admin.treasury.onchainUsdt")} value={rail.onchain_usdt ? qty(rail.onchain_usdt, locale) : undefined} />
-      <FundingRow label={t("admin.treasury.gas")} value={rail.onchain_gas ? `${qty(rail.onchain_gas, locale)} ${gasSymbol}`.trimEnd() : undefined} />
+      <FundingRow label={t("admin.treasury.onchainUsdt", "On-chain USDT")} value={rail.onchain_usdt ? qty(rail.onchain_usdt, locale) : undefined} />
+      <FundingRow label={t("admin.treasury.gas", "Gas")} value={rail.onchain_gas ? `${qty(rail.onchain_gas, locale)} ${gasSymbol}`.trimEnd() : undefined} />
       {rail.gas_station_address && (
         <div className="space-y-1.5">
           <div className="flex items-center gap-1.5">
             {/* The accent parenthetical is its own complete thought, so it keeps its own key
                 and its own colour rather than being folded into the label. */}
             <p className="text-xs text-ink-soft">
-              {t("admin.treasury.gasStation")}{" "}
-              <span className="text-positive">{t("admin.treasury.gasStationHint", { symbol: gasSymbol || t("admin.treasury.gasWord") })}</span>
+              {t("admin.treasury.gasStation", "Gas station")}{" "}
+              <span className="text-positive">{t("admin.treasury.gasStationHint", "(fund {symbol} here — pays sweep gas drops)", { symbol: gasSymbol || t("admin.treasury.gasWord", "gas") })}</span>
             </p>
             <TipAnchor anchor="admin.treasury.rail.gas-station" />
           </div>
           <CopyableAddress address={show(rail.gas_station_address)} />
           <FundingRow
-            label={t("admin.treasury.gasStationBalance")}
+            label={t("admin.treasury.gasStationBalance", "Gas station balance")}
             value={rail.gas_station_gas ? `${qty(rail.gas_station_gas, locale)} ${gasSymbol}`.trimEnd() : undefined}
           />
         </div>
@@ -326,7 +326,7 @@ function CopyableAddress({ address, label }: { address: string; label?: string }
         <code className="flex-1 min-w-0 truncate rounded border border-border bg-secondary px-2 py-1 font-mono-tech text-xs text-ink-soft" title={address}>
           {address}
         </code>
-        <Button type="button" variant="outline" size="icon" onClick={copy} aria-label={t("admin.treasury.a11y.copy", { what: label ?? t("ui.address") })}>
+        <Button type="button" variant="outline" size="icon" onClick={copy} aria-label={t("admin.treasury.a11y.copy", "Copy {what}", { what: label ?? t("ui.address", "address") })}>
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </Button>
       </div>

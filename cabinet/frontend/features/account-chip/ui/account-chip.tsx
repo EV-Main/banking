@@ -168,14 +168,14 @@ function AuthedChip({
           {/* i18n-max: 12 — sits under the name inside the chip's `min-w-0` column, which
               is what the conductor's central nav is centred against. */}
           <p className="flex items-center gap-1 text-xs font-medium text-accent-debug">
-            <BadgeCheck className="size-3 shrink-0" /> {t("ui.verified")}
+            <BadgeCheck className="size-3 shrink-0" /> {t("ui.verified", "Verified")}
           </p>
         </div>
       </a>
       <button
         type="button"
         onClick={signOut}
-        aria-label={t("auth.signOut")}
+        aria-label={t("auth.signOut", "Sign out")}
         className={cn("shrink-0 rounded-md text-ink-soft transition-colors hover:text-ink", CHIP_FOCUS)}
       >
         <LogOut className="size-4" />
@@ -200,7 +200,7 @@ function SignInCta({ className }: { className?: string }) {
         className,
       )}
     >
-      {t("auth.investorPortal")}
+      {t("auth.investorPortal", "Investor Portal")}
     </a>
   );
 }
@@ -218,7 +218,7 @@ function ChipSkeleton({ className }: { className?: string }) {
 // and stays that way, and its one word of prose is the last-resort label.
 function displayName(email: string | null | undefined, t: Translate): string {
   if (email === undefined) return "…";
-  if (!email) return t("ui.account");
+  if (!email) return t("ui.account", "Account");
   const handle = email.split("@")[0] ?? email;
   const parts = handle.split(/[._-]+/).filter(Boolean);
   const first = parts[0] ? cap(parts[0]) : handle;
