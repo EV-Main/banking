@@ -32,7 +32,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   if (denied) {
     return (
       <StatusScreen
-        accent="gold"
+        accent="warn"
         code="403"
         eyebrow={t("status.forbidden.eyebrow", "Access forbidden")}
         headlineLead={t("status.forbidden.headlineLead", "This harbour is ")}

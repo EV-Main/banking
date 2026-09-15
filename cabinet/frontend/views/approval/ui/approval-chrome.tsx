@@ -27,10 +27,10 @@ import {
   FieldError,
   FieldLabel,
   Input,
+  Logo,
   Skeleton,
 } from "@evinvest/uikit";
 
-import { Logo } from "@/application/layout/logo";
 import { cn } from "@/shared/lib/cn";
 
 /**

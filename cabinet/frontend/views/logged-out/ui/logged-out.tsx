@@ -1,8 +1,8 @@
 import { translator } from "@evinvest/i18n";
+import { Logo } from "@evinvest/uikit";
 
 import { Link } from "@/shared/ui/cabinet-link";
 
-import { Logo } from "@/application/layout/logo";
 import { messagesFor } from "@/shared/config/i18n";
 import { currentLocale } from "@/shared/config/locale";
 

@@ -72,6 +72,10 @@ const nextConfig: NextConfig = {
       // prefix for free; without it the account chip 404s on every page of the
       // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
       { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
+      // Same shape for the brand mark: `--brand-mark` names an absolute URL, and
+      // under the zone mount the browser's `/assets/*` would reach the
+      // conductor's public dir rather than ours.
+      { source: "/cabinet/assets/:path*", destination: "/assets/:path*" },
     ];
   },
   // Request-invariant hardening on every response, mirroring

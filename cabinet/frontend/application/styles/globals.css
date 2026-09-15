@@ -36,12 +36,14 @@
      The `(app)` layout reserves matching padding-bottom below `lg` so content is
      never occluded by the fixed bar. */
   --cabinet-bottom-nav-h: 64px;
-  /* Aspect ratio of the brand mark's artwork (application/layout/logo.tsx). uikit's
-     `Logo` is a CSS-masked <span>, which has no intrinsic size the way an inline
-     <svg viewBox> does, so the ratio has to be restated for `w-auto` to resolve. It
-     is the canonical lockup's own 387×335 canvas — changing it distorts nothing
-     (the mask is `contain`) but does letterbox the mark inside its own box. */
-  --ev-logo-aspect: 387 / 335;
+  /* The brand mark uikit's `Logo` masks. The kit ships no artwork, so these two
+     are the whole contract: the lockup itself (staged into public/assets from the
+     ev_assets input by flake.nix, reached through the zone's /cabinet/assets
+     rewrite) and its 387×335 canvas — a CSS-masked <span> has no intrinsic size
+     the way an inline <svg viewBox> does, so the ratio has to be stated for
+     `w-auto` to resolve. */
+  --brand-mark: url("/cabinet/assets/logo.svg");
+  --brand-aspect: 387 / 335;
 }
 
 @layer base {

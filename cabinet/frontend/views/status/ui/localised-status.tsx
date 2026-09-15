@@ -26,7 +26,9 @@ import { cabinetPath } from "@/shared/config/base-path";
  */
 export type StatusKind = "notFound" | "forbidden" | "unauthorized";
 
-const ACCENT = { notFound: "teal", forbidden: "gold", unauthorized: "gold" } as const;
+// Accent rungs, not hues: a 404 is a shrug, a 403/401 is a warning. Matches the
+// kit's own `NotFound` / `Forbidden` presets.
+const ACCENT = { notFound: "debug", forbidden: "warn", unauthorized: "warn" } as const;
 const CODE = { notFound: "404", forbidden: "403", unauthorized: "401" } as const;
 
 const HALVES = ["eyebrow", "headlineLead", "headlineAccent", "subtext"] as const;

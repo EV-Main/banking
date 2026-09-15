@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import * as Sentry from "@sentry/nextjs";
 import { createSentrySink } from "@evinvest/error-monitoring";
 import { useLocale, useT } from "@evinvest/i18n/react";
-import { StatusScreen, statusButtonClass } from "@evinvest/uikit";
+import { StatusScreen, statusCtaClass } from "@evinvest/uikit";
 
 import { cabinetPath } from "@/shared/config/base-path";
 
@@ -44,7 +44,7 @@ export default function Error({
 
   return (
     <StatusScreen
-      accent="red"
+      accent="error"
       code="500"
       eyebrow={t("status.serverError.eyebrow", "Server error")}
       headlineLead={t("status.serverError.headlineLead", "Our systems are ")}
@@ -59,7 +59,7 @@ export default function Error({
         },
       ]}
     >
-      <button type="button" className={statusButtonClass("red", "filled")} onClick={reset}>
+      <button type="button" className={statusCtaClass("error", "primary")} onClick={reset}>
         {t("status.tryAgain", "Try again")}
       </button>
     </StatusScreen>

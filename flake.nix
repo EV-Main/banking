@@ -1,8 +1,12 @@
 {
   inputs = {
     v_flakes.url = "github:valeratrades/v_flakes?ref=v1.6";
+    # The brand mark. `@evinvest/uikit` ships no artwork — `<Logo>` masks whatever
+    # `--brand-mark` points at — so the lockup is pinned here and staged into
+    # `public/`, never vendored. "Latest logo" = `nix flake update ev_assets`.
+    ev_assets = { url = "github:EV-invest/assets"; flake = false; };
   };
-  outputs = { self, v_flakes }:
+  outputs = { self, v_flakes, ev_assets }:
     let
       inherit (v_flakes) flake-utils pre-commit-hooks rust-overlay;
     in
@@ -19,6 +23,10 @@
         rust = v_flakes.rs.default_nightly system;
         pre-commit-check = pre-commit-hooks.lib.${system}.run (v_flakes.files.preCommit { inherit pkgs; });
         pname = "ev_banking";
+        # Brand mark from the pinned `ev_assets` input, staged into the cabinet's
+        # served assets (gitignored; declaratively populated, never hand-edited).
+        # `--brand-mark` in globals.css is what masks it.
+        logoSrc = "${ev_assets}/logo/logo.svg";
         # ── ev_invest dev topology (single source of truth for ports) ───────
         # ONE postgres + ONE redis serve every sibling repo (concierge and
         # site_conductor mirror these values in their flakes); tigerbeetle is
@@ -61,6 +69,8 @@
             node_modules/
             .next/
             .turbo/
+            ## Brand mark, staged from the ev_assets input
+            cabinet/frontend/public/assets/
             ## Env
             .env
             .env.local
@@ -264,6 +274,8 @@
           };
           buildPhase = ''
             runHook preBuild
+            mkdir -p cabinet/frontend/public/assets
+            cp -f --no-preserve=mode ${logoSrc} cabinet/frontend/public/assets/logo.svg
             npm run build --workspace @evbanking/cabinet
             runHook postBuild
           '';
@@ -1066,6 +1078,11 @@
               + combined.shellHook
               + ''
                 cp -f ${(v_flakes.files.treefmt) { inherit pkgs; }} ./.treefmt.toml
+
+                # Same staging the image does, so `npm run dev` masks a real mark
+                # rather than the solid block an undeclared `--brand-mark` paints.
+                mkdir -p cabinet/frontend/public/assets
+                cp -f --no-preserve=mode ${logoSrc} cabinet/frontend/public/assets/logo.svg
 
                 export DYLD_FALLBACK_LIBRARY_PATH="${rust}/lib''${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
                 export PROTOC="${pkgs.protobuf}/bin/protoc"

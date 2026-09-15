@@ -1,6 +1,5 @@
 import QRCode from "react-qr-code";
-
-import { Logo } from "@/application/layout/logo";
+import { Logo } from "@evinvest/uikit";
 
 // A branded deposit-address QR (Figma `qr`): high error-correction modules in deep navy on a
 // white rounded plate, with the EV mark inset in the centre (level H tolerates the occlusion).

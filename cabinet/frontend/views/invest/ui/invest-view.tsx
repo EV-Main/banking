@@ -249,7 +249,7 @@ function ProductCard({ product }: { product: Product }) {
 
         {/* One CTA treatment per card, full width. The list used to mix a filled button
             with a bare text link, which read as two different kinds of thing. */}
-        <Button asChild className={cn("mt-auto w-full", held ? "" : TEAL_CTA)} variant={held ? "outline" : "default"}>
+        <Button asChild className={cn("mt-auto w-full", held ? "" : TEAL_CTA)} variant={held ? "outline" : "primary"}>
           <Link href={`/invest/${encodeURIComponent(product.service)}`}>
             {held ? t("ui.manage", "Manage") : t("nav.invest", "Invest")}
             <ArrowRight className="size-4" />
