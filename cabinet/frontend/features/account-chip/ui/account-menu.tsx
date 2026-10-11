@@ -143,10 +143,14 @@ export function AccountMenu({ className, identity, locked = false, links, groups
           {identity?.initials}
         </span>
         {identity ? (
-          // sr-only rather than hidden: on a phone the name is still the button's name.
-          <span className="truncate text-sm font-semibold text-ink max-sm:sr-only">{identity.label}</span>
+          // sr-only rather than hidden: on a phone the name is still the button's name. A host
+          // that gives the chip a full-width row (a mobile drawer) sets `data-layout="menu"` on
+          // the element and keeps the name; pure CSS, so no prop threads through both modes.
+          <span className="truncate text-sm font-semibold text-ink max-sm:sr-only max-sm:in-data-[layout=menu]:not-sr-only">
+            {identity.label}
+          </span>
         ) : (
-          <span className="h-3 w-24 animate-pulse rounded bg-ink/10 max-sm:hidden" aria-hidden />
+          <span className="h-3 w-24 animate-pulse rounded bg-ink/10 max-sm:hidden max-sm:in-data-[layout=menu]:inline-block" aria-hidden />
         )}
         <ChevronDown
           // Duration and easing are motion-safe too: under reduce the computed transition

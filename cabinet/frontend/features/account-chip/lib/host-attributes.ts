@@ -44,6 +44,8 @@ export const HOST_ATTRS = {
   groups: "data-groups",
   intent: "data-intent",
   returnTo: "data-return-to",
+  /** Either mode; `menu` keeps the name below `sm` (a drawer row). Read by CSS only. */
+  layout: "data-layout",
 } as const;
 
 // Bounds on what a header menu can sensibly hold, so a runaway attribute cannot lay out a
