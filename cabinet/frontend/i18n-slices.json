@@ -145,7 +145,8 @@
     "status.tryAgain",
     "sys.a11y.dismiss",
     "sys.maintenance",
-    "sys.readOnly"
+    "sys.readOnly",
+    "ui.account"
   ],
   "routes": {
     "app/[locale]/cabinet/(app)/admin/allocations/[service]/page.tsx": [
@@ -1663,7 +1664,6 @@
       "payment.tier.service",
       "session.breakGlass.body",
       "session.breakGlass.title",
-      "ui.account",
       "ui.cancel",
       "ui.keep",
       "wallet.chain.bep20",
@@ -2319,7 +2319,6 @@
       "tips.profile.field.tax-residence.title",
       "tips.profile.kyc-level.body",
       "tips.profile.kyc-level.title",
-      "ui.account",
       "ui.accountStatus",
       "ui.addFunds",
       "ui.back",
@@ -2486,7 +2485,6 @@
       "tips.settings.sessions.revoke.title",
       "tips.settings.sessions.this-device.body",
       "tips.settings.sessions.this-device.title",
-      "ui.account",
       "ui.back",
       "ui.deliveryTopics",
       "ui.email",
@@ -2919,6 +2917,7 @@
   },
   "serverOnly": [
     "auth.cabinet",
+    "auth.err.signOut",
     "auth.manageAccount",
     "auth.signInAgain",
     "auth.signedOut",

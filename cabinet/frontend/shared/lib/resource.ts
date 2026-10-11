@@ -74,8 +74,8 @@ export interface ResourceConfig<T, A extends unknown[]> {
    *
    * NON-PERSONAL data only. The catalog of open funds and their NAVs qualify; a balance,
    * a position, a profile or an operation does not — those stay in memory, which dies with
-   * the page. (`features/account-chip/model/identity-cache.ts` makes the same call for the
-   * two identity fields it needs.)
+   * the page. (`entities/user/model/identity-cache.ts` makes the same call for the
+   * three identity fields it needs.)
    */
   persist?: boolean;
   /**

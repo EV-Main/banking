@@ -1,92 +1,55 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import { translator, type Translate } from "@evinvest/i18n";
-
-import { profileResource } from "@/entities/user/model/profile-resource";
+import {
+  clearIdentity,
+  identityOf,
+  parseIdentity,
+  profileName,
+  readIdentityRaw,
+  seedFor,
+  subscribeIdentity,
+  writeIdentity,
+  type CachedIdentity,
+} from "@/entities/user/model/identity-cache";
 import { cabinetPath, isCabinetPage } from "@/shared/config/base-path";
-import { chipMessages } from "@/features/account-chip/model/chip-messages";
 import { cn } from "@/shared/lib/cn";
 import { csrfHeader } from "@/shared/lib/csrf-client";
+import { displayName, initialsOfName, truncateName } from "@/shared/lib/identity";
 import { documentLocale } from "@/shared/lib/locale-cookie";
 import { clearResources, useResource } from "@/shared/lib/resource";
 import { SESSION_UNAVAILABLE, useSession } from "@/shared/lib/use-session";
 
+import { chipTranslator } from "../lib/chip-translator";
+import type { MenuGroup } from "../lib/host-attributes";
 import { signInHref } from "../lib/sign-in-href";
-import { clearIdentity, readIdentity, writeIdentity } from "../model/identity-cache";
+import { chipProfileResource } from "../model/chip-profile";
+import { performSignOut } from "../model/sign-out";
+import { AccountMenu, CHIP_FOCUS, type MenuIdentity, type MenuLinks } from "./account-menu";
 
 // Inlined by `mfe/build.mjs`; unset, the menu offers no Service-Arb. Not through `config`:
 // that reads every variable off `process`, which this bundle does not have on the host page.
 // eslint-disable-next-line no-restricted-properties
 const SA_PANEL_URL = process.env.NEXT_PUBLIC_SA_PANEL_URL;
 
-// The chip's controls are hand-written so the bundle stays free of the uikit Button,
-// which means the keyboard focus ring has to be written out too.
-const CHIP_FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** Keeps the label from pushing the host's central nav off-centre. */
+const MAX_LABEL = 28;
 
-/**
- * The chip's own translator.
- *
- * `useT()` cannot be used here and the reason is the same one that rules out next/link
- * below: this bundle mounts on the CONDUCTOR origin, where none of the cabinet's React
- * tree — and so no `I18nProvider` — exists above it. The hook would throw. It reads the
- * locale the way it already reads it for every link it builds, off the document it was
- * mounted into, and constructs a translator over `chip-messages.ts` — the strings
- * this component renders, and nothing else. Not the cabinet's `messagesFor()`: that pulls
- * all five `common.json` files and runs the resolve policy over them at module scope,
- * which put 532 KB of catalogue into a bundle the conductor injects on every page of the
- * public site. An anonymous visitor was downloading the German admin-treasury copy to
- * render the word "Verified". `chip-messages.test.ts` keeps the small copy in step with
- * the real catalogues, so there is still one source of truth — just not one bundle.
- *
- * Not memoised, and deliberately not: `documentLocale()` is two property reads and
- * `translator()` closes over a catalogue it does not copy, so caching the pair would cost
- * more in the machinery than it saves — and a cached one would go stale the moment the
- * conductor swapped the document's language under a chip that never remounts.
- */
-function chipTranslator(): Translate {
-  const locale = documentLocale();
-  return translator(chipMessages(locale), locale);
-}
-
-// The account chip, rendered as a cabinet microfrontend inside the conductor's shared
-// header (registered in site_conductor's mfe-registry as `cabinet.account`). It replaces
-// the header's old "Investor Portal" button and owns all three states itself:
-//   • loading      → a compact skeleton
-//   • authenticated → avatar + name, opening the account menu in the order every service
-//                     keeps (lib ts/uikit README, "The top bar contract")
-//   • signed-out   → the Cabinet CTA (so anonymous marketing-site visitors still
-//                     get a way into the cabinet)
+// The account chip in cabinet mode — on the public site and in the cabinet zone, where the
+// cabinet's own session cookie is readable. It owns the session, the profile read and the
+// logout; `AccountMenu` only draws. States:
+//   • no cache, session loading            → AccountMenu skeleton (final box, w-24 bar)
+//   • cache, session loading or unreachable → the cached chip, so a blip never shows the CTA;
+//                                             locked — no email, nothing opens — until the
+//                                             session vouches for it (a shared machine)
+//   • signed in                             → live chip; profile name refines the label
+//   • signed out                            → the Cabinet CTA
 //
-// Framework-agnostic on purpose: the bundle mounts as a vanilla-React custom element on
-// the CONDUCTOR origin, which has no cabinet Next router — so no next/link or
-// next/navigation, and no I18nProvider either (see chipTranslator above). Every
-// destination is a cross-zone hard <a href> (PATTERNS §9), routed back into the zone via
-// cabinetPath(). And unlike the sidebar chip it NEVER redirects on a dropped session: an
-// anonymous visitor on the public site must not be bounced to login.
-//
-// Those destinations are LOCALISED, and that is the whole fix for "the cabinet always opens
-// in Russian". Cabinet page URLs carry the locale first (`/{locale}/cabinet/…`); the chip
-// used to link to the locale-free `/cabinet/profile`, which the zone proxy then had to
-// resolve on its own — and with nothing carrying the reader's site language across the zone
-// boundary, it resolved from Accept-Language. A reader on the English landing with a
-// Russian-configured browser was sent to /ru/cabinet/profile every time. The document the
-// chip is rendered into already knows the answer, so it links straight there and no guess
-// is ever made. site_conductor also mirrors that locale into the `ev_locale` cookie, which
-// covers the other entry points (bookmarks, old links) the chip is not involved in.
-//
-// Where the chip links depends on where it is. On a public-site page it is the way INTO
-// the cabinet, so it opens the cabinet home — an investor arriving from the landing wants
-// their portfolio, not their own name and address. On a cabinet page the home is one rail
-// click away and the chip is the identity affordance, so there it opens the profile. The
-// document's own pathname decides (`isCabinetPage`), read the same way the locale is.
-//
-// The host may also say where the visitor was going and why — `intent` and `returnTo`,
-// read off the custom element's data attributes by the MFE entry — and the signed-out
-// link carries them to the login page (`lib/sign-in-href.ts`). Nothing else in the chip
-// reads them.
+// Framework-agnostic: no next/link or next/navigation (no cabinet router on the conductor
+// origin). Destinations are hard <a href>s built with cabinetPath() for the document's own
+// locale, so the reader lands in the language they were reading. It NEVER redirects on a
+// dropped session: an anonymous visitor on the public site must not be bounced to login.
 export type AccountChipProps = {
   className?: string;
   /** `data-intent` on the element: `signup` | `login`; anything else is ignored. */
@@ -97,219 +60,140 @@ export type AccountChipProps = {
 
 export function AccountChip({ className, intent, returnTo }: AccountChipProps) {
   const session = useSession();
-  // Read once, at mount: the optimistic identity from the last visit.
-  const [identity] = useState(readIdentity);
-  const email = session?.user?.email ?? null;
+  const raw = useSyncExternalStore(subscribeIdentity, readIdentityRaw, () => null);
+  const cached = useMemo(() => parseIdentity(raw), [raw]);
 
-  // Invalidate the cache only on a GENUINE signed-out result. A transient
-  // session-endpoint blip resolves to the frozen SESSION_UNAVAILABLE sentinel — treating
-  // that as sign-out would wipe the optimization and flash the CTA at a still-logged-in
-  // user on the next load.
-  const signedOut =
-    session !== null && !session.authenticated && session !== SESSION_UNAVAILABLE;
+  // Only a GENUINE signed-out answer clears the cache; SESSION_UNAVAILABLE is a blip.
+  const signedOut = session !== null && session !== SESSION_UNAVAILABLE && !session.authenticated;
   useEffect(() => {
     if (signedOut) clearIdentity();
   }, [signedOut]);
 
-  // Still loading: trust the cache if we have one (same tab ⇒ same user in practice) so
-  // the chip paints its final form now — but don't persist from here, the email isn't
-  // confirmed yet. Never the email-derived name.
-  if (session === null) {
-    return identity ? (
-      <AuthedChip
-        className={className}
-        email={identity.email}
-        seedName={identity.name}
-        persist={false}
-      />
-    ) : (
-      <ChipSkeleton className={className} />
-    );
+  if (session === null || session === SESSION_UNAVAILABLE) {
+    // Unconfirmed: paint the last visit's name rather than a skeleton or the CTA, but not
+    // its email and not its menu — that cache may be someone else's.
+    if (cached) return <CabinetMenu className={className} identity={{ ...menuIdentity(cached), email: null }} locked />;
+    if (session === null) return <CabinetMenu className={className} identity={null} />;
   }
-  if (!session.authenticated) return <SignInCta className={className} intent={intent} returnTo={returnTo} />;
-  // Confirmed session: trust the seeded name only if it belongs to THIS account, so a
-  // same-tab account switch never paints (or re-persists) the previous user's name.
-  const seedName = identity?.email === email ? identity.name : null;
-  return <AuthedChip className={className} email={email} seedName={seedName} persist />;
+  if (!session?.authenticated) return <SignInCta className={className} intent={intent} returnTo={returnTo} />;
+  const email = session.user?.email ?? null;
+  return <AuthedChip className={className} email={email} seed={seedFor(cached, email)} />;
 }
 
-function AuthedChip({
-  className,
-  email,
-  seedName,
-  persist,
-}: {
-  className?: string;
-  email: string | null;
-  seedName: string | null;
-  persist: boolean;
-}) {
-  // The profile refines the label (preferred/legal name); it only fetches here, in the
-  // authenticated branch.
-  // `isLoading` is false once the read has settled either way, so a profile that failed to
-  // load falls through to the heuristic below instead of holding the skeleton forever.
-  const { data: profile, isLoading } = useResource(profileResource);
-  const t = chipTranslator();
-  const settled = !isLoading;
-  const realName = profile?.preferred_name || profile?.legal_name || null;
-  // Resolution order: live profile name → the name seeded from last visit → (only once the
-  // fetch has settled without a preferred/legal name) the email heuristic. Showing the
-  // email-derived label while the profile is still loading is the flicker we avoid — it
-  // would visibly correct itself a beat later. Until a name is known, render a skeleton,
-  // not a name we'll replace. Truncate long names so the chip doesn't push the central nav
-  // off-centre.
-  const name = truncate(realName ?? seedName ?? (settled ? displayName(email, t) : null));
+/** Label and initials from `name ?? email` ("Valentina Kuznetsova" → "VK"). */
+function labelled(email: string | null, name: string | null): MenuIdentity {
+  return {
+    email,
+    initials: initialsOfName(name ?? "", email),
+    label: truncateName(name ?? displayName(email, chipTranslator()), MAX_LABEL),
+  };
+}
 
+function menuIdentity(cached: CachedIdentity): MenuIdentity {
+  return { ...labelled(cached.email, cached.name), initials: cached.initials };
+}
+
+function AuthedChip({ className, email, seed }: { className?: string; email: string | null; seed: CachedIdentity | null }) {
+  const { data: profile, isLoading } = useResource(chipProfileResource);
+  // undefined: not read yet; null: read, and the profile has no name.
+  const name = profile ? profileName(profile) : undefined;
   useEffect(() => {
-    // Persist only from a confirmed session (persist) and only real names, so the cache
-    // never holds a heuristic or a name that disagrees with its email.
-    if (persist && realName) writeIdentity({ email, name: realName });
-  }, [persist, email, realName]);
+    // Confirmed session + live profile only; writeIdentity itself skips an unchanged value.
+    if (email && name !== undefined) writeIdentity(identityOf(email, name));
+  }, [email, name]);
 
-  async function signOut() {
-    // Shell-owned logout (site-root /api/auth): revokes the shared session and clears
-    // its cookies for every zone at once.
-    await fetch("/api/auth/logout", { method: "POST", headers: csrfHeader() });
-    // The reads cached for this account go with the session. The hard navigation below
-    // clears the in-memory half anyway; this is what clears the sessionStorage half.
-    clearResources();
-    window.location.href = cabinetPath(documentLocale(), "/loggedout");
-  }
+  // The profile is the truth once it lands; until then the matching cache; once the read has
+  // settled without one (failed), the email heuristic. Never the heuristic while the profile
+  // is in flight — it would visibly correct itself a beat later.
+  const identity =
+    name !== undefined ? labelled(email, name) : seed ? menuIdentity(seed) : isLoading ? null : labelled(email, null);
+  return <CabinetMenu className={className} identity={identity} />;
+}
 
+/** AccountMenu with the cabinet's own links, groups and logout. */
+function CabinetMenu({ className, identity, locked }: { className?: string; identity: MenuIdentity | null; locked?: boolean }) {
+  const t = chipTranslator();
+  const [failed, setFailed] = useState(false);
+  const onSignOut = async () => {
+    setFailed(false);
+    if (!(await signOut())) setFailed(true);
+  };
   return (
-    <AccountMenu className={className} email={email} name={name} onSignOut={signOut} />
+    <AccountMenu
+      className={className}
+      identity={identity}
+      locked={locked}
+      links={cabinetLinks()}
+      groups={serviceGroups()}
+      error={failed ? t("auth.err.signOut", "We couldn't sign you out. Please try again.") : null}
+      onSwitchAccount={clearIdentity}
+      onSignOut={() => void onSignOut()}
+    />
   );
 }
 
+function signOut(): Promise<boolean> {
+  return performSignOut({
+    // Wrapped: a bare `window.fetch` reference called off `window` throws "Illegal invocation".
+    fetch: (input, init) => fetch(input, init),
+    csrfHeader,
+    clearIdentity,
+    clearResources,
+    navigate: (href) => {
+      window.location.href = href;
+    },
+    locale: documentLocale(),
+  });
+}
+
 /**
- * Name / email, Manage account, the services, Switch account, Sign out. A disclosure, not
- * an ARIA menu: its entries are plain links Tab already walks, and Escape or a click
- * elsewhere closes it.
+ * Read at render, like the locale — the conductor swaps documents under a chip that never
+ * remounts. The header opens the cabinet home from the public site (an investor arriving
+ * from the landing wants their portfolio) and the profile from inside the cabinet.
  */
-function AccountMenu({
-  className,
-  email,
-  name,
-  onSignOut,
-}: {
-  className?: string;
-  email: string | null;
-  name: string | null;
-  onSignOut: () => void;
-}) {
-  const t = chipTranslator();
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
+function cabinetLinks(): MenuLinks {
+  const locale = documentLocale();
   const here = typeof document === "undefined" ? "/" : document.location.pathname + document.location.search;
-  // Spelled out to the reset: the host page's base styles are not this bundle's to rely on.
-  const entry = cn(
-    "block w-full rounded-md bg-transparent px-2 py-1.5 text-left text-sm text-ink no-underline transition-colors hover:bg-ink/5",
-    CHIP_FOCUS,
-  );
-  const rule = "my-1 border-0 border-t border-solid border-border";
-  return (
-    <div ref={root} className={cn("relative", className)}>
-      <button
-        ref={trigger}
-        type="button"
-        aria-expanded={open}
-        aria-controls="ev-account-menu"
-        onClick={() => setOpen((o) => !o)}
-        className={cn("flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border-0 bg-transparent px-1.5 py-1 transition-colors hover:bg-ink/5", CHIP_FOCUS)}
-      >
-        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-full bg-primary-ink/15 text-xs font-semibold text-primary-ink">
-          {initialsOf(email)}
-        </span>
-        {name ? (
-          <span className="truncate text-sm font-semibold text-ink">{name}</span>
-        ) : (
-          <span className="block h-3 w-24 animate-pulse rounded bg-ink/10" aria-hidden />
-        )}
-        <ChevronDown className="size-4 shrink-0 text-ink-soft" aria-hidden />
-      </button>
-      {open && (
-        <div
-          id="ev-account-menu"
-          className="absolute right-0 top-full z-50 mt-2 flex w-64 flex-col rounded-lg border border-border bg-popover p-1 shadow-md"
-        >
-          <a href={chipHref()} className={cn(entry, "flex flex-col")}>
-            {name && <span className="truncate font-semibold">{name}</span>}
-            <span className="truncate text-ink-soft">{email}</span>
-          </a>
-          <a href={cabinetPath(documentLocale(), "/settings")} className={entry}>
-            {t("auth.manageAccount", "Manage account")}
-          </a>
-          {SA_PANEL_URL && (
-            <>
-              <hr className={rule} />
-              <p className="m-0 px-2 py-1 text-xs text-ink-soft">{t("ui.services", "Services")}</p>
-              <a href={SA_PANEL_URL} className={entry}>
-                Service-Arb
-              </a>
-            </>
-          )}
-          <hr className={rule} />
-          {/* Google's chooser is on every sign-in; the new session closes this one. */}
-          <a href={`/api/auth/login?returnTo=${encodeURIComponent(here)}`} className={entry}>
-            {t("auth.switchAccount", "Switch account")}
-          </a>
-          <button type="button" onClick={onSignOut} className={cn(entry, "cursor-pointer border-0")}>
-            {t("auth.signOut", "Sign out")}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * The chip's destination: the cabinet home from the public site, the profile from inside
- * the cabinet (see the note above AccountChip). Read at render, like the locale — the
- * conductor swaps documents under a chip that never remounts.
- */
-function chipHref(): string {
   const inCabinet = typeof document !== "undefined" && isCabinetPage(document.location.pathname);
-  return cabinetPath(documentLocale(), inCabinet ? "/profile" : "/");
+  return {
+    profile: inCabinet ? { href: cabinetPath(locale, "/profile"), kind: "profile" } : { href: cabinetPath(locale, "/"), kind: "cabinet" },
+    manage: cabinetPath(locale, "/settings"),
+    // Google's chooser is on every sign-in; the new session closes this one.
+    switchAccount: `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
+  };
 }
 
-// Signed-out (or BFF-unavailable) state — the sign-in CTA, labelled "Cabinet" (#399).
+/** The Services group; Service-Arb is `current` when this page is the panel's own origin. */
+function serviceGroups(): MenuGroup[] {
+  if (!SA_PANEL_URL) return [];
+  let current = false;
+  try {
+    current = typeof location !== "undefined" && location.origin === new URL(SA_PANEL_URL).origin;
+  } catch {
+    // A malformed build-time URL only loses the highlight.
+  }
+  const t = chipTranslator();
+  return [
+    {
+      id: "services",
+      label: t("ui.services", "Services"),
+      items: [{ id: "service-arb", href: SA_PANEL_URL, label: "Service-Arb", external: false, current }],
+    },
+  ];
+}
+
+// Signed-out (or BFF-unavailable with no cache) — the sign-in CTA, labelled "Cabinet" (#399).
 //
-// Styled as a primary-ink outline pill by hand rather than as the uikit `Button`. The JS
-// is not the reason — `buttonVariants` costs +7.4 KB min on top of a `cn` this bundle
-// already carries. The stylesheet is: the kit's class strings live in node_modules, which
-// the Tailwind scan behind `mfe.css` never reads, so a uikit variant would arrive with its
-// utilities missing, and `@source`-ing the kit's dist to fix that doubles the chip CSS
-// (59 → 118 KB min) on every public page. And neither system variant is this pill anyway —
-// `outline` is the neutral border, `link` is bare text; the missing outline-primary Button
-// variant is tracked in EV-invest/lib. Until it ships, every class here must be a core
-// utility or a token from `tokens.css` — nothing that only the host's own layer defines
-// (see the note in `mfe.css`), or the pill's look would change with the page it sits on.
+// A primary-ink outline pill by hand rather than the uikit `Button`: the kit's class strings
+// live in node_modules, which the Tailwind scan behind `mfe.css` never reads, and
+// `@source`-ing the kit's dist doubles the chip CSS on every public page. Every class here
+// must be a core utility or a `tokens.css` token, or the pill would change with its host;
+// the colours the hover changes start as arbitrary properties so a host's own
+// primary-ink text utility in a higher layer cannot pin them (chip-parts.ts).
 //
-// Not instrumented on purpose. The `cta_clicked` event for this link is captured by the
-// HOST — site_conductor's `CabinetEntryTracker`, a capture-phase listener over the slot —
-// before the hard navigation starts; the chip carries no PostHog client of its own (a
-// second one on every site page, plus a build-time key, for one event). `data-cta` is what
-// the host's tracker keys on, so a click is countable without the host having to know
-// this markup. If the chip ever fires its own event, the host side must stop, or the funnel
-// double-counts.
+// Not instrumented: the `cta_clicked` event is captured by the HOST (site_conductor's
+// `CabinetEntryTracker`, keyed on `data-cta`). If the chip ever fires its own, the host side
+// must stop, or the funnel double-counts.
 function SignInCta({ className, intent, returnTo }: AccountChipProps) {
   const t = chipTranslator();
   return (
@@ -319,7 +203,7 @@ function SignInCta({ className, intent, returnTo }: AccountChipProps) {
       href={signInHref(documentLocale(), { intent, returnTo })}
       data-cta="cabinet"
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-md border border-primary-ink bg-transparent px-4 font-mono text-xs tracking-wider text-primary-ink tabular-nums transition-all hover:border-primary hover:bg-primary hover:text-on-primary",
+        "inline-flex h-9 items-center justify-center rounded-md! border! [border-color:var(--color-primary-ink)]! [background-color:transparent]! px-4! font-mono text-xs tracking-wider [color:var(--color-primary-ink)]! tabular-nums transition-all hover:border-primary! hover:bg-primary! hover:text-on-primary!",
         CHIP_FOCUS,
         className,
       )}
@@ -327,44 +211,4 @@ function SignInCta({ className, intent, returnTo }: AccountChipProps) {
       {t("auth.cabinet", "Cabinet")}
     </a>
   );
-}
-
-function ChipSkeleton({ className }: { className?: string }) {
-  return (
-    <div className={cn("flex items-center gap-2.5 px-1.5 py-1", className)} aria-hidden>
-      <span className="size-8.5 shrink-0 animate-pulse rounded-full bg-ink/10" />
-      <span className="h-3 w-20 animate-pulse rounded bg-ink/10" />
-    </div>
-  );
-}
-
-// Takes the translator rather than reaching for one: it is a pure function over an email
-// and stays that way, and its one word of prose is the last-resort label.
-function displayName(email: string | null | undefined, t: Translate): string {
-  if (email === undefined) return "…";
-  if (!email) return t("ui.account", "Account");
-  const handle = email.split("@")[0] ?? email;
-  const parts = handle.split(/[._-]+/).filter(Boolean);
-  const first = parts[0] ? cap(parts[0]) : handle;
-  const last = parts[1] ? `${parts[1][0]!.toUpperCase()}.` : "";
-  return [first, last].filter(Boolean).join(" ");
-}
-
-function initialsOf(email: string | null | undefined): string {
-  if (!email) return "EV";
-  const parts = (email.split("@")[0] ?? "").split(/[._-]+/).filter(Boolean);
-  const a = parts[0]?.[0] ?? email[0] ?? "E";
-  const b = parts[1]?.[0] ?? "";
-  return (a + b).toUpperCase();
-}
-
-function cap(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** Keep the chip label from pushing the central nav off-centre. */
-function truncate(s: string | null, max = 28): string | null {
-  if (!s) return s;
-  if (s.length <= max) return s;
-  return `${s.slice(0, max - 1)}…`;
 }

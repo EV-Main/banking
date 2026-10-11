@@ -16,47 +16,57 @@ import type { Locale, Messages } from "@evinvest/i18n";
 // values here are copies, which is a real duplication — `chip-messages.test.ts`
 // exists to make it a checked one: it fails if any of these drifts from
 // `messages/<locale>/common.json`.
-export const CHIP_KEYS = ["auth.cabinet", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.services"] as const;
+export const CHIP_KEYS = ["auth.cabinet", "auth.err.signOut", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.profile", "ui.services"] as const;
 
 const CHIP_MESSAGES: Record<Locale, Messages> = {
   en: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "We couldn't sign you out. Please try again.",
     "auth.manageAccount": "Manage account",
     "auth.signOut": "Sign out",
     "auth.switchAccount": "Switch account",
     "ui.account": "Account",
+    "ui.profile": "Profile",
     "ui.services": "Services"
   },
   ru: {
     "auth.cabinet": "Кабинет",
+    "auth.err.signOut": "Не удалось выйти. Попробуйте ещё раз.",
     "auth.manageAccount": "Управление аккаунтом",
     "auth.signOut": "Выйти",
     "auth.switchAccount": "Сменить аккаунт",
     "ui.account": "Аккаунт",
+    "ui.profile": "Профиль",
     "ui.services": "Сервисы"
   },
   vi: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "Không thể đăng xuất. Vui lòng thử lại.",
     "auth.manageAccount": "Quản lý tài khoản",
     "auth.signOut": "Đăng xuất",
     "auth.switchAccount": "Chuyển tài khoản",
     "ui.account": "Tài khoản",
+    "ui.profile": "Hồ sơ",
     "ui.services": "Dịch vụ"
   },
   fr: {
     "auth.cabinet": "Mon espace",
+    "auth.err.signOut": "Impossible de vous déconnecter. Veuillez réessayer.",
     "auth.manageAccount": "Gérer le compte",
     "auth.signOut": "Se déconnecter",
     "auth.switchAccount": "Changer de compte",
     "ui.account": "Compte",
+    "ui.profile": "Profil",
     "ui.services": "Services"
   },
   de: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "Abmelden fehlgeschlagen. Bitte versuchen Sie es erneut.",
     "auth.manageAccount": "Konto verwalten",
     "auth.signOut": "Abmelden",
     "auth.switchAccount": "Konto wechseln",
     "ui.account": "Konto",
+    "ui.profile": "Profil",
     "ui.services": "Dienste"
   }
 };
