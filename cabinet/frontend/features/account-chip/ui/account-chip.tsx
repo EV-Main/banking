@@ -25,6 +25,7 @@ import { chipTranslator } from "../lib/chip-translator";
 import type { MenuGroup } from "../lib/host-attributes";
 import { signInHref } from "../lib/sign-in-href";
 import { chipProfileResource } from "../model/chip-profile";
+import { performSignOut } from "../model/sign-out";
 import { AccountMenu, CHIP_FOCUS, type MenuIdentity, type MenuLinks } from "./account-menu";
 
 // Inlined by `mfe/build.mjs`; unset, the menu offers no Service-Arb. Not through `config`:
@@ -131,23 +132,18 @@ function CabinetMenu({ className, identity, locked }: { className?: string; iden
   );
 }
 
-/**
- * Shell-owned logout (site-root /api/auth): revokes the shared session and clears its
- * cookies for every zone at once. False when the shell did not confirm it (CSRF refusal,
- * store error, network): the session is still alive, so landing on /loggedout would lie.
- */
-async function signOut(): Promise<boolean> {
-  clearIdentity();
-  try {
-    const res = await fetch("/api/auth/logout", { method: "POST", headers: csrfHeader() });
-    if (!res.ok) return false;
-  } catch {
-    return false;
-  }
-  // The hard navigation below clears the in-memory reads anyway; this clears the persisted ones.
-  clearResources();
-  window.location.href = cabinetPath(documentLocale(), "/loggedout");
-  return true;
+function signOut(): Promise<boolean> {
+  return performSignOut({
+    // Wrapped: a bare `window.fetch` reference called off `window` throws "Illegal invocation".
+    fetch: (input, init) => fetch(input, init),
+    csrfHeader,
+    clearIdentity,
+    clearResources,
+    navigate: (href) => {
+      window.location.href = href;
+    },
+    locale: documentLocale(),
+  });
 }
 
 /**
