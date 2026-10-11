@@ -137,6 +137,14 @@ export function writeIdentity(identity: CachedIdentity, now: number = Date.now()
   announce();
 }
 
+/**
+ * The cache a confirmed session may start from: only an entry of that same account. A
+ * cache left by another account (a switch in this browser) is ignored, never shown.
+ */
+export function seedFor(cached: CachedIdentity | null, email: string | null): CachedIdentity | null {
+  return cached && email !== null && cached.email === email ? cached : null;
+}
+
 function sameIdentity(a: CachedIdentity, b: CachedIdentity): boolean {
   return a.email === b.email && a.name === b.name && a.initials === b.initials;
 }

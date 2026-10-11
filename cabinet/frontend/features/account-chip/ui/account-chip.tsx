@@ -8,6 +8,7 @@ import {
   parseIdentity,
   profileName,
   readIdentityRaw,
+  seedFor,
   subscribeIdentity,
   writeIdentity,
   type CachedIdentity,
@@ -75,9 +76,7 @@ export function AccountChip({ className, intent, returnTo }: AccountChipProps) {
   }
   if (!session?.authenticated) return <SignInCta className={className} intent={intent} returnTo={returnTo} />;
   const email = session.user?.email ?? null;
-  // A cache from another account (a switch in this browser) is ignored, never shown.
-  const seed = cached && cached.email === email ? cached : null;
-  return <AuthedChip className={className} email={email} seed={seed} />;
+  return <AuthedChip className={className} email={email} seed={seedFor(cached, email)} />;
 }
 
 /** Label and initials from `name ?? email` ("Valentina Kuznetsova" → "VK"). */
