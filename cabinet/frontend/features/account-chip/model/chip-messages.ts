@@ -16,7 +16,7 @@ import type { Locale, Messages } from "@evinvest/i18n";
 // values here are copies, which is a real duplication — `chip-messages.test.ts`
 // exists to make it a checked one: it fails if any of these drifts from
 // `messages/<locale>/common.json`.
-export const CHIP_KEYS = ["auth.cabinet", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.services"] as const;
+export const CHIP_KEYS = ["auth.cabinet", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.profile", "ui.services"] as const;
 
 const CHIP_MESSAGES: Record<Locale, Messages> = {
   en: {
@@ -25,6 +25,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
     "auth.signOut": "Sign out",
     "auth.switchAccount": "Switch account",
     "ui.account": "Account",
+    "ui.profile": "Profile",
     "ui.services": "Services"
   },
   ru: {
@@ -33,6 +34,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
     "auth.signOut": "Выйти",
     "auth.switchAccount": "Сменить аккаунт",
     "ui.account": "Аккаунт",
+    "ui.profile": "Профиль",
     "ui.services": "Сервисы"
   },
   vi: {
@@ -41,6 +43,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
     "auth.signOut": "Đăng xuất",
     "auth.switchAccount": "Chuyển tài khoản",
     "ui.account": "Tài khoản",
+    "ui.profile": "Hồ sơ",
     "ui.services": "Dịch vụ"
   },
   fr: {
@@ -49,6 +52,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
     "auth.signOut": "Se déconnecter",
     "auth.switchAccount": "Changer de compte",
     "ui.account": "Compte",
+    "ui.profile": "Profil",
     "ui.services": "Services"
   },
   de: {
@@ -57,6 +61,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
     "auth.signOut": "Abmelden",
     "auth.switchAccount": "Konto wechseln",
     "ui.account": "Konto",
+    "ui.profile": "Profil",
     "ui.services": "Dienste"
   }
 };
