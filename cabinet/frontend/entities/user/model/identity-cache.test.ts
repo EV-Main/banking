@@ -15,12 +15,14 @@ import test, { afterEach, beforeEach } from "node:test";
 import {
   IDENTITY_EVENT,
   IDENTITY_KEY,
+  IDENTITY_TTL_MS,
   LEGACY_IDENTITY_KEY,
   clearIdentity,
   identityOf,
   parseIdentity,
   readIdentity,
   rememberProfile,
+  seedFor,
   subscribeIdentity,
   writeIdentity,
 } from "./identity-cache.ts";
@@ -79,6 +81,8 @@ const freshModule = (): Promise<typeof import("./identity-cache.ts")> => import(
 // Entries carry a `savedAt` stamp and expire; the fixtures are stamped at a fixed `NOW`.
 const NOW = 1_800_000_000_000;
 const VALENTINA = `{"email":"v@example.com","name":"Valentina Kuznetsova","initials":"VK","savedAt":${NOW}}`;
+const VALENTINA_ID = { email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" };
+const HOUR = 60 * 60 * 1000;
 
 // ── key ─────────────────────────────────────────────────────────────────────
 
@@ -141,17 +145,45 @@ test("garbage parses as no cache rather than throwing", () => {
   assert.equal(parseIdentity("[]"), null);
 });
 
+// Fresh stamps on purpose: each entry below is refused for its one bad field, not for a
+// missing `savedAt` that would refuse it anyway.
 test("the v1 shape without initials parses as no cache", () => {
-  assert.equal(parseIdentity('{"email":"v@example.com","name":"Valentina"}'), null);
+  assert.equal(parseIdentity(`{"email":"v@example.com","name":"Valentina","savedAt":${NOW}}`, NOW), null);
 });
 
 test("a foreign shape parses as no cache", () => {
-  assert.equal(parseIdentity('{"email":"","name":"V","initials":"V"}'), null, "empty email");
-  assert.equal(parseIdentity('{"email":42,"name":"V","initials":"V"}'), null, "numeric email");
-  assert.equal(parseIdentity('{"email":"v@example.com","name":7,"initials":"V"}'), null, "numeric name");
-  assert.equal(parseIdentity('{"email":"v@example.com","initials":"V"}'), null, "name missing, not null");
-  assert.equal(parseIdentity('{"email":"v@example.com","name":"V","initials":""}'), null, "empty initials");
-  assert.equal(parseIdentity('{"user":{"email":"v@example.com"}}'), null, "nested");
+  assert.equal(parseIdentity(`{"email":"","name":"V","initials":"V","savedAt":${NOW}}`, NOW), null, "empty email");
+  assert.equal(parseIdentity(`{"email":42,"name":"V","initials":"V","savedAt":${NOW}}`, NOW), null, "numeric email");
+  assert.equal(parseIdentity(`{"email":"v@example.com","name":7,"initials":"V","savedAt":${NOW}}`, NOW), null, "numeric name");
+  assert.equal(parseIdentity(`{"email":"v@example.com","initials":"V","savedAt":${NOW}}`, NOW), null, "name missing, not null");
+  assert.equal(parseIdentity(`{"email":"v@example.com","name":"V","initials":"","savedAt":${NOW}}`, NOW), null, "empty initials");
+  assert.equal(parseIdentity(`{"user":{"email":"v@example.com"},"savedAt":${NOW}}`, NOW), null, "nested");
+});
+
+// ── parseIdentity: savedAt and the TTL ──────────────────────────────────────
+
+test("an entry without savedAt parses as no cache", () => {
+  assert.equal(parseIdentity('{"email":"v@example.com","name":"V","initials":"V"}', NOW), null);
+});
+
+test("a non-numeric or non-finite savedAt parses as no cache", () => {
+  assert.equal(parseIdentity(`{"email":"v@example.com","name":"V","initials":"V","savedAt":"${NOW}"}`, NOW), null, "numeric string");
+  assert.equal(parseIdentity('{"email":"v@example.com","name":"V","initials":"V","savedAt":null}', NOW), null, "null");
+  assert.equal(parseIdentity('{"email":"v@example.com","name":"V","initials":"V","savedAt":1e999}', NOW), null, "Infinity");
+});
+
+test("an entry one millisecond short of the TTL still parses", () => {
+  assert.equal(IDENTITY_TTL_MS, 12 * HOUR);
+
+  assert.deepEqual(parseIdentity(VALENTINA, NOW + 12 * HOUR - 1), { email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" });
+});
+
+test("an entry exactly the TTL old parses as no cache", () => {
+  assert.equal(parseIdentity(VALENTINA, NOW + 12 * HOUR), null);
+});
+
+test("an entry stamped in the future parses as no cache", () => {
+  assert.equal(parseIdentity(VALENTINA, NOW - 1), null);
 });
 
 test("storage that throws on access reads as no cache", () => {
@@ -191,6 +223,42 @@ test("a changed name replaces the stored identity and is announced", () => {
   writeIdentity({ email: "v@example.com", name: "Valya", initials: "V" }, NOW);
 
   assert.equal(local.getItem(IDENTITY_KEY), `{"email":"v@example.com","name":"Valya","initials":"V","savedAt":${NOW}}`);
+  assert.equal(announced, 1);
+});
+
+test("the same identity written again within the hour is neither re-stamped nor announced", () => {
+  local.setItem(IDENTITY_KEY, VALENTINA);
+
+  writeIdentity(VALENTINA_ID, NOW + HOUR - 1);
+
+  assert.equal(local.getItem(IDENTITY_KEY), VALENTINA);
+  assert.equal(announced, 0);
+});
+
+test("the same identity written an hour later is re-stamped and announced", () => {
+  local.setItem(IDENTITY_KEY, VALENTINA);
+
+  writeIdentity(VALENTINA_ID, NOW + HOUR);
+
+  assert.equal(local.getItem(IDENTITY_KEY), `{"email":"v@example.com","name":"Valentina Kuznetsova","initials":"VK","savedAt":${NOW + HOUR}}`);
+  assert.equal(announced, 1);
+});
+
+test("the same identity over an expired entry is re-stamped, so a returning user gets a live cache", () => {
+  local.setItem(IDENTITY_KEY, VALENTINA);
+
+  writeIdentity(VALENTINA_ID, NOW + 13 * HOUR);
+
+  assert.deepEqual(parseIdentity(local.getItem(IDENTITY_KEY), NOW + 13 * HOUR), VALENTINA_ID);
+  assert.equal(announced, 1);
+});
+
+test("the same identity over an entry stamped in the future is re-stamped to now", () => {
+  local.setItem(IDENTITY_KEY, VALENTINA);
+
+  writeIdentity(VALENTINA_ID, NOW - 1);
+
+  assert.equal(local.getItem(IDENTITY_KEY), `{"email":"v@example.com","name":"Valentina Kuznetsova","initials":"VK","savedAt":${NOW - 1}}`);
   assert.equal(announced, 1);
 });
 
@@ -255,6 +323,33 @@ test("no name falls back to the email handle", () => {
 
 test("a Cyrillic name gives Cyrillic initials", () => {
   assert.equal(identityOf("v@example.com", "Валентина Кузнецова").initials, "ВК");
+});
+
+test("an emoji-led name gives well-formed initials that keep the emoji whole", () => {
+  const { initials } = identityOf("v@example.com", "😀 Smile");
+
+  assert.equal(initials, "😀S");
+  assert.equal(initials.isWellFormed(), true);
+});
+
+// ── seedFor ─────────────────────────────────────────────────────────────────
+
+test("the cache seeds the chip of the same account", () => {
+  const cached = identityOf("v@example.com", "Valentina Kuznetsova");
+
+  assert.equal(seedFor(cached, "v@example.com"), cached);
+});
+
+test("another account's cache never seeds the chip", () => {
+  assert.equal(seedFor(identityOf("v@example.com", "Valentina Kuznetsova"), "ada@example.com"), null);
+});
+
+test("a session without an email takes no seed", () => {
+  assert.equal(seedFor(identityOf("v@example.com", "Valentina Kuznetsova"), null), null);
+});
+
+test("no cache gives no seed", () => {
+  assert.equal(seedFor(null, "v@example.com"), null);
 });
 
 // ── subscribeIdentity ───────────────────────────────────────────────────────
