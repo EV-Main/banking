@@ -691,6 +691,7 @@
   "auth.err.passkeyRegistered": "This passkey is registered already.",
   "auth.err.passkeyRejected": "That passkey is not registered here. Sign in with a code instead.",
   "auth.err.passwordLocked": "Too many wrong passwords. Sign in with a code instead.",
+  "auth.err.signOut": "We couldn't sign you out. Please try again.",
   "auth.err.throttled": "Too many codes went to this address. Try again in a few minutes.",
   "auth.err.usernameTaken": "That username is taken.",
   "auth.err.weakPassword": "Use at least 8 characters.",

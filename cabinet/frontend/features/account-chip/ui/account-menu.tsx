@@ -26,6 +26,8 @@ export type AccountMenuProps = {
   locked?: boolean;
   links: MenuLinks;
   groups: readonly MenuGroup[];
+  /** An action from the panel failed after it closed (sign out); shown under the chip. */
+  error?: string | null;
   onSwitchAccount?: () => void;
   onSignOut: () => void;
 };
@@ -45,7 +47,7 @@ const ENTRIES = "a[href], button:not(:disabled)";
  * Home and End are a shortcut on top of Tab, not a replacement for it; Escape, Tab out and
  * a click elsewhere close it.
  */
-export function AccountMenu({ className, identity, locked = false, links, groups, onSwitchAccount, onSignOut }: AccountMenuProps) {
+export function AccountMenu({ className, identity, locked = false, links, groups, error = null, onSwitchAccount, onSignOut }: AccountMenuProps) {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -153,6 +155,13 @@ export function AccountMenu({ className, identity, locked = false, links, groups
           aria-hidden
         />
       </button>
+      {error && !expanded && (
+        // Where the panel was, so the eye is already there; the open panel takes its place
+        // again on the retry.
+        <p role="alert" className="absolute right-0 top-full z-50 m-0 mt-2 box-border w-64 max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-popover px-3 py-2 text-sm text-ink shadow-md">
+          {error}
+        </p>
+      )}
       {openable && (
         <MenuPanel
           id={panelId}

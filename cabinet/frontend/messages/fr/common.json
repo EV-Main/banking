@@ -7291,6 +7291,10 @@
     "en": "Too many wrong passwords. Sign in with a code instead.",
     "t": "Trop de mots de passe erronés. Connectez-vous plutôt avec un code."
   },
+  "auth.err.signOut": {
+    "en": "We couldn't sign you out. Please try again.",
+    "t": "Impossible de vous déconnecter. Veuillez réessayer."
+  },
   "auth.err.throttled": {
     "en": "Too many codes went to this address. Try again in a few minutes.",
     "t": "Trop de codes envoyés à cette adresse. Réessayez dans quelques minutes."

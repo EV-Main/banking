@@ -16,11 +16,12 @@ import type { Locale, Messages } from "@evinvest/i18n";
 // values here are copies, which is a real duplication — `chip-messages.test.ts`
 // exists to make it a checked one: it fails if any of these drifts from
 // `messages/<locale>/common.json`.
-export const CHIP_KEYS = ["auth.cabinet", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.profile", "ui.services"] as const;
+export const CHIP_KEYS = ["auth.cabinet", "auth.err.signOut", "auth.manageAccount", "auth.signOut", "auth.switchAccount", "ui.account", "ui.profile", "ui.services"] as const;
 
 const CHIP_MESSAGES: Record<Locale, Messages> = {
   en: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "We couldn't sign you out. Please try again.",
     "auth.manageAccount": "Manage account",
     "auth.signOut": "Sign out",
     "auth.switchAccount": "Switch account",
@@ -30,6 +31,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
   },
   ru: {
     "auth.cabinet": "Кабинет",
+    "auth.err.signOut": "Не удалось выйти. Попробуйте ещё раз.",
     "auth.manageAccount": "Управление аккаунтом",
     "auth.signOut": "Выйти",
     "auth.switchAccount": "Сменить аккаунт",
@@ -39,6 +41,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
   },
   vi: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "Không thể đăng xuất. Vui lòng thử lại.",
     "auth.manageAccount": "Quản lý tài khoản",
     "auth.signOut": "Đăng xuất",
     "auth.switchAccount": "Chuyển tài khoản",
@@ -48,6 +51,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
   },
   fr: {
     "auth.cabinet": "Mon espace",
+    "auth.err.signOut": "Impossible de vous déconnecter. Veuillez réessayer.",
     "auth.manageAccount": "Gérer le compte",
     "auth.signOut": "Se déconnecter",
     "auth.switchAccount": "Changer de compte",
@@ -57,6 +61,7 @@ const CHIP_MESSAGES: Record<Locale, Messages> = {
   },
   de: {
     "auth.cabinet": "Cabinet",
+    "auth.err.signOut": "Abmelden fehlgeschlagen. Bitte versuchen Sie es erneut.",
     "auth.manageAccount": "Konto verwalten",
     "auth.signOut": "Abmelden",
     "auth.switchAccount": "Konto wechseln",

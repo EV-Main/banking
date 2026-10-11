@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import {
   clearIdentity,
@@ -112,6 +112,12 @@ function AuthedChip({ className, email, seed }: { className?: string; email: str
 
 /** AccountMenu with the cabinet's own links, groups and logout. */
 function CabinetMenu({ className, identity, locked }: { className?: string; identity: MenuIdentity | null; locked?: boolean }) {
+  const t = chipTranslator();
+  const [failed, setFailed] = useState(false);
+  const onSignOut = async () => {
+    setFailed(false);
+    if (!(await signOut())) setFailed(true);
+  };
   return (
     <AccountMenu
       className={className}
@@ -119,20 +125,30 @@ function CabinetMenu({ className, identity, locked }: { className?: string; iden
       locked={locked}
       links={cabinetLinks()}
       groups={serviceGroups()}
+      error={failed ? t("auth.err.signOut", "We couldn't sign you out. Please try again.") : null}
       onSwitchAccount={clearIdentity}
-      onSignOut={signOut}
+      onSignOut={() => void onSignOut()}
     />
   );
 }
 
-async function signOut() {
+/**
+ * Shell-owned logout (site-root /api/auth): revokes the shared session and clears its
+ * cookies for every zone at once. False when the shell did not confirm it (CSRF refusal,
+ * store error, network): the session is still alive, so landing on /loggedout would lie.
+ */
+async function signOut(): Promise<boolean> {
   clearIdentity();
-  // Shell-owned logout (site-root /api/auth): revokes the shared session and clears its
-  // cookies for every zone at once.
-  await fetch("/api/auth/logout", { method: "POST", headers: csrfHeader() });
+  try {
+    const res = await fetch("/api/auth/logout", { method: "POST", headers: csrfHeader() });
+    if (!res.ok) return false;
+  } catch {
+    return false;
+  }
   // The hard navigation below clears the in-memory reads anyway; this clears the persisted ones.
   clearResources();
   window.location.href = cabinetPath(documentLocale(), "/loggedout");
+  return true;
 }
 
 /**

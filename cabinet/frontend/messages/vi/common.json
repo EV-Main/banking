@@ -7291,6 +7291,10 @@
     "en": "Too many wrong passwords. Sign in with a code instead.",
     "t": "Sai mật khẩu quá nhiều lần. Hãy đăng nhập bằng mã."
   },
+  "auth.err.signOut": {
+    "en": "We couldn't sign you out. Please try again.",
+    "t": "Không thể đăng xuất. Vui lòng thử lại."
+  },
   "auth.err.throttled": {
     "en": "Too many codes went to this address. Try again in a few minutes.",
     "t": "Đã gửi quá nhiều mã tới địa chỉ này. Hãy thử lại sau vài phút."

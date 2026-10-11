@@ -2917,6 +2917,7 @@
   },
   "serverOnly": [
     "auth.cabinet",
+    "auth.err.signOut",
     "auth.manageAccount",
     "auth.signInAgain",
     "auth.signedOut",
