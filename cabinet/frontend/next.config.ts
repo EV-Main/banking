@@ -112,7 +112,16 @@ const nextConfig: NextConfig = {
     const tokenPageHeaders = headers
       .filter((h) => h.key !== "Referrer-Policy")
       .concat({ key: "Referrer-Policy", value: "no-referrer" });
+    // The element-remote bundles keep fixed names (`account-chip.js`/`.css`: a content hash
+    // would make the conductor read a manifest to find them), so they cannot be immutable.
+    // Without any Cache-Control every page of the site revalidated them; five minutes fresh
+    // plus a day of stale-while-revalidate bounds how long a release takes to reach a
+    // returning visitor while sparing the header a round trip on every navigation. Both
+    // spellings: the conductor asks for `/cabinet/mfe/*`, a direct run of the zone for `/mfe/*`.
+    const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=86400" }];
     return [
+      { source: "/mfe/:path*", headers: mfeHeaders },
+      { source: "/cabinet/mfe/:path*", headers: mfeHeaders },
       { source: "/:locale/cabinet/approve/:token", headers: tokenPageHeaders },
       { source: "/:locale/cabinet/owner-removal/:token", headers: tokenPageHeaders },
       { source: "/:path*", headers },
