@@ -3,13 +3,13 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { AccountChip, HOST_ATTRS, HostAccountChip, isHostMode, readHostProps } from "@/features/account-chip";
 
-import { ensureStylesheet, stylesheetHref, whenStylesheetReady } from "./stylesheet";
+import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 
 // Self-registering ESM entry for the <mfe-cabinet-account-chip> element remote. Hosts inject
 // this bundle (site_conductor's mfe-registry → `/cabinet/mfe/account-chip.js`; the
 // Service-Arb panel by its own loader) and place the element in their header. React renders
 // into the element's LIGHT DOM so the host's tokens and fonts cascade in; the chip's own
-// utilities ship in a sibling stylesheet pre-layered `@layer reamfe`.
+// utilities ship in a sibling stylesheet, read and inlined as `@layer reamfe` (stylesheet.ts).
 //
 // Two modes, picked by `data-mode`:
 //   • cabinet (default) — the chip reads the cabinet session, profile and identity cache.
@@ -33,11 +33,10 @@ class AccountChipElement extends HTMLElement {
   #styled = false;
 
   connectedCallback() {
-    const href = ensureStylesheet(TAG, stylesheetHref());
     const root = createRoot(this);
     this.#root = root;
     this.#hold();
-    void whenStylesheetReady(href).then(() => {
+    void whenStylesheetReady(TAG, stylesheetHref()).then(() => {
       // Disconnected (or reconnected under a new root) while waiting.
       if (this.#root !== root) return;
       this.#styled = true;
