@@ -115,10 +115,11 @@ const nextConfig: NextConfig = {
     // The element-remote bundles keep fixed names (`account-chip.js`/`.css`: a content hash
     // would make the conductor read a manifest to find them), so they cannot be immutable.
     // Without any Cache-Control every page of the site revalidated them; five minutes fresh
-    // plus a day of stale-while-revalidate bounds how long a release takes to reach a
-    // returning visitor while sparing the header a round trip on every navigation. Both
+    // plus ten minutes of stale-while-revalidate bounds how long a release — or a security
+    // fix — takes to reach a returning visitor (15 min) while sparing the header a round trip
+    // on every navigation. A day of SWR kept a revoked bundle alive far too long. Both
     // spellings: the conductor asks for `/cabinet/mfe/*`, a direct run of the zone for `/mfe/*`.
-    const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=86400" }];
+    const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=600" }];
     return [
       { source: "/mfe/:path*", headers: mfeHeaders },
       { source: "/cabinet/mfe/:path*", headers: mfeHeaders },
