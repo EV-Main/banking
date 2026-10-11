@@ -73,7 +73,7 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
             <hr role="separator" className={RULE} />
             <div role={group.label ? "group" : undefined} aria-labelledby={group.label ? labelId : undefined} className="flex flex-col">
               {group.label && (
-                <p id={labelId} className="m-0 px-2! py-1! text-xs text-ink-soft">
+                <p id={labelId} className="m-0! px-2! py-1! text-xs text-ink-soft">
                   {group.label}
                 </p>
               )}
