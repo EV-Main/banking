@@ -14,18 +14,18 @@ import type { DisclosurePhase } from "./use-disclosure";
 // 44 px rows are the touch-target floor; `flex` rather than `block` so the row can hold it,
 // and `box-border` because a host without preflight would add the padding on top of it.
 const ENTRY = cn(
-  "box-border flex min-h-11 w-full items-center gap-2 rounded-md border-0 px-2 py-1.5 text-left text-sm text-ink no-underline",
+  "box-border flex min-h-11 w-full items-center gap-2 rounded-md! border-0! px-2! py-1.5! text-left text-sm! text-ink! no-underline!",
   CHIP_PRESS,
   CHIP_FOCUS,
 );
-const RULE = "my-1 border-0 border-t border-solid border-border";
+const RULE = "my-1! border-0! border-t! border-solid! border-border!";
 
 // Open is the default look and closed the variant, never the reverse: a host whose own
 // `utilities` layer has the zero-opacity or 97 % scale utility would outrank an open-state variant of
 // ours and leave an open panel invisible but clickable (see chip-parts.ts). Under reduced
 // motion only opacity moves; the panel still fades so the state change is not a cut.
 const PANEL = cn(
-  "absolute right-0 top-full z-50 mt-2 flex w-64 max-w-[calc(100vw-1rem)] origin-top-right flex-col rounded-lg border border-border bg-popover p-1 shadow-md",
+  "absolute right-0 top-full z-50 mt-2! flex w-64 max-w-[calc(100vw-1rem)] origin-top-right flex-col rounded-lg border! border-border! bg-popover p-1! shadow-md",
   "transition-[opacity,translate,scale] duration-(--ev-dur-fast) ease-(--ev-ease-out) motion-reduce:transition-opacity",
   "data-[state=closed]:opacity-0 motion-safe:data-[state=closed]:-translate-y-1 motion-safe:data-[state=closed]:scale-97",
 );
@@ -73,7 +73,7 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
             <hr role="separator" className={RULE} />
             <div role={group.label ? "group" : undefined} aria-labelledby={group.label ? labelId : undefined} className="flex flex-col">
               {group.label && (
-                <p id={labelId} className="m-0 px-2 py-1 text-xs text-ink-soft">
+                <p id={labelId} className="m-0 px-2! py-1! text-xs text-ink-soft">
                   {group.label}
                 </p>
               )}
@@ -85,7 +85,7 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
                   target={item.external ? "_blank" : undefined}
                   rel={item.external ? "noopener noreferrer" : undefined}
                   onClick={onPick}
-                  className={cn(ENTRY, "aria-[current=page]:bg-ink/5 aria-[current=page]:font-semibold")}
+                  className={cn(ENTRY, "aria-[current=page]:bg-ink/5! aria-[current=page]:font-semibold")}
                 >
                   {item.label}
                 </a>
@@ -134,7 +134,7 @@ function ProfileRow({ identity, links, onPick }: Pick<MenuPanelProps, "identity"
       {identity.email && <span className="truncate text-ink-soft">{identity.email}</span>}
     </span>
   );
-  if (!links.profile) return <div className="flex min-h-11 flex-col justify-center px-2 py-1.5 text-sm text-ink">{who}</div>;
+  if (!links.profile) return <div className="flex min-h-11 flex-col justify-center px-2! py-1.5! text-sm text-ink">{who}</div>;
   return (
     <a href={links.profile.href} onClick={onPick} className={ENTRY}>
       {who}

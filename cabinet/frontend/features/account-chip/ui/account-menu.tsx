@@ -127,10 +127,10 @@ export function AccountMenu({ className, identity, locked = false, links, groups
         onClick={onTriggerClick}
         onKeyDown={onTriggerKey}
         className={cn(
-          "group flex min-w-0 items-center gap-2.5 rounded-lg border-0 px-1.5 py-1",
+          "group flex min-w-0 items-center gap-2.5 rounded-lg! border-0! px-1.5! py-1!",
           CHIP_PRESS,
-          "disabled:cursor-default disabled:hover:bg-transparent disabled:active:bg-transparent",
-          "aria-disabled:cursor-default aria-disabled:hover:bg-transparent aria-disabled:active:bg-transparent",
+          "disabled:cursor-default! disabled:hover:bg-transparent! disabled:active:bg-transparent!",
+          "aria-disabled:cursor-default! aria-disabled:hover:bg-transparent! aria-disabled:active:bg-transparent!",
           CHIP_FOCUS,
         )}
       >
@@ -162,7 +162,7 @@ export function AccountMenu({ className, identity, locked = false, links, groups
       {error && !expanded && (
         // Where the panel was, so the eye is already there; the open panel takes its place
         // again on the retry.
-        <p role="alert" className="absolute right-0 top-full z-50 m-0 mt-2 box-border w-64 max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-popover px-3 py-2 text-sm text-ink shadow-md">
+        <p role="alert" className="absolute right-0 top-full z-50 m-0! mt-2! box-border w-64 max-w-[calc(100vw-1rem)] rounded-lg border! border-border! bg-popover px-3! py-2! text-sm text-ink shadow-md">
           {error}
         </p>
       )}

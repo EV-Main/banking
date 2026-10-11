@@ -203,7 +203,7 @@ function SignInCta({ className, intent, returnTo }: AccountChipProps) {
       href={signInHref(documentLocale(), { intent, returnTo })}
       data-cta="cabinet"
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-md border [border-color:var(--color-primary-ink)] [background-color:transparent] px-4 font-mono text-xs tracking-wider [color:var(--color-primary-ink)] tabular-nums transition-all hover:border-primary hover:bg-primary hover:text-on-primary",
+        "inline-flex h-9 items-center justify-center rounded-md! border! [border-color:var(--color-primary-ink)]! [background-color:transparent]! px-4! font-mono text-xs tracking-wider [color:var(--color-primary-ink)]! tabular-nums transition-all hover:border-primary! hover:bg-primary! hover:text-on-primary!",
         CHIP_FOCUS,
         className,
       )}
