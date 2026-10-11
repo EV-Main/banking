@@ -14,6 +14,8 @@ import type { UpdateProfileRequest, UserProfile } from "@/shared/contracts";
 import { TAG } from "@/shared/lib/cache-tags";
 import { defineResource } from "@/shared/lib/resource";
 
+import { rememberProfile } from "./identity-cache";
+
 export const profileResource = defineResource({
   name: "user.profile",
   fetch: fetchProfile,
@@ -35,5 +37,7 @@ export const profileResource = defineResource({
 export async function saveProfile(fields: UpdateProfileRequest): Promise<UserProfile> {
   const updated = await saveProfileRequest(fields);
   profileResource.publish(updated);
+  // The header chip is another bundle with its own resource cache; this is how it hears.
+  rememberProfile(updated);
   return updated;
 }

@@ -18,7 +18,8 @@
 @import "tailwindcss/utilities.css" layer(reamfe);
 @import "@evinvest/uikit/styles/tokens.css" layer(reamfe);
 
-@source "../../features/account-chip/ui/account-chip.tsx";
+/* The whole ui/ directory: a class in a file left out of the scan compiles to nothing. */
+@source "../../features/account-chip/ui";
 
 /* Same single-typeface override the host applies in globals.css. Per the note
    above, a change that lands in globals.css alone leaves the remote painting the
