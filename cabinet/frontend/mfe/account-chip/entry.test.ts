@@ -7,9 +7,18 @@
 // painted and unreserved after it; not ready after disconnect; and a sheet that lands for a
 // connection that is already gone marks nothing ready.
 //
+// Until then the chip is invisible, and its box is the host's when the host gave the element
+// one (a class with `display: flex`, or `hidden` while signed out): then only `visibility` is
+// held inline, since an inline display or size would beat the host's. Only an element left in
+// inline flow, or with no computed display at all, gets the chip's own 178 × 42 reserve.
+// Disconnecting clears every reserve key, so the next connect reads the host's display again
+// and not a leftover of ours.
+//
 // The element runs in host mode (`data-mode="host"`), which fetches nothing. Its stylesheet
 // loader is replaced by a stub whose promises the tests settle; custom element reactions do
 // not exist in the stand-in DOM, so the tests call the lifecycle callbacks the browser would.
+// `getComputedStyle` answers `display` as a browser does: the element's inline display if it
+// has one, else what the host's stylesheet gives it (`hostDisplay`, set per test).
 import assert from "node:assert/strict";
 import test, { after, afterEach, before } from "node:test";
 
@@ -29,6 +38,8 @@ type ChipElement = FakeElement & { connectedCallback(): void; disconnectedCallba
 type Loaded = Pick<typeof import("react"), "act"> & { sheetRequests: Array<() => void> };
 
 const doc = new FakeDocument();
+/** The display the host's own CSS gives the element; a custom element defaults to inline. */
+let hostDisplay = "inline";
 const registry = new Map<string, new () => ChipElement>();
 let uninstall: () => void;
 let chip: Loaded;
@@ -44,6 +55,11 @@ before(async () => {
       }
     },
   );
+  Reflect.set(globalThis, "getComputedStyle", (el: FakeElement) => ({
+    display: el.style.getPropertyValue("display") || hostDisplay,
+    transitionDuration: "0s",
+    transitionDelay: "0s",
+  }));
   Reflect.set(globalThis, "customElements", {
     get: (name: string) => registry.get(name),
     define: (name: string, ctor: new () => ChipElement) => void registry.set(name, ctor),
@@ -64,7 +80,15 @@ afterEach(async () => {
     if (el.parentNode) doc.body.removeChild(el);
   }
   chip.sheetRequests.length = 0;
+  hostDisplay = "inline";
 });
+
+/** The element's inline style as plain `property: value` pairs. */
+function inlineStyle(el: FakeElement): Record<string, string> {
+  return Object.fromEntries(Object.entries(el.style).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
+
+const RESERVE = { visibility: "hidden", display: "inline-block", width: "178px", height: "42px" };
 
 /** A host-mode element, placed in the body and connected as the browser would. */
 async function connect(el?: ChipElement): Promise<ChipElement> {
@@ -147,4 +171,77 @@ test("a reconnected element waits for its own stylesheet, not the first connecti
   await stylesheetApplies(1);
   assert.equal(el.getAttribute("data-ready"), "");
   assert.equal(el.textContent.includes("Valentina Kuznetsova"), true, el.outerHTML);
+});
+
+// ── the reserve against the host's own box ──────────────────────────────────
+
+test("a host that makes the element flex keeps its box: only visibility is held", async () => {
+  hostDisplay = "flex";
+
+  const el = await connect();
+
+  assert.deepEqual(inlineStyle(el), { visibility: "hidden" });
+});
+
+test("a host that hides the element keeps it hidden: only visibility is held", async () => {
+  hostDisplay = "none";
+
+  const el = await connect();
+
+  assert.deepEqual(inlineStyle(el), { visibility: "hidden" });
+});
+
+test("an element left in inline flow gets the chip's own 178 × 42 reserve", async () => {
+  hostDisplay = "inline";
+
+  const el = await connect();
+
+  assert.deepEqual(inlineStyle(el), RESERVE);
+});
+
+test("an element with no computed display gets the reserve", async () => {
+  hostDisplay = "";
+
+  const el = await connect();
+
+  assert.deepEqual(inlineStyle(el), RESERVE);
+});
+
+test("on a host box the stylesheet's arrival leaves no inline style behind", async () => {
+  hostDisplay = "flex";
+  const el = await connect();
+
+  await stylesheetApplies(0);
+
+  assert.deepEqual(inlineStyle(el), {});
+  assert.equal(el.getAttribute("data-ready"), "");
+});
+
+test("disconnecting while the reserve is held clears every key of it", async () => {
+  const el = await connect();
+
+  await disconnect(el);
+
+  assert.deepEqual(inlineStyle(el), {});
+});
+
+test("a reconnect reads the host's display again, not a reserve left from before", async () => {
+  const el = await connect();
+  await disconnect(el);
+  hostDisplay = "flex";
+
+  await connect(el);
+
+  assert.deepEqual(inlineStyle(el), { visibility: "hidden" });
+});
+
+test("a reconnect into inline flow takes the reserve after a host box", async () => {
+  hostDisplay = "flex";
+  const el = await connect();
+  await disconnect(el);
+  hostDisplay = "inline";
+
+  await connect(el);
+
+  assert.deepEqual(inlineStyle(el), RESERVE);
 });
