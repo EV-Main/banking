@@ -27,7 +27,8 @@ export function displayName(email: string | null | undefined, t: Translate): str
   const handle = email.split("@")[0] ?? email;
   const parts = handle.split(/[._-]+/).filter(Boolean);
   const first = parts[0] ? cap(parts[0]) : handle;
-  const last = parts[1] ? `${parts[1][0]!.toUpperCase()}.` : "";
+  const initial = firstGrapheme(parts[1]);
+  const last = initial ? `${initial.toUpperCase()}.` : "";
   return [first, last].filter(Boolean).join(" ");
 }
 
@@ -35,20 +36,34 @@ export function displayName(email: string | null | undefined, t: Translate): str
 export function initialsOf(email: string | null | undefined): string {
   if (!email) return "EV";
   const parts = (email.split("@")[0] ?? "").split(/[._-]+/).filter(Boolean);
-  const a = parts[0]?.[0] ?? email[0] ?? "E";
-  const b = parts[1]?.[0] ?? "";
+  const a = firstGrapheme(parts[0]) ?? firstGrapheme(email) ?? "E";
+  const b = firstGrapheme(parts[1]) ?? "";
   return (a + b).toUpperCase();
 }
 
 function cap(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  const first = firstGrapheme(s) ?? "";
+  return first.toUpperCase() + s.slice(first.length);
+}
+
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The first user-perceived character, not `s[0]`: that is half a surrogate pair for an
+ * emoji or astral letter (a lone surrogate the avatar renders as U+FFFD and that is not
+ * well-formed for `encodeURIComponent` or storage), and drops the accent of a decomposed "é".
+ */
+function firstGrapheme(s: string | undefined): string | undefined {
+  if (!s) return undefined;
+  for (const { segment } of GRAPHEMES.segment(s)) return segment;
+  return undefined;
 }
 
 /** Initials from a resolved display name ("Fen Astra" → "FA"), falling back to the
  *  email heuristic while the name is still unknown. */
 export function initialsOfName(name: string, email: string | null | undefined): string {
   const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
-  const a = parts[0]?.[0];
+  const a = firstGrapheme(parts[0]);
   if (!a) return initialsOf(email);
-  return (a + (parts[1]?.[0] ?? "")).toUpperCase();
+  return (a + (firstGrapheme(parts[1]) ?? "")).toUpperCase();
 }
