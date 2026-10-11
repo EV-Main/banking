@@ -172,7 +172,9 @@ function serviceGroups(): MenuGroup[] {
 // A primary-ink outline pill by hand rather than the uikit `Button`: the kit's class strings
 // live in node_modules, which the Tailwind scan behind `mfe.css` never reads, and
 // `@source`-ing the kit's dist doubles the chip CSS on every public page. Every class here
-// must be a core utility or a `tokens.css` token, or the pill would change with its host.
+// must be a core utility or a `tokens.css` token, or the pill would change with its host;
+// the colours the hover changes start as arbitrary properties so a host's own
+// primary-ink text utility in a higher layer cannot pin them (chip-parts.ts).
 //
 // Not instrumented: the `cta_clicked` event is captured by the HOST (site_conductor's
 // `CabinetEntryTracker`, keyed on `data-cta`). If the chip ever fires its own, the host side
@@ -186,7 +188,7 @@ function SignInCta({ className, intent, returnTo }: AccountChipProps) {
       href={signInHref(documentLocale(), { intent, returnTo })}
       data-cta="cabinet"
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-md border border-primary-ink bg-transparent px-4 font-mono text-xs tracking-wider text-primary-ink tabular-nums transition-all hover:border-primary hover:bg-primary hover:text-on-primary",
+        "inline-flex h-9 items-center justify-center rounded-md border [border-color:var(--color-primary-ink)] [background-color:transparent] px-4 font-mono text-xs tracking-wider [color:var(--color-primary-ink)] tabular-nums transition-all hover:border-primary hover:bg-primary hover:text-on-primary",
         CHIP_FOCUS,
         className,
       )}

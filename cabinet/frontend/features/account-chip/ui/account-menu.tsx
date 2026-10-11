@@ -113,7 +113,7 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
         onClick={onTriggerClick}
         onKeyDown={onTriggerKey}
         className={cn(
-          "group flex min-w-0 items-center gap-2.5 rounded-lg border-0 bg-transparent px-1.5 py-1",
+          "group flex min-w-0 items-center gap-2.5 rounded-lg border-0 px-1.5 py-1",
           CHIP_PRESS,
           "disabled:cursor-default disabled:hover:bg-transparent disabled:active:bg-transparent",
           CHIP_FOCUS,
@@ -131,10 +131,12 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
           // sr-only rather than hidden: on a phone the name is still the button's name.
           <span className="truncate text-sm font-semibold text-ink max-sm:sr-only">{identity.label}</span>
         ) : (
-          <span className="block h-3 w-24 animate-pulse rounded bg-ink/10 max-sm:hidden" aria-hidden />
+          <span className="h-3 w-24 animate-pulse rounded bg-ink/10 max-sm:hidden" aria-hidden />
         )}
         <ChevronDown
-          className="size-4 shrink-0 text-ink-soft transition-transform duration-(--ev-dur-fast) ease-(--ev-ease-out) group-aria-expanded:rotate-180 motion-reduce:transition-none"
+          // Duration and easing are motion-safe too: under reduce the computed transition
+          // property falls back to `all`, so a bare duration would still animate the turn.
+          className="size-4 shrink-0 text-ink-soft group-aria-expanded:rotate-180 motion-safe:transition-transform motion-safe:duration-(--ev-dur-fast) motion-safe:ease-(--ev-ease-out)"
           aria-hidden
         />
       </button>

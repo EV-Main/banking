@@ -14,20 +14,20 @@ import type { DisclosurePhase } from "./use-disclosure";
 // 44 px rows are the touch-target floor; `flex` rather than `block` so the row can hold it,
 // and `box-border` because a host without preflight would add the padding on top of it.
 const ENTRY = cn(
-  "box-border flex min-h-11 w-full items-center gap-2 rounded-md border-0 bg-transparent px-2 py-1.5 text-left text-sm text-ink no-underline",
+  "box-border flex min-h-11 w-full items-center gap-2 rounded-md border-0 px-2 py-1.5 text-left text-sm text-ink no-underline",
   CHIP_PRESS,
   CHIP_FOCUS,
 );
 const RULE = "my-1 border-0 border-t border-solid border-border";
 
-// Closed is the base look and open the override, so a panel that never got `data-state`
-// stays invisible. Under reduced motion only opacity moves; the panel still fades so the
-// state change is not a cut.
+// Open is the default look and closed the variant, never the reverse: a host whose own
+// `utilities` layer has the zero-opacity or 97 % scale utility would outrank an open-state variant of
+// ours and leave an open panel invisible but clickable (see chip-parts.ts). Under reduced
+// motion only opacity moves; the panel still fades so the state change is not a cut.
 const PANEL = cn(
   "absolute right-0 top-full z-50 mt-2 flex w-64 max-w-[calc(100vw-1rem)] origin-top-right flex-col rounded-lg border border-border bg-popover p-1 shadow-md",
   "transition-[opacity,translate,scale] duration-(--ev-dur-fast) ease-(--ev-ease-out) motion-reduce:transition-opacity",
-  "-translate-y-1 scale-97 opacity-0 data-[state=open]:translate-y-0 data-[state=open]:scale-100 data-[state=open]:opacity-100",
-  "motion-reduce:translate-y-0 motion-reduce:scale-100",
+  "data-[state=closed]:opacity-0 motion-safe:data-[state=closed]:-translate-y-1 motion-safe:data-[state=closed]:scale-97",
 );
 
 export type MenuPanelProps = {
@@ -55,8 +55,10 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
       hidden={phase === "closed"}
       inert={!shown}
       onKeyDown={onKeyDown}
-      // `hidden` alone loses to the `flex` utility: no preflight here restores its display.
-      className={cn(PANEL, phase === "closed" && "hidden")}
+      // Inline, not the `hidden` utility: a host's `.flex` in a higher layer would beat ours,
+      // and the attribute alone loses to `flex` without preflight.
+      style={phase === "closed" ? { display: "none" } : undefined}
+      className={PANEL}
     >
       <ProfileRow identity={identity} links={links} onPick={onPick} />
       {links.manage && (
@@ -83,7 +85,7 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
                   target={item.external ? "_blank" : undefined}
                   rel={item.external ? "noopener noreferrer" : undefined}
                   onClick={onPick}
-                  className={cn(ENTRY, item.current && "bg-ink/5 font-semibold")}
+                  className={cn(ENTRY, "aria-[current=page]:bg-ink/5 aria-[current=page]:font-semibold")}
                 >
                   {item.label}
                 </a>

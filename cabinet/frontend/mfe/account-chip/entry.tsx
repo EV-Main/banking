@@ -17,6 +17,8 @@ import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 //     identity, links and service groups as attributes; the chip fetches nothing and turns
 //     Sign out into a `signout` event for the host to act on.
 // Every attribute is observed: a change re-renders the same root, so open state survives.
+// The element sets `data-ready` itself once the chip paints with its styles (removed on
+// disconnect); hosts wait on that rather than on the reserve's inline style going away.
 
 const TAG = "mfe-cabinet-account-chip";
 
@@ -56,6 +58,7 @@ class AccountChipElement extends HTMLElement {
     this.#root?.unmount();
     this.#root = undefined;
     this.#styled = false;
+    this.removeAttribute("data-ready");
   }
 
   #hold() {
@@ -64,6 +67,9 @@ class AccountChipElement extends HTMLElement {
 
   #release() {
     for (const key of Object.keys(RESERVE)) this.style.removeProperty(key);
+    // The explicit "painted" signal for hosts (`[data-ready]`), instead of watching for the
+    // inline visibility to disappear.
+    this.toggleAttribute("data-ready", true);
   }
 
   #signOut = () => {
