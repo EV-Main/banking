@@ -22,10 +22,15 @@ import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 
 const TAG = "mfe-cabinet-account-chip";
 
-// The chip's final box with its name still unknown (avatar 34 + gaps 2×10 + bar 96 + chevron
-// 16 + padding 2×6, by 34 + padding 2×4). Held, invisible, until the stylesheet applies, so the
-// host's header neither collapses nor jumps under an unstyled first frame.
-const RESERVE = { display: "inline-block", width: "178px", height: "42px", visibility: "hidden" } as const;
+// Until the stylesheet applies the chip is invisible, so an unstyled first frame never paints.
+// Its box is the host's when the host gave the element one — a class on the element itself
+// (the cabinet zone's shell: flex, a fixed width below `sm`, `hidden` when signed out) or a
+// flex/grid parent: an inline display or size here would beat those, and in the zone it
+// grew the row 42 → 48 px for half a second. Only an element left in inline flow, which
+// would collapse to nothing, gets the chip's own final box with its name still unknown
+// (avatar 34 + gaps 2×10 + bar 96 + chevron 16 + padding 2×6, by 34 + padding 2×4).
+const HIDDEN = { visibility: "hidden" } as const;
+const RESERVE = { ...HIDDEN, display: "inline-block", width: "178px", height: "42px" } as const;
 
 class AccountChipElement extends HTMLElement {
   /** Lets a host's loader tell this bundle from one without host mode (no static: v1). */
@@ -59,13 +64,21 @@ class AccountChipElement extends HTMLElement {
     this.#root = undefined;
     this.#styled = false;
     this.removeAttribute("data-ready");
+    // A reserve left inline would read as the host's own display on the next connect.
+    for (const key of Object.keys(RESERVE)) this.style.removeProperty(key);
   }
 
   #hold() {
-    for (const [key, value] of Object.entries(RESERVE)) this.style.setProperty(key, value);
+    // Read before anything is set inline, so it is the host's display. One forced style
+    // recalc per connect; the host's render-blocking sheets have applied by the time a
+    // module script runs.
+    // An empty value (no browsing context to style it) cannot vouch for a host box either.
+    const hostBox = (getComputedStyle(this).display || "inline") !== "inline";
+    for (const [key, value] of Object.entries(hostBox ? HIDDEN : RESERVE)) this.style.setProperty(key, value);
   }
 
   #release() {
+    // Every key either branch may have set; removing one that was not set is a no-op.
     for (const key of Object.keys(RESERVE)) this.style.removeProperty(key);
     // The explicit "painted" signal for hosts (`[data-ready]`), instead of watching for the
     // inline visibility to disappear.
