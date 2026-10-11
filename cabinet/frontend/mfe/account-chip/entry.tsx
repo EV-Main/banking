@@ -2,6 +2,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 
 import { AccountChip, HOST_ATTRS, HostAccountChip, isHostMode, readHostProps } from "@/features/account-chip";
+import { CHIP_TAG } from "@/shared/config/chip-element";
 
 import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 
@@ -19,8 +20,18 @@ import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 // Every attribute is observed: a change re-renders the same root, so open state survives.
 // The element sets `data-ready` itself once the chip paints with its styles (removed on
 // disconnect); hosts wait on that rather than on the reserve's inline style going away.
+//
+// Events the element dispatches (both modes; bubbles, composed):
+//   • `signout` (host mode) — Sign out was picked; the host ends its own session.
+//   • `ev:navigate` (cancelable) — a plain same-origin click on a menu link: a primary
+//     button with no modifier keys, no `target`/`download`, not already prevented. `detail`
+//     is `{ href }`, the destination as path + query + hash. A host that routes the path
+//     itself calls `preventDefault()` and pushes it, and the chip cancels the click; left
+//     alone, the browser follows the link (a full load). Sign out is not a link and never
+//     sends it. Additive: hosts without a listener behave as before, so apiVersion stays 2.
+//     (features/account-chip/lib/navigate-event.ts)
 
-const TAG = "mfe-cabinet-account-chip";
+const TAG = CHIP_TAG;
 
 // Until the stylesheet applies the chip is invisible, so an unstyled first frame never paints.
 // Its box is the host's when the host gave the element one — a class on the element itself

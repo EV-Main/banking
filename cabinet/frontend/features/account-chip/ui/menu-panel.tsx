@@ -1,12 +1,14 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { Fragment, type KeyboardEvent, type Ref } from "react";
+import { Fragment, type KeyboardEvent, type MouseEvent, type Ref } from "react";
 
+import { CHIP_TAG } from "@/shared/config/chip-element";
 import { cn } from "@/shared/lib/cn";
 
 import { chipTranslator } from "../lib/chip-translator";
 import type { MenuGroup } from "../lib/host-attributes";
+import { delegatedHref, dispatchNavigate } from "../lib/navigate-event";
 import { CHIP_FOCUS, CHIP_PRESS, type MenuIdentity, type MenuLinks } from "./chip-parts";
 import type { DisclosurePhase } from "./use-disclosure";
 
@@ -55,6 +57,7 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
       hidden={phase === "closed"}
       inert={!shown}
       onKeyDown={onKeyDown}
+      onClick={offerToHost}
       // Inline, not the `hidden` utility: a host's `.flex` in a higher layer would beat ours,
       // and the attribute alone loses to `flex` without preflight.
       style={phase === "closed" ? { display: "none" } : undefined}
@@ -119,6 +122,22 @@ export function MenuPanel({ id, panelRef, phase, identity, links, groups, onKeyD
       </button>
     </div>
   );
+}
+
+/**
+ * One listener for every link in the panel, after the entry's own `onClick` has closed the
+ * menu: a same-origin plain click is offered to the host's router (navigate-event.ts), and
+ * cancelled here only if the host took it. Sign out is a button, so it never matches.
+ */
+function offerToHost(e: MouseEvent<HTMLDivElement>) {
+  if (!(e.target instanceof Element)) return;
+  const anchor = e.target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement) || !e.currentTarget.contains(anchor)) return;
+  const href = delegatedHref(e, anchor, window.location);
+  if (href === null) return;
+  // The element when the chip runs as one; the anchor itself when it is rendered inline,
+  // which still bubbles to the document.
+  if (dispatchNavigate(anchor.closest(CHIP_TAG) ?? anchor, href)) e.preventDefault();
 }
 
 /**

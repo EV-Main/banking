@@ -1,9 +1,10 @@
 // A stand-in document for rendering the account chip with react-dom's client renderer under
 // `node --test`. No DOM library is installed; this carries what React reads and writes when
 // it creates, updates and removes host nodes and dispatches events at the root, plus what the
-// chip itself touches (`focus`, `contains`, `getBoundingClientRect`, `toggleAttribute`, one
-// `querySelectorAll` shape). Anything else throws or is absent, so a test that starts relying
-// on more DOM fails loudly instead of passing on a missing feature.
+// chip itself touches (`focus`, `contains`, `getBoundingClientRect`, `toggleAttribute`, the
+// `querySelectorAll`/`closest` shapes it uses, an anchor's resolved `href` and `target`, and
+// `instanceof Element`/`HTMLAnchorElement`). Anything else throws or is absent, so a test that
+// starts relying on more DOM fails loudly instead of passing on a missing feature.
 //
 // Events do not travel the tree: React listens on the root container, so `click`/`keyDown`
 // fire there with `target` set to the node, which is what React resolves the handler from.
@@ -173,15 +174,31 @@ export class FakeElement extends FakeNode {
    * `tag:not(:disabled)`. Anything else throws, so a new selector is noticed here.
    */
   querySelectorAll(selector: string): FakeElement[] {
-    const matchers = selector.split(",").map((part) => {
-      const m = /^\s*([a-z]+)(?:\[([a-z-]+)\])?(:not\(:disabled\))?\s*$/.exec(part);
-      if (!m) throw new Error(`fake-dom: unsupported selector "${part}"`);
-      const [, tag, attr, enabled] = m;
-      return (el: FakeElement) =>
-        el.tagName === tag?.toUpperCase() && (!attr || el.hasAttribute(attr)) && (!enabled || !el.hasAttribute("disabled"));
-    });
-    // Not `t` for the matcher: the i18n extractor reads any `t(…)` call as a translation.
-    return descendants(this).filter((el) => matchers.some((matches) => matches(el)));
+    const matches = selectorMatcher(selector);
+    return descendants(this).filter(matches);
+  }
+
+  /** This element or its nearest ancestor matching `selector` (same shapes as above). */
+  closest(selector: string): FakeElement | null {
+    const matches = selectorMatcher(selector);
+    if (matches(this)) return this;
+    const parent = this.parentNode;
+    return parent instanceof FakeElement ? parent.closest(selector) : null;
+  }
+
+  /** As the DOM reflects it on `<a>`: the attribute resolved against the page, or "". */
+  get href(): string {
+    const raw = this.getAttribute("href");
+    if (raw === null) return "";
+    try {
+      return new URL(raw, String(Reflect.get(globalThis, "location")?.href)).href;
+    } catch {
+      return raw;
+    }
+  }
+
+  get target(): string {
+    return this.getAttribute("target") ?? "";
   }
 
   /**
@@ -227,12 +244,38 @@ export class FakeDocument extends FakeNode {
   }
 }
 
+function selectorMatcher(selector: string): (el: FakeElement) => boolean {
+  const matchers = selector.split(",").map((part) => {
+    const m = /^\s*([a-z][a-z-]*)(?:\[([a-z-]+)\])?(:not\(:disabled\))?\s*$/.exec(part);
+    if (!m) throw new Error(`fake-dom: unsupported selector "${part}"`);
+    const [, tag, attr, enabled] = m;
+    return (el: FakeElement) =>
+      el.tagName === tag?.toUpperCase() && (!attr || el.hasAttribute(attr)) && (!enabled || !el.hasAttribute("disabled"));
+  });
+  // Not `t` for the matcher: the i18n extractor reads any `t(…)` call as a translation.
+  return (el) => matchers.some((matches) => matches(el));
+}
+
 /** Every element under `root`, in document order. */
 export function descendants(root: FakeNode): FakeElement[] {
   return root.childNodes.flatMap((child) => (child instanceof FakeElement ? [child, ...descendants(child)] : []));
 }
 
-const GLOBALS = ["window", "document", "HTMLIFrameElement", "HTMLElement", "customElements", "getComputedStyle", "IS_REACT_ACT_ENVIRONMENT"] as const;
+const GLOBALS = [
+  "window",
+  "document",
+  "location",
+  "Element",
+  "HTMLAnchorElement",
+  "HTMLIFrameElement",
+  "HTMLElement",
+  "customElements",
+  "getComputedStyle",
+  "IS_REACT_ACT_ENVIRONMENT",
+] as const;
+
+/** The page the stand-in document is: what `location` reports and what hrefs resolve against. */
+export const PAGE_URL = "https://cabinet.example/en/cabinet";
 
 /**
  * Installs a fresh document as the global one, with `window` as globalThis (as in a page).
@@ -243,6 +286,17 @@ export function installDom(doc: FakeDocument): () => void {
   Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
   Reflect.set(globalThis, "window", globalThis);
   Reflect.set(globalThis, "document", doc);
+  Reflect.set(globalThis, "location", { href: PAGE_URL, origin: new URL(PAGE_URL).origin });
+  Reflect.set(globalThis, "Element", FakeElement);
+  Reflect.set(
+    globalThis,
+    "HTMLAnchorElement",
+    class {
+      static [Symbol.hasInstance](value: unknown): boolean {
+        return value instanceof FakeElement && value.tagName === "A";
+      }
+    },
+  );
   Reflect.set(globalThis, "HTMLIFrameElement", class {});
   // The panel's exit fallback reads its transitions; none are declared here.
   Reflect.set(globalThis, "getComputedStyle", () => ({ transitionDuration: "0s", transitionDelay: "0s" }));
@@ -251,9 +305,13 @@ export function installDom(doc: FakeDocument): () => void {
   };
 }
 
+/** Modifier keys held during a click; all up by default. */
+export type Modifiers = Partial<Record<"ctrlKey" | "metaKey" | "shiftKey" | "altKey", boolean>>;
+
 /** A `click` as React sees it at the root; `detail` 0 is Enter/Space, 1 a pointer. */
-export function click(container: FakeElement, target: FakeElement, detail: 0 | 1 = 1): Event {
-  return fire(container, target, Object.assign(new Event("click", { bubbles: true, cancelable: true }), { detail, button: 0 }));
+export function click(container: FakeElement, target: FakeElement, detail: 0 | 1 = 1, modifiers: Modifiers = {}): Event {
+  const keys = { ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...modifiers };
+  return fire(container, target, Object.assign(new Event("click", { bubbles: true, cancelable: true }), { detail, button: 0 }, keys));
 }
 
 /** A `keydown` as React sees it at the root. */
