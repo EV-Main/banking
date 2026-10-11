@@ -8,7 +8,14 @@ const CSRF_HEADER = "x-ev-csrf";
 function readCookie(name: string): string | null {
   const prefix = `${name}=`;
   const found = document.cookie.split("; ").find((entry) => entry.startsWith(prefix));
-  return found ? decodeURIComponent(found.slice(prefix.length)) : null;
+  if (!found) return null;
+  try {
+    return decodeURIComponent(found.slice(prefix.length));
+  } catch {
+    // A malformed `%` sequence (a cookie another app on the parent domain wrote) would throw
+    // out of every mutating request; no token is the failure the server already answers.
+    return null;
+  }
 }
 
 export function csrfHeader(): Record<string, string> {
