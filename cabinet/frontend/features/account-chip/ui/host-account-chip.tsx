@@ -35,7 +35,7 @@ export function HostAccountChip({ className, name, email, manageHref, profileHre
     <AccountMenu
       className={className}
       identity={identity}
-      links={{ profile: profileHref, manage: manageHref, switchAccount: switchHref }}
+      links={{ profile: profileHref ? { href: profileHref, kind: "cabinet" } : null, manage: manageHref, switchAccount: switchHref }}
       groups={groups}
       onSignOut={onSignOut}
     />

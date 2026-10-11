@@ -141,7 +141,7 @@ function cabinetLinks(): MenuLinks {
   const here = typeof document === "undefined" ? "/" : document.location.pathname + document.location.search;
   const inCabinet = typeof document !== "undefined" && isCabinetPage(document.location.pathname);
   return {
-    profile: cabinetPath(locale, inCabinet ? "/profile" : "/"),
+    profile: inCabinet ? { href: cabinetPath(locale, "/profile"), kind: "profile" } : { href: cabinetPath(locale, "/"), kind: "cabinet" },
     manage: cabinetPath(locale, "/settings"),
     // Google's chooser is on every sign-in; the new session closes this one.
     switchAccount: `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
