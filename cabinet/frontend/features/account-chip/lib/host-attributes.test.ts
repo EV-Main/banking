@@ -178,6 +178,26 @@ test("a label of 254 characters is accepted and one of 255 is refused", () => {
   assert.deepEqual(parseGroups(JSON.stringify([{ id: "g", items: [item("a", { label: `${at}L` })] }])), []);
 });
 
+// ── attribute names ─────────────────────────────────────────────────────────
+
+// Hosts write these names into their own markup (the Service-Arb panel among them); a rename
+// strands every host silently and is apiVersion 3, not a refactor. `data-layout="menu"` is
+// read by CSS only (a drawer row keeps the name below `sm`), so nothing else would notice it.
+test("the element's attribute names are the frozen v2 contract, data-layout included", () => {
+  assert.deepEqual(HOST_ATTRS, {
+    mode: "data-mode",
+    name: "data-name",
+    email: "data-email",
+    manageHref: "data-manage-href",
+    profileHref: "data-profile-href",
+    switchHref: "data-switch-href",
+    groups: "data-groups",
+    intent: "data-intent",
+    returnTo: "data-return-to",
+    layout: "data-layout",
+  });
+});
+
 // ── isHostMode / readHostProps ──────────────────────────────────────────────
 
 test("host mode is on only for data-mode exactly \"host\"", () => {
