@@ -61,14 +61,25 @@ function text(raw: unknown): string | null {
 
 /**
  * An href the chip will render: root-relative or absolute http(s). Everything else —
- * `javascript:`, `data:`, protocol-relative `//evil`, bare words — is refused, because the
- * value lands in an `<a href>` on a page that holds a session.
+ * `javascript:`, `data:`, protocol-relative `//evil`, control characters, backslashes, bare
+ * words — is refused, because the value lands in an `<a href>` on a page that holds a session.
  */
 export function safeHref(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
+  // Browsers strip tabs and newlines from URLs and read a backslash as `/`, so `/<TAB>/evil`
+  // or `/\evil` parse as protocol-relative; refused wherever they sit, before any trimming.
+  if (/[\u0000-\u001F\u007F\\]/.test(raw)) return null;
   const value = raw.trim();
   if (!value || value.length > 2048) return null;
-  if (value.startsWith("/")) return value.startsWith("//") || value.startsWith("/\\") ? null : value;
+  if (value.startsWith("/")) {
+    if (value.startsWith("//")) return null;
+    // Belt and braces: whatever the parser makes of it must stay on the page's own origin.
+    try {
+      return new URL(value, "https://h.invalid").origin === "https://h.invalid" ? value : null;
+    } catch {
+      return null;
+    }
+  }
   try {
     const url = new URL(value);
     return url.protocol === "https:" || url.protocol === "http:" ? value : null;

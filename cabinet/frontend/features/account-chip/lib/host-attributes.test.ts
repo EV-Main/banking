@@ -52,6 +52,19 @@ test("a backslash after the leading slash is refused — browsers read it as pro
   assert.equal(safeHref("/\\evil.example"), null);
 });
 
+test("a tab or newline that the browser would strip into a protocol-relative href is refused", () => {
+  assert.equal(safeHref("/\t/evil.example"), null);
+  assert.equal(safeHref("/\n/evil.example"), null);
+  assert.equal(safeHref("/\r\n/evil.example"), null);
+});
+
+test("a control character or backslash anywhere in the href is refused", () => {
+  assert.equal(safeHref("/a\\b"), null);
+  assert.equal(safeHref("https://sa.example/\\evil"), null);
+  assert.equal(safeHref("/a\u0000b"), null);
+  assert.equal(safeHref("/a\u007Fb"), null);
+});
+
 test("a bare word, a non-http scheme and a non-string are refused", () => {
   assert.equal(safeHref("settings"), null);
   assert.equal(safeHref("mailto:a@b.c"), null);
