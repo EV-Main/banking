@@ -17,6 +17,13 @@ export type AccountMenuProps = {
   className?: string;
   /** Null is the first-visit skeleton: same box, same width, nothing to open. */
   identity: MenuIdentity | null;
+  /**
+   * An identity painted before the session confirmed it (the last visit's cache): shown, but
+   * nothing opens — on a shared machine the panel would be the previous person's account.
+   * The caller switches it by remounting (AccountChip renders a locked and a live chip as
+   * different trees), so an open phase never survives into a lock or out of one.
+   */
+  locked?: boolean;
   links: MenuLinks;
   groups: readonly MenuGroup[];
   onSwitchAccount?: () => void;
@@ -38,13 +45,14 @@ const ENTRIES = "a[href], button:not(:disabled)";
  * Home and End are a shortcut on top of Tab, not a replacement for it; Escape, Tab out and
  * a click elsewhere close it.
  */
-export function AccountMenu({ className, identity, links, groups, onSwitchAccount, onSignOut }: AccountMenuProps) {
+export function AccountMenu({ className, identity, locked = false, links, groups, onSwitchAccount, onSignOut }: AccountMenuProps) {
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const panelId = useId();
   const { phase, open, close, closeNow } = useDisclosure(panel);
-  const expanded = identity !== null && (phase === "open" || phase === "entering");
+  const openable = identity !== null && !locked;
+  const expanded = openable && (phase === "open" || phase === "entering");
 
   useEffect(() => {
     if (!expanded) return;
@@ -75,13 +83,14 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
   };
 
   const onTriggerClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (!openable) return;
     if (expanded) return close();
     // detail 0 is Enter/Space: the keyboard user lands on the first entry, a pointer does not.
     if (e.detail === 0) openAndFocus("first");
     else open();
   };
   const onTriggerKey = (e: KeyboardEvent<HTMLButtonElement>) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (!openable || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
     e.preventDefault();
     openAndFocus(e.key === "ArrowDown" ? "first" : "last");
   };
@@ -106,7 +115,10 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
         ref={trigger}
         type="button"
         disabled={identity === null}
-        aria-busy={identity === null || undefined}
+        // aria-disabled rather than `disabled` while locked: the cached name stays reachable
+        // with Tab and is announced as unavailable, instead of vanishing from the tab order.
+        aria-disabled={locked || undefined}
+        aria-busy={identity === null || locked || undefined}
         aria-label={identity ? undefined : chipTranslator()("ui.account", "Account")}
         aria-expanded={expanded}
         aria-controls={panelId}
@@ -116,6 +128,7 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
           "group flex min-w-0 items-center gap-2.5 rounded-lg border-0 px-1.5 py-1",
           CHIP_PRESS,
           "disabled:cursor-default disabled:hover:bg-transparent disabled:active:bg-transparent",
+          "aria-disabled:cursor-default aria-disabled:hover:bg-transparent aria-disabled:active:bg-transparent",
           CHIP_FOCUS,
         )}
       >
@@ -140,7 +153,7 @@ export function AccountMenu({ className, identity, links, groups, onSwitchAccoun
           aria-hidden
         />
       </button>
-      {identity && (
+      {openable && (
         <MenuPanel
           id={panelId}
           panelRef={panel}

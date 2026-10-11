@@ -38,7 +38,9 @@ const MAX_LABEL = 28;
 // cabinet's own session cookie is readable. It owns the session, the profile read and the
 // logout; `AccountMenu` only draws. States:
 //   • no cache, session loading            → AccountMenu skeleton (final box, w-24 bar)
-//   • cache, session loading or unreachable → the cached chip, so a blip never shows the CTA
+//   • cache, session loading or unreachable → the cached chip, so a blip never shows the CTA;
+//                                             locked — no email, nothing opens — until the
+//                                             session vouches for it (a shared machine)
 //   • signed in                             → live chip; profile name refines the label
 //   • signed out                            → the Cabinet CTA
 //
@@ -66,8 +68,9 @@ export function AccountChip({ className, intent, returnTo }: AccountChipProps) {
   }, [signedOut]);
 
   if (session === null || session === SESSION_UNAVAILABLE) {
-    // Unconfirmed: paint the last visit's identity rather than a skeleton or the CTA.
-    if (cached) return <CabinetMenu className={className} identity={menuIdentity(cached)} />;
+    // Unconfirmed: paint the last visit's name rather than a skeleton or the CTA, but not
+    // its email and not its menu — that cache may be someone else's.
+    if (cached) return <CabinetMenu className={className} identity={{ ...menuIdentity(cached), email: null }} locked />;
     if (session === null) return <CabinetMenu className={className} identity={null} />;
   }
   if (!session?.authenticated) return <SignInCta className={className} intent={intent} returnTo={returnTo} />;
@@ -108,11 +111,12 @@ function AuthedChip({ className, email, seed }: { className?: string; email: str
 }
 
 /** AccountMenu with the cabinet's own links, groups and logout. */
-function CabinetMenu({ className, identity }: { className?: string; identity: MenuIdentity | null }) {
+function CabinetMenu({ className, identity, locked }: { className?: string; identity: MenuIdentity | null; locked?: boolean }) {
   return (
     <AccountMenu
       className={className}
       identity={identity}
+      locked={locked}
       links={cabinetLinks()}
       groups={serviceGroups()}
       onSwitchAccount={clearIdentity}

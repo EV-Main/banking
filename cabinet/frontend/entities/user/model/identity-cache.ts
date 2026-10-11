@@ -10,6 +10,11 @@
 // of every module — reads it. A same-document write fires no `storage` event, so writers
 // announce themselves with `IDENTITY_EVENT` on `window`; other tabs still hear `storage`.
 //
+// Every entry carries `savedAt` and goes stale after IDENTITY_TTL_MS. The cache is painted
+// before the session is confirmed, so on a shared machine it is what the next person sees;
+// bounding its age bounds that, and the chip keeps the email and the menu back until the
+// session answers (account-chip.tsx).
+//
 // Relative imports, no `@/`: `node --test` runs this file and cannot resolve the alias.
 
 import { initialsOfName } from "../../../shared/lib/identity.ts";
@@ -26,6 +31,12 @@ export const IDENTITY_KEY = "ev.cabinet.account-chip.v2";
 
 /** v1 lived in sessionStorage as `{ email, name }`; dropped on first read, never migrated. */
 export const LEGACY_IDENTITY_KEY = "ev.cabinet.account-chip";
+
+/** An entry older than this reads as no cache: a day-old identity is not "the last visit". */
+export const IDENTITY_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** A confirmed identity re-stamps an entry at most this often, so steady visits stay quiet. */
+const RESTAMP_MS = 60 * 60 * 1000;
 
 /** Dispatched on `window` after every write or clear in this document. */
 export const IDENTITY_EVENT = "ev:account-chip-identity";
@@ -61,8 +72,21 @@ export function readIdentityRaw(): string | null {
   }
 }
 
-/** Storage is outside input: anything but the exact three-field shape reads as no cache. */
-export function parseIdentity(raw: string | null): CachedIdentity | null {
+/**
+ * Storage is outside input: anything but the exact shape — three fields plus a `savedAt`
+ * within IDENTITY_TTL_MS of `now` — reads as no cache. Entries from before `savedAt`
+ * existed are simply stale.
+ */
+export function parseIdentity(raw: string | null, now: number = Date.now()): CachedIdentity | null {
+  const entry = parseEntry(raw);
+  if (!entry) return null;
+  const age = now - entry.savedAt;
+  // A future stamp is a clock change or a hand edit; neither vouches for freshness.
+  if (age < 0 || age >= IDENTITY_TTL_MS) return null;
+  return entry.identity;
+}
+
+function parseEntry(raw: string | null): { identity: CachedIdentity; savedAt: number } | null {
   if (!raw) return null;
   let value: unknown;
   try {
@@ -71,11 +95,12 @@ export function parseIdentity(raw: string | null): CachedIdentity | null {
     return null;
   }
   if (typeof value !== "object" || value === null) return null;
-  const { email, name, initials } = value as Record<string, unknown>;
+  const { email, name, initials, savedAt } = value as Record<string, unknown>;
   if (typeof email !== "string" || !email) return null;
   if (name !== null && typeof name !== "string") return null;
   if (typeof initials !== "string" || !initials) return null;
-  return { email, name: name || null, initials };
+  if (typeof savedAt !== "number" || !Number.isFinite(savedAt)) return null;
+  return { identity: { email, name: name || null, initials }, savedAt };
 }
 
 export function readIdentity(): CachedIdentity | null {
@@ -92,19 +117,28 @@ function announce(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(IDENTITY_EVENT));
 }
 
-/** Store `identity` unless it is already what is stored; an unchanged write announces nothing. */
-export function writeIdentity(identity: CachedIdentity): void {
+/**
+ * Store `identity`, stamped `now`. An unchanged identity stamped within RESTAMP_MS is left
+ * alone and announces nothing; an older one is re-stamped, so a user who keeps coming back
+ * keeps a live cache.
+ */
+export function writeIdentity(identity: CachedIdentity, now: number = Date.now()): void {
   const store = storage();
   if (!store) return;
-  const next = JSON.stringify({ email: identity.email, name: identity.name, initials: identity.initials });
+  const next = JSON.stringify({ email: identity.email, name: identity.name, initials: identity.initials, savedAt: now });
   try {
-    if (store.getItem(IDENTITY_KEY) === next) return;
+    const stored = parseEntry(store.getItem(IDENTITY_KEY));
+    if (stored && sameIdentity(stored.identity, identity) && now - stored.savedAt >= 0 && now - stored.savedAt < RESTAMP_MS) return;
     store.setItem(IDENTITY_KEY, next);
   } catch {
     // Quota or disabled storage: the chip degrades to the live fetch, correctness intact.
     return;
   }
   announce();
+}
+
+function sameIdentity(a: CachedIdentity, b: CachedIdentity): boolean {
+  return a.email === b.email && a.name === b.name && a.initials === b.initials;
 }
 
 export function clearIdentity(): void {

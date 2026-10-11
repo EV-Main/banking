@@ -76,7 +76,9 @@ let instance = 0;
 /** A copy of the module with its own "legacy key already dropped" flag. */
 const freshModule = (): Promise<typeof import("./identity-cache.ts")> => import(`./identity-cache.ts?instance=${++instance}`);
 
-const VALENTINA = '{"email":"v@example.com","name":"Valentina Kuznetsova","initials":"VK"}';
+// Entries carry a `savedAt` stamp and expire; the fixtures are stamped at a fixed `NOW`.
+const NOW = 1_800_000_000_000;
+const VALENTINA = `{"email":"v@example.com","name":"Valentina Kuznetsova","initials":"VK","savedAt":${NOW}}`;
 
 // ── key ─────────────────────────────────────────────────────────────────────
 
@@ -117,12 +119,12 @@ test("clearing the cache drops the v1 entry too", async () => {
 // ── parseIdentity ───────────────────────────────────────────────────────────
 
 test("the exact v2 shape parses", () => {
-  assert.deepEqual(parseIdentity(VALENTINA), { email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" });
+  assert.deepEqual(parseIdentity(VALENTINA, NOW), { email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" });
 });
 
 test("a null or empty name parses as no name", () => {
-  assert.deepEqual(parseIdentity('{"email":"v@example.com","name":null,"initials":"V"}'), { email: "v@example.com", name: null, initials: "V" });
-  assert.deepEqual(parseIdentity('{"email":"v@example.com","name":"","initials":"V"}'), { email: "v@example.com", name: null, initials: "V" });
+  assert.deepEqual(parseIdentity(`{"email":"v@example.com","name":null,"initials":"V","savedAt":${NOW}}`, NOW), { email: "v@example.com", name: null, initials: "V" });
+  assert.deepEqual(parseIdentity(`{"email":"v@example.com","name":"","initials":"V","savedAt":${NOW}}`, NOW), { email: "v@example.com", name: null, initials: "V" });
 });
 
 test("a missing or empty entry parses as no cache", () => {
@@ -168,7 +170,7 @@ test("storage that throws on access reads as no cache", () => {
 // ── writeIdentity / clearIdentity ───────────────────────────────────────────
 
 test("a new identity is stored in the v2 shape and announced once", () => {
-  writeIdentity({ email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" });
+  writeIdentity({ email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" }, NOW);
 
   assert.equal(local.getItem(IDENTITY_KEY), VALENTINA);
   assert.equal(announced, 1);
@@ -177,7 +179,7 @@ test("a new identity is stored in the v2 shape and announced once", () => {
 test("writing the identity already stored announces nothing", () => {
   local.setItem(IDENTITY_KEY, VALENTINA);
 
-  writeIdentity({ email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" });
+  writeIdentity({ email: "v@example.com", name: "Valentina Kuznetsova", initials: "VK" }, NOW);
 
   assert.equal(local.getItem(IDENTITY_KEY), VALENTINA);
   assert.equal(announced, 0);
@@ -186,9 +188,9 @@ test("writing the identity already stored announces nothing", () => {
 test("a changed name replaces the stored identity and is announced", () => {
   local.setItem(IDENTITY_KEY, VALENTINA);
 
-  writeIdentity({ email: "v@example.com", name: "Valya", initials: "V" });
+  writeIdentity({ email: "v@example.com", name: "Valya", initials: "V" }, NOW);
 
-  assert.equal(local.getItem(IDENTITY_KEY), '{"email":"v@example.com","name":"Valya","initials":"V"}');
+  assert.equal(local.getItem(IDENTITY_KEY), `{"email":"v@example.com","name":"Valya","initials":"V","savedAt":${NOW}}`);
   assert.equal(announced, 1);
 });
 
