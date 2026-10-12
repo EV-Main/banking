@@ -57,7 +57,8 @@ layout feeds `I18nProvider` so both the `(app)` and `(auth)` groups are covered.
 
 Only a Settings save *confirms* that cookie (`ev_locale_chosen`). An unprefixed entry
 whose `ev_locale` was not confirmed is treated as a guess, so the account's stored
-language wins on that device; a URL never writes to the account.
+language wins on that device; a URL never writes to the account. A confirmed
+choice is kept on that device until it is changed there.
 
 Catalogues live in `messages/<locale>/common.json`. English is a plain map; every
 other locale records the English each entry was translated from, which is what
