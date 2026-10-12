@@ -18,8 +18,8 @@ import { DEFAULT_LOCALE, isLocale, type Locale } from "@evinvest/i18n";
 // hosts by construction — `__Host-ev_locale` in production, bare `ev_locale`
 // over plain http in dev — and with site_conductor's `scripts/locale-cookie.ts`,
 // which computes it the same way.
-function cookieName(): string {
-  return (location.protocol === "https:" ? "__Host-" : "") + "ev_locale";
+function cookieName(base = "ev_locale"): string {
+  return (location.protocol === "https:" ? "__Host-" : "") + base;
 }
 
 /** The reader's remembered locale, or null when they have never had one set. */
@@ -38,9 +38,23 @@ export function readLocaleCookie(): Locale | null {
 
 /** Remember `locale` for a year, in the shape the proxy reads on the next entry. */
 export function writeLocaleCookie(locale: Locale): void {
+  writeCookie(cookieName(), locale);
+}
+
+/**
+ * Remember `locale` AND that the reader asked for it. Settings is the only caller: the
+ * `ev_locale_chosen` twin is what lets the proxy tell this cookie from one it seeded
+ * itself from a URL or a header, which yields to the account's language.
+ */
+export function confirmLocaleCookie(locale: Locale): void {
+  writeLocaleCookie(locale);
+  writeCookie(cookieName("ev_locale_chosen"), locale);
+}
+
+function writeCookie(name: string, value: string): void {
   if (typeof document === "undefined") return;
   const secure = location.protocol === "https:";
-  document.cookie = `${cookieName()}=${locale};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax${secure ? ";secure" : ""}`;
+  document.cookie = `${name}=${value};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax${secure ? ";secure" : ""}`;
 }
 
 /**

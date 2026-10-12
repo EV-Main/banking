@@ -33,8 +33,9 @@ export type LocaleSyncDecision =
  * device follows"; a preference that follows the reader cannot also follow the link
  * they clicked. Nor can an account with no language be seeded from a URL: the proxy
  * remembers a guessed locale in the `ev_locale` cookie, and the next unprefixed entry
- * redirects to it without the mark — so a URL that looks deliberate may be last week's
- * guess laundered through a cookie. Settings is the only writer.
+ * redirects to it — so a URL that looks deliberate may be last week's guess laundered
+ * through a cookie. The proxy therefore marks that entry too unless Settings confirmed
+ * the cookie (`ev_locale_chosen`, #367). Settings is the only writer.
  *
  * What remains is a read. The mark is matched on its value, not its presence: it
  * describes the entry that minted it, and one left behind by an earlier redirect the
