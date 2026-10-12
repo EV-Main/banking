@@ -15,7 +15,7 @@ import { validateProfileForm } from "@/entities/user/model/profile-schema";
 import { relocalise } from "@/shared/config/base-path";
 import type { UpdateProfileRequest, UserProfile } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
-import { writeLocaleCookie } from "@/shared/lib/locale-cookie";
+import { confirmLocaleCookie } from "@/shared/lib/locale-cookie";
 import { type ResourceSeed, useSeededResource } from "@/shared/lib/resource";
 import { EDITABLE, type Form, formFrom } from "@/views/settings/lib/form";
 
@@ -80,8 +80,11 @@ export function useProfileForm(initial?: ResourceSeed<UserProfile>) {
       // typed. `en-US` and friends are stored fine but are not routable locales, so a
       // non-locale value simply leaves the interface where it is.
       const chosen = updated.language;
+      // Confirmed even when the page already speaks it: this is the one moment the
+      // reader has said which language this device keeps, and a cookie seeded from a
+      // URL must not outrank it later.
+      if (isLocale(chosen)) confirmLocaleCookie(chosen);
       if (isLocale(chosen) && chosen !== locale) {
-        writeLocaleCookie(chosen);
         // A hard navigation, not router.push: the locale lives in the root layout's
         // segment, and the catalogue is chosen there at render time. `relocalise` is
         // shared with LocaleSync so the two cannot disagree about what "the same page"

@@ -29,6 +29,11 @@ export const COOKIES = {
   // `LocaleSync`, which uses it to decide whether the stored profile language
   // should override the URL. Session-scoped and carries no authority.
   localeGuessed: `${PREFIX}ev_locale_guessed`,
+  // Written by Settings alone, when the reader saves a language: the locale this device
+  // was told to keep. An `ev_locale` that does not match it was seeded from a URL, a
+  // header or the public site, so the proxy treats it as a guess and lets the account's
+  // language win (`shared/lib/locale-guess.ts`). Carries no authority.
+  localeChosen: `${PREFIX}ev_locale_chosen`,
   // Minted by the browser too: the device's time zone, so a server render formats times
   // the way the browser will hydrate them. Carries no authority — see
   // `shared/lib/time-zone-name.ts`.

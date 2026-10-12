@@ -33,6 +33,9 @@ export function LocaleSync() {
     });
     if (decision.kind !== "adopt-stored") return;
 
+    // Not `confirmLocaleCookie`: adopting the account's language is not the reader's
+    // choice on this device, so the cookie stays unconfirmed and the next unprefixed entry
+    // is re-checked against the account.
     writeLocaleCookie(decision.to);
     // Hard navigation: the locale is a root layout segment, so the catalogue is chosen
     // server-side and `router.replace` would re-render the same one. `location.replace`

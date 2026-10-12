@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 
-import { documentLocale, readLocaleCookie, writeLocaleCookie } from "./locale-cookie.ts";
+import { confirmLocaleCookie, documentLocale, readLocaleCookie, writeLocaleCookie } from "./locale-cookie.ts";
 
 // The module reaches for the two browser globals directly (it only ever runs in a
 // browser), so a test has to supply them. Assigned onto globalThis rather than mocked
@@ -85,4 +85,15 @@ test("with no usable lang the cookie is the fallback, then English", () => {
   // A regional tag is not one of the five routable locales and there is no cookie, so
   // the floor applies rather than a half-match.
   assert.equal(documentLocale(), "en");
+});
+
+test("confirming writes both the locale and its twin under the same prefix rule", () => {
+  // The proxy reads `ev_locale_chosen` by the server-computed name; a prefix mismatch
+  // would silently leave every Settings choice looking like a guess.
+  const writes: string[] = [];
+  const doc = browser("https:");
+  Object.defineProperty(doc, "cookie", { set: (v: string) => writes.push(v), get: () => "" });
+  confirmLocaleCookie("vi");
+  assert.match(writes[0], /^__Host-ev_locale=vi;/);
+  assert.match(writes[1], /^__Host-ev_locale_chosen=vi;.*;secure$/);
 });

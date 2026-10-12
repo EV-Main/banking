@@ -10,6 +10,7 @@ import { COOKIES } from "@/shared/config/cookies";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
 import { contentSecurityPolicy, websocketOrigin } from "@/shared/config/security";
 import { isSessionId, needsRenewal, renewAccess, type Renewal } from "@/shared/lib/access-renewal";
+import { localeIsGuessed } from "@/shared/lib/locale-guess";
 import { decideSession } from "@/shared/lib/session-gate";
 
 const CSP_HEADER = "content-security-policy";
@@ -111,7 +112,11 @@ export async function proxy(req: NextRequest) {
       // read as "this URL was guessed" on the next deliberate /de/cabinet link they
       // follow — bouncing them off the page they chose. Matching on the value makes
       // a stale mark inert instead.
-      if (!isLocale(remembered)) {
+      //
+      // A remembered locale Settings never confirmed counts as a guess too (#367): the
+      // proxy and the public site seed `ev_locale` from URLs, and such a cookie must not
+      // pin a device to a language the account does not have.
+      if (localeIsGuessed(remembered, req.cookies.get(COOKIES.localeChosen)?.value)) {
         res.cookies.set(COOKIES.localeGuessed, chosen, {
           path: "/",
           sameSite: "lax",
