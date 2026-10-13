@@ -32,7 +32,7 @@ export interface SiteDocuments {
 
 export const SITE_DOCUMENTS: SiteDocuments = {
   whitepaper: "/publications/whitepaper",
-  sourceCode: "https://github.com/EV-invest",
+  sourceCode: "https://github.com/EV-Main",
   terms: undefined,
   privacy: undefined,
   riskDisclosure: undefined,
