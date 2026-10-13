@@ -48,7 +48,7 @@
           # Public repo → public Cachix (`ev-invest`); pull deps + push built paths.
           cache = { cachix = "ev-invest"; };
           lastSupportedVersion = "nightly-2026-05-12";
-          containerRelease = { registry = "ghcr.io/ev-invest"; };
+          containerRelease = { registry = "ghcr.io/ev-main"; };
           gitignore.extra = ''
             ## Local Postgres
             .pg/
