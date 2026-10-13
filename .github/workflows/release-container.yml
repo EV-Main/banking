@@ -46,13 +46,13 @@ jobs:
         \ \"::group::$name\"\n  RESULT=\"$(nix build \".#$name-container\" --no-link\
         \ --print-out-paths --quiet)\"\n  if [ \"${{ github.ref_type }}\" = \"tag\"\
         \ ]; then\n    nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\"\
-        \ \\\n      \"docker://ghcr.io/ev-main/${name,,}:${{ github.ref_name }}\"\n\
-        \  elif [ \"${{ github.ref }}\" = \"refs/heads/dev\" ]; then\n    nix run\
+        \ \\\n      \"docker://ghcr.io/ev-invest/${name,,}:${{ github.ref_name }}\"\
+        \n  elif [ \"${{ github.ref }}\" = \"refs/heads/dev\" ]; then\n    nix run\
         \ nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\" \\\n      \"\
-        docker://ghcr.io/ev-main/${name,,}:dev-${GITHUB_SHA::8}\"\n  elif [ \"${{\
+        docker://ghcr.io/ev-invest/${name,,}:dev-${GITHUB_SHA::8}\"\n  elif [ \"${{\
         \ github.event_name }}\" = \"pull_request\" ]; then\n    head=\"${{ github.event.pull_request.head.sha\
         \ }}\"\n    nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\"\
-        \ \\\n      \"docker://ghcr.io/ev-main/${name,,}:pr-${{ github.event.pull_request.number\
+        \ \\\n      \"docker://ghcr.io/ev-invest/${name,,}:pr-${{ github.event.pull_request.number\
         \ }}-${head::8}\"\n  else\n    echo \"cache-seed build ($name) on ${{ github.ref_name\
         \ }} — skipping GHCR push\"\n  fi\n  echo \"::endgroup::\"\ndone\n"
       shell: bash
