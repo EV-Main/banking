@@ -22,7 +22,7 @@
 set -euo pipefail
 
 repo="$(git rev-parse --show-toplevel)"
-remote="https://github.com/EV-invest/concierge.git"
+remote="https://github.com/EV-Main/concierge.git"
 list="$repo/contracts/concierge-protos.txt"
 
 # No `mapfile`: the shebang resolves to bash 3.2 on a stock mac (issue #321).
