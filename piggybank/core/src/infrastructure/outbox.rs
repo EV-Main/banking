@@ -46,6 +46,19 @@ pub async fn lock_claim(conn: &mut PgConnection, claim: &LedgerAccountKey) -> Re
 	Ok(())
 }
 
+/// Take a transaction-scoped advisory lock on an arbitrary `name`, for a writer that must
+/// serialize on something other than a claim (a user's idempotency key). Hashed into the
+/// same key space as [`lock_claim`]; a name is never a ledger logical key, so the two cannot
+/// meet by accident — prefix it with what it locks.
+pub async fn lock_named(conn: &mut PgConnection, name: &str) -> Result<(), DomainError> {
+	sqlx::query("SELECT pg_advisory_xact_lock($1)")
+		.bind(advisory_key(Uuid::new_v5(&Uuid::NAMESPACE_OID, name.as_bytes())))
+		.execute(&mut *conn)
+		.await
+		.map_err(repo_err)?;
+	Ok(())
+}
+
 /// The advisory-lock name for a claim.
 ///
 /// THE NAMED ARM IS FROZEN, NOT STYLE. A rolling deploy runs the old binary and the new one

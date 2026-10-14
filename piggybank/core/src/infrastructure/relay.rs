@@ -395,6 +395,14 @@ impl Relay {
 		{
 			error!(seq = row.seq, order = %order_id, "relay: failed to mark the order rejected after its lock parked: {err}");
 		}
+		// A parked move is a refused move: the user is told it failed, the money it promised
+		// is spendable again, and an operator's unpark replays an event whose row is
+		// terminal — a no-op (see `dispatch`). Nothing of a move applies before its one leg.
+		if row.kind == CompartmentEvent::KIND
+			&& let Err(err) = compartments::mark_failed(&self.pool, row.aggregate_id, &format!("parked:{}", park_kind(reason))).await
+		{
+			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked compartment move failed: {err}");
+		}
 		if applied_legs > 0 {
 			error!(seq = row.seq, event_id = %row.event_id, aggregate = %row.aggregate, applied_legs, "relay: PARKED HALF-APPLIED event (compensation owed): {reason}");
 			if let Err(err) = outbox::mark_compensated(&self.pool, row.seq).await {
@@ -902,6 +910,22 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
+	}
+}
+
+/// The kind of a park, for a parked move's `failure_reason` (`parked:<kind>`): what the user
+/// and the operator need to tell apart, not the relay's full sentence.
+fn park_kind(reason: &str) -> &'static str {
+	if reason.starts_with("ledger conflict") {
+		"conflict"
+	} else if reason.starts_with("compartment move applied check") {
+		"applied_check"
+	} else if reason.starts_with("unplannable") {
+		"unplannable"
+	} else if reason.starts_with("retryable exhausted") {
+		"retry_exhausted"
+	} else {
+		"other"
 	}
 }
 

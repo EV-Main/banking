@@ -392,7 +392,7 @@ impl BalanceService for BalanceSvc {
 				.into_iter()
 				.map(|w| pb::WithdrawalQueueItem {
 					withdrawal_id: w.id.to_string(),
-					source: "user".to_owned(),
+					source: w.source.column().to_owned(),
 					// Empty for a treasury payout, which belongs to no user.
 					user_id: w.source.user().map(|user| user.to_string()).unwrap_or_default(),
 					email: w.email,

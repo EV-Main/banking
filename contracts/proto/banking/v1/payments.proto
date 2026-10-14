@@ -15,17 +15,20 @@ package banking.v1;
 // owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is
 // no separate RPC. A payment out of an investor's own claim (`user:<id>`) needs THAT
 // investor's emailed consent at every tier. There is deliberately no cell in which one
-// admin moves pooled money alone. The platform has no money of its own outside an
-// allocation (#245): the singleton `piggybank` / `revenue` sources are retired, and a
-// request naming them is refused.
+// admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are
+// retired (#245) and a request naming them is refused. banking's treasury (`treasury`,
+// D17) is the one source beside them that is not an allocation: it needs the owners'
+// consilium the same way, may pay out on a rail (a treasury withdrawal, no fee), and is
+// never a destination.
 //
 // IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms
 // shown in the mail; changing anything means cancel and reopen.
 service PaymentsService {
   // Open a payment order (Admin/Owner). Refused when the source cannot cover the amount
   // right now, when the shape could never execute (an unconfigured rail, a sub-minimum
-  // external amount, an external destination out of a service claim), or when another
-  // order is already open against the same service claim.
+  // external amount, an external destination out of a service claim, the treasury as a
+  // destination), or when another order is already open against the same service claim or
+  // the treasury.
   rpc OpenPayment(OpenPaymentRequest) returns (Payment);
 
   // The payment history, newest first, filtered (Admin/Owner). Nothing is ever deleted.
@@ -201,8 +204,8 @@ message ListPaymentsRequest {
   PaymentState state = 2;
   // Either end. Unset means every party.
   Party party = 3;
-  // Only orders whose source is an allocation's claim (`service:<id>`) — the ones the
-  // owners' consilium gates, i.e. the governance surface.
+  // Only orders whose source is an allocation's claim (`service:<id>`) or banking's
+  // treasury — the ones the owners' consilium gates, i.e. the governance surface.
   bool fund_owned_only = 4;
 }
 

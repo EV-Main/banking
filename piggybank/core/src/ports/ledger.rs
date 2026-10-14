@@ -33,6 +33,17 @@ pub trait Ledger: Gateway {
 	/// Live balance for an account, normalized to its natural side (Read-First).
 	async fn balance(&self, key: &LedgerAccountKey) -> Result<LedgerBalance, LedgerError>;
 
+	/// What a new spend out of `key` may take right now, in raw base units: the ledger's
+	/// [`LedgerBalance::available`] less what the account's owner has already promised away
+	/// in compartment moves the relay has not posted yet. THE ONE ANSWER every Read-First on
+	/// a user's money asks — a withdrawal, a subscription, a buy order, a payment, a move —
+	/// so a move recorded a moment ago is never spent twice. Only `user:` and `scope_claim:`
+	/// accounts have moves; for any other key this is `available`. This default — for
+	/// wrappers that only intercept other calls — knows of no moves.
+	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		Ok(self.balance(key).await?.available())
+	}
+
 	/// [`Self::balance`] for several accounts, in the order asked. The adapter answers in
 	/// one id-map query and one ledger lookup per chunk; this default — one read per key —
 	/// is for wrappers that only intercept other calls.

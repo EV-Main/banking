@@ -5,7 +5,7 @@
 //! Amounts are 18-dp base units as TEXT; nothing here sums money the ledger holds — the
 //! in-flight and 24 h figures are sums over recorded moves, added up in Rust.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use domain::{
@@ -25,11 +25,28 @@ use crate::{
 
 pub struct PgCompartments {
 	pool: PgPool,
+	/// The scope list, read once per [`SCOPES_TTL`]: every wallet and balance read sums over
+	/// it, and it changes when concierge announces a scope — rarely. A move never reads it:
+	/// [`CompartmentStore::scope`] goes to the table every time.
+	scopes: std::sync::Mutex<Option<(Instant, Vec<ScopeRecord>)>>,
 }
+
+/// How long the cached scope list stands. A scope announced or frozen shows in the listing
+/// within this; it is enforced on a move at once.
+const SCOPES_TTL: Duration = Duration::from_secs(30);
 
 impl PgCompartments {
 	pub fn new(pool: PgPool) -> Self {
-		Self { pool }
+		Self {
+			pool,
+			scopes: std::sync::Mutex::new(None),
+		}
+	}
+
+	fn cached_scopes(&self) -> Option<Vec<ScopeRecord>> {
+		// A poisoned lock only means a reader panicked; the cached list is still whole.
+		let cache = self.scopes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+		cache.as_ref().filter(|(read_at, _)| read_at.elapsed() < SCOPES_TTL).map(|(_, scopes)| scopes.clone())
 	}
 }
 
@@ -126,7 +143,7 @@ async fn find_move_on(conn: &mut PgConnection, user: UserId, idempotency_key: &s
 }
 
 /// Σ of a set of stored amounts.
-async fn sum_amounts(conn: &mut PgConnection, sql: &'static str, user: UserId, compartment: &str) -> Result<Usdt, DomainError> {
+async fn sum_amounts<'c>(conn: impl sqlx::PgExecutor<'c>, sql: &'static str, user: UserId, compartment: &str) -> Result<Usdt, DomainError> {
 	let amounts: Vec<String> = sqlx::query_scalar(sql).bind(user.raw()).bind(compartment).fetch_all(conn).await.map_err(repo_err)?;
 	amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
 		total
@@ -136,19 +153,30 @@ async fn sum_amounts(conn: &mut PgConnection, sql: &'static str, user: UserId, c
 }
 
 const PENDING_OUT: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND from_scope = $2 AND state = 'pending'";
+/// Σ the user's `pending` moves out of `compartment`: promised away, not yet off the ledger.
+/// What [`Ledger::spendable`](crate::ports::ledger::Ledger::spendable) subtracts.
+pub async fn pending_out(pool: &PgPool, user: UserId, compartment: &Compartment) -> Result<Usdt, DomainError> {
+	sum_amounts(pool, PENDING_OUT, user, compartment.as_str()).await
+}
+
 const PENDING_IN: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND state = 'pending'";
 const MOVED_IN_24H: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND state IN ('pending', 'posted') AND created_at > now() - interval '24 hours'";
 
 #[async_trait]
 impl CompartmentStore for PgCompartments {
 	async fn scopes(&self) -> Result<Vec<ScopeRecord>, DomainError> {
-		sqlx::query_as::<_, ScopeRow>(SELECT_ALL_SCOPES)
+		if let Some(scopes) = self.cached_scopes() {
+			return Ok(scopes);
+		}
+		let scopes = sqlx::query_as::<_, ScopeRow>(SELECT_ALL_SCOPES)
 			.fetch_all(&self.pool)
 			.await
 			.map_err(repo_err)?
 			.into_iter()
 			.map(scope_record)
-			.collect()
+			.collect::<Result<Vec<_>, _>>()?;
+		*self.scopes.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((Instant::now(), scopes.clone()));
+		Ok(scopes)
 	}
 
 	async fn scope(&self, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
@@ -169,6 +197,14 @@ impl CompartmentStore for PgCompartments {
 	async fn record_move(&self, movement: &mut CompartmentMove, idempotency_key: &str, admission: &dyn MoveAdmission) -> Result<MoveOutcome, MoveError> {
 		let user = movement.user();
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
+		// The key first: two requests under one key may name different sources, so the
+		// claim locks alone would let both through to the unique index. With the key held,
+		// the second finds the first's row below.
+		outbox::lock_named(&mut tx, &format!("compartment_key:{user}:{idempotency_key}")).await?;
+		if let Some(existing) = find_move_on(&mut tx, user, idempotency_key).await? {
+			tx.commit().await.map_err(repo_err)?;
+			return Ok(MoveOutcome::Existing(existing));
+		}
 		// The source's lock is the one every writer that spends that claim takes (withdraw,
 		// subscribe), so their writes serialize with this one. A move in also takes the
 		// target's, always second: only a move in ever holds two, and it takes them in one
@@ -177,21 +213,14 @@ impl CompartmentStore for PgCompartments {
 		if movement.is_move_in() {
 			outbox::lock_claim(&mut tx, &movement.to().claim_key(user)).await?;
 		}
-		if let Some(existing) = find_move_on(&mut tx, user, idempotency_key).await? {
-			tx.commit().await.map_err(repo_err)?;
-			return Ok(MoveOutcome::Existing(existing));
-		}
-		let mut in_flight = InFlight {
-			pending_out_of_source: sum_amounts(&mut tx, PENDING_OUT, user, movement.from().as_str()).await?,
-			..InFlight::default()
-		};
+		let mut in_flight = InFlight::default();
 		if movement.is_move_in() {
-			in_flight.pending_into_target = sum_amounts(&mut tx, PENDING_IN, user, movement.to().as_str()).await?;
-			in_flight.moved_in_24h = sum_amounts(&mut tx, MOVED_IN_24H, user, movement.scope().as_str()).await?;
+			in_flight.pending_into_target = sum_amounts(&mut *tx, PENDING_IN, user, movement.to().as_str()).await?;
+			in_flight.moved_in_24h = sum_amounts(&mut *tx, MOVED_IN_24H, user, movement.scope().as_str()).await?;
 		}
 		// The refusal rolls the transaction back with nothing written.
 		admission.admit(&in_flight).await?;
-		let (id, created_at) = sqlx::query_as::<_, (Uuid, i64)>(
+		let inserted = sqlx::query_as::<_, (Uuid, i64)>(
 			"INSERT INTO compartment_moves (id, user_id, from_scope, to_scope, amount, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6) \
 			 RETURNING id, EXTRACT(EPOCH FROM created_at)::BIGINT",
 		)
@@ -202,8 +231,14 @@ impl CompartmentStore for PgCompartments {
 		.bind(movement.amount().base_units().to_string())
 		.bind(idempotency_key)
 		.fetch_one(&mut *tx)
-		.await
-		.map_err(repo_err)?;
+		.await;
+		let (id, created_at) = match inserted {
+			Ok(row) => row,
+			// The key lock above makes this unreachable; should it ever not, the caller is
+			// told the key is taken, never an internal error.
+			Err(sqlx::Error::Database(err)) if err.is_unique_violation() => return Err(DomainError::Conflict("idempotency_key was used for a different move".into()).into()),
+			Err(err) => return Err(repo_err(err).into()),
+		};
 		outbox::drain_to_outbox(&mut tx, movement, true).await?;
 		tx.commit().await.map_err(repo_err)?;
 		let recorded = CompartmentMove::restore(CompartmentMoveId::from_raw(id), user, movement.from().clone(), movement.to().clone(), movement.amount())?;

@@ -15,13 +15,14 @@ use async_trait::async_trait;
 use domain::{
 	architecture::Gateway,
 	balance::{AccountCode, LedgerAccountKey, Normal},
+	scopes::Compartment,
 };
 use sqlx::PgPool;
 use tigerbeetle as tb;
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::tigerbeetle::TigerBeetle,
+	infrastructure::{compartments, tigerbeetle::TigerBeetle},
 	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, PendingCompletion},
 };
 
@@ -54,7 +55,8 @@ const TB_CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const TB_CASH_INVARIANT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The TigerBeetle-backed [`Ledger`]. Holds the shared TB client and a Postgres pool
-/// for the `tb_accounts` id-map only (never an amount).
+/// for the `tb_accounts` id-map — and, for [`Ledger::spendable`], the compartment moves
+/// recorded but not yet posted, which only the control plane knows of yet.
 pub struct TbLedger {
 	tb: Arc<TigerBeetle>,
 	pool: PgPool,
@@ -223,6 +225,17 @@ impl Ledger for TbLedger {
 			Some(account) => normalized(key, account),
 			None => Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 }),
 		}
+	}
+
+	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		let available = self.balance(key).await?.available();
+		let promised = match key {
+			LedgerAccountKey::UserClaim(user) => compartments::pending_out(&self.pool, *user, &Compartment::Main).await,
+			LedgerAccountKey::ScopeClaim(user, scope) => compartments::pending_out(&self.pool, *user, &Compartment::Scope(scope.clone())).await,
+			_ => return Ok(available),
+		}
+		.map_err(|e| LedgerError::Unavailable(format!("pending compartment moves read: {e}")))?;
+		Ok(available.saturating_sub(promised.base_units()))
 	}
 
 	async fn balances(&self, keys: &[LedgerAccountKey]) -> Result<Vec<LedgerBalance>, LedgerError> {

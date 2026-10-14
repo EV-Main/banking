@@ -170,7 +170,8 @@ impl Reaper {
 			}
 		}
 
-		// (4) `pending` compartment moves whose event is gone — RE-ENQUEUE (idempotent).
+		// `pending` compartment moves whose event is gone — RE-ENQUEUE: the ledger transfer
+		// id is the move's, so a replay cannot post twice.
 		report.redriven_compartment_moves = compartments::redrive_stale_moves(&self.pool, self.move_redrive_after).await?;
 		if report.redriven_compartment_moves > 0 {
 			warn!(

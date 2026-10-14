@@ -305,8 +305,8 @@ pub async fn subscribe(ports: &FundPorts<'_>, subscriptions: &dyn SubscriptionRe
 		)));
 	}
 	let allocation = allocations_app::require_subscribable(ports.allocations, &service, user).await?;
-	let claim = ports.ledger.balance(&LedgerAccountKey::UserClaim(user)).await?;
-	if Usdt::from_base_units(claim.available()) < cash {
+	// Net of the user's compartment moves still in flight (`Ledger::spendable`).
+	if Usdt::from_base_units(ports.ledger.spendable(&LedgerAccountKey::UserClaim(user)).await?) < cash {
 		return Err(DomainError::Validation("insufficient available balance to subscribe".into()));
 	}
 	let price = dealing_nav(ports.nav, ports.ledger, &service, now_unix).await?;

@@ -56,27 +56,18 @@ impl From<DomainError> for MoveError {
 	}
 }
 
-/// What the control plane knows about a user's moves in flight, read under the locks the
-/// move is about to be recorded under — so two moves cannot both count the same money.
-#[derive(Clone, Copy, Debug)]
+/// What the control plane knows about a user's moves into the target, read under the locks
+/// the move is about to be recorded under — so two moves cannot both count the same room.
+/// What the source may still spend is the ledger's answer ([`Ledger::spendable`]), which
+/// already nets out the moves in flight.
+///
+/// [`Ledger::spendable`]: crate::ports::ledger::Ledger::spendable
+#[derive(Clone, Copy, Debug, Default)]
 pub struct InFlight {
-	/// Σ the user's `pending` moves OUT of the source compartment: already promised, not yet
-	/// off the ledger.
-	pub pending_out_of_source: Usdt,
 	/// Σ the user's `pending` moves INTO the target compartment.
 	pub pending_into_target: Usdt,
 	/// Σ the user's moves into the move's scope over the last 24 h, `pending` and `posted`.
 	pub moved_in_24h: Usdt,
-}
-
-impl Default for InFlight {
-	fn default() -> Self {
-		Self {
-			pending_out_of_source: Usdt::ZERO,
-			pending_into_target: Usdt::ZERO,
-			moved_in_24h: Usdt::ZERO,
-		}
-	}
 }
 
 /// The rules a move must pass, asked by the store while it holds the locks. Everything the
@@ -88,7 +79,8 @@ pub trait MoveAdmission: Send + Sync {
 
 #[async_trait]
 pub trait CompartmentStore: Send + Sync {
-	/// Every scope banking knows, `main` excluded, ordered by id.
+	/// Every scope banking knows, `main` excluded, ordered by id. May be up to half a minute
+	/// stale — for listings and totals; a decision reads [`Self::scope`].
 	async fn scopes(&self) -> Result<Vec<ScopeRecord>, DomainError>;
 
 	/// One scope, or `None` when banking does not know it.
@@ -97,9 +89,10 @@ pub trait CompartmentStore: Send + Sync {
 	/// The move the user recorded under `idempotency_key`, if any.
 	async fn find_move(&self, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError>;
 
-	/// Record the move and drain its event to the outbox in one transaction. Under the
-	/// source compartment's write lock — and, for a move in, the target's — it answers a
-	/// key the user already used with the stored move ([`MoveOutcome::Existing`]),
-	/// otherwise asks `admission` with the in-flight sums and records only on its yes.
+	/// Record the move and drain its event to the outbox in one transaction. Under a lock on
+	/// the user's key it answers a key already used with the stored move
+	/// ([`MoveOutcome::Existing`]); otherwise, under the source compartment's write lock —
+	/// and, for a move in, the target's — it asks `admission` with the in-flight sums and
+	/// records only on its yes. A key taken by a racer past the lock is `Conflict`.
 	async fn record_move(&self, movement: &mut CompartmentMove, idempotency_key: &str, admission: &dyn MoveAdmission) -> Result<MoveOutcome, MoveError>;
 }

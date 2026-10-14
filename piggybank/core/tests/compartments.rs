@@ -20,11 +20,11 @@ use piggybank_core::{
 	application::{
 		balance as balance_app,
 		compartments::{self as compartments_app, CompartmentPorts, MoveError},
-		wallet as wallet_app,
+		wallet as wallet_app, withdrawals as withdrawal_app,
 	},
 	infrastructure::{
-		compartments::PgCompartments, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, positions::PgFundPositions, reaper::Reaper, redemptions::PgRedemptions, relay::Relay,
-		users::PgUsers, withdrawals::PgWithdrawals,
+		compartments::PgCompartments, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, positions::PgFundPositions, reaper::Reaper,
+		redemptions::PgRedemptions, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
 	},
 	ports::{
 		UserRepository,
@@ -269,7 +269,7 @@ async fn a_frozen_or_closed_scope_takes_nothing_in_but_lets_money_out() {
 	move_funds(&h, user, scope.as_str(), "main", "6", &key()).await.expect("out of a closed scope");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 
-	// Emptied, the closed scope drops off the list; a stranger never saw it.
+	// Emptied, the closed scope drops off the list.
 	let (views, _) = compartments_app::list_compartments(&ports(&h), user).await.unwrap();
 	assert!(views.iter().all(|v| v.compartment.as_str() != scope.as_str()), "an empty closed scope is listed");
 }
@@ -510,4 +510,106 @@ async fn the_wallet_total_counts_the_compartments() {
 	.unwrap()
 	.balance;
 	assert_eq!((wallet.available, wallet.in_compartments, wallet.total), (usdt("18"), usdt("12"), usdt("30")));
+}
+
+/// One answer to "what may the user still spend from main": a move recorded a moment ago
+/// and not yet on the ledger is already spent for a withdrawal too — refused at once, not
+/// left to park in the relay.
+#[tokio::test]
+async fn a_pending_move_is_already_spent_for_a_withdrawal() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "100").await;
+	move_funds(&h, user, "main", "sa", "100", &key()).await.unwrap();
+	let withdrawals = PgWithdrawals::new(h.pool.clone());
+	let refused = withdrawal_app::request_withdrawal(
+		&withdrawal_app::WithdrawalPorts {
+			withdrawals: &withdrawals,
+			ledger: h.ledger.as_ref(),
+			custody: &StubCustody,
+			relay: &h.notify,
+		},
+		&withdrawal_app::AdmissionGates {
+			policy: &h.outflow,
+			configured: &Network::ALL,
+			kyc: piggybank_core::config::KycGate::LIFTED,
+		},
+		domain::withdrawals::WithdrawalId::new(),
+		user,
+		Network::Bep20,
+		domain::money::WalletAddress::parse(Network::Bep20, "0x52908400098527886E0F7030069857D2E4169EE7").unwrap(),
+		usdt("100"),
+	)
+	.await;
+	assert!(matches!(refused, Err(DomainError::Validation(_))), "{refused:?}");
+	let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawals WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(recorded, 0, "refused before anything was recorded");
+	assert_eq!(
+		Usdt::from_base_units(h.ledger.spendable(&LedgerAccountKey::UserClaim(user)).await.unwrap()),
+		Usdt::ZERO,
+		"the ledger still shows 100; the move has it"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+/// A move whose event the relay parks is failed with the park's kind, terminally: the money
+/// it promised is spendable again, and an operator unparking the event moves nothing.
+#[tokio::test]
+async fn a_parked_move_is_failed_and_its_unpark_moves_nothing() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "10").await;
+	let moved = move_funds(&h, user, "main", "sa", "10", &key()).await.unwrap();
+	let id = moved.movement.id().raw();
+	// An event the relay cannot plan — the shape of a corrupt or foreign payload.
+	sqlx::query("UPDATE outbox SET payload = '{\"type\":\"moved\"}'::jsonb WHERE aggregate_id = $1")
+		.bind(id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	h.relay.drain().await;
+	assert_eq!(state_of(&h, id).await, ("failed".to_owned(), Some("parked:unplannable".to_owned())));
+	assert_eq!(
+		Usdt::from_base_units(h.ledger.spendable(&LedgerAccountKey::UserClaim(user)).await.unwrap()),
+		usdt("10"),
+		"the promise is released"
+	);
+
+	// Unpark the way `BalanceService.UnparkEvent` does, with a payload that would plan now.
+	let event = serde_json::json!({"type": "moved", "move_id": id, "user": user.raw(), "from": "main", "to": "sa", "amount": usdt("10").base_units().to_string()});
+	sqlx::query("UPDATE outbox SET parked_at = NULL, attempts = 0, payload = $2 WHERE aggregate_id = $1")
+		.bind(id)
+		.bind(event)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(state_of(&h, id).await.0, "failed", "terminal");
+	assert_eq!(posted(&h, &LedgerAccountKey::UserClaim(user)).await, usdt("10"), "nothing moved");
+}
+
+/// Two requests under one key naming different sources: the key is locked before any claim,
+/// so the second finds the first and is told the key is taken — never an internal error.
+#[tokio::test]
+async fn one_key_across_two_sources_records_one_move() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "20").await;
+	move_funds(&h, user, "main", "sa", "5", &key()).await.unwrap();
+	move_funds(&h, user, "main", "invest", "5", &key()).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let k = key();
+	let (a, b) = tokio::join!(move_funds(&h, user, "sa", "main", "5", &k), move_funds(&h, user, "invest", "main", "5", &k));
+	let conflicts = [&a, &b].iter().filter(|r| matches!(r, Err(MoveError::Domain(DomainError::Conflict(_))))).count();
+	assert_eq!((a.is_ok() as usize) + (b.is_ok() as usize), 1, "{a:?} {b:?}");
+	assert_eq!(conflicts, 1, "{a:?} {b:?}");
+	let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM compartment_moves WHERE user_id = $1 AND idempotency_key = $2")
+		.bind(user.raw())
+		.bind(&k)
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(recorded, 1);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }

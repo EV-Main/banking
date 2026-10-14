@@ -13,11 +13,13 @@ import "banking/v1/funds.proto";
 // lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated
 // (allowlist) at the boundary. See docs/ARCHITECTURE.md.
 //
-// The platform holds no money of its own (#245): what it earns is the `fee` allocation's
-// and what it was seeded with is the `fund` allocation's, and both are held by PEOPLE
+// The allocations hold no company money (#245): what they earn is the `fee` allocation's
+// and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE
 // through units — so the treasury lists every allocation with its holders, and nothing
 // here pays "the fund" out. Cash leaves a reserved allocation by a holder's redemption
-// or by a payment the owners' consilium approved (`PaymentsService`).
+// or by a payment the owners' consilium approved (`PaymentsService`). banking's own money
+// is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps,
+// paid out only the same way, by a consilium-approved payment with source `treasury`.
 service BalanceService {
   // The treasury: per-rail on-chain liquidity (Layer 2) and the claims it backs
   // (Layer 1), read live from TigerBeetle (Read-First).
@@ -192,7 +194,7 @@ message WithdrawalQueueItem {
   string net_amount = 7;  // amount − fee — what ships on-chain
   string state = 8;       // queued | processing
   int64 created_at = 9;
-  string source = 10;     // user — which claim funds it (always a person's since #245)
+  string source = 10;     // user | treasury — which account funds it (`treasury`: an approved payment out of banking's treasury, D17)
 }
 
 message WithdrawalQueue {
@@ -284,8 +286,9 @@ message AllocationTreasury {
 // The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong to
 // (Layer 1). Under the unified-claim model the invariant is GLOBAL — `total_custody`
 // (the asset side) equals the sum of all claims — and every claim is somebody's (#245):
-// a person's directly (`held_by_users`, Σ `user:<id>` claims) or an allocation's, whose
-// units people hold (`allocations`, the hidden `fee` and `fund` included). Nothing here
+// a person's directly (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`,
+// Σ their scope compartments), an allocation's, whose units people hold (`allocations`,
+// the hidden `fee` and `fund` included), or banking's own (`banking_treasury`). Nothing here
 // is a remainder: each figure is read off its own accounts, and whether they add up to
 // the custody is the reconciliation's finding, not this view's arithmetic.
 message Treasury {

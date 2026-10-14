@@ -196,8 +196,8 @@ async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Res
 			if let Party::User(user) = from {
 				withdrawal_app::admit_user_account(&ports.admission_gates(), *user).await?;
 			}
-			let claim = ports.ledger.balance(&terms.source_claim()).await?;
-			if Usdt::from_base_units(claim.available()) < terms.amount() {
+			// Net of the owner's compartment moves still in flight (`Ledger::spendable`).
+			if Usdt::from_base_units(ports.ledger.spendable(&terms.source_claim()).await?) < terms.amount() {
 				return Err(DomainError::Validation("the source claim's available balance does not cover the payment".into()));
 			}
 			Ok(())
@@ -392,11 +392,13 @@ async fn create_withdrawal(ports: &PaymentPorts<'_>, order: &PaymentOrder) -> Re
 				order.terms().amount(),
 			)
 			.await,
+		// banking's treasury (D17): the owners' consilium approved the order, so the
+		// withdrawal opens with no account gate of its own — only the rail's.
+		Party::Treasury =>
+			withdrawal_app::queue_treasury_withdrawal(&ports.withdrawal_ports(), &ports.admission_gates(), withdrawal, *network, address.clone(), order.terms().amount()).await,
 		// Refused at open; stated here too so the match is total and a row that somehow
 		// carries this shape fails visibly rather than paying from a source the saga does not
 		// open a withdrawal for.
-		Party::Treasury =>
-			withdrawal_app::queue_treasury_withdrawal(&ports.withdrawal_ports(), &ports.admission_gates(), withdrawal, *network, address.clone(), order.terms().amount()).await,
 		Party::Service(_) => return Ok(ExecutionOutcome::Failed("an external payment cannot leave from this source".to_owned())),
 	};
 	Ok(match requested {

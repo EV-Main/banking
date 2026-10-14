@@ -136,7 +136,8 @@ message DepositList {
 // two non-main scopes directly. A user is identified by their `auth_subject`.
 //
 // A separate service, not new fields on `Wallet`: WalletService keeps its shape while
-// the compartments are built behind it. Every RPC acts on the caller's own `sub`.
+// the compartments are built behind it, and its `Balance` carries only their sum
+// (`in_compartments`). Every RPC acts on the caller's own `sub`.
 //
 // FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,
 // `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and
@@ -161,10 +162,11 @@ service CompartmentService {
   // failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when
   // it does not pass. Moving OUT is never limited by policy, only by what is available
   // in the compartment. Either way `insufficient_funds` when the source, less the
-  // caller's moves still in flight, cannot cover it. The move is recorded at once and
+  // caller's moves still in flight, cannot cover it; the limits count moves in flight too.
+  // A key reused with different terms is ALREADY_EXISTS. The move is recorded at once and
   // posted to the ledger by the hub: the result's `state` is `pending` until then,
-  // `posted` after, or `failed` (with `failure_reason`) if the ledger refused it — a
-  // failed move is final and is never carried out later.
+  // `posted` after, or `failed` (with `failure_reason`) if the ledger refused it or the
+  // hub could not post it — a failed move is final and is never carried out later.
   rpc MoveFunds(MoveFundsRequest) returns (CompartmentMove);
 
   // One scope's policy, read-only. The platform owners set it (an approval of kind
@@ -221,7 +223,7 @@ message CompartmentMove {
   string amount = 4;
   int64 created_at = 5;     // unix seconds
   string state = 6;         // pending | posted | failed
-  string failure_reason = 7;  // set only when `failed` (e.g. `insufficient_funds`)
+  string failure_reason = 7;  // set only when `failed`: `insufficient_funds`, or `parked:<kind>` when the hub could not post it
 }
 
 message GetScopePolicyRequest {

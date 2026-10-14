@@ -741,7 +741,7 @@ export type BankingV1CompartmentMove = {
     /**
      * failure_reason
      *
-     * set only when `failed` (e.g. `insufficient_funds`)
+     * set only when `failed`: `insufficient_funds`, or `parked:<kind>` when the hub could not post it
      */
     failure_reason?: string;
 };
@@ -2430,8 +2430,8 @@ export type BankingV1ListPaymentsRequest = {
     /**
      * fund_owned_only
      *
-     * Only orders whose source is an allocation's claim (`service:<id>`) — the ones the
-     * owners' consilium gates, i.e. the governance surface.
+     * Only orders whose source is an allocation's claim (`service:<id>`) or banking's
+     * treasury — the ones the owners' consilium gates, i.e. the governance surface.
      */
     fund_owned_only?: boolean;
 };
@@ -4959,8 +4959,9 @@ export type BankingV1TradeList = {
  * The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong to
  * (Layer 1). Under the unified-claim model the invariant is GLOBAL — `total_custody`
  * (the asset side) equals the sum of all claims — and every claim is somebody's (#245):
- * a person's directly (`held_by_users`, Σ `user:<id>` claims) or an allocation's, whose
- * units people hold (`allocations`, the hidden `fee` and `fund` included). Nothing here
+ * a person's directly (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`,
+ * Σ their scope compartments), an allocation's, whose units people hold (`allocations`,
+ * the hidden `fee` and `fund` included), or banking's own (`banking_treasury`). Nothing here
  * is a remainder: each figure is read off its own accounts, and whether they add up to
  * the custody is the reconciliation's finding, not this view's arithmetic.
  */
@@ -5264,15 +5265,15 @@ export type BankingV1UpdateProfileRequest = {
  *
  * A live ledger balance for a user. `amount` and `pending` are u128 minor-unit
  * decimal STRINGS (proto3 has no u128; a string is lossless and matches
- * proto-loader's `longs: String`). An investor account is credit-normal, so
- * `amount` = posted credits − posted debits is non-negative by invariant.
+ * proto-loader's `longs: String`). They cover the user's whole cash — the `main` claim
+ * plus every scope compartment, split by `main` and `in_compartments` — and each account
+ * is credit-normal, so `amount` (Σ posted credits − posted debits) is non-negative by
+ * invariant.
  * `authoritative` is true when read directly from TigerBeetle; `as_of` is unix
  * seconds. The `authoritative`/`as_of` pair is the forward-compat seam for a future
  * read projection — a projection may later return `authoritative=false` rows with
  * no breaking proto change. (Named for the users surface; the company-money
  * `BalanceService` owns its own balance messages.)
- * `amount` and `pending` cover the user's whole cash: `main` plus every scope
- * compartment; `main` and `in_compartments` split `amount` (posted) between the two.
  */
 export type BankingV1UserBalanceResponse = {
     /**
@@ -5691,7 +5692,7 @@ export type BankingV1WithdrawalQueueItem = {
     /**
      * source
      *
-     * user — which claim funds it (always a person's since #245)
+     * user | treasury — which account funds it (`treasury`: an approved payment out of banking's treasury, D17)
      */
     source?: string;
 };

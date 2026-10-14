@@ -10,21 +10,23 @@
 //!   wallet per [`Network`] (the per-rail liquidity), plus a mocked bank account.
 //!   Assets the platform holds. This is the **only** layer where network lives.
 //! - **Claims** (credit-normal, **network-agnostic**): whose value it is — a user's
-//!   claim (`UserClaim`), an allocation's pooled funds (`ServiceClaim`, the reserved
-//!   `fee` and `fund` allocations included), and queued-withdrawal funds
-//!   (`WithdrawalClearing`). USDT is one fungible pool, so a user has ONE claim, not
-//!   one per chain. There is no claim without an owner: the platform's own capital is
-//!   the `fund` allocation's claim, its earnings the `fee` allocation's, and both are
-//!   held by people through units.
+//!   claim (`UserClaim`, their `main` wallet) and their compartments in scopes
+//!   (`ScopeClaim`), an allocation's pooled funds (`ServiceClaim`, the reserved `fee` and
+//!   `fund` allocations included), a scope's own accounts (`ScopeAccount`, banking's
+//!   treasury among them), and queued-withdrawal funds (`WithdrawalClearing`). USDT is one
+//!   fungible pool, so a user has ONE claim per compartment, not one per chain. There is no
+//!   claim without an owner: the allocations' capital is the `fund` allocation's claim,
+//!   their earnings the `fee` allocation's, both held by people through units; banking's
+//!   own earnings are its treasury (D17).
 //!
 //! A management/performance fee never touches either layer while it is being charged:
 //! it moves *units* on the Share ledger, from the holder's `UserShares` to the product's
 //! fee class, `FeeShares` — the units the `fee` allocation holds in that product. Only
 //! the periodic bulk settlement of accumulated fee units crosses into cash, `Dr
 //! ServiceClaim / Cr ServiceClaim(fee)`: the product buys its fee class back from the
-//! `fee` allocation at the day's NAV. Every other fee the platform charges — the
-//! retained withdrawal fee, the book's taker fee — is paid to the same claim; the
-//! event that raises a fee names its payee ([`Party::fee_payee`]).
+//! `fee` allocation at the day's NAV. The book's taker fee is paid to the same claim; the
+//! retained withdrawal fee is banking's own and goes to its treasury (D17). The event that
+//! raises a fee names its payee ([`Party::fee_payee`], [`FeePayee`]).
 //!
 //! **Retired accounts.** The `fund` (code 1) and `fee` (40) claims and the company stake
 //! (63) were claims and holdings with nobody behind them. The data migration emptied them
@@ -78,7 +80,7 @@ impl ServiceId {
 		&self.0
 	}
 
-	/// The **fee allocation** — the platform's earned money as a product of its own:
+	/// The **fee allocation** — the allocations' earned money as a product of its own:
 	/// the fee class of every product (the units a 2-and-20 charge moves) plus the cash
 	/// those units settle into. Hidden, never listed, and held by people through units
 	/// like any other allocation (issue #245).

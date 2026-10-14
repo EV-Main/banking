@@ -4,17 +4,19 @@
 //! `move_funds` answers the idempotency key first (a repeat returns the original move,
 //! whatever happened since). A move IN then has to pass the scope's state, the account's
 //! freeze and the policy; a move OUT is never limited — the money does not leave the
-//! platform, and a frozen user or a paused platform still lets it back into `main`. What
-//! the money is checked against — the source's available balance, the policy's sums — is
-//! read under the store's locks and net of the user's moves still in flight, so the loser
-//! of two racing moves is refused at once instead of failing in the relay. The relay posts
+//! platform, and a frozen user or a paused platform still lets it back into `main`. Every
+//! check — the scope's state, the freeze, the policy, what the source may spend — runs under
+//! the store's key and claim locks, against figures net of the user's moves still in flight
+//! (the source's [`Ledger::spendable`], the same answer a withdrawal or a subscription
+//! gets), so the loser of two racing moves is refused at once instead of failing in the
+//! relay. The relay posts
 //! the move and stamps it `posted`; a ledger refusal stamps it `failed`, for good.
 
 use async_trait::async_trait;
 use domain::{
 	error::DomainError,
 	money::Usdt,
-	scopes::{Compartment, CompartmentMove, CompartmentMoveId, MoveInFacts, MoveRefusal, ScopeId, ScopePolicy, ScopeState},
+	scopes::{Compartment, CompartmentMove, CompartmentMoveId, MoveInFacts, MoveRefusal, ScopeId, ScopeState},
 	users::UserId,
 };
 use tokio::sync::Notify;
@@ -67,10 +69,9 @@ pub struct PolicyView {
 /// never entered). A closed scope is listed only while the caller still holds money in it
 /// — the one reason left to see it is to move that money out.
 pub async fn list_compartments(ports: &CompartmentPorts<'_>, user: UserId) -> Result<(Vec<CompartmentView>, u32), DomainError> {
-	let (kyc_level, scopes) = tokio::try_join!(kyc_level(ports.policy, user), ports.store.scopes())?;
-	let (main, compartments) = read_balances(ports.ledger, user, &scopes).await?;
-	let mut views = vec![view(Compartment::Main, MAIN_DISPLAY_NAME.to_owned(), main, None)];
-	for (scope, balance) in scopes.into_iter().zip(compartments) {
+	let (kyc_level, read) = tokio::try_join!(kyc_level(ports.policy, user), read_compartments(ports.store, ports.ledger, user))?;
+	let mut views = vec![view(Compartment::Main, MAIN_DISPLAY_NAME.to_owned(), read.main, None)];
+	for (scope, balance) in read.scopes.into_iter().zip(read.compartments) {
 		if scope.state == ScopeState::Closed && balance.posted == 0 {
 			continue;
 		}
@@ -80,29 +81,20 @@ pub async fn list_compartments(ports: &CompartmentPorts<'_>, user: UserId) -> Re
 }
 
 /// What the caller holds in `main` and, summed, in every scope compartment — the split the
-/// wallet and the balance RPCs add up. Raw base units, on each account's natural side.
+/// wallet and the balance RPCs add up. Every scope banking knows is summed, closed ones
+/// included: money there is still the user's.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Holdings {
 	pub main: LedgerBalanceTotals,
 	pub compartments: LedgerBalanceTotals,
 }
 
-/// A sum of ledger balances.
-#[derive(Clone, Copy, Debug)]
+/// A sum of ledger balances, on each account's natural side.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LedgerBalanceTotals {
 	pub posted: Usdt,
 	pub pending: Usdt,
 	pub locked: Usdt,
-}
-
-impl Default for LedgerBalanceTotals {
-	fn default() -> Self {
-		Self {
-			posted: Usdt::ZERO,
-			pending: Usdt::ZERO,
-			locked: Usdt::ZERO,
-		}
-	}
 }
 
 impl LedgerBalanceTotals {
@@ -126,24 +118,23 @@ impl LedgerBalanceTotals {
 
 /// The caller's `main` claim and the sum of their compartments, read in one ledger lookup.
 pub async fn holdings(store: &dyn CompartmentStore, ledger: &dyn Ledger, user: UserId) -> Result<Holdings, DomainError> {
-	let scopes = store.scopes().await?;
-	let (main, compartments) = read_balances(ledger, user, &scopes).await?;
-	let compartments = compartments.iter().try_fold(LedgerBalanceTotals::default(), LedgerBalanceTotals::add)?;
+	let read = read_compartments(store, ledger, user).await?;
 	Ok(Holdings {
-		main: LedgerBalanceTotals::default().add(&main)?,
-		compartments,
+		main: LedgerBalanceTotals::default().add(&read.main)?,
+		compartments: read.compartments.iter().try_fold(LedgerBalanceTotals::default(), LedgerBalanceTotals::add)?,
 	})
 }
 
-/// The sum of the caller's compartments alone, for a reader that has `main` in hand. Every
-/// scope banking knows is summed, closed ones included: money there is still the user's.
-pub async fn in_compartments(store: &dyn CompartmentStore, ledger: &dyn Ledger, user: UserId) -> Result<LedgerBalanceTotals, DomainError> {
-	let keys: Vec<_> = store.scopes().await?.into_iter().map(|scope| Compartment::Scope(scope.id).claim_key(user)).collect();
-	ledger.balances(&keys).await?.iter().try_fold(LedgerBalanceTotals::default(), LedgerBalanceTotals::add)
+/// Every scope banking knows, with the caller's `main` balance and one balance per scope in
+/// the same order — the one read behind the listing and the totals.
+struct CompartmentRead {
+	scopes: Vec<ScopeRecord>,
+	main: LedgerBalance,
+	compartments: Vec<LedgerBalance>,
 }
 
-/// `main` and one balance per scope, in `scopes` order, from one batched ledger read.
-async fn read_balances(ledger: &dyn Ledger, user: UserId, scopes: &[ScopeRecord]) -> Result<(LedgerBalance, Vec<LedgerBalance>), DomainError> {
+async fn read_compartments(store: &dyn CompartmentStore, ledger: &dyn Ledger, user: UserId) -> Result<CompartmentRead, DomainError> {
+	let scopes = store.scopes().await?;
 	let keys: Vec<_> = std::iter::once(Compartment::Main)
 		.chain(scopes.iter().map(|scope| Compartment::Scope(scope.id.clone())))
 		.map(|compartment| compartment.claim_key(user))
@@ -153,7 +144,11 @@ async fn read_balances(ledger: &dyn Ledger, user: UserId, scopes: &[ScopeRecord]
 		return Err(DomainError::Repository(format!("asked the ledger for {} balances, got {}", keys.len(), balances.len())));
 	}
 	let main = balances.remove(0);
-	Ok((main, balances))
+	Ok(CompartmentRead {
+		scopes,
+		main,
+		compartments: balances,
+	})
 }
 
 /// One scope's policy. `main` has none, and an unknown scope is the same NOT_FOUND.
@@ -174,32 +169,10 @@ pub async fn move_funds(ports: &CompartmentPorts<'_>, user: UserId, from: Compar
 	if let Some(original) = ports.store.find_move(user, idempotency_key).await? {
 		return repeat(original, &movement);
 	}
-
-	let scope = known_scope(ports.store, movement.scope()).await?;
-	let admission = if movement.is_move_in() {
-		if let Some(refusal) = scope.state.refuses_money_in() {
-			return Err(MoveError::Refused(refusal));
-		}
-		let standing = ports.policy.standing(user).await?.ok_or_else(|| DomainError::NotFound {
-			entity: "user",
-			id: user.to_string(),
-		})?;
-		if standing.blocked {
-			return Err(MoveError::Refused(MoveRefusal::UserFrozen));
-		}
-		Admission {
-			ledger: ports.ledger,
-			movement: movement.clone(),
-			policy_in: Some((scope.policy, standing.kyc_level)),
-		}
-	} else {
-		Admission {
-			ledger: ports.ledger,
-			movement: movement.clone(),
-			policy_in: None,
-		}
-	};
-
+	// Unknown is answered here; everything that can change — the scope's state and policy,
+	// the account's freeze — is read again under the locks, in `admit`.
+	known_scope(ports.store, movement.scope()).await?;
+	let admission = Admission { ports, movement: movement.clone() };
 	match ports.store.record_move(&mut movement, idempotency_key, &admission).await? {
 		MoveOutcome::Recorded(recorded) => {
 			ports.relay.notify_one();
@@ -210,43 +183,59 @@ pub async fn move_funds(ports: &CompartmentPorts<'_>, user: UserId, from: Compar
 	}
 }
 
-/// The money checks, run by the store under its locks.
+/// The checks, run by the store while it holds the key and claim locks.
 struct Admission<'a> {
-	ledger: &'a dyn Ledger,
+	ports: &'a CompartmentPorts<'a>,
 	movement: CompartmentMove,
-	/// For a move in: the scope's policy and the caller's KYC level.
-	policy_in: Option<(ScopePolicy, u32)>,
 }
 
 #[async_trait]
 impl MoveAdmission for Admission<'_> {
 	async fn admit(&self, in_flight: &InFlight) -> Result<(), MoveError> {
-		let user = self.movement.user();
-		let amount = self.movement.amount();
-		let source = self.ledger.balance(&self.movement.from().claim_key(user)).await.map_err(DomainError::from)?;
-		// What the ledger shows as spendable, less what this user's moves already promised
-		// away and the relay has not posted yet.
-		let spendable = Usdt::from_base_units(source.available()).checked_sub(in_flight.pending_out_of_source).unwrap_or(Usdt::ZERO);
-		if spendable < amount {
+		let (ledger, user, amount) = (self.ports.ledger, self.movement.user(), self.movement.amount());
+		if self.movement.is_move_in() {
+			// A freeze or a scope state that changed since the request arrived counts.
+			let scope = known_scope(self.ports.store, self.movement.scope()).await?;
+			if let Some(refusal) = scope.state.refuses_money_in() {
+				return Err(MoveError::Refused(refusal));
+			}
+			let standing = self.ports.policy.standing(user).await?.ok_or_else(|| DomainError::NotFound {
+				entity: "user",
+				id: user.to_string(),
+			})?;
+			if standing.blocked {
+				return Err(MoveError::Refused(MoveRefusal::UserFrozen));
+			}
+			self.admit_source(ledger, user, amount).await?;
+			let target = ledger.balance(&self.movement.to().claim_key(user)).await.map_err(DomainError::from)?;
+			// Inflows still pending count, on the ledger and in the control plane alike: the
+			// cap is on what the compartment will hold.
+			let balance = Usdt::from_base_units(target.posted.saturating_add(target.pending))
+				.checked_add(in_flight.pending_into_target)
+				.ok_or_else(|| DomainError::Repository("compartment balance overflows".into()))?;
+			return scope
+				.policy
+				.admit_move_in(MoveInFacts {
+					kyc_level: standing.kyc_level,
+					amount,
+					moved_in_24h: in_flight.moved_in_24h,
+					balance,
+				})
+				.map_err(MoveError::Refused);
+		}
+		self.admit_source(ledger, user, amount).await
+	}
+}
+
+impl Admission<'_> {
+	/// The source covers the amount — the ledger's spendable, which already nets out the
+	/// user's moves still in flight.
+	async fn admit_source(&self, ledger: &dyn Ledger, user: UserId, amount: Usdt) -> Result<(), MoveError> {
+		let spendable = ledger.spendable(&self.movement.from().claim_key(user)).await.map_err(DomainError::from)?;
+		if Usdt::from_base_units(spendable) < amount {
 			return Err(MoveError::Refused(MoveRefusal::InsufficientFunds));
 		}
-		let Some((policy, kyc_level)) = &self.policy_in else {
-			return Ok(());
-		};
-		let target = self.ledger.balance(&self.movement.to().claim_key(user)).await.map_err(DomainError::from)?;
-		// Inflows still pending count, on the ledger and in the control plane alike: the cap
-		// is on what the compartment will hold.
-		let balance = Usdt::from_base_units(target.posted.saturating_add(target.pending))
-			.checked_add(in_flight.pending_into_target)
-			.ok_or_else(|| DomainError::Repository("compartment balance overflows".into()))?;
-		policy
-			.admit_move_in(MoveInFacts {
-				kyc_level: *kyc_level,
-				amount,
-				moved_in_24h: in_flight.moved_in_24h,
-				balance,
-			})
-			.map_err(MoveError::Refused)
+		Ok(())
 	}
 }
 
