@@ -15,15 +15,14 @@ use async_trait::async_trait;
 use domain::{
 	architecture::Gateway,
 	balance::{AccountCode, LedgerAccountKey, Normal},
-	scopes::Compartment,
 };
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use tigerbeetle as tb;
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{compartments, tigerbeetle::TigerBeetle},
-	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, PendingCompletion},
+	infrastructure::{claims::TxReads, tigerbeetle::TigerBeetle},
+	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LockedReads, PendingCompletion},
 };
 
 /// The USDT cash ledger id (`Ledger::Usdt`) — the plane `cash_invariant` scans; each
@@ -55,8 +54,8 @@ const TB_CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const TB_CASH_INVARIANT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The TigerBeetle-backed [`Ledger`]. Holds the shared TB client and a Postgres pool
-/// for the `tb_accounts` id-map — and, for [`Ledger::spendable`], the compartment moves
-/// recorded but not yet posted, which only the control plane knows of yet.
+/// for the `tb_accounts` id-map — and, for [`Ledger::spendable`], the debits recorded but
+/// not yet applied, which only the control plane knows of yet.
 pub struct TbLedger {
 	tb: Arc<TigerBeetle>,
 	pool: PgPool,
@@ -65,6 +64,25 @@ pub struct TbLedger {
 impl TbLedger {
 	pub fn new(tb: Arc<TigerBeetle>, pool: PgPool) -> Self {
 		Self { tb, pool }
+	}
+
+	/// The balance of `key` whose id the map gave as `id`; `None` — never touched — is zero.
+	async fn balance_of(&self, key: &LedgerAccountKey, id: Option<u128>) -> Result<LedgerBalance, LedgerError> {
+		let Some(id) = id else {
+			return Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 });
+		};
+		let call = self
+			.tb
+			.client()
+			.lookup_accounts(&[id])
+			.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
+		let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
+			.await?
+			.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
+		match accounts.first() {
+			Some(account) => normalized(key, account),
+			None => Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 }),
+		}
 	}
 
 	/// Look up an existing account id from the map (no allocation).
@@ -200,6 +218,18 @@ impl TbLedger {
 	}
 }
 
+/// The id the map holds for `key`, read on `conn` — the connection a spend holds its
+/// claim's lock on ([`LockedReads::account_id`]). Ids are minted once and never rewritten,
+/// so this reads the same row [`TbLedger`] resolves through its pool.
+pub async fn account_id(conn: &mut PgConnection, key: &LedgerAccountKey) -> Result<Option<u128>, LedgerError> {
+	let row = sqlx::query_scalar::<_, Vec<u8>>("SELECT tb_account_id FROM tb_accounts WHERE logical_key = $1")
+		.bind(key.logical_key())
+		.fetch_optional(conn)
+		.await
+		.map_err(|e| LedgerError::Unavailable(format!("account map read: {e}")))?;
+	row.map(|bytes| u128_from_be(&bytes)).transpose()
+}
+
 impl Gateway for TbLedger {}
 
 #[async_trait]
@@ -209,22 +239,13 @@ impl Ledger for TbLedger {
 	}
 
 	async fn balance(&self, key: &LedgerAccountKey) -> Result<LedgerBalance, LedgerError> {
-		let Some(id) = self.resolve_id(&key.logical_key()).await? else {
-			// No id-map row ⇒ the account was never touched ⇒ balance is zero.
-			return Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 });
-		};
-		let call = self
-			.tb
-			.client()
-			.lookup_accounts(&[id])
-			.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
-		let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
-			.await?
-			.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
-		match accounts.first() {
-			Some(account) => normalized(key, account),
-			None => Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 }),
-		}
+		let id = self.resolve_id(&key.logical_key()).await?;
+		self.balance_of(key, id).await
+	}
+
+	async fn balance_locked(&self, key: &LedgerAccountKey, reads: &mut dyn LockedReads) -> Result<LedgerBalance, LedgerError> {
+		let id = reads.account_id(key).await?;
+		self.balance_of(key, id).await
 	}
 
 	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
@@ -243,14 +264,8 @@ impl Ledger for TbLedger {
 	}
 
 	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
-		let available = self.balance(key).await?.available();
-		let promised = match key {
-			LedgerAccountKey::UserClaim(user) => compartments::pending_out(&self.pool, *user, &Compartment::Main).await,
-			LedgerAccountKey::ScopeClaim(user, scope) => compartments::pending_out(&self.pool, *user, &Compartment::Scope(scope.clone())).await,
-			_ => return Ok(available),
-		}
-		.map_err(|e| LedgerError::Unavailable(format!("pending compartment moves read: {e}")))?;
-		Ok(available.saturating_sub(promised.base_units()))
+		let mut conn = self.pool.acquire().await.map_err(|e| LedgerError::Unavailable(format!("control-plane connection: {e}")))?;
+		self.spendable_locked(key, &mut TxReads::new(&mut conn)).await
 	}
 
 	async fn balances(&self, keys: &[LedgerAccountKey]) -> Result<Vec<LedgerBalance>, LedgerError> {

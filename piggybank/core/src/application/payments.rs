@@ -196,7 +196,7 @@ async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Res
 			if let Party::User(user) = from {
 				withdrawal_app::admit_user_account(&ports.admission_gates(), *user).await?;
 			}
-			// Net of the owner's compartment moves still in flight (`Ledger::spendable`).
+			// Net of every debit of the source recorded and not yet applied (`Ledger::spendable`).
 			if Usdt::from_base_units(ports.ledger.spendable(&terms.source_claim()).await?) < terms.amount() {
 				return Err(DomainError::Validation("the source claim's available balance does not cover the payment".into()));
 			}

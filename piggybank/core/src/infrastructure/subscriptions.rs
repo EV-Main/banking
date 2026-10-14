@@ -21,7 +21,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{fees::parse_units, outbox},
+	infrastructure::{claims::TxReads, fees::parse_units, outbox},
 	ports::{SubscriptionRepository, ledger::SpendGuard},
 };
 
@@ -87,7 +87,7 @@ impl SubscriptionRepository for PgSubscriptions {
 		// Same shared per-user lock the withdrawal path takes — both spend this user's unified
 		// claim, so they must serialize on one target (see [`outbox::lock_user`]).
 		outbox::lock_user(&mut tx, subscription.user().raw()).await?;
-		guard.check().await?;
+		guard.check(&mut TxReads::new(&mut tx)).await?;
 		insert_row(&mut tx, subscription).await?;
 		outbox::drain_to_outbox(&mut tx, subscription, true).await?;
 		tx.commit().await.map_err(repo_err)?;

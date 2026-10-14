@@ -21,7 +21,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::outbox,
+	infrastructure::{claims::TxReads, outbox},
 	ports::{WithdrawalRepository, ledger::SpendGuard, withdrawals::QueuedWithdrawal},
 };
 
@@ -172,7 +172,7 @@ impl WithdrawalRepository for PgWithdrawals {
 		// projection from diverging). For a user that's withdraw + subscribe on their
 		// unified claim.
 		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
-		guard.check().await?;
+		guard.check(&mut TxReads::new(&mut tx)).await?;
 		insert_row(&mut tx, withdrawal).await?;
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
 		tx.commit().await.map_err(repo_err)?;

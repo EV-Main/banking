@@ -11,6 +11,8 @@ use domain::{
 	users::UserId,
 };
 
+use crate::ports::{ledger::LockedReads, outflow::PayoutStanding};
+
 /// One scope banking knows, with its policy.
 #[derive(Clone, Debug)]
 pub struct ScopeRecord {
@@ -56,25 +58,31 @@ impl From<DomainError> for MoveError {
 	}
 }
 
-/// What the control plane knows about a user's moves into the target, read under the locks
-/// the move is about to be recorded under — so two moves cannot both count the same room.
-/// What the source may still spend is the ledger's answer ([`Ledger::spendable`]), which
-/// already nets out the moves in flight.
+/// What the control plane says about a move, read by the store under the locks the move is
+/// about to be recorded under and on the connection that holds them — so two moves cannot
+/// both count the same room, and the check never waits on the pool while holding a lock.
+/// What the source may still spend is the ledger's answer
+/// ([`Ledger::spendable_locked`]), asked through the [`LockedReads`] handed in beside this.
 ///
-/// [`Ledger::spendable`]: crate::ports::ledger::Ledger::spendable
-#[derive(Clone, Copy, Debug, Default)]
+/// [`Ledger::spendable_locked`]: crate::ports::ledger::Ledger::spendable_locked
+#[derive(Clone, Debug, Default)]
 pub struct InFlight {
 	/// Σ the user's `pending` moves INTO the target compartment.
 	pub pending_into_target: Usdt,
 	/// Σ the user's moves into the move's scope over the last 24 h, `pending` and `posted`.
 	pub moved_in_24h: Usdt,
+	/// The move's scope as it stands now; read for a move in only, `None` otherwise or when
+	/// banking does not know it.
+	pub scope: Option<ScopeRecord>,
+	/// The user's freeze and KYC level now; read for a move in only.
+	pub standing: Option<PayoutStanding>,
 }
 
 /// The rules a move must pass, asked by the store while it holds the locks. Everything the
-/// ledger says is read inside [`Self::admit`], after the locks are taken.
+/// ledger says is read inside [`Self::admit`], after the locks are taken, through `reads`.
 #[async_trait]
 pub trait MoveAdmission: Send + Sync {
-	async fn admit(&self, in_flight: &InFlight) -> Result<(), MoveError>;
+	async fn admit(&self, in_flight: &InFlight, reads: &mut dyn LockedReads) -> Result<(), MoveError>;
 }
 
 #[async_trait]

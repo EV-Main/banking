@@ -37,7 +37,7 @@ use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::outbox,
+	infrastructure::{claims::TxReads, outbox},
 	ports::{
 		book::{BookDepth, BookLevel, BookPolicyRecord, BookStore, CancelOutcome, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade},
 		ledger::SpendGuard,
@@ -565,7 +565,7 @@ impl BookStore for PgBook {
 		if let Some(existing) = find_by_client_id(&mut tx, order.user(), order.client_order_id()).await? {
 			return Ok(PlaceOutcome::Existing(existing));
 		}
-		guard.check().await?;
+		guard.check(&mut TxReads::new(&mut tx)).await?;
 
 		let (sql, side) = match order.side() {
 			Side::Buy => (SELECT_ASKS_CROSSING, Side::Sell),

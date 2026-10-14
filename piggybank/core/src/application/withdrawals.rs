@@ -245,10 +245,9 @@ async fn require_unfrozen_rail(policy: &dyn OutflowPolicy, network: Network) -> 
 	Ok(())
 }
 
-/// Read-First on the source's claim: the spendable balance ([`Ledger::spendable`] — posted
-/// minus what in-flight withdrawals reserved and what the owner's compartment moves
-/// promised away) must cover the gross. TigerBeetle's non-negative flag is the hard
-/// backstop.
+/// Read-First on the source's claim: the spendable balance ([`Ledger::spendable`] — available
+/// on the ledger minus every debit of the claim recorded and not yet applied) must cover the
+/// gross. TigerBeetle's non-negative flag is the hard backstop.
 async fn require_solvent(ledger: &dyn Ledger, source: WithdrawalSource, amount: Usdt) -> Result<(), DomainError> {
 	if Usdt::from_base_units(ledger.spendable(&source.claim_key()).await?) < amount {
 		return Err(DomainError::Validation(INSUFFICIENT_TO_WITHDRAW.into()));

@@ -6,11 +6,11 @@
 //! freeze and the policy; a move OUT is never limited — the money does not leave the
 //! platform, and a frozen user or a paused platform still lets it back into `main`. Every
 //! check — the scope's state, the freeze, the policy, what the source may spend — runs under
-//! the store's key and claim locks, against figures net of the user's moves still in flight
-//! (the source's [`Ledger::spendable`], the same answer a withdrawal or a subscription
-//! gets), so the loser of two racing moves is refused at once instead of failing in the
-//! relay. The relay posts
-//! the move and stamps it `posted`; a ledger refusal stamps it `failed`, for good.
+//! the store's key and claim locks, read on the connection that holds them, against figures
+//! net of everything recorded against the source and not yet on the ledger (the source's
+//! [`Ledger::spendable_locked`], the same answer a withdrawal or a subscription gets), so
+//! the loser of two racing spends is refused at once instead of failing in the relay. The
+//! relay posts the move and stamps it `posted`; a ledger refusal stamps it `failed`, for good.
 
 use async_trait::async_trait;
 use domain::{
@@ -25,7 +25,7 @@ pub use crate::ports::compartments::MoveError;
 use crate::ports::{
 	OutflowPolicy,
 	compartments::{CompartmentStore, InFlight, MoveAdmission, MoveOutcome, RecordedMove, ScopeRecord},
-	ledger::{Ledger, LedgerBalance},
+	ledger::{Ledger, LedgerBalance, LockedReads},
 };
 
 /// The display name of the root compartment; concierge announces every other scope's.
@@ -194,23 +194,26 @@ struct Admission<'a> {
 
 #[async_trait]
 impl MoveAdmission for Admission<'_> {
-	async fn admit(&self, in_flight: &InFlight) -> Result<(), MoveError> {
+	async fn admit(&self, in_flight: &InFlight, reads: &mut dyn LockedReads) -> Result<(), MoveError> {
 		let (ledger, user, amount) = (self.ports.ledger, self.movement.user(), self.movement.amount());
 		if self.movement.is_move_in() {
 			// A freeze or a scope state that changed since the request arrived counts.
-			let scope = known_scope(self.ports.store, self.movement.scope()).await?;
+			let scope = in_flight.scope.as_ref().ok_or_else(|| DomainError::NotFound {
+				entity: "scope",
+				id: self.movement.scope().to_string(),
+			})?;
 			if let Some(refusal) = scope.state.refuses_money_in() {
 				return Err(MoveError::Refused(refusal));
 			}
-			let standing = self.ports.policy.standing(user).await?.ok_or_else(|| DomainError::NotFound {
+			let standing = in_flight.standing.ok_or_else(|| DomainError::NotFound {
 				entity: "user",
 				id: user.to_string(),
 			})?;
 			if standing.blocked {
 				return Err(MoveError::Refused(MoveRefusal::UserFrozen));
 			}
-			self.admit_source(ledger, user, amount).await?;
-			let target = ledger.balance(&self.movement.to().claim_key(user)).await.map_err(DomainError::from)?;
+			self.admit_source(reads, amount).await?;
+			let target = ledger.balance_locked(&self.movement.to().claim_key(user), reads).await.map_err(DomainError::from)?;
 			// Inflows still pending count, on the ledger and in the control plane alike: the
 			// cap is on what the compartment will hold.
 			let balance = Usdt::from_base_units(target.posted.saturating_add(target.pending))
@@ -226,15 +229,16 @@ impl MoveAdmission for Admission<'_> {
 				})
 				.map_err(MoveError::Refused);
 		}
-		self.admit_source(ledger, user, amount).await
+		self.admit_source(reads, amount).await
 	}
 }
 
 impl Admission<'_> {
-	/// The source covers the amount — the ledger's spendable, which already nets out the
-	/// user's moves still in flight.
-	async fn admit_source(&self, ledger: &dyn Ledger, user: UserId, amount: Usdt) -> Result<(), MoveError> {
-		let spendable = ledger.spendable(&self.movement.from().claim_key(user)).await.map_err(DomainError::from)?;
+	/// The source covers the amount — the ledger's spendable, net of everything recorded
+	/// against the source and not yet applied, the user's other moves included.
+	async fn admit_source(&self, reads: &mut dyn LockedReads, amount: Usdt) -> Result<(), MoveError> {
+		let source = self.movement.from().claim_key(self.movement.user());
+		let spendable = self.ports.ledger.spendable_locked(&source, reads).await.map_err(DomainError::from)?;
 		if Usdt::from_base_units(spendable) < amount {
 			return Err(MoveError::Refused(MoveRefusal::InsufficientFunds));
 		}

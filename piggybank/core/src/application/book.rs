@@ -241,7 +241,7 @@ pub async fn place_order(ports: &BookPorts<'_>, user: UserId, request: PlaceOrde
 		}
 		Side::Buy => {
 			let reserve = policy.buy_reserve(size.shares(), price)?;
-			// Net of the user's compartment moves still in flight (`Ledger::spendable`).
+			// Net of every debit of the claim recorded and not yet applied (`Ledger::spendable`).
 			if Usdt::from_base_units(ports.ledger.spendable(&LedgerAccountKey::UserClaim(user)).await?) < reserve {
 				return Err(DomainError::Validation("insufficient available balance to buy".into()));
 			}

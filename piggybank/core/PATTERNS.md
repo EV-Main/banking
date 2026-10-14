@@ -925,17 +925,24 @@ racing moves is refused at once. A refusal writes nothing; a pass records the
 `compartment_moves` row and its event together.
 
 **One answer to "what may the user still spend".** `Ledger::spendable(key)` is the
-ledger's `available` less the owner's `pending` moves out of that compartment — moves the
-relay has not posted yet. Every Read-First on a user's money asks it: a withdrawal
-(`require_solvent`), a subscription, a buy order, a payment, a move. So a move recorded a
-moment ago is already spent for a withdrawal that follows it, refused at once instead of
-parking in the relay. The withdrawal, subscription and buy repositories ask it twice: in
-the use case, and again through a `SpendGuard` (`ClaimCovers`) after `open` / `place`
-takes the claim's lock and before it writes — so a move and a withdrawal of one balance
-cannot both be recorded. What stays optimistic: a withdrawal's or a subscription's own
-reservation is not in the ledger until the relay applies it, so a move admitted between its
-record and the relay fails in the relay (`failed`, `insufficient_funds`); and a payment
-order's open-time check is advisory — the money is reserved at approval, by the relay.
+ledger's `available` less every debit of `key` the control plane recorded and the relay
+has not applied yet (`claims::unapplied_debits`): the owner's `pending` moves out of that
+compartment, and every outbox event neither dispatched nor parked whose relay plan posts or
+reserves a debit of `key` — a withdrawal's reserve, a subscription's cash leg, a buy's
+escrow, a payment's reserve. The unapplied debits are read before the ledger, because the
+relay applies first and marks dispatched after: the order can count a debit twice for a
+moment (a refusal that clears on retry), never miss it. Every Read-First on a user's money
+asks it: a withdrawal (`require_solvent`), a subscription, a buy order, a payment, a move.
+The withdrawal, subscription and buy repositories and the move store ask it twice: in the
+use case, and again through a `SpendGuard` (`ClaimCovers`) or the move's admission after
+they take the claim's lock and before they write — so two spends of one balance cannot
+both be recorded, whatever the relay has applied yet. Under the lock every control-plane
+read goes through `LockedReads` on the connection holding the lock (`claims::TxReads`):
+each waiter on the lock holds a pooled connection, and a holder asking the pool for a
+second one stalled the hub until the acquire timeout (#507). A parked event is not counted
+— the relay will not apply it on its own; unparked, it meets the ledger's non-negative
+flag. What stays advisory: a payment order's open-time check — the money is reserved at
+approval, by the relay.
 
 **A move is never lost and never runs twice.** The row is `pending` until the relay posts
 `Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id `uuid_v5(move_id,

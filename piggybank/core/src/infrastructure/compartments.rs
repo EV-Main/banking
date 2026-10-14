@@ -19,7 +19,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::outbox,
+	infrastructure::{claims::TxReads, outbox, outflow},
 	ports::compartments::{CompartmentStore, InFlight, MoveAdmission, MoveError, MoveOutcome, RecordedMove, ScopeRecord},
 };
 
@@ -152,11 +152,21 @@ async fn sum_amounts<'c>(conn: impl sqlx::PgExecutor<'c>, sql: &'static str, use
 	})
 }
 
+async fn scope_on<'c>(conn: impl sqlx::PgExecutor<'c>, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
+	sqlx::query_as::<_, ScopeRow>(SELECT_ONE_SCOPE)
+		.bind(id.as_str())
+		.fetch_optional(conn)
+		.await
+		.map_err(repo_err)?
+		.map(scope_record)
+		.transpose()
+}
+
 const PENDING_OUT: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND from_scope = $2 AND state = 'pending'";
 /// Σ the user's `pending` moves out of `compartment`: promised away, not yet off the ledger.
-/// What [`Ledger::spendable`](crate::ports::ledger::Ledger::spendable) subtracts.
-pub async fn pending_out(pool: &PgPool, user: UserId, compartment: &Compartment) -> Result<Usdt, DomainError> {
-	sum_amounts(pool, PENDING_OUT, user, compartment.as_str()).await
+/// Part of what [`claims::unapplied_debits`](super::claims::unapplied_debits) counts.
+pub async fn pending_out<'c>(conn: impl sqlx::PgExecutor<'c>, user: UserId, compartment: &Compartment) -> Result<Usdt, DomainError> {
+	sum_amounts(conn, PENDING_OUT, user, compartment.as_str()).await
 }
 
 const PENDING_IN: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND state = 'pending'";
@@ -180,13 +190,7 @@ impl CompartmentStore for PgCompartments {
 	}
 
 	async fn scope(&self, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
-		sqlx::query_as::<_, ScopeRow>(SELECT_ONE_SCOPE)
-			.bind(id.as_str())
-			.fetch_optional(&self.pool)
-			.await
-			.map_err(repo_err)?
-			.map(scope_record)
-			.transpose()
+		scope_on(&self.pool, id).await
 	}
 
 	async fn find_move(&self, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError> {
@@ -228,9 +232,11 @@ impl CompartmentStore for PgCompartments {
 		if movement.is_move_in() {
 			in_flight.pending_into_target = sum_amounts(&mut *tx, PENDING_IN, user, movement.to().as_str()).await?;
 			in_flight.moved_in_24h = sum_amounts(&mut *tx, MOVED_IN_24H, user, movement.scope().as_str()).await?;
+			in_flight.scope = scope_on(&mut *tx, movement.scope()).await?;
+			in_flight.standing = outflow::standing(&mut *tx, user).await?;
 		}
 		// The refusal rolls the transaction back with nothing written.
-		admission.admit(&in_flight).await?;
+		admission.admit(&in_flight, &mut TxReads::new(&mut tx)).await?;
 		let inserted = sqlx::query_as::<_, (Uuid, i64)>(
 			"INSERT INTO compartment_moves (id, user_id, from_scope, to_scope, amount, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6) \
 			 RETURNING id, EXTRACT(EPOCH FROM created_at)::BIGINT",

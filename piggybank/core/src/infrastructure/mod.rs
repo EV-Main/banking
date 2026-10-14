@@ -45,6 +45,7 @@
 pub mod allocations;
 pub mod book;
 pub mod bridge;
+pub mod claims;
 pub mod compartments;
 pub mod consilium;
 pub mod consilium_mailer;

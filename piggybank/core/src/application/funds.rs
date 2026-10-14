@@ -29,7 +29,7 @@ use crate::{
 	ports::{
 		FundPositionReader, RedemptionRepository, SubscriptionRepository, UnitFlow,
 		allocations::{AllocationRecord, AllocationRegistry},
-		ledger::{ClaimCovers, HoldingScope, Ledger, SpendGuard},
+		ledger::{ClaimCovers, HoldingScope, Ledger},
 		nav::{NavMarks, Valuation},
 	},
 };
@@ -312,7 +312,7 @@ pub async fn subscribe(ports: &FundPorts<'_>, subscriptions: &dyn SubscriptionRe
 		refusal: "insufficient available balance to subscribe",
 	};
 	// Asked now to refuse before pricing, and again by the repository under the claim lock.
-	covers.check().await?;
+	covers.check_unlocked().await?;
 	let price = dealing_nav(ports.nav, ports.ledger, &service, now_unix).await?;
 	allocation.ensure_capacity(issued_units(ports.ledger, &service).await?, Shares::from_cash(cash, price)?)?;
 	let mut subscription = Subscription::open(SubscriptionId::new(), user, service, cash, price)?;

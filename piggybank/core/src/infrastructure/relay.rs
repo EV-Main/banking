@@ -865,6 +865,26 @@ enum LedgerAction {
 	Broadcast(BroadcastRequest),
 }
 
+/// Σ what `row`'s legs will take out of `key` once the relay applies them — the event's
+/// share of [`claims::unapplied_debits`](super::claims::unapplied_debits). Read off the
+/// same plan the relay executes, so a new kind of event is counted the moment it can be
+/// relayed. Only new outflows count: a posted or reserved leg debiting `key`. Completing a
+/// pending takes nothing more than its reserve already locked, and a void gives back.
+pub(crate) fn planned_debit(row: &OutboxRow, key: &LedgerAccountKey) -> Result<u128, String> {
+	let mut total: u128 = 0;
+	for op in plan(row)? {
+		let legs = match &op.action {
+			LedgerAction::Post(transfer) | LedgerAction::Reserve(transfer) => std::slice::from_ref(transfer),
+			LedgerAction::PostLinked(transfers) => transfers.as_slice(),
+			LedgerAction::Complete(_) | LedgerAction::Broadcast(_) => &[],
+		};
+		for leg in legs.iter().filter(|leg| &leg.debit == key) {
+			total = total.checked_add(leg.amount).ok_or("planned debits overflow")?;
+		}
+	}
+	Ok(total)
+}
+
 /// Map an outbox event to the ledger op(s) (and any custody broadcast) it performs.
 /// `reference` (stamped into `user_data_128`) is always the aggregate id, tying every
 /// TB transfer back to its allocation/deposit/withdrawal for reconciliation.

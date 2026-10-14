@@ -39,14 +39,32 @@ pub trait Ledger: Gateway {
 	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError>;
 
 	/// What a new spend out of `key` may take right now, in raw base units: the ledger's
-	/// [`LedgerBalance::available`] less what the account's owner has already promised away
-	/// in compartment moves the relay has not posted yet. THE ONE ANSWER every Read-First on
-	/// a user's money asks — a withdrawal, a subscription, a buy order, a payment, a move —
-	/// so a move recorded a moment ago is never spent twice. Only `user:` and `scope_claim:`
-	/// accounts have moves; for any other key this is `available`. This default — for
-	/// wrappers that only intercept other calls — knows of no moves.
+	/// [`LedgerBalance::available`] less every debit of it the control plane has recorded
+	/// and the relay not yet applied ([`LockedReads::unapplied_debits`]). THE ONE ANSWER
+	/// every Read-First on a user's money asks — a withdrawal, a subscription, a buy order,
+	/// a payment, a move — so a spend recorded a moment ago is never spent twice. Read on a
+	/// pooled connection: for a first answer before any lock is taken. Under a claim's lock
+	/// ask [`Self::spendable_locked`]. This default — for wrappers that only intercept
+	/// other calls — knows of nothing unapplied.
 	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
 		Ok(self.balance(key).await?.available())
+	}
+
+	/// [`Self::balance`], with the control plane's half of the read made through `reads`
+	/// — on the connection that holds the claim's lock. This default, for wrappers that
+	/// only intercept other calls, reads on a pooled connection instead.
+	async fn balance_locked(&self, key: &LedgerAccountKey, reads: &mut dyn LockedReads) -> Result<LedgerBalance, LedgerError> {
+		let _ = reads;
+		self.balance(key).await
+	}
+
+	/// [`Self::spendable`] under the claim's lock, every read through `reads`. The
+	/// unapplied debits are read BEFORE the ledger: the relay applies a debit to the ledger
+	/// first and marks it dispatched after, so this order can only count one twice (a
+	/// refusal that clears on retry), never miss it.
+	async fn spendable_locked(&self, key: &LedgerAccountKey, reads: &mut dyn LockedReads) -> Result<u128, LedgerError> {
+		let unapplied = reads.unapplied_debits(key).await?;
+		Ok(self.balance_locked(key, reads).await?.available().saturating_sub(unapplied))
 	}
 
 	/// [`Self::balance`] for several accounts, in the order asked. The adapter answers in
@@ -113,13 +131,34 @@ pub trait Ledger: Gateway {
 	async fn cash_invariant(&self) -> Result<CashInvariant, LedgerError>;
 }
 
+/// The control plane's reads a spend makes under a claim's write lock, on the very
+/// connection holding that lock.
+///
+/// Every waiter on the lock holds a connection of the shared pool while it waits; a check
+/// that asked the pool for another connection while holding the lock could find none left
+/// and stall every RPC of the hub until the pool's acquire timeout (#507). So nothing
+/// decided under the lock reads the control plane any other way.
+#[async_trait]
+pub trait LockedReads: Send {
+	/// Σ the debits of `key` the control plane recorded and the ledger has not applied yet:
+	/// compartment moves still `pending`, and every outbox event neither dispatched nor
+	/// parked whose plan debits `key` — a withdrawal's reserve, a subscription's cash leg,
+	/// a buy's escrow, a payment's reserve. Raw base units.
+	async fn unapplied_debits(&mut self, key: &LedgerAccountKey) -> Result<u128, LedgerError>;
+
+	/// The ledger's id for `key` from the adapter's id map; `None` when the account was
+	/// never touched.
+	async fn account_id(&mut self, key: &LedgerAccountKey) -> Result<Option<u128>, LedgerError>;
+}
+
 /// A spend's last check, run by the repository that records the spend AFTER it takes the
 /// claim's write lock and before it writes — so two spends of one claim (a withdrawal and a
 /// move, a buy and a subscription) cannot both pass on the same money. The application
-/// says what to check ([`ClaimCovers`]); the repository says when.
+/// says what to check ([`ClaimCovers`]); the repository says when, and hands in the reads
+/// of its own locked connection.
 #[async_trait]
 pub trait SpendGuard: Send + Sync {
-	async fn check(&self) -> Result<(), DomainError>;
+	async fn check(&self, reads: &mut dyn LockedReads) -> Result<(), DomainError>;
 }
 
 /// The guard for a spend that needs no cover check — one whose money is booked in the same
@@ -128,13 +167,14 @@ pub struct NoSpendCheck;
 
 #[async_trait]
 impl SpendGuard for NoSpendCheck {
-	async fn check(&self) -> Result<(), DomainError> {
+	async fn check(&self, _: &mut dyn LockedReads) -> Result<(), DomainError> {
 		Ok(())
 	}
 }
 
-/// `key` still covers `amount` — [`Ledger::spendable`], net of in-flight compartment moves.
-/// A shortfall is `Validation(refusal)`, the wording each flow has always answered with.
+/// `key` still covers `amount` — [`Ledger::spendable_locked`], net of every debit recorded
+/// and not yet on the ledger. A shortfall is `Validation(refusal)`, the wording each flow
+/// has always answered with.
 pub struct ClaimCovers<'a> {
 	pub ledger: &'a dyn Ledger,
 	pub key: LedgerAccountKey,
@@ -142,13 +182,24 @@ pub struct ClaimCovers<'a> {
 	pub refusal: &'static str,
 }
 
-#[async_trait]
-impl SpendGuard for ClaimCovers<'_> {
-	async fn check(&self) -> Result<(), DomainError> {
-		if self.ledger.spendable(&self.key).await? < self.amount {
+impl ClaimCovers<'_> {
+	/// The same question before any lock, to refuse early: [`Ledger::spendable`].
+	pub async fn check_unlocked(&self) -> Result<(), DomainError> {
+		self.answer(self.ledger.spendable(&self.key).await?)
+	}
+
+	fn answer(&self, spendable: u128) -> Result<(), DomainError> {
+		if spendable < self.amount {
 			return Err(DomainError::Validation(self.refusal.into()));
 		}
 		Ok(())
+	}
+}
+
+#[async_trait]
+impl SpendGuard for ClaimCovers<'_> {
+	async fn check(&self, reads: &mut dyn LockedReads) -> Result<(), DomainError> {
+		self.answer(self.ledger.spendable_locked(&self.key, reads).await?)
 	}
 }
 
