@@ -33,6 +33,13 @@
 //!      owners approved (`approved` / `executed`) plus the treasury withdrawals still
 //!      standing (`queued` / `processing` / `completed`), each tied to its order by
 //!      `withdrawals.payment_id`. A debit nobody approved is an alert.
+//!   6. **Scope stream freshness** — how long since the scope registry last got a
+//!      well-formed page of concierge's scope stream ([`scope_events::freshness`]). Past
+//!      [`SCOPE_STREAM_STALL`] a freeze or close on concierge may not have reached the money
+//!      plane: an alert — unless concierge answers UNIMPLEMENTED (it predates ScopeEvents),
+//!      which is a `warn!`. Not part of [`ReconReport::clean`]: it is the registry's
+//!      freshness, not a money invariant, and any database no consumer follows (every
+//!      test's) would read dirty for a reason that says nothing about the money.
 //!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
@@ -46,13 +53,22 @@ use tracing::{error, info, warn};
 
 use crate::{
 	application::ownership::{self as ownership_app, AllocationOwnership},
-	infrastructure::{outbox, telemetry},
+	infrastructure::{
+		outbox,
+		scope_events::{self, StreamFreshness},
+		telemetry,
+	},
 	ports::{AllocationRegistry, ledger::Ledger},
 };
 
 /// How often the reconciliation scan runs. Discrepancies are rare and operator-resolved,
 /// so a slow cadence is fine; the relay (sub-second) owns the hot path.
 const SCAN_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How far the scope registry may fall behind concierge's scope stream before it is alerted.
+/// Several of the consumer's backed-off retries (at most a minute apart) fit inside it, so a
+/// blip does not page anyone.
+pub const SCOPE_STREAM_STALL: Duration = Duration::from_secs(5 * 60);
 
 /// One reconciliation pass over the cash plane. The fields are raw 18-dp USDT base units
 /// and the parked-row count, so a caller (a test, the run loop) can assert on the outcome
@@ -82,6 +98,9 @@ pub struct ReconReport {
 	pub treasury_debits: u128,
 	/// Σ what the owners approved paying out of the treasury (see the module header, 5).
 	pub treasury_debits_approved: u128,
+	/// The scope stream's standing this pass; `None` when it could not be read. Outside
+	/// [`Self::clean`] (see the module header, 6).
+	pub scope_stream: Option<StreamFreshness>,
 }
 
 impl ReconReport {
@@ -238,6 +257,25 @@ impl Reconciliation {
 				"reconciliation: PARKED outbox event needs intervention: {}",
 				row.last_error.as_deref().unwrap_or("(no last_error)")
 			);
+		}
+
+		// (6) Scope stream freshness. A read failure skips it this pass, like the ledger reads.
+		match scope_events::freshness(&self.pool, SCOPE_STREAM_STALL).await {
+			Ok(freshness) => {
+				report.scope_stream = Some(freshness);
+				match freshness {
+					StreamFreshness::Fresh { .. } => {}
+					StreamFreshness::Unserved { lag_secs } => warn!(
+						lag_secs,
+						"reconciliation: scope registry not following concierge — concierge answers UNIMPLEMENTED (predates ScopeEvents); scopes keep their last state until one that serves the stream is deployed"
+					),
+					StreamFreshness::Stalled { lag_secs } => error!(
+						lag_secs,
+						"reconciliation: SCOPE STREAM STALLED — no well-formed page from concierge's scope stream in over {SCOPE_STREAM_STALL:?}; a scope frozen or closed on concierge may still take money in here"
+					),
+				}
+			}
+			Err(err) => warn!("reconciliation: scope stream cursor read failed, freshness not verified this pass: {err}"),
 		}
 
 		if report.clean() {

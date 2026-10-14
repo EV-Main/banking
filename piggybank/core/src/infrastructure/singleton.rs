@@ -4,7 +4,7 @@
 //! anticipated shape of this deployment rather than a hypothetical: a second replica draining
 //! the same queue is not a slowdown, it is two workers racing the same rows. The governance
 //! workers drain shared queues too and had no such guard, so this lifts the relay's pattern
-//! into one place both can use.
+//! into one place every such worker uses.
 //!
 //! The lock's lifetime IS the returned connection's lifetime. Postgres releases a
 //! session-level advisory lock when the session ends, so a crashed or reaped holder frees it
@@ -22,6 +22,8 @@ pub mod keys {
 	pub const CONSILIUM_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64;
 	/// ASCII `EVBKCML_` — the consilium mailer.
 	pub const CONSILIUM_MAILER: i64 = 0x4556_424b_434d_4c5f_u64 as i64;
+	/// ASCII `EVBKSCE_` — the consumer of concierge's scope stream.
+	pub const SCOPE_EVENTS: i64 = 0x4556_424b_5343_455f_u64 as i64;
 }
 
 /// Block on a dedicated pooled connection until the lock is held, then return that
