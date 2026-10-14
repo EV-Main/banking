@@ -2953,6 +2953,183 @@
       }
     },
     "/banking.v1.BookService/WatchBook": {},
+    "/banking.v1.CompartmentService/GetScopePolicy": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "GetScopePolicy",
+        "description": "One scope's policy, read-only. The scope's admins set it, never the user.",
+        "operationId": "banking.v1.CompartmentService.GetScopePolicy",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetScopePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.ScopePolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.CompartmentService/ListCompartments": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "ListCompartments",
+        "description": "Every scope the caller could hold money in: `main` first, then each scope banking\n knows, with the caller's balance there (zero if never entered) and its policy.",
+        "operationId": "banking.v1.CompartmentService.ListCompartments",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.ListCompartmentsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.CompartmentList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.CompartmentService/MoveFunds": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "MoveFunds",
+        "description": "Move money between `main` and one scope compartment — exactly one side is `main`.\n Moving IN is checked against the scope's policy (KYC level, limits):\n FAILED_PRECONDITION with the failed rule (`kyc_level`, `max_per_move`,\n `max_moved_in_24h`, `max_balance`) when it does not pass. Moving OUT is never\n limited by policy, only by what is available in the compartment.",
+        "operationId": "banking.v1.CompartmentService.MoveFunds",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.MoveFundsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.CompartmentMove"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.ConsiliumApprovalService/GetInvitation": {
       "post": {
         "tags": [
@@ -4596,6 +4773,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.InvoicePaymentService/GetPayableInvoice": {
+      "post": {
+        "tags": [
+          "banking.v1.InvoicePaymentService"
+        ],
+        "summary": "GetPayableInvoice",
+        "description": "The invoice as the payer sees it. Unknown ids and invoices restricted to another\n payer are the SAME NOT_FOUND.",
+        "operationId": "banking.v1.InvoicePaymentService.GetPayableInvoice",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetPayableInvoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PayableInvoice"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.InvoicePaymentService/PayInvoice": {
+      "post": {
+        "tags": [
+          "banking.v1.InvoicePaymentService"
+        ],
+        "summary": "PayInvoice",
+        "description": "Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, or when the\n chosen source cannot cover it. A repeat with the same `idempotency_key` returns\n the paid invoice; paying it again under a new key is FAILED_PRECONDITION.",
+        "operationId": "banking.v1.InvoicePaymentService.PayInvoice",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.PayInvoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PayableInvoice"
                 }
               }
             }
@@ -8884,6 +9179,89 @@
         "title": "CheckResponse",
         "additionalProperties": false
       },
+      "banking.v1.Compartment": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "scope",
+            "description": "main | invest | sa | …"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "display_name",
+            "description": "the scope's human name, as concierge announced it"
+          },
+          "available": {
+            "type": "string",
+            "title": "available",
+            "description": "free to spend in the scope or move back to main"
+          },
+          "held": {
+            "type": "string",
+            "title": "held",
+            "description": "held by the scope's services (resting orders, pending subscriptions)"
+          },
+          "total": {
+            "type": "string",
+            "title": "total"
+          },
+          "policy": {
+            "title": "policy",
+            "description": "absent for `main`",
+            "$ref": "#/components/schemas/banking.v1.ScopePolicy"
+          }
+        },
+        "title": "Compartment",
+        "additionalProperties": false,
+        "description": "One compartment of the caller. Decimal USDT strings; total = available + held."
+      },
+      "banking.v1.CompartmentList": {
+        "type": "object",
+        "properties": {
+          "compartments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.Compartment"
+            },
+            "title": "compartments"
+          }
+        },
+        "title": "CompartmentList",
+        "additionalProperties": false
+      },
+      "banking.v1.CompartmentMove": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "id"
+          },
+          "from_scope": {
+            "type": "string",
+            "title": "from_scope"
+          },
+          "to_scope": {
+            "type": "string",
+            "title": "to_scope"
+          },
+          "amount": {
+            "type": "string",
+            "title": "amount"
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "created_at",
+            "format": "int64",
+            "description": "unix seconds"
+          }
+        },
+        "title": "CompartmentMove",
+        "additionalProperties": false
+      },
       "banking.v1.ConsentDecision": {
         "type": "string",
         "title": "ConsentDecision",
@@ -10062,6 +10440,17 @@
         "title": "GetOperationsModeRequest",
         "additionalProperties": false
       },
+      "banking.v1.GetPayableInvoiceRequest": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "title": "invoice_id"
+          }
+        },
+        "title": "GetPayableInvoiceRequest",
+        "additionalProperties": false
+      },
       "banking.v1.GetPaymentRequest": {
         "type": "object",
         "properties": {
@@ -10082,6 +10471,17 @@
           }
         },
         "title": "GetPositionRequest",
+        "additionalProperties": false
+      },
+      "banking.v1.GetScopePolicyRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "scope"
+          }
+        },
+        "title": "GetScopePolicyRequest",
         "additionalProperties": false
       },
       "banking.v1.GetTreasuryRequest": {
@@ -10301,6 +10701,11 @@
           }
         },
         "title": "ListCandlesRequest",
+        "additionalProperties": false
+      },
+      "banking.v1.ListCompartmentsRequest": {
+        "type": "object",
+        "title": "ListCompartmentsRequest",
         "additionalProperties": false
       },
       "banking.v1.ListConsiliaRequest": {
@@ -10606,6 +11011,33 @@
           }
         },
         "title": "MigrateDepositAddressToCustodianResponse",
+        "additionalProperties": false
+      },
+      "banking.v1.MoveFundsRequest": {
+        "type": "object",
+        "properties": {
+          "from_scope": {
+            "type": "string",
+            "title": "from_scope",
+            "description": "`main` or a scope"
+          },
+          "to_scope": {
+            "type": "string",
+            "title": "to_scope",
+            "description": "the other side; one of the two must be `main`"
+          },
+          "amount": {
+            "type": "string",
+            "title": "amount",
+            "description": "decimal USDT, \u003e 0"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "idempotency_key",
+            "description": "client-minted (a UUID per click); a repeat returns the original move"
+          }
+        },
+        "title": "MoveFundsRequest",
         "additionalProperties": false
       },
       "banking.v1.NavMark": {
@@ -11048,6 +11480,95 @@
         "title": "Party",
         "additionalProperties": false,
         "description": "One end of a payment, as a REQUEST names it."
+      },
+      "banking.v1.PayInvoiceRequest": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "title": "invoice_id"
+          },
+          "pay_from": {
+            "type": "string",
+            "title": "pay_from",
+            "description": "`main`, or the invoice's scope (the caller's compartment there)"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "idempotency_key",
+            "description": "client-minted, one per click"
+          }
+        },
+        "title": "PayInvoiceRequest",
+        "additionalProperties": false
+      },
+      "banking.v1.PayableInvoice": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "title": "invoice_id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "scope",
+            "description": "who asks for the money"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "display_name",
+            "description": "the scope's human name"
+          },
+          "amount": {
+            "type": "string",
+            "title": "amount",
+            "description": "decimal USDT"
+          },
+          "memo": {
+            "type": "string",
+            "title": "memo",
+            "description": "the scope's text, plain"
+          },
+          "state": {
+            "type": "string",
+            "title": "state",
+            "description": "open | paid | cancelled | expired"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "expires_at",
+            "format": "int64",
+            "description": "unix seconds"
+          },
+          "paid_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "paid_at",
+            "format": "int64",
+            "description": "unix seconds, once paid"
+          },
+          "paid_from": {
+            "type": "string",
+            "title": "paid_from",
+            "description": "once paid: `main` or the scope"
+          },
+          "available_main": {
+            "type": "string",
+            "title": "available_main",
+            "description": "What the caller could pay from right now, decimal USDT: their `main` available\n balance and their available balance in this scope's compartment."
+          },
+          "available_scope": {
+            "type": "string",
+            "title": "available_scope"
+          }
+        },
+        "title": "PayableInvoice",
+        "additionalProperties": false
       },
       "banking.v1.Payment": {
         "type": "object",
@@ -12033,6 +12554,52 @@
         },
         "title": "ScheduleFeePolicyRequest",
         "additionalProperties": false
+      },
+      "banking.v1.ScopePolicy": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "scope"
+          },
+          "min_kyc_level": {
+            "type": "integer",
+            "title": "min_kyc_level",
+            "description": "the concierge KYC level a user needs to move money in"
+          },
+          "max_per_move": {
+            "type": "string",
+            "title": "max_per_move",
+            "description": "largest single move in"
+          },
+          "max_moved_in_24h": {
+            "type": "string",
+            "title": "max_moved_in_24h",
+            "description": "rolling 24 h total moved in, per user"
+          },
+          "max_balance": {
+            "type": "string",
+            "title": "max_balance",
+            "description": "ceiling on the compartment's total"
+          },
+          "caller_eligible": {
+            "type": "boolean",
+            "title": "caller_eligible",
+            "description": "Whether the CALLER meets `min_kyc_level` right now — the UI's reason to offer the\n move or to point at verification instead."
+          },
+          "updated_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "updated_at",
+            "format": "int64",
+            "description": "unix seconds"
+          }
+        },
+        "title": "ScopePolicy",
+        "additionalProperties": false,
+        "description": "What it takes to move money into a scope. Limits are decimal USDT strings; an empty\n limit means none."
       },
       "banking.v1.SeedCapitalRequest": {
         "type": "object",
@@ -15910,6 +16477,10 @@
       "description": "Health surface for the hub's gRPC service plane.\n\n   Check     — liveness: is the process up? Trivial, unauthenticated; backs the\n               `cabinet` BFF smoke path (browser -\u003e BFF -\u003e gRPC) and service checks.\n   Readiness — can this instance actually move money? Pings Postgres + TigerBeetle\n               and inspects the outbox (parked rows / dispatch backlog). An\n               orchestrator/LB drains an instance that is up but not ready instead of\n               routing money-moving traffic to it."
     },
     {
+      "name": "banking.v1.InvoicePaymentService",
+      "description": "InvoicePaymentService — the payer's side of an invoice a scope issued\n (`scope.v1.InvoiceService`). The user opens it from the scope's link in the wallet\n page or the `\u003cev-pay-invoice\u003e` element and pays it straight into the scope's\n account from `main` or from their compartment in that scope — no move between\n compartments first. Every RPC acts on the caller's own `sub`."
+    },
+    {
       "name": "banking.v1.OperationsService",
       "description": "OperationsService — the caller's activity timeline: every money event that touched\n their account, in one time-ordered stream.\n\n A pure CQRS **read model**. The four things a user does — deposit, withdraw,\n subscribe, redeem — are separate aggregates written through their own services\n (WalletService, FundsService); each already exposes its own list. What none of them\n can answer is \"what happened, in order\", because interleaving four lists client-side\n needs a timestamp every one of them must agree on. This service is that join, done\n once in the hub over the Postgres projections.\n\n Read-only: it moves no money and owns no state. Every RPC acts on the caller's own\n access-token `sub`. Amounts are decimal USDT STRINGS (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`).\n See docs/ARCHITECTURE.md and piggybank/core/PATTERNS.md."
     },
@@ -15928,6 +16499,10 @@
     {
       "name": "banking.v1.WalletService",
       "description": "WalletService — a user's own crypto wallet: one unified USDT balance, deposit\n addresses, and withdrawals. Networks (BEP20/Polygon/TRC20/TON) are a transaction attribute\n (where you deposit / where a withdrawal ships), never a balance dimension — the user\n holds a single fungible USDT balance, segmented by lifecycle.\n\n Every RPC acts on the caller's own access-token `sub`. Balances are read live from the\n authoritative TigerBeetle ledger (Read-First); amounts are decimal USDT STRINGS\n (proto3 has no u128; a string is lossless and matches proto-loader's `longs: String`).\n A withdrawal is a queued saga (reserve → dispatch → settle/void): it is accepted even\n when the chosen rail is short on liquidity and queued until the treasury tops it up.\n The operator-driven dispatch/settle/fail RPCs live on BalanceService; the custody\n broadcast and deposit-address derivation sit behind ports (a stub in this scaffold).\n See docs/ARCHITECTURE.md and piggybank/core/PATTERNS.md."
+    },
+    {
+      "name": "banking.v1.CompartmentService",
+      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it. Every RPC acts on the caller's own `sub`."
     },
     {
       "name": "concierge.v1.UserDirectory",

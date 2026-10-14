@@ -641,6 +641,86 @@ export type BankingV1CheckResponse = {
 };
 
 /**
+ * Compartment
+ *
+ * One compartment of the caller. Decimal USDT strings; total = available + held.
+ */
+export type BankingV1Compartment = {
+    /**
+     * scope
+     *
+     * main | invest | sa | …
+     */
+    scope?: string;
+    /**
+     * display_name
+     *
+     * the scope's human name, as concierge announced it
+     */
+    display_name?: string;
+    /**
+     * available
+     *
+     * free to spend in the scope or move back to main
+     */
+    available?: string;
+    /**
+     * held
+     *
+     * held by the scope's services (resting orders, pending subscriptions)
+     */
+    held?: string;
+    /**
+     * total
+     */
+    total?: string;
+    /**
+     * policy
+     *
+     * absent for `main`
+     */
+    policy?: BankingV1ScopePolicy;
+};
+
+/**
+ * CompartmentList
+ */
+export type BankingV1CompartmentList = {
+    /**
+     * compartments
+     */
+    compartments?: Array<BankingV1Compartment>;
+};
+
+/**
+ * CompartmentMove
+ */
+export type BankingV1CompartmentMove = {
+    /**
+     * id
+     */
+    id?: string;
+    /**
+     * from_scope
+     */
+    from_scope?: string;
+    /**
+     * to_scope
+     */
+    to_scope?: string;
+    /**
+     * amount
+     */
+    amount?: string;
+    /**
+     * created_at
+     *
+     * unix seconds
+     */
+    created_at?: number | string;
+};
+
+/**
  * ConsentDecision
  *
  * What the emailed investor answered.
@@ -1835,6 +1915,16 @@ export type BankingV1GetOperationsModeRequest = {
 };
 
 /**
+ * GetPayableInvoiceRequest
+ */
+export type BankingV1GetPayableInvoiceRequest = {
+    /**
+     * invoice_id
+     */
+    invoice_id?: string;
+};
+
+/**
  * GetPaymentRequest
  */
 export type BankingV1GetPaymentRequest = {
@@ -1852,6 +1942,16 @@ export type BankingV1GetPositionRequest = {
      * service
      */
     service?: string;
+};
+
+/**
+ * GetScopePolicyRequest
+ */
+export type BankingV1GetScopePolicyRequest = {
+    /**
+     * scope
+     */
+    scope?: string;
 };
 
 /**
@@ -2094,6 +2194,13 @@ export type BankingV1ListCandlesRequest = {
      * unix seconds, exclusive; 0 = now
      */
     to?: number | string;
+};
+
+/**
+ * ListCompartmentsRequest
+ */
+export type BankingV1ListCompartmentsRequest = {
+    [key: string]: never;
 };
 
 /**
@@ -2418,6 +2525,36 @@ export type BankingV1MigrateDepositAddressToCustodianResponse = {
      * the NEW fundable, custody-held deposit address
      */
     new_address?: string;
+};
+
+/**
+ * MoveFundsRequest
+ */
+export type BankingV1MoveFundsRequest = {
+    /**
+     * from_scope
+     *
+     * `main` or a scope
+     */
+    from_scope?: string;
+    /**
+     * to_scope
+     *
+     * the other side; one of the two must be `main`
+     */
+    to_scope?: string;
+    /**
+     * amount
+     *
+     * decimal USDT, > 0
+     */
+    amount?: string;
+    /**
+     * idempotency_key
+     *
+     * client-minted (a UUID per click); a repeat returns the original move
+     */
+    idempotency_key?: string;
 };
 
 /**
@@ -2909,6 +3046,97 @@ export type BankingV1Party = {
      * accepted as a fallback, the way UsersService.GetUserBalance resolves one).
      */
     id?: string;
+};
+
+/**
+ * PayInvoiceRequest
+ */
+export type BankingV1PayInvoiceRequest = {
+    /**
+     * invoice_id
+     */
+    invoice_id?: string;
+    /**
+     * pay_from
+     *
+     * `main`, or the invoice's scope (the caller's compartment there)
+     */
+    pay_from?: string;
+    /**
+     * idempotency_key
+     *
+     * client-minted, one per click
+     */
+    idempotency_key?: string;
+};
+
+/**
+ * PayableInvoice
+ */
+export type BankingV1PayableInvoice = {
+    /**
+     * invoice_id
+     */
+    invoice_id?: string;
+    /**
+     * scope
+     *
+     * who asks for the money
+     */
+    scope?: string;
+    /**
+     * display_name
+     *
+     * the scope's human name
+     */
+    display_name?: string;
+    /**
+     * amount
+     *
+     * decimal USDT
+     */
+    amount?: string;
+    /**
+     * memo
+     *
+     * the scope's text, plain
+     */
+    memo?: string;
+    /**
+     * state
+     *
+     * open | paid | cancelled | expired
+     */
+    state?: string;
+    /**
+     * expires_at
+     *
+     * unix seconds
+     */
+    expires_at?: number | string;
+    /**
+     * paid_at
+     *
+     * unix seconds, once paid
+     */
+    paid_at?: number | string;
+    /**
+     * paid_from
+     *
+     * once paid: `main` or the scope
+     */
+    paid_from?: string;
+    /**
+     * available_main
+     *
+     * What the caller could pay from right now, decimal USDT: their `main` available
+     * balance and their available balance in this scope's compartment.
+     */
+    available_main?: string;
+    /**
+     * available_scope
+     */
+    available_scope?: string;
 };
 
 /**
@@ -3914,6 +4142,56 @@ export type BankingV1ScheduleFeePolicyRequest = {
      * (the approval mail is refused without one); optional otherwise. Shown verbatim.
      */
     reason?: string;
+};
+
+/**
+ * ScopePolicy
+ *
+ * What it takes to move money into a scope. Limits are decimal USDT strings; an empty
+ * limit means none.
+ */
+export type BankingV1ScopePolicy = {
+    /**
+     * scope
+     */
+    scope?: string;
+    /**
+     * min_kyc_level
+     *
+     * the concierge KYC level a user needs to move money in
+     */
+    min_kyc_level?: number;
+    /**
+     * max_per_move
+     *
+     * largest single move in
+     */
+    max_per_move?: string;
+    /**
+     * max_moved_in_24h
+     *
+     * rolling 24 h total moved in, per user
+     */
+    max_moved_in_24h?: string;
+    /**
+     * max_balance
+     *
+     * ceiling on the compartment's total
+     */
+    max_balance?: string;
+    /**
+     * caller_eligible
+     *
+     * Whether the CALLER meets `min_kyc_level` right now — the UI's reason to offer the
+     * move or to point at verification instead.
+     */
+    caller_eligible?: boolean;
+    /**
+     * updated_at
+     *
+     * unix seconds
+     */
+    updated_at?: number | string;
 };
 
 /**
@@ -9223,6 +9501,93 @@ export type BankingV1BookServiceSetBookPolicyResponses = {
 
 export type BankingV1BookServiceSetBookPolicyResponse = BankingV1BookServiceSetBookPolicyResponses[keyof BankingV1BookServiceSetBookPolicyResponses];
 
+export type BankingV1CompartmentServiceGetScopePolicyData = {
+    body: BankingV1GetScopePolicyRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/GetScopePolicy';
+};
+
+export type BankingV1CompartmentServiceGetScopePolicyErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceGetScopePolicyError = BankingV1CompartmentServiceGetScopePolicyErrors[keyof BankingV1CompartmentServiceGetScopePolicyErrors];
+
+export type BankingV1CompartmentServiceGetScopePolicyResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1ScopePolicy;
+};
+
+export type BankingV1CompartmentServiceGetScopePolicyResponse = BankingV1CompartmentServiceGetScopePolicyResponses[keyof BankingV1CompartmentServiceGetScopePolicyResponses];
+
+export type BankingV1CompartmentServiceListCompartmentsData = {
+    body: BankingV1ListCompartmentsRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/ListCompartments';
+};
+
+export type BankingV1CompartmentServiceListCompartmentsErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceListCompartmentsError = BankingV1CompartmentServiceListCompartmentsErrors[keyof BankingV1CompartmentServiceListCompartmentsErrors];
+
+export type BankingV1CompartmentServiceListCompartmentsResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1CompartmentList;
+};
+
+export type BankingV1CompartmentServiceListCompartmentsResponse = BankingV1CompartmentServiceListCompartmentsResponses[keyof BankingV1CompartmentServiceListCompartmentsResponses];
+
+export type BankingV1CompartmentServiceMoveFundsData = {
+    body: BankingV1MoveFundsRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/MoveFunds';
+};
+
+export type BankingV1CompartmentServiceMoveFundsErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceMoveFundsError = BankingV1CompartmentServiceMoveFundsErrors[keyof BankingV1CompartmentServiceMoveFundsErrors];
+
+export type BankingV1CompartmentServiceMoveFundsResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1CompartmentMove;
+};
+
+export type BankingV1CompartmentServiceMoveFundsResponse = BankingV1CompartmentServiceMoveFundsResponses[keyof BankingV1CompartmentServiceMoveFundsResponses];
+
 export type BankingV1ConsiliumApprovalServiceGetInvitationData = {
     body: BankingV1GetInvitationRequest;
     headers: {
@@ -10034,6 +10399,64 @@ export type BankingV1HealthServiceReadinessResponses = {
 };
 
 export type BankingV1HealthServiceReadinessResponse = BankingV1HealthServiceReadinessResponses[keyof BankingV1HealthServiceReadinessResponses];
+
+export type BankingV1InvoicePaymentServiceGetPayableInvoiceData = {
+    body: BankingV1GetPayableInvoiceRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.InvoicePaymentService/GetPayableInvoice';
+};
+
+export type BankingV1InvoicePaymentServiceGetPayableInvoiceErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1InvoicePaymentServiceGetPayableInvoiceError = BankingV1InvoicePaymentServiceGetPayableInvoiceErrors[keyof BankingV1InvoicePaymentServiceGetPayableInvoiceErrors];
+
+export type BankingV1InvoicePaymentServiceGetPayableInvoiceResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PayableInvoice;
+};
+
+export type BankingV1InvoicePaymentServiceGetPayableInvoiceResponse = BankingV1InvoicePaymentServiceGetPayableInvoiceResponses[keyof BankingV1InvoicePaymentServiceGetPayableInvoiceResponses];
+
+export type BankingV1InvoicePaymentServicePayInvoiceData = {
+    body: BankingV1PayInvoiceRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.InvoicePaymentService/PayInvoice';
+};
+
+export type BankingV1InvoicePaymentServicePayInvoiceErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1InvoicePaymentServicePayInvoiceError = BankingV1InvoicePaymentServicePayInvoiceErrors[keyof BankingV1InvoicePaymentServicePayInvoiceErrors];
+
+export type BankingV1InvoicePaymentServicePayInvoiceResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PayableInvoice;
+};
+
+export type BankingV1InvoicePaymentServicePayInvoiceResponse = BankingV1InvoicePaymentServicePayInvoiceResponses[keyof BankingV1InvoicePaymentServicePayInvoiceResponses];
 
 export type BankingV1OperationsServiceListOperationsData = {
     body: BankingV1ListOperationsRequest;

@@ -126,3 +126,77 @@ message Deposit {
 message DepositList {
   repeated Deposit deposits = 1;
 }
+
+// CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),
+// as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive
+// there, withdrawals leave from there); every other scope the user has entered holds
+// a compartment, money earmarked for that scope's services. Only the user moves money
+// between `main` and a compartment — instantly and without a fee — and never between
+// two non-main scopes directly.
+//
+// A separate service, not new fields on `Wallet`: WalletService keeps its shape while
+// the compartments are built behind it. Every RPC acts on the caller's own `sub`.
+service CompartmentService {
+  // Every scope the caller could hold money in: `main` first, then each scope banking
+  // knows, with the caller's balance there (zero if never entered) and its policy.
+  rpc ListCompartments(ListCompartmentsRequest) returns (CompartmentList);
+
+  // Move money between `main` and one scope compartment — exactly one side is `main`.
+  // Moving IN is checked against the scope's policy (KYC level, limits):
+  // FAILED_PRECONDITION with the failed rule (`kyc_level`, `max_per_move`,
+  // `max_moved_in_24h`, `max_balance`) when it does not pass. Moving OUT is never
+  // limited by policy, only by what is available in the compartment.
+  rpc MoveFunds(MoveFundsRequest) returns (CompartmentMove);
+
+  // One scope's policy, read-only. The scope's admins set it, never the user.
+  rpc GetScopePolicy(GetScopePolicyRequest) returns (ScopePolicy);
+}
+
+message ListCompartmentsRequest {}
+
+// One compartment of the caller. Decimal USDT strings; total = available + held.
+message Compartment {
+  string scope = 1;           // main | invest | sa | …
+  string display_name = 2;    // the scope's human name, as concierge announced it
+  string available = 3;       // free to spend in the scope or move back to main
+  string held = 4;            // held by the scope's services (resting orders, pending subscriptions)
+  string total = 5;
+  ScopePolicy policy = 6;     // absent for `main`
+}
+
+message CompartmentList {
+  repeated Compartment compartments = 1;
+}
+
+message MoveFundsRequest {
+  string from_scope = 1;       // `main` or a scope
+  string to_scope = 2;         // the other side; one of the two must be `main`
+  string amount = 3;           // decimal USDT, > 0
+  string idempotency_key = 4;  // client-minted (a UUID per click); a repeat returns the original move
+}
+
+message CompartmentMove {
+  string id = 1;
+  string from_scope = 2;
+  string to_scope = 3;
+  string amount = 4;
+  int64 created_at = 5;  // unix seconds
+}
+
+message GetScopePolicyRequest {
+  string scope = 1;
+}
+
+// What it takes to move money into a scope. Limits are decimal USDT strings; an empty
+// limit means none.
+message ScopePolicy {
+  string scope = 1;
+  uint32 min_kyc_level = 2;     // the concierge KYC level a user needs to move money in
+  string max_per_move = 3;      // largest single move in
+  string max_moved_in_24h = 4;  // rolling 24 h total moved in, per user
+  string max_balance = 5;       // ceiling on the compartment's total
+  // Whether the CALLER meets `min_kyc_level` right now — the UI's reason to offer the
+  // move or to point at verification instead.
+  bool caller_eligible = 6;
+  int64 updated_at = 7;         // unix seconds
+}

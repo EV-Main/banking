@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package scope.v1;
+
+import "scope/v1/ledger.proto";
+
+// MoneyEvents — the money plane's outbox, served to the scope services that build a
+// projection of their scope's money (the `banking_projection` library). Modelled on
+// concierge's `UserEvents`: the consumer PULLS, banking never calls a service.
+//
+// `Pull` serves the events of ONE scope with `position > after_position`, oldest
+// first, capped by `limit`; the consumer stores `next_position` as its cursor per
+// scope. Positions are global to the money plane, so a scope's stream has gaps — a
+// consumer must not expect `position` to step by one. Read-only and never compacted:
+// a consumer dedupes by `event_id`. The caller's service token must hold a grant for
+// the requested scope, otherwise PERMISSION_DENIED — a scope sees its own holds,
+// charges, payouts, transfers, invoices, accounts and its users' compartment moves,
+// and nothing of any other scope.
+//
+// Kinds will be added. A consumer that meets an unknown `kind` must park that event
+// and keep its cursor moving, not stop: banking may ship a kind before every consumer
+// knows it.
+service MoneyEvents {
+  rpc Pull(PullRequest) returns (PullResponse);
+}
+
+message PullRequest {
+  string scope = 1;
+  // Exclusive lower bound: the consumer's stored cursor; 0 reads from the beginning.
+  int64 after_position = 2;
+  // Max events to return. The server caps it at its own ceiling.
+  uint32 limit = 3;
+}
+
+message PullResponse {
+  // Oldest first by `position`.
+  repeated MoneyEvent events = 1;
+  // The cursor to pass as the next `after_position`: the max `position` scanned, or
+  // `after_position` unchanged when nothing matched.
+  int64 next_position = 2;
+}
+
+message MoneyEvent {
+  // The outbox row key (a UUID) — the unit of at-least-once delivery.
+  string event_id = 1;
+  int64 position = 2;
+  string scope = 3;
+  // Unix seconds the movement was booked in the ledger.
+  int64 occurred_at = 4;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // A scope account was opened. `to` = the account.
+    KIND_ACCOUNT_OPENED = 1;
+    // A user moved money from `main` into their compartment in this scope.
+    // `user_subject`, `amount`.
+    KIND_COMPARTMENT_IN = 2;
+    // A user moved money from their compartment in this scope back to `main`.
+    KIND_COMPARTMENT_OUT = 3;
+    // `ref_id` = hold id; `user_subject`, `amount`.
+    KIND_HOLD_PLACED = 4;
+    // `ref_id` = hold id; `amount` = this capture; `to` = where it went.
+    KIND_HOLD_CAPTURED = 5;
+    // `ref_id` = hold id; `amount` = what was released.
+    KIND_HOLD_VOIDED = 6;
+    KIND_HOLD_EXPIRED = 7;
+    // `ref_id` = charge id; `user_subject`, `amount`, `to`.
+    KIND_CHARGED = 8;
+    // One event PER LINE of a payout: `ref_id` = payout id, `from`, `user_subject`,
+    // `amount` = the line. The lines of one payout share `ref_id`.
+    KIND_PAID_OUT = 9;
+    // `ref_id` = transfer id; `from`, `to`, `amount`.
+    KIND_TRANSFERRED = 10;
+    // `ref_id` = invoice id; `to`, `amount`.
+    KIND_INVOICE_CREATED = 11;
+    // `ref_id` = invoice id; `user_subject` = payer, `amount`, `to`, `paid_from`.
+    KIND_INVOICE_PAID = 12;
+    KIND_INVOICE_CANCELLED = 13;
+    KIND_INVOICE_EXPIRED = 14;
+  }
+  Kind kind = 5;
+
+  // The id of the aggregate the event is about (hold, charge, payout, transfer,
+  // invoice); empty for compartment moves and account openings.
+  string ref_id = 6;
+  // The user concerned, when there is one.
+  string user_subject = 7;
+  // Decimal USDT.
+  string amount = 8;
+  AccountRef from = 9;
+  AccountRef to = 10;
+  // Echoed from the request that caused the movement (empty when the user caused it).
+  string subject_ref = 11;
+  string idempotency_key = 12;
+  // Where an invoice was paid from: "main", or this scope (the payer's compartment).
+  string paid_from = 13;
+}
