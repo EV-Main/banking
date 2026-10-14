@@ -94,6 +94,26 @@ Set `min_kyc_level = 2147483647`. Money already in the scope can still be moved 
 `main`. To freeze or close the scope itself, do it on concierge. Its `SCOPE_CHANGED`
 reaches banking over the stream, and banking does not author scope state.
 
+## When the scope stream alerts
+
+While banking does not follow concierge, a scope frozen or closed there may still take money
+in here. Read `SELECT * FROM scope_events_cursor;` and compare `position` with the head of
+concierge's stream.
+
+- **`SCOPE STREAM STALLED`** (reconciliation, ERROR). No well-formed page for over 5 minutes.
+  Check that concierge is up and that `BRIDGE_SERVICE_TOKEN` matches the token concierge expects. The
+  same pass can still log `reconciliation: clean`, because the stream sits outside the ledger
+  invariants.
+- **`… rewound or replaced …`** or **`… breaks the stream's contract …`** (ERROR). Concierge's
+  stream no longer matches the cursor, for example after a restore of concierge's database.
+  Nothing is applied and the cursor holds. Find out why the stream moved before you touch the
+  cursor. Then set `position` and `last_event_id` to an event concierge still serves and
+  restart piggybank. Without a restart it resumes on the next continuity check, within 5
+  minutes.
+- **`scope registry not following concierge … UNIMPLEMENTED`** (WARN). Concierge predates
+  ScopeEvents. Scopes keep their last state until a concierge that serves the stream is
+  deployed.
+
 ## Follow-up
 
 An operator RPC on `CompartmentService` (a permissioned `SetScopePolicy`, with the
