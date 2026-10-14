@@ -1,0 +1,27 @@
+# HAND-WRITTEN, like npm-publish.yml: the flake's github module only overwrites the
+# workflows it owns. Those carry no TS tests, so without this a broken sdk/ would first
+# fail at publish time, after the tag is already pushed.
+name: sdk-check
+'on':
+  pull_request:
+    paths: ['sdk/wallet/**', '.github/workflows/sdk-check.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    name: sdk typecheck + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Typecheck and test
+        working-directory: sdk/wallet
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
