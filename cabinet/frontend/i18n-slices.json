@@ -2344,6 +2344,8 @@
       "auth.err.invalidUsername",
       "auth.err.passkeyRegistered",
       "auth.err.usernameTaken",
+      "auth.err.verifyAttemptsExceeded",
+      "auth.err.verifyThrottled",
       "auth.field.newPassword",
       "auth.method.code",
       "auth.method.password",

@@ -7303,6 +7303,14 @@
     "en": "That username is taken.",
     "t": "Ce nom d’utilisateur est déjà pris."
   },
+  "auth.err.verifyAttemptsExceeded": {
+    "en": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
+    "t": "Trop de codes erronés au cours des dernières 24 heures. Réessayez demain."
+  },
+  "auth.err.verifyThrottled": {
+    "en": "Too many codes went to this address. Try again later — the limit is 10 a day.",
+    "t": "Trop de codes envoyés à cette adresse. Réessayez plus tard — 10 au maximum par jour."
+  },
   "auth.err.weakPassword": {
     "en": "Use at least 8 characters.",
     "t": "Utilisez au moins 8 caractères."

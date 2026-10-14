@@ -5,8 +5,8 @@ import { useEffect, useRef } from "react";
 import { config } from "@/config";
 
 // Cloudflare Turnstile, explicitly rendered. The identity plane checks the token on its own
-// side and refuses a credential request without one, so a widget that fails to load leaves
-// the form disabled rather than sending it bare.
+// side and refuses a credential request or a code mailing without one, so a widget that fails
+// to load leaves the form disabled rather than sending it bare.
 
 interface TurnstileApi {
   render(el: HTMLElement, options: Record<string, unknown>): string;

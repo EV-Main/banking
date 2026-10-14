@@ -58,8 +58,8 @@ export const passwordSignIn = (identifier: string, password: string, turnstileTo
 export const passwordSignUp = (email: string, password: string, verify: boolean, turnstileToken: string) =>
   post<{ verification: "sent" | "skipped" | "throttled" | "failed" }>("/password/signup", { email, password, verify, turnstileToken });
 
-/** Mail the signed-in account a code for its own address. */
-export const requestVerification = () => post("/email/verify/request", {}, true);
+/** Mail the signed-in account a code for its own address. It sends mail, so like `/code/request` it carries a challenge token: a session alone must not be able to drive the mailer. */
+export const requestVerification = (turnstileToken: string) => post("/email/verify/request", { turnstileToken }, true);
 
 export const confirmVerification = (code: string) => post("/email/verify/confirm", { code }, true);
 

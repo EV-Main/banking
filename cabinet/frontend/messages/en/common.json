@@ -694,6 +694,8 @@
   "auth.err.signOut": "We couldn't sign you out. Please try again.",
   "auth.err.throttled": "Too many codes went to this address. Try again in a few minutes.",
   "auth.err.usernameTaken": "That username is taken.",
+  "auth.err.verifyAttemptsExceeded": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
+  "auth.err.verifyThrottled": "Too many codes went to this address. Try again later — the limit is 10 a day.",
   "auth.err.weakPassword": "Use at least 8 characters.",
   "auth.field.email": "Email",
   "auth.field.identifier": "Email or username",
