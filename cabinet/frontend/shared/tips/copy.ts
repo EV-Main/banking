@@ -15,7 +15,7 @@ export interface TipCopy {
 export const TIP_COPY: Readonly<Record<TipKey, (t: Translate) => TipCopy>> = {
   "wallet.balance.model": (t) => ({
     title: t("tips.wallet.balance.model.title", "One balance, many networks"),
-    body: t("tips.wallet.balance.model.body", "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal."),
+    body: t("tips.wallet.balance.model.body", "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments."),
   }),
   "wallet.balance.available": (t) => ({
     title: t("tips.wallet.balance.available.title", "Available"),
@@ -32,6 +32,10 @@ export const TIP_COPY: Readonly<Record<TipKey, (t: Translate) => TipCopy>> = {
   "wallet.balance.pending-withdrawal": (t) => ({
     title: t("tips.wallet.balance.pending-withdrawal.title", "Pending withdrawal"),
     body: t("tips.wallet.balance.pending-withdrawal.body", "USDT reserved for withdrawals still in flight (queued or processing). It is no longer part of your available balance."),
+  }),
+  "wallet.balance.in-compartments": (t) => ({
+    title: t("tips.wallet.balance.in-compartments.title", "In compartments"),
+    body: t("tips.wallet.balance.in-compartments.body", "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it."),
   }),
   "wallet.deposit.network": (t) => ({
     title: t("tips.wallet.deposit.network.title", "Network"),

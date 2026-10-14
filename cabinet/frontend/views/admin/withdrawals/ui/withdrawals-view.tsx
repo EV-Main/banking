@@ -4,7 +4,7 @@ import { Inbox, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { useLocale, useT } from "@evinvest/i18n/react";
-import { Button, Card, CardContent, Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle, Input, Skeleton, Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@evinvest/uikit";
+import { Badge, Button, Card, CardContent, Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle, Input, Skeleton, Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@evinvest/uikit";
 
 import { dispatchWithdrawal, failWithdrawal, settleWithdrawal } from "@/entities/admin/api/admin-client";
 import { withdrawalQueueResource } from "@/entities/admin/model/admin-resource";
@@ -64,7 +64,7 @@ export function WithdrawalsView() {
 
   return (
     <AdminScreen className="space-y-8">
-      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.withdrawals", "Withdrawals")} subtitle={t("admin.withdrawals.subtitle", "Dispatch, settle, or fail withdrawals — investors' and the fund's own payouts")} />
+      <AdminHeader eyebrow={t("admin.eyebrow.administer", "Administer")} title={t("nav.withdrawals", "Withdrawals")} subtitle={t("admin.withdrawals.subtitle", "Dispatch, settle, or fail withdrawals — investors' and payouts from banking's treasury")} />
 
       {error && <ResourceError message={error} />}
 
@@ -195,11 +195,12 @@ function WithdrawalRow({
     <>
       <TableRow>
         <TableCell className={EDGE_CELL}>
-          {/* A revenue payout has no investor behind it — the fund is paying its own
-              earnings out. Naming that beats rendering a blank User cell, and it tells
-              the operator whose money the dispatch/settle below is about to move. */}
-          {item.source === "revenue" ? (
-            <p className="font-medium text-positive">{t("admin.fundRevenue", "Fund revenue")}</p>
+          {/* A treasury payout has no investor behind it — banking is paying out of its
+              own treasury (D17), on the owners' approval. Naming that beats rendering a
+              blank User cell, and it tells the operator whose money the dispatch/settle
+              below is about to move. */}
+          {item.source === "treasury" ? (
+            <Badge variant="success">{t("admin.withdrawals.source.treasury", "Banking treasury")}</Badge>
           ) : (
             <p className="font-medium">{item.email || item.user_id.slice(0, 8)}</p>
           )}

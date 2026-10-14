@@ -2,15 +2,17 @@
 
 // Who the claims on custody belong to, through units (#245): every allocation the hub
 // knows — the products and the hidden `fee` / `fund` — with its cash claim, supply, price
-// and holders. Read, never derived: each figure is the allocation's own ledger account,
-// and Σ claims + `held_by_users` = custody is the hub's invariant, not this table's sum.
+// and holders, then banking's own treasury (D17) as a last row: a claim of the same shape
+// but no allocation, so it has no units, price or holders. Read, never derived: each
+// figure is its own ledger account, and Σ claims + `held_by_users` + `held_in_compartments`
+// = custody is the hub's invariant, not this table's sum.
 
 import { Layers } from "lucide-react";
 
 import { useLocale, useT } from "@evinvest/i18n/react";
 import { Button, Card, CardContent, Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle, Skeleton } from "@evinvest/uikit";
 
-import type { AllocationTreasury } from "@/shared/contracts/admin";
+import type { AllocationClaim, AllocationTreasury } from "@/shared/contracts/admin";
 import { cn } from "@/shared/lib/cn";
 import { formatNav, formatUnits, formatUsd } from "@/shared/lib/money";
 import { hasUnixStamp } from "@/shared/lib/unix-stamp";
@@ -20,7 +22,7 @@ import { accessLabel, accessTone } from "@/views/admin/lib/access";
 import { ago } from "@/views/admin/lib/format";
 import { HoldersCell } from "@/views/admin/treasury/ui/holders-cell";
 
-export function TreasuryAllocations({ allocations }: { allocations: AllocationTreasury[] | null }) {
+export function TreasuryAllocations({ allocations, bankingTreasury }: { allocations: AllocationTreasury[] | null; bankingTreasury: AllocationClaim | null }) {
   const t = useT();
   return (
     <Card>
@@ -63,6 +65,7 @@ export function TreasuryAllocations({ allocations }: { allocations: AllocationTr
                   {allocations.map((a) => (
                     <AllocationRow key={a.service} allocation={a} />
                   ))}
+                  {bankingTreasury && <BankingTreasuryRow claim={bankingTreasury} />}
                 </tbody>
               </table>
             </div>
@@ -85,12 +88,7 @@ function AllocationRow({ allocation: a }: { allocation: AllocationTreasury }) {
       <td className="px-5 py-3">
         <span className={cn("inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium", accessTone(a.access))}>{accessLabel(a.access, t)}</span>
       </td>
-      <td className="px-5 py-3 text-right tabular-nums">
-        <p>{formatUsd(a.claim.available, locale)}</p>
-        {/* Posted and reserved beside the spendable figure: an operator judging a payment
-            out of the claim needs the reserved part, not only what is left. */}
-        <p className="text-xs text-ink-soft">{t("admin.treasury.allocations.claimDetail", "posted {posted} · reserved {reserved}", { posted: formatUsd(a.claim.posted, locale), reserved: formatUsd(a.claim.reserved, locale) })}</p>
-      </td>
+      <ClaimCell claim={a.claim} />
       <td className="px-5 py-3 text-right tabular-nums">{formatUnits(a.units_outstanding, locale)}</td>
       <td className="px-5 py-3 text-right tabular-nums">
         <p>{formatNav(a.nav, locale)}</p>
@@ -101,5 +99,35 @@ function AllocationRow({ allocation: a }: { allocation: AllocationTreasury }) {
         <HoldersCell holders={a.holders} />
       </td>
     </tr>
+  );
+}
+
+function BankingTreasuryRow({ claim }: { claim: AllocationClaim }) {
+  const t = useT();
+  return (
+    <tr>
+      <td className="px-5 py-3">
+        <p className="font-medium">{t("admin.treasury.bankingTreasury", "Banking treasury")}</p>
+        <p className="font-mono-tech text-xs text-ink-soft">main:treasury</p>
+      </td>
+      <td className="px-5 py-3 text-xs text-ink-soft">{t("admin.treasury.bankingTreasuryAccess", "banking's own")}</td>
+      <ClaimCell claim={claim} />
+      <td className="px-5 py-3 text-right text-ink-soft">—</td>
+      <td className="px-5 py-3 text-right text-ink-soft">—</td>
+      <td className="px-5 py-3 text-xs text-ink-soft">{t("admin.treasury.bankingTreasuryHolders", "withdrawal fees · paid out by the owners")}</td>
+    </tr>
+  );
+}
+
+function ClaimCell({ claim }: { claim: AllocationClaim }) {
+  const t = useT();
+  const locale = useLocale();
+  return (
+    <td className="px-5 py-3 text-right tabular-nums">
+      <p>{formatUsd(claim.available, locale)}</p>
+      {/* Posted and reserved beside the spendable figure: an operator judging a payment
+          out of the claim needs the reserved part, not only what is left. */}
+      <p className="text-xs text-ink-soft">{t("admin.treasury.allocations.claimDetail", "posted {posted} · reserved {reserved}", { posted: formatUsd(claim.posted, locale), reserved: formatUsd(claim.reserved, locale) })}</p>
+    </td>
   );
 }

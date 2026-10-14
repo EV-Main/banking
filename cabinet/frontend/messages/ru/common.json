@@ -1119,10 +1119,6 @@
     "en": "Notices waived · {n, plural, one {# holder} other {# holders}}",
     "t": "Уведомления отменены · {n, plural, one {# держатель} few {# держателя} many {# держателей} other {# держателя}}"
   },
-  "admin.fundRevenue": {
-    "en": "Fund revenue",
-    "t": "Доход фонда"
-  },
   "admin.holder.allocation": {
     "en": "Allocation",
     "t": "Аллокация"
@@ -2188,8 +2184,8 @@
     "t": "Хеш подтверждённой транзакции (0x…)"
   },
   "admin.withdrawals.subtitle": {
-    "en": "Dispatch, settle, or fail withdrawals — investors' and the fund's own payouts",
-    "t": "Отправка, исполнение и отклонение выводов — как инвесторов, так и собственных выплат фонда"
+    "en": "Dispatch, settle, or fail withdrawals — investors' and payouts from banking's treasury",
+    "t": "Отправка, исполнение и отклонение выводов — как инвесторов, так и выплат из казны banking"
   },
   "approval.amount": {
     "en": "Amount",
@@ -6152,8 +6148,8 @@
     "t": "Инвестировано"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal.",
-    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + в заявках + инвестировано + в ожидании вывода."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
+    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + в заявках + инвестировано + в ожидании вывода + в отсеках."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
@@ -7482,5 +7478,57 @@
   "auth.usePasskey": {
     "en": "Use a passkey",
     "t": "Войти с ключом доступа"
+  },
+  "admin.revenue.bankingTreasuryNote": {
+    "en": "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. The owners approve every payment out of it.",
+    "t": "Комиссии за вывод поступают сюда, а не в аллокацию комиссий: это собственные деньги banking, ни у кого нет на них паёв. Каждую выплату отсюда одобряют владельцы."
+  },
+  "admin.revenue.treasuryPostedHint": {
+    "en": "retained withdrawal fees, reserved included",
+    "t": "удержанные комиссии за вывод, включая зарезервированное"
+  },
+  "admin.treasury.bankingTreasury": {
+    "en": "Banking treasury",
+    "t": "Казна banking"
+  },
+  "admin.treasury.bankingTreasuryAccess": {
+    "en": "banking's own",
+    "t": "собственные banking"
+  },
+  "admin.treasury.bankingTreasuryHolders": {
+    "en": "withdrawal fees · paid out by the owners",
+    "t": "комиссии за вывод · выплаты одобряют владельцы"
+  },
+  "admin.treasury.heldInCompartments": {
+    "en": "Held in compartments",
+    "t": "В отсеках"
+  },
+  "admin.treasury.heldInCompartmentsHint": {
+    "en": "users' scope compartments · still theirs",
+    "t": "отсеки пользователей по scope · по-прежнему их"
+  },
+  "admin.users.balanceInCompartments": {
+    "en": "· in compartments",
+    "t": "· в отсеках"
+  },
+  "admin.users.balanceMain": {
+    "en": "· main",
+    "t": "· основной"
+  },
+  "admin.withdrawals.source.treasury": {
+    "en": "Banking treasury",
+    "t": "Казна banking"
+  },
+  "tips.wallet.balance.in-compartments.body": {
+    "en": "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it.",
+    "t": "USDT, которые вы перевели в отсек сервиса. Они по-прежнему ваши и входят в общий баланс — чтобы вывести их, верните их на основной баланс."
+  },
+  "tips.wallet.balance.in-compartments.title": {
+    "en": "In compartments",
+    "t": "В отсеках"
+  },
+  "wallet.chip.inCompartments": {
+    "en": "IN COMPARTMENTS",
+    "t": "В ОТСЕКАХ"
   }
 }

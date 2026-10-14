@@ -1,10 +1,11 @@
 "use client";
 
-// The treasury in two layers: what the ledger owes and to whom (Layer 1 — people directly,
-// or through the units of an allocation), and where the backing physically sits (Layer 2 —
-// custody per rail). Since #245 nothing here is a remainder: `held_by_users` and each
-// allocation's claim are read off their own accounts, so a figure with no holder cannot
-// hide inside a derived one.
+// The treasury in two layers: what the ledger owes and to whom (Layer 1 — people directly
+// or in their scope compartments, through the units of an allocation, or banking's own
+// treasury), and where the backing physically sits (Layer 2 — custody per rail). Since #245
+// nothing here is a remainder: `held_by_users`, `held_in_compartments`, banking's treasury
+// and each allocation's claim are read off their own accounts, so a figure with no holder
+// cannot hide inside a derived one.
 
 import { RefreshCw } from "lucide-react";
 
@@ -56,9 +57,10 @@ export function TreasuryView() {
 
       <StaggerItem as="section" className="space-y-3">
         <p className="text-xs font-semibold uppercase tracking-widest text-ink-soft">{t("admin.treasury.layer1", "Layer 1 · Ledger — claims by holder (USDT)")}</p>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MoneyCard label={t("admin.treasury.claimsTotal", "Claims · total (USDT)")} value={treasury?.total_custody} hint={t("admin.treasury.claimsTotalHint", "= on-chain custody · backed")} tip="admin.treasury.layer1.claims-total" {...cardState} />
           <MoneyCard label={t("admin.treasury.heldByUsers", "Held by users")} value={treasury?.held_by_users} hint={t("admin.treasury.heldByUsersHint", "user claims · held directly")} tip="admin.treasury.layer1.held-by-users" {...cardState} />
+          <MoneyCard label={t("admin.treasury.heldInCompartments", "Held in compartments")} value={treasury?.held_in_compartments} hint={t("admin.treasury.heldInCompartmentsHint", "users' scope compartments · still theirs")} {...cardState} />
           <MoneyCard label={t("admin.treasury.reservedWithdrawals", "Reserved · withdrawals")} value={treasury?.reserved_for_withdrawals} hint={t("admin.treasury.reservedWithdrawalsHint", "queued + in-flight (clearing)")} tip="admin.treasury.layer1.reserved-withdrawals" {...cardState} />
         </div>
       </StaggerItem>
@@ -68,7 +70,7 @@ export function TreasuryView() {
         {/* A section-type tip — a descriptor block, not an inline ⓘ — so it sits under the
             heading rather than in it, the way the settings sections place theirs. */}
         <TipAnchor anchor="admin.treasury.layer1.allocations" />
-        <TreasuryAllocations allocations={treasury?.allocations ?? null} />
+        <TreasuryAllocations allocations={treasury?.allocations ?? null} bankingTreasury={treasury?.banking_treasury ?? null} />
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">

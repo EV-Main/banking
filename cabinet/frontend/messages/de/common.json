@@ -1119,10 +1119,6 @@
     "en": "Notices waived · {n, plural, one {# holder} other {# holders}}",
     "t": "Benachrichtigungen erlassen · {n, plural, one {# Anleger} other {# Anleger}}"
   },
-  "admin.fundRevenue": {
-    "en": "Fund revenue",
-    "t": "Fondseinnahmen"
-  },
   "admin.holder.allocation": {
     "en": "Allocation",
     "t": "Allokation"
@@ -2188,8 +2184,8 @@
     "t": "Hash der geminten Transaktion (0x…)"
   },
   "admin.withdrawals.subtitle": {
-    "en": "Dispatch, settle, or fail withdrawals — investors' and the fund's own payouts",
-    "t": "Auszahlungen versenden, abrechnen oder verwerfen — die der Investoren und die eigenen Ausschüttungen des Fonds"
+    "en": "Dispatch, settle, or fail withdrawals — investors' and payouts from banking's treasury",
+    "t": "Auszahlungen versenden, abrechnen oder verwerfen — die der Investoren und Zahlungen aus der Treasury von banking"
   },
   "approval.amount": {
     "en": "Amount",
@@ -6152,8 +6148,8 @@
     "t": "Investiert"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal.",
-    "t": "Sie haben ein einziges USDT-Guthaben — Netzwerke sind nur der Weg, auf dem Sie ein- und auszahlen. Diese Karte teilt es auf: Gesamt = Verfügbar + In Orders + Investiert + Offene Auszahlung."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
+    "t": "Sie haben ein einziges USDT-Guthaben — Netzwerke sind nur der Weg, auf dem Sie ein- und auszahlen. Diese Karte teilt es auf: Gesamt = Verfügbar + In Orders + Investiert + Offene Auszahlung + In Fächern."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
@@ -7482,5 +7478,57 @@
   "auth.usePasskey": {
     "en": "Use a passkey",
     "t": "Mit Passkey anmelden"
+  },
+  "admin.revenue.bankingTreasuryNote": {
+    "en": "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. The owners approve every payment out of it.",
+    "t": "Auszahlungsgebühren landen hier, nicht in der Gebühren-Allokation: Eigenmittel von banking, von niemandem über Anteile gehalten. Jede Zahlung daraus genehmigen die Eigentümer."
+  },
+  "admin.revenue.treasuryPostedHint": {
+    "en": "retained withdrawal fees, reserved included",
+    "t": "einbehaltene Auszahlungsgebühren, inklusive Reservierungen"
+  },
+  "admin.treasury.bankingTreasury": {
+    "en": "Banking treasury",
+    "t": "Treasury von banking"
+  },
+  "admin.treasury.bankingTreasuryAccess": {
+    "en": "banking's own",
+    "t": "Eigenmittel von banking"
+  },
+  "admin.treasury.bankingTreasuryHolders": {
+    "en": "withdrawal fees · paid out by the owners",
+    "t": "Auszahlungsgebühren · Zahlungen genehmigen die Eigentümer"
+  },
+  "admin.treasury.heldInCompartments": {
+    "en": "Held in compartments",
+    "t": "In Fächern gehalten"
+  },
+  "admin.treasury.heldInCompartmentsHint": {
+    "en": "users' scope compartments · still theirs",
+    "t": "Scope-Fächer der Nutzer · weiterhin ihres"
+  },
+  "admin.users.balanceInCompartments": {
+    "en": "· in compartments",
+    "t": "· in Fächern"
+  },
+  "admin.users.balanceMain": {
+    "en": "· main",
+    "t": "· Hauptkonto"
+  },
+  "admin.withdrawals.source.treasury": {
+    "en": "Banking treasury",
+    "t": "Treasury von banking"
+  },
+  "tips.wallet.balance.in-compartments.body": {
+    "en": "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it.",
+    "t": "USDT, die Sie in das Fach eines Dienstes verschoben haben. Weiterhin Ihres und Teil Ihres Gesamtguthabens — verschieben Sie es zurück auf Ihr Hauptguthaben, um es auszuzahlen."
+  },
+  "tips.wallet.balance.in-compartments.title": {
+    "en": "In compartments",
+    "t": "In Fächern"
+  },
+  "wallet.chip.inCompartments": {
+    "en": "IN COMPARTMENTS",
+    "t": "IN FÄCHERN"
   }
 }

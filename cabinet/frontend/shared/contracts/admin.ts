@@ -126,11 +126,15 @@ export interface AdminUserProfile {
   hold_expires_at: string;
 }
 
+/** A user's whole cash: `amount = main + in_compartments` — the `main` claim plus every
+ *  scope compartment, which is still the user's money. */
 export interface UserBalance {
   amount: string;
   pending: string;
   authoritative: boolean;
   as_of: string;
+  main: string;
+  in_compartments: string;
 }
 
 // ── outbox ────────────────────────────────────────────────────────────────────
@@ -188,12 +192,17 @@ export interface AllocationTreasury {
   nav: string;
   nav_posted_at: string;
   holders: UnitHolding[];
+  /** banking's own treasury (D17), where the retained withdrawal fees land. Set on the
+   *  Revenue answer only, beside `fee`; a treasury line never carries it — the treasury
+   *  answer has it once, as `Treasury.banking_treasury`. */
+  banking_treasury?: AllocationClaim;
 }
 
 /** The two-layer treasury picture: per-rail custody, and who the claims on it belong to —
- *  people directly (`held_by_users`) or through the units of an allocation
- *  (`allocations`, the hidden `fee` and `fund` included). No remainder is derived: each
- *  figure is read off its own accounts, and Σ = `total_custody` is checked hub-side. */
+ *  people directly (`held_by_users`, and `held_in_compartments` for their scope
+ *  compartments), through the units of an allocation (`allocations`, the hidden `fee` and
+ *  `fund` included), or banking itself (`banking_treasury`, D17). No remainder is derived:
+ *  each figure is read off its own accounts, and Σ = `total_custody` is checked hub-side. */
 export interface Treasury {
   rails: RailLiquidity[];
   bank: string;
@@ -201,6 +210,9 @@ export interface Treasury {
   reserved_for_withdrawals: string;
   held_by_users: string;
   allocations: AllocationTreasury[];
+  /** Zeros, not absent, from a hub older than D17 — the BFF fills them. */
+  banking_treasury: AllocationClaim;
+  held_in_compartments: string;
 }
 
 /** The seed-capital body, exactly as the BFF reads it (`POST /api/admin/treasury/
@@ -614,9 +626,10 @@ export interface Redemption {
 // ── withdrawals (operator queue) ─────────────────────────────────────────────────
 export interface WithdrawalQueueItem {
   withdrawal_id: string;
-  /** Which claim funds it. A `revenue` row is the fund paying its own earnings out, so
-   *  it carries no `user_id`/`email` — label it rather than rendering a blank investor. */
-  source: "user" | "revenue";
+  /** Which account funds it. A `treasury` row is an approved payment out of banking's own
+   *  treasury (D17), so it carries empty `user_id`/`email` — label it rather than rendering
+   *  a blank investor. */
+  source: "user" | "treasury";
   user_id: string;
   email: string;
   network: string;
@@ -634,7 +647,8 @@ export interface WithdrawalQueue {
 // ── revenue (the reserved `fee` allocation) ─────────────────────────────────────
 //
 // `GET /api/admin/revenue` answers an `AllocationTreasury` — the `fee` allocation in the
-// treasury's own shape (#245): its cash claim, supply, price and the people who hold it.
+// treasury's own shape (#245): its cash claim, supply, price and the people who hold it,
+// plus `banking_treasury` beside it — the withdrawal fees go there since D17, not to `fee`.
 // Nothing pays it out from that surface any more: a holder redeems, or the owners approve
 // a payment out of `service:fee` on the Payments screen.
 
