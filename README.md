@@ -29,6 +29,7 @@ TODO
 | [`contracts/`](contracts) | gRPC wire contracts (`proto/` → tonic stubs) | Rust · tonic-build · proto3 | — |
 | [`domain/`](domain) | shared domain types (pure, wasm-safe) over `ev::architecture` | Rust | — |
 | [`cabinet/`](cabinet) | host shell + BFF + microfrontend runtime | Next.js 16 · TS · Tailwind | [README](cabinet/README.md) |
+| [`sdk/wallet/`](sdk/wallet) | `@evinvest/wallet` — host wrappers for the wallet MFEs, published to npm by the `@evinvest/wallet-v*` tag | TS · React · tsup | [README](sdk/wallet/README.md) |
 
 `domain` is the shared source of truth for types — the hub and every service repo
 depend on it, never on each other. `contracts` (vendoring `proto/`) is the single

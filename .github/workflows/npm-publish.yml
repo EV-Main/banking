@@ -1,0 +1,57 @@
+# HAND-WRITTEN — like checks.yml and drift.yml, and not generator output: v_flakes only
+# `cp -f`s its own filenames, so this file survives `nix develop`.
+#
+# Publishes `sdk/wallet` (@evinvest/wallet) through npm trusted publishing (OIDC): no
+# token, no 2FA, for a job matching the package's trusted-publisher entry on npmjs.com
+# (this repo, this file). Fired by the `@evinvest/wallet-v<version>` tag; dispatch it by
+# hand with that tag to retry. The tag never matches release-container.yml's
+# `v[0-9]+.*`, so publishing the package does not ship the hub.
+name: npm-publish
+'on':
+  push:
+    tags: ['@evinvest/wallet-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag, e.g. @evinvest/wallet-v0.1.1
+        required: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    name: ${{ inputs.tag || github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            @evinvest/wallet-v*) ;;
+            *) echo "::error::'$TAG' is not an @evinvest/wallet-v<version> tag" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG##*-v}" >> "$GITHUB_OUTPUT"
+      - name: Checkout the tag
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      # OIDC publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@latest
+      - name: Check, test and publish
+        working-directory: sdk/wallet
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          test "$(node -p 'require("./package.json").version')" = "$VERSION"
+          npm ci
+          npm run typecheck
+          npm test
+          npm publish --access public

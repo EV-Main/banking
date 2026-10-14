@@ -243,11 +243,18 @@ roots, and global tokens/uikit must cascade in.
 - **Page-level** = the same element mounted at a route
   (`cabinet/frontend/app/(mfe)/[service]/[[...slug]]`); the cabinet keeps its chrome.
 - **React producer** (other repos): wrap a component as a custom element with
-  `@r2wc/react-to-web-component` directly — the hub ships no producer SDK (its
-  only TS is `cabinet`). _Optional_ optimization for React-to-React widgets: Module
+  `@r2wc/react-to-web-component` directly — the hub ships no producer SDK. _Optional_ optimization for React-to-React widgets: Module
   Federation 2.0 **runtime** (`@module-federation/runtime` + `bridge-react`) to
   share one React instance — never `@module-federation/nextjs-mf`
   (App-Router-unsupported, sunsetting).
+- **Host SDK for banking's own elements** — [`sdk/wallet`](../sdk/wallet)
+  (`@evinvest/wallet`): the wallet and pay-invoice elements as React wrappers for
+  other hosts (invest cabinet, SA panel, admin), plus `openWalletAction`, the popup
+  that carries a money action to evinvest.ltd and posts the result back. It lives
+  here, not in `EV-Main/lib`, because it is banking's contract; lib holds no
+  service logic. Not an npm workspace (own lockfile, `@evinvest/mfe` from npm);
+  published by the `@evinvest/wallet-v<version>` tag via
+  `.github/workflows/npm-publish.yml`, which never triggers a container release.
 - **Rust/WASM producer** (other repos): Dioxus 0.7 mounts via
   `dioxus-web` `Config::rootelement(Element)` into the custom element (don't use
   `dioxus-web-component` yet — it pins Dioxus 0.6); Leptos mounts via
