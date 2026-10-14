@@ -54,9 +54,11 @@ fn repo_err(err: sqlx::Error) -> DomainError {
 	DomainError::Repository(err.to_string())
 }
 
-/// A scope without a policy row reads as the column defaults — what the migration gives a
-/// row that states nothing — so a scope announced before its policy is set is never
-/// mistaken for one without limits it should have had.
+/// A scope without a policy row reads as the column defaults, exactly like a row that states
+/// nothing: `min_kyc_level` 0, no `max_*` limit on moves in, the automatic ceilings at their
+/// defaults — open to every user. Only the seeded scopes rely on that, and they have rows; a
+/// scope the stream registers gets a row closed to moves in
+/// (`scope_events::CLOSED_UNTIL_SET_KYC`) until an operator sets its policy.
 macro_rules! select_scopes {
 	() => {
 		"SELECT s.id, s.state, s.display_name, \
@@ -79,7 +81,9 @@ const SELECT_ALL_SCOPES: &str = concat!(select_scopes!(), " ORDER BY s.id");
 const SELECT_ONE_SCOPE: &str = concat!(select_scopes!(), " WHERE s.id = $1");
 /// The scope a move in decides against, held until the move commits: the scope stream's
 /// consumer writes a state under `FOR UPDATE`, so a freeze cannot commit between this read
-/// and the move it admits, and a move that starts after the freeze reads it.
+/// and the move it records, and a move that starts after the freeze reads it. A move
+/// recorded before the freeze still posts — the freeze stops new moves in, not those
+/// already admitted.
 const SELECT_ONE_SCOPE_FOR_SHARE: &str = concat!(select_scopes!(), " WHERE s.id = $1 FOR SHARE OF s");
 
 type ScopeRow = (String, String, String, i32, Option<String>, Option<String>, Option<String>, String, String, String, i64);

@@ -962,7 +962,12 @@ not know the kind, in a rolling deploy or after a rollback) is re-enqueued by th
 id already on the ledger if it was, and only stamps the row. A row the reaper cannot replay
 is logged and sent to the back of the queue; the others are not held up by it.
 
-The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will own it) and
+The registry is `scopes` (seeded `invest`, `sa`; since 0053 kept by concierge's scope stream
+— [`scope_events`](src/infrastructure/scope_events.rs), one consumer under an advisory lock,
+which stops and alerts on a rewound stream or a malformed page; reconciliation alerts when
+no well-formed page has arrived for 5 minutes, and only warns while concierge answers
+UNIMPLEMENTED; a scope it registers is closed to moves in until an operator sets its
+policy — [`docs/RUNBOOK-scope-policy.md`](../../docs/RUNBOOK-scope-policy.md)) and
 `scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
 `max_moved_in_24h`, `max_balance` on moves IN only; the automatic ceilings
 `auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
