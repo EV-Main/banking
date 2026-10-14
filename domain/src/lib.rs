@@ -12,7 +12,8 @@
 //! (the management + performance fee policy), `issuance` (an operator minting units in
 //! kind, to an investor or the company), `book` (the secondary market in a product's
 //! units — orders, the matching engine, the escrow facts), `scopes` (a user's wallet split
-//! by scope, and the scope's own accounts), and
+//! by scope, and the scope's own accounts), `scope_ledger` (what a scope's own service may
+//! do with money there — its grants, its accounts, its transfers), and
 //! the `users` / `subscriptions` / `redemptions` / `withdrawals` aggregates.
 
 pub mod error;
@@ -28,6 +29,7 @@ pub mod issuance;
 pub mod money;
 pub mod payments;
 pub mod redemptions;
+pub mod scope_ledger;
 pub mod scopes;
 pub mod subscriptions;
 pub mod users;
