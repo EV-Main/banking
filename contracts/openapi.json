@@ -2959,7 +2959,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "GetScopePolicy",
-        "description": "One scope's policy, read-only. The scope's admins set it, never the user.",
+        "description": "One scope's policy, read-only. The platform owners set it (an approval of kind\n `bank:compartment_policy`), never the user.",
         "operationId": "banking.v1.CompartmentService.GetScopePolicy",
         "parameters": [
           {
@@ -3005,6 +3005,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.ScopePolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.CompartmentService/GrantMandate": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "GrantMandate",
+        "description": "Let a scope's service draw on the caller's compartment in that scope — hold it\n (a subscription, a buy order) or charge it — within caps the caller sets. This is\n the only consent a service's debit stands on; without it the service can only\n send an invoice. One live mandate per (scope, client): granting again replaces it.\n Naturally confirmed on the caller's first move into the scope, on one screen.",
+        "operationId": "banking.v1.CompartmentService.GrantMandate",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GrantMandateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.Mandate"
                 }
               }
             }
@@ -3071,13 +3130,72 @@
         }
       }
     },
+    "/banking.v1.CompartmentService/ListMandates": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "ListMandates",
+        "description": "The caller's live mandates, newest first.",
+        "operationId": "banking.v1.CompartmentService.ListMandates",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.ListMandatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.MandateList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.CompartmentService/MoveFunds": {
       "post": {
         "tags": [
           "banking.v1.CompartmentService"
         ],
         "summary": "MoveFunds",
-        "description": "Move money between `main` and one scope compartment — exactly one side is `main`.\n Moving IN is checked against the scope's policy (KYC level, limits):\n FAILED_PRECONDITION with the failed rule (`kyc_level`, `max_per_move`,\n `max_moved_in_24h`, `max_balance`) when it does not pass. Moving OUT is never\n limited by policy, only by what is available in the compartment.",
+        "description": "Move money between `main` and one scope compartment — exactly one side is `main`.\n Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the\n failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when\n it does not pass. Moving OUT is never limited by policy, only by what is available\n in the compartment.",
         "operationId": "banking.v1.CompartmentService.MoveFunds",
         "parameters": [
           {
@@ -3123,6 +3241,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.CompartmentMove"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.CompartmentService/RevokeMandate": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "RevokeMandate",
+        "description": "End a mandate at once. Every hold the client still has on the caller's compartment\n under it is voided — the money is back with the caller, and the service learns it\n from the money events.",
+        "operationId": "banking.v1.CompartmentService.RevokeMandate",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.RevokeMandateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.Mandate"
                 }
               }
             }
@@ -4845,7 +5022,7 @@
           "banking.v1.InvoicePaymentService"
         ],
         "summary": "PayInvoice",
-        "description": "Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, or when the\n chosen source cannot cover it. A repeat with the same `idempotency_key` returns\n the paid invoice; paying it again under a new key is FAILED_PRECONDITION.",
+        "description": "Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, when the\n chosen source cannot cover it, or when the payer is below the receiving scope's\n `min_kyc_level`. A repeat with the same `idempotency_key` returns\n the paid invoice; paying it again under a new key is FAILED_PRECONDITION.",
         "operationId": "banking.v1.InvoicePaymentService.PayInvoice",
         "parameters": [
           {
@@ -10520,6 +10697,53 @@
         "title": "GrantAllocationAccessRequest",
         "additionalProperties": false
       },
+      "banking.v1.GrantMandateRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "scope"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "client_id",
+            "description": "the scope's service, as banking's grants name it"
+          },
+          "cap_per_op": {
+            "type": "string",
+            "title": "cap_per_op",
+            "description": "decimal USDT, \u003e 0"
+          },
+          "cap_24h": {
+            "type": "string",
+            "title": "cap_24h",
+            "description": "decimal USDT, rolling 24 h, \u003e= cap_per_op"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.MandateOperation"
+            },
+            "title": "operations",
+            "description": "at least one"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "expires_at",
+            "format": "int64",
+            "description": "unix seconds; 0 = until revoked"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "idempotency_key"
+          }
+        },
+        "title": "GrantMandateRequest",
+        "additionalProperties": false
+      },
       "banking.v1.HolderGrantTerms": {
         "type": "object",
         "properties": {
@@ -10785,6 +11009,11 @@
         "additionalProperties": false,
         "description": "Keyed by the ALLOCATION (the product's registry key — today equal to the service id)\n rather than the service, so a hidden allocation such as the fee fund can serve its\n holders' history later without a second route. `from`/`to` are unix seconds,\n inclusive; 0 means \"from the first mark\" / \"up to now\"."
       },
+      "banking.v1.ListMandatesRequest": {
+        "type": "object",
+        "title": "ListMandatesRequest",
+        "additionalProperties": false
+      },
       "banking.v1.ListOpenOrdersRequest": {
         "type": "object",
         "properties": {
@@ -10978,6 +11207,99 @@
         "type": "object",
         "title": "LogoutResponse",
         "additionalProperties": false
+      },
+      "banking.v1.Mandate": {
+        "type": "object",
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "mandate_id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "scope"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "client_id"
+          },
+          "client_display_name": {
+            "type": "string",
+            "title": "client_display_name"
+          },
+          "cap_per_op": {
+            "type": "string",
+            "title": "cap_per_op"
+          },
+          "cap_24h": {
+            "type": "string",
+            "title": "cap_24h"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.MandateOperation"
+            },
+            "title": "operations"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "expires_at",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "created_at",
+            "format": "int64"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "revoked_at",
+            "format": "int64",
+            "description": "0 while live"
+          },
+          "used_24h": {
+            "type": "string",
+            "title": "used_24h",
+            "description": "drawn in the rolling 24 h, decimal USDT"
+          }
+        },
+        "title": "Mandate",
+        "additionalProperties": false
+      },
+      "banking.v1.MandateList": {
+        "type": "object",
+        "properties": {
+          "mandates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.Mandate"
+            },
+            "title": "mandates"
+          }
+        },
+        "title": "MandateList",
+        "additionalProperties": false
+      },
+      "banking.v1.MandateOperation": {
+        "type": "string",
+        "title": "MandateOperation",
+        "enum": [
+          "MANDATE_OPERATION_UNSPECIFIED",
+          "MANDATE_OPERATION_RESERVE",
+          "MANDATE_OPERATION_CHARGE",
+          "MANDATE_OPERATION_BOOK_FILL"
+        ],
+        "description": "What a mandate lets the service do with the caller's compartment."
       },
       "banking.v1.MigrateDepositAddressToCustodianRequest": {
         "type": "object",
@@ -12433,6 +12755,17 @@
         "title": "RevokeAllocationAccessResponse",
         "additionalProperties": false
       },
+      "banking.v1.RevokeMandateRequest": {
+        "type": "object",
+        "properties": {
+          "mandate_id": {
+            "type": "string",
+            "title": "mandate_id"
+          }
+        },
+        "title": "RevokeMandateRequest",
+        "additionalProperties": false
+      },
       "banking.v1.RevokeSessionRequest": {
         "type": "object",
         "properties": {
@@ -12565,7 +12898,7 @@
           "min_kyc_level": {
             "type": "integer",
             "title": "min_kyc_level",
-            "description": "the concierge KYC level a user needs to move money in"
+            "description": "the concierge KYC level a user needs to move money in or pay the scope's invoices"
           },
           "max_per_move": {
             "type": "string",
@@ -12580,7 +12913,7 @@
           "max_balance": {
             "type": "string",
             "title": "max_balance",
-            "description": "ceiling on the compartment's total"
+            "description": "Ceiling on the compartment's total, applied ONLY to the user's own MoveFunds in —\n payouts, captures and refunds into the compartment are never refused for it."
           },
           "caller_eligible": {
             "type": "boolean",
@@ -12595,11 +12928,26 @@
             "title": "updated_at",
             "format": "int64",
             "description": "unix seconds"
+          },
+          "auto_payout_per_op": {
+            "type": "string",
+            "title": "auto_payout_per_op",
+            "description": "Automatic ceilings, per (service client, scope): past them a payout or transfer\n needs an approval. Defaults 1000 / 5000 / 5000."
+          },
+          "auto_payout_24h": {
+            "type": "string",
+            "title": "auto_payout_24h",
+            "description": "rolling 24 h"
+          },
+          "auto_transfer_24h": {
+            "type": "string",
+            "title": "auto_transfer_24h",
+            "description": "rolling 24 h"
           }
         },
         "title": "ScopePolicy",
         "additionalProperties": false,
-        "description": "What it takes to move money into a scope. Limits are decimal USDT strings; an empty\n limit means none."
+        "description": "What it takes to move money into a scope, and how far its services may move money\n without an approval. Limits are decimal USDT strings; an empty limit means none."
       },
       "banking.v1.SeedCapitalRequest": {
         "type": "object",
@@ -16478,7 +16826,7 @@
     },
     {
       "name": "banking.v1.InvoicePaymentService",
-      "description": "InvoicePaymentService — the payer's side of an invoice a scope issued\n (`scope.v1.InvoiceService`). The user opens it from the scope's link in the wallet\n page or the `\u003cev-pay-invoice\u003e` element and pays it straight into the scope's\n account from `main` or from their compartment in that scope — no move between\n compartments first. Every RPC acts on the caller's own `sub`."
+      "description": "InvoicePaymentService — the payer's side of an invoice a scope issued\n (`scope.v1.InvoiceService`). The user opens it from the scope's link in the wallet\n page or the `\u003cev-pay-invoice\u003e` element and pays it straight into the scope's\n account from `main` or from their compartment in that scope — no move between\n compartments first. Every RPC acts on the caller's own `sub`.\n\n Paying is first-party: `PayInvoice` is accepted only from\n `Origin: https://evinvest.ltd` (see `CompartmentService`), and an invoice's\n `pay_url` always points there. Whichever source pays, the RECEIVING scope's\n `min_kyc_level` applies to the payer (FAILED_PRECONDITION `kyc_level`); a frozen\n payer is `user_frozen`."
     },
     {
       "name": "banking.v1.OperationsService",
@@ -16502,7 +16850,7 @@
     },
     {
       "name": "banking.v1.CompartmentService",
-      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it. Every RPC acts on the caller's own `sub`."
+      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly. A user is identified by their `auth_subject`.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it. Every RPC acts on the caller's own `sub`.\n\n FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,\n `MoveFunds`, `GrantMandate`, `RevokeMandate`, and\n `InvoicePaymentService.PayInvoice` — is accepted only from\n `Origin: https://evinvest.ltd`. A scope's host may read balances and history\n cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result\n by `postMessage` with the origin checked. The CSRF token is never in a body a\n cross-origin read can see.\n\n FROZEN. A frozen user's new debits — MoveFunds out of any compartment, PayInvoice —\n are FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in\n (`scope_frozen`). Credits and reads go on."
     },
     {
       "name": "concierge.v1.UserDirectory",

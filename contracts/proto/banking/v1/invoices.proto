@@ -7,13 +7,20 @@ package banking.v1;
 // page or the `<ev-pay-invoice>` element and pays it straight into the scope's
 // account from `main` or from their compartment in that scope — no move between
 // compartments first. Every RPC acts on the caller's own `sub`.
+//
+// Paying is first-party: `PayInvoice` is accepted only from
+// `Origin: https://evinvest.ltd` (see `CompartmentService`), and an invoice's
+// `pay_url` always points there. Whichever source pays, the RECEIVING scope's
+// `min_kyc_level` applies to the payer (FAILED_PRECONDITION `kyc_level`); a frozen
+// payer is `user_frozen`.
 service InvoicePaymentService {
   // The invoice as the payer sees it. Unknown ids and invoices restricted to another
   // payer are the SAME NOT_FOUND.
   rpc GetPayableInvoice(GetPayableInvoiceRequest) returns (PayableInvoice);
 
-  // Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, or when the
-  // chosen source cannot cover it. A repeat with the same `idempotency_key` returns
+  // Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, when the
+  // chosen source cannot cover it, or when the payer is below the receiving scope's
+  // `min_kyc_level`. A repeat with the same `idempotency_key` returns
   // the paid invoice; paying it again under a new key is FAILED_PRECONDITION.
   rpc PayInvoice(PayInvoiceRequest) returns (PayableInvoice);
 }

@@ -8,14 +8,17 @@ import "scope/v1/ledger.proto";
 // projection of their scope's money (the `banking_projection` library). Modelled on
 // concierge's `UserEvents`: the consumer PULLS, banking never calls a service.
 //
-// `Pull` serves the events of ONE scope with `position > after_position`, oldest
-// first, capped by `limit`; the consumer stores `next_position` as its cursor per
-// scope. Positions are global to the money plane, so a scope's stream has gaps — a
-// consumer must not expect `position` to step by one. Read-only and never compacted:
-// a consumer dedupes by `event_id`. The caller's service token must hold a grant for
-// the requested scope, otherwise PERMISSION_DENIED — a scope sees its own holds,
-// charges, payouts, transfers, invoices, accounts and its users' compartment moves,
-// and nothing of any other scope.
+// `Pull` serves events with `position > after_position`, oldest first, capped by
+// `limit`, of the requested scope — or, with `scope` empty, of every scope the caller
+// holds a grant in. Positions are global to the money plane, so a filtered stream has
+// gaps: a consumer must not expect `position` to step by one. Read-only and never
+// compacted: a consumer dedupes by `event_id` and orders one aggregate's events by
+// `aggregate_version`. A scope outside the caller's grants is PERMISSION_DENIED — a
+// scope sees its own holds, charges, payouts, transfers, invoices, accounts, pending
+// operations, its users' compartment moves and mandates for it, and nothing of any
+// other scope. A movement between two scopes (the fee route, an approved scope
+// transfer) appears in BOTH scopes' streams, one event each, `counterparty_scope`
+// naming the other side.
 //
 // Kinds will be added. A consumer that meets an unknown `kind` must park that event
 // and keep its cursor moving, not stop: banking may ship a kind before every consumer
@@ -25,6 +28,7 @@ service MoneyEvents {
 }
 
 message PullRequest {
+  // Optional: empty = every scope the caller holds a grant in.
   string scope = 1;
   // Exclusive lower bound: the consumer's stored cursor; 0 reads from the beginning.
   int64 after_position = 2;
@@ -35,9 +39,17 @@ message PullRequest {
 message PullResponse {
   // Oldest first by `position`.
   repeated MoneyEvent events = 1;
-  // The cursor to pass as the next `after_position`: the max `position` scanned, or
-  // `after_position` unchanged when nothing matched.
+  // The highest position the server scanned for this request — at least the last
+  // returned event's, possibly beyond it when the rest was filtered out — or
+  // `after_position` unchanged when nothing was scanned. Pass it as the next
+  // `after_position`.
   int64 next_position = 2;
+}
+
+// An account's balance right after the event, decimal USDT.
+message AccountBalance {
+  AccountRef account = 1;
+  string balance = 2;
 }
 
 message MoneyEvent {
@@ -53,45 +65,70 @@ message MoneyEvent {
     // A scope account was opened. `to` = the account.
     KIND_ACCOUNT_OPENED = 1;
     // A user moved money from `main` into their compartment in this scope.
-    // `user_subject`, `amount`.
+    // `auth_subject`, `amount`.
     KIND_COMPARTMENT_IN = 2;
     // A user moved money from their compartment in this scope back to `main`.
     KIND_COMPARTMENT_OUT = 3;
-    // `ref_id` = hold id; `user_subject`, `amount`.
+    // `ref_id` = hold id; `auth_subject`, `amount`, `hold_remaining`.
     KIND_HOLD_PLACED = 4;
     // `ref_id` = hold id; `amount` = this capture; `to` = where it went.
     KIND_HOLD_CAPTURED = 5;
     // `ref_id` = hold id; `amount` = what was released.
     KIND_HOLD_VOIDED = 6;
     KIND_HOLD_EXPIRED = 7;
-    // `ref_id` = charge id; `user_subject`, `amount`, `to`.
+    // `ref_id` = charge id; `auth_subject`, `amount`, `to`.
     KIND_CHARGED = 8;
-    // One event PER LINE of a payout: `ref_id` = payout id, `from`, `user_subject`,
+    // One event PER LINE of a payout: `ref_id` = payout id, `from`, `auth_subject`,
     // `amount` = the line. The lines of one payout share `ref_id`.
     KIND_PAID_OUT = 9;
-    // `ref_id` = transfer id; `from`, `to`, `amount`.
+    // `ref_id` = transfer id; `from`, `to`, `amount`, `counterparty_scope` when it
+    // crossed scopes.
     KIND_TRANSFERRED = 10;
     // `ref_id` = invoice id; `to`, `amount`.
     KIND_INVOICE_CREATED = 11;
-    // `ref_id` = invoice id; `user_subject` = payer, `amount`, `to`, `paid_from`.
+    // `ref_id` = invoice id; `auth_subject` = payer, `amount`, `to`, `paid_from`.
     KIND_INVOICE_PAID = 12;
     KIND_INVOICE_CANCELLED = 13;
     KIND_INVOICE_EXPIRED = 14;
+    // `ref_id` = mandate id; `auth_subject`. A grant replacing a live mandate is one
+    // GRANTED for the new id.
+    KIND_MANDATE_GRANTED = 15;
+    // A revoke voids the client's active holds on the user: HOLD_VOIDED follows for each.
+    KIND_MANDATE_REVOKED = 16;
+    // `ref_id` = operation id; a `Request*` was stored and its approval opened.
+    KIND_OPERATION_REQUESTED = 17;
+    // The approval said no or lapsed. An executed operation shows as PAID_OUT /
+    // TRANSFERRED with the same `subject_ref`; a failed one as this kind with
+    // `failure_reason`.
+    KIND_OPERATION_REJECTED = 18;
+    KIND_OPERATION_FAILED = 19;
   }
   Kind kind = 5;
 
   // The id of the aggregate the event is about (hold, charge, payout, transfer,
-  // invoice); empty for compartment moves and account openings.
+  // invoice, mandate, operation); empty for compartment moves and account openings.
   string ref_id = 6;
+  // Per-aggregate strictly increasing version: apply an event only if it exceeds the
+  // last one stored for `ref_id`.
+  uint64 aggregate_version = 7;
   // The user concerned, when there is one.
-  string user_subject = 7;
+  string auth_subject = 8;
   // Decimal USDT.
-  string amount = 8;
-  AccountRef from = 9;
-  AccountRef to = 10;
+  string amount = 9;
+  AccountRef from = 10;
+  AccountRef to = 11;
   // Echoed from the request that caused the movement (empty when the user caused it).
-  string subject_ref = 11;
-  string idempotency_key = 12;
+  string subject_ref = 12;
+  // The service client whose call caused the event; empty when the user or banking
+  // itself did.
+  string initiator_client = 13;
+  // Balances of this scope's accounts the event moved, right after it.
+  repeated AccountBalance balance_after = 14;
+  // Hold events: what the hold still holds after the event.
+  string hold_remaining = 15;
   // Where an invoice was paid from: "main", or this scope (the payer's compartment).
-  string paid_from = 13;
+  string paid_from = 16;
+  // The other scope of a cross-scope movement; empty otherwise.
+  string counterparty_scope = 17;
+  string failure_reason = 18;
 }

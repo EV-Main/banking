@@ -1998,6 +1998,50 @@ export type BankingV1GrantAllocationAccessRequest = {
 };
 
 /**
+ * GrantMandateRequest
+ */
+export type BankingV1GrantMandateRequest = {
+    /**
+     * scope
+     */
+    scope?: string;
+    /**
+     * client_id
+     *
+     * the scope's service, as banking's grants name it
+     */
+    client_id?: string;
+    /**
+     * cap_per_op
+     *
+     * decimal USDT, > 0
+     */
+    cap_per_op?: string;
+    /**
+     * cap_24h
+     *
+     * decimal USDT, rolling 24 h, >= cap_per_op
+     */
+    cap_24h?: string;
+    /**
+     * operations
+     *
+     * at least one
+     */
+    operations?: Array<BankingV1MandateOperation>;
+    /**
+     * expires_at
+     *
+     * unix seconds; 0 = until revoked
+     */
+    expires_at?: number | string;
+    /**
+     * idempotency_key
+     */
+    idempotency_key?: string;
+};
+
+/**
  * HolderGrantTerms
  *
  * The immutable subject of a HOLDER-GRANT consilium (#245): `units` of the reserved
@@ -2280,6 +2324,13 @@ export type BankingV1ListFundNavHistoryRequest = {
 };
 
 /**
+ * ListMandatesRequest
+ */
+export type BankingV1ListMandatesRequest = {
+    [key: string]: never;
+};
+
+/**
  * ListOpenOrdersRequest
  */
 export type BankingV1ListOpenOrdersRequest = {
@@ -2490,6 +2541,77 @@ export type BankingV1LogoutRequest = {
 export type BankingV1LogoutResponse = {
     [key: string]: never;
 };
+
+/**
+ * Mandate
+ */
+export type BankingV1Mandate = {
+    /**
+     * mandate_id
+     */
+    mandate_id?: string;
+    /**
+     * scope
+     */
+    scope?: string;
+    /**
+     * client_id
+     */
+    client_id?: string;
+    /**
+     * client_display_name
+     */
+    client_display_name?: string;
+    /**
+     * cap_per_op
+     */
+    cap_per_op?: string;
+    /**
+     * cap_24h
+     */
+    cap_24h?: string;
+    /**
+     * operations
+     */
+    operations?: Array<BankingV1MandateOperation>;
+    /**
+     * expires_at
+     */
+    expires_at?: number | string;
+    /**
+     * created_at
+     */
+    created_at?: number | string;
+    /**
+     * revoked_at
+     *
+     * 0 while live
+     */
+    revoked_at?: number | string;
+    /**
+     * used_24h
+     *
+     * drawn in the rolling 24 h, decimal USDT
+     */
+    used_24h?: string;
+};
+
+/**
+ * MandateList
+ */
+export type BankingV1MandateList = {
+    /**
+     * mandates
+     */
+    mandates?: Array<BankingV1Mandate>;
+};
+
+/**
+ * MandateOperation
+ *
+ * What a mandate lets the service do with the caller's compartment.
+ */
+export type BankingV1MandateOperation = 'MANDATE_OPERATION_UNSPECIFIED' | 'MANDATE_OPERATION_RESERVE' | 'MANDATE_OPERATION_CHARGE' | 'MANDATE_OPERATION_BOOK_FILL';
 
 /**
  * MigrateDepositAddressToCustodianRequest
@@ -4026,6 +4148,16 @@ export type BankingV1RevokeAllocationAccessResponse = {
 };
 
 /**
+ * RevokeMandateRequest
+ */
+export type BankingV1RevokeMandateRequest = {
+    /**
+     * mandate_id
+     */
+    mandate_id?: string;
+};
+
+/**
  * RevokeSessionRequest
  */
 export type BankingV1RevokeSessionRequest = {
@@ -4147,8 +4279,8 @@ export type BankingV1ScheduleFeePolicyRequest = {
 /**
  * ScopePolicy
  *
- * What it takes to move money into a scope. Limits are decimal USDT strings; an empty
- * limit means none.
+ * What it takes to move money into a scope, and how far its services may move money
+ * without an approval. Limits are decimal USDT strings; an empty limit means none.
  */
 export type BankingV1ScopePolicy = {
     /**
@@ -4158,7 +4290,7 @@ export type BankingV1ScopePolicy = {
     /**
      * min_kyc_level
      *
-     * the concierge KYC level a user needs to move money in
+     * the concierge KYC level a user needs to move money in or pay the scope's invoices
      */
     min_kyc_level?: number;
     /**
@@ -4176,7 +4308,8 @@ export type BankingV1ScopePolicy = {
     /**
      * max_balance
      *
-     * ceiling on the compartment's total
+     * Ceiling on the compartment's total, applied ONLY to the user's own MoveFunds in —
+     * payouts, captures and refunds into the compartment are never refused for it.
      */
     max_balance?: string;
     /**
@@ -4192,6 +4325,25 @@ export type BankingV1ScopePolicy = {
      * unix seconds
      */
     updated_at?: number | string;
+    /**
+     * auto_payout_per_op
+     *
+     * Automatic ceilings, per (service client, scope): past them a payout or transfer
+     * needs an approval. Defaults 1000 / 5000 / 5000.
+     */
+    auto_payout_per_op?: string;
+    /**
+     * auto_payout_24h
+     *
+     * rolling 24 h
+     */
+    auto_payout_24h?: string;
+    /**
+     * auto_transfer_24h
+     *
+     * rolling 24 h
+     */
+    auto_transfer_24h?: string;
 };
 
 /**
@@ -9530,6 +9682,35 @@ export type BankingV1CompartmentServiceGetScopePolicyResponses = {
 
 export type BankingV1CompartmentServiceGetScopePolicyResponse = BankingV1CompartmentServiceGetScopePolicyResponses[keyof BankingV1CompartmentServiceGetScopePolicyResponses];
 
+export type BankingV1CompartmentServiceGrantMandateData = {
+    body: BankingV1GrantMandateRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/GrantMandate';
+};
+
+export type BankingV1CompartmentServiceGrantMandateErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceGrantMandateError = BankingV1CompartmentServiceGrantMandateErrors[keyof BankingV1CompartmentServiceGrantMandateErrors];
+
+export type BankingV1CompartmentServiceGrantMandateResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1Mandate;
+};
+
+export type BankingV1CompartmentServiceGrantMandateResponse = BankingV1CompartmentServiceGrantMandateResponses[keyof BankingV1CompartmentServiceGrantMandateResponses];
+
 export type BankingV1CompartmentServiceListCompartmentsData = {
     body: BankingV1ListCompartmentsRequest;
     headers: {
@@ -9559,6 +9740,35 @@ export type BankingV1CompartmentServiceListCompartmentsResponses = {
 
 export type BankingV1CompartmentServiceListCompartmentsResponse = BankingV1CompartmentServiceListCompartmentsResponses[keyof BankingV1CompartmentServiceListCompartmentsResponses];
 
+export type BankingV1CompartmentServiceListMandatesData = {
+    body: BankingV1ListMandatesRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/ListMandates';
+};
+
+export type BankingV1CompartmentServiceListMandatesErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceListMandatesError = BankingV1CompartmentServiceListMandatesErrors[keyof BankingV1CompartmentServiceListMandatesErrors];
+
+export type BankingV1CompartmentServiceListMandatesResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1MandateList;
+};
+
+export type BankingV1CompartmentServiceListMandatesResponse = BankingV1CompartmentServiceListMandatesResponses[keyof BankingV1CompartmentServiceListMandatesResponses];
+
 export type BankingV1CompartmentServiceMoveFundsData = {
     body: BankingV1MoveFundsRequest;
     headers: {
@@ -9587,6 +9797,35 @@ export type BankingV1CompartmentServiceMoveFundsResponses = {
 };
 
 export type BankingV1CompartmentServiceMoveFundsResponse = BankingV1CompartmentServiceMoveFundsResponses[keyof BankingV1CompartmentServiceMoveFundsResponses];
+
+export type BankingV1CompartmentServiceRevokeMandateData = {
+    body: BankingV1RevokeMandateRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/RevokeMandate';
+};
+
+export type BankingV1CompartmentServiceRevokeMandateErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceRevokeMandateError = BankingV1CompartmentServiceRevokeMandateErrors[keyof BankingV1CompartmentServiceRevokeMandateErrors];
+
+export type BankingV1CompartmentServiceRevokeMandateResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1Mandate;
+};
+
+export type BankingV1CompartmentServiceRevokeMandateResponse = BankingV1CompartmentServiceRevokeMandateResponses[keyof BankingV1CompartmentServiceRevokeMandateResponses];
 
 export type BankingV1ConsiliumApprovalServiceGetInvitationData = {
     body: BankingV1GetInvitationRequest;
