@@ -1587,7 +1587,7 @@ async fn an_investors_external_payment_creates_one_withdrawal_under_the_derived_
 	assert_eq!(view.order.state(), PaymentState::Executed, "the consent executed the order inline");
 	assert_eq!(view.order.executed_withdrawal_id(), Some(expected));
 	let withdrawal = a.withdrawals.find_by_id(expected).await.unwrap().expect("the withdrawal exists under the derived id");
-	assert_eq!(withdrawal.user(), investor);
+	assert_eq!(withdrawal.user(), Some(investor));
 	assert_eq!(withdrawal.amount(), usdt("50"));
 	assert_eq!(
 		withdrawal.state(),

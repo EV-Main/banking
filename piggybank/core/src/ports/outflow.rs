@@ -35,6 +35,7 @@ pub trait OutflowPolicy: Send + Sync {
 }
 
 /// One owner's money-out standing, as the cross-plane bridge mirrors it.
+#[derive(Clone, Copy, Debug)]
 pub struct PayoutStanding {
 	/// Blocked from moving money by EITHER a concierge `SUSPENDED` (mirrored onto
 	/// `frozen`) OR a banking-side `DisableUser` (`status = 'disabled'`) — the same fold

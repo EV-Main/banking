@@ -23,9 +23,10 @@ import "scope/v1/ledger.proto";
 //     (COMPARTMENT_IN / _OUT) of users who hold a live mandate for it in that scope.
 // Nothing about a user's compartment the client has no part in, and nothing of another
 // client's accounts, reaches it. `balance_after` lists only accounts the receiving
-// client owns. A movement between two scopes (banking's fee sweep, an approved scope
-// transfer) appears once per side, `counterparty_scope` naming the other, each side
-// delivered by the same rules.
+// client owns. A movement between two scopes (an approved scope transfer, or banking's
+// sweep of a non-invest scope's fees into `(main, treasury)`) appears once per side,
+// `counterparty_scope` naming the other, each side delivered by the same rules; `main`
+// has no client, so the sweep shows on the scope's side alone.
 //
 // Kinds will be added. A consumer that meets an unknown `kind` must park that event
 // and keep its cursor moving, not stop: banking may ship a kind before every consumer

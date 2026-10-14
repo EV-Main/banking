@@ -7,7 +7,7 @@
 import { useLocale, useT } from "@evinvest/i18n/react";
 import { Card, CardContent, Skeleton } from "@evinvest/uikit";
 
-import type { AllocationTreasury } from "@/shared/contracts/admin";
+import type { AllocationClaim, AllocationTreasury } from "@/shared/contracts/admin";
 import { formatNav, formatUnits } from "@/shared/lib/money";
 import { hasUnixStamp } from "@/shared/lib/unix-stamp";
 import { ago } from "@/views/admin/lib/format";
@@ -29,6 +29,18 @@ export function FeeAllocationCards({ fee, loading, unavailable }: { fee: Allocat
         loading={loading}
         unavailable={unavailable}
       />
+    </div>
+  );
+}
+
+/** banking's own treasury (D17): a cash claim with no units behind it, so only the two
+ *  cash figures the `fee` row leads with. */
+export function BankingTreasuryCards({ claim, loading, unavailable }: { claim: AllocationClaim | null; loading: boolean; unavailable: boolean }) {
+  const t = useT();
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <MoneyCard label={t("admin.revenue.cashAvailable", "Cash · available")} value={claim?.available} hint={t("admin.revenue.cashAvailableHint", "free of approved payments")} loading={loading} unavailable={unavailable} emphasis />
+      <MoneyCard label={t("admin.revenue.cashPosted", "Cash · posted")} value={claim?.posted} hint={t("admin.revenue.treasuryPostedHint", "retained withdrawal fees, reserved included")} loading={loading} unavailable={unavailable} />
     </div>
   );
 }

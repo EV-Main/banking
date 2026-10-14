@@ -9,8 +9,8 @@
 //!
 //!   1. **Global cash invariant** — `sum(custody) == sum(claims)` on the USDT ledger,
 //!      read straight from TigerBeetle ([`Ledger::cash_invariant`]), the claims broken
-//!      down by whose they are: `Σ user + Σ service + clearing + book cash + retired
-//!      == Σ custody`. The retired `fund`/`fee` accounts (codes 1/40) still exist in
+//!      down by whose they are: `Σ user + Σ scope compartment + Σ service + Σ scope
+//!      account + clearing + book cash + retired == Σ custody`. The retired `fund`/`fee` accounts (codes 1/40) still exist in
 //!      TigerBeetle and count as claims by code — zero since the ownership data migration
 //!      of 2026-09-27 — and value on an account of no known kind is its own finding.
 //!   2. **Clearing vs control-plane** — the `clearing` account's reserved (pending +
@@ -28,13 +28,18 @@
 //!      decide whose it is. After the 2026-09-27 data migration it reads zero everywhere.
 //!   4. **Parked-row scan** — every `outbox.parked_at` row, surfaced with its
 //!      `last_error` and whether it has been flagged for compensation.
+//!   5. **Treasury debits vs approvals** (D17) — everything debited from banking's
+//!      treasury must be an approved payment out of it: the internal treasury orders the
+//!      owners approved (`approved` / `executed`) plus the treasury withdrawals still
+//!      standing (`queued` / `processing` / `completed`), each tied to its order by
+//!      `withdrawals.payment_id`. A debit nobody approved is an alert.
 //!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
 
 use std::{sync::Arc, time::Duration};
 
-use domain::balance::{LedgerAccountKey, ServiceId};
+use domain::balance::{LedgerAccountKey, Party, ServiceId};
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -59,6 +64,10 @@ pub struct ReconReport {
 	/// Claims on accounts of a kind the breakdown does not name — value the chart of
 	/// accounts cannot attribute to anyone.
 	pub unclassified_claims: u128,
+	/// Σ users' scope compartments and Σ scopes' own accounts — named parts of `claims`,
+	/// reported so a reader sees how much of the custody sits in scopes.
+	pub scope_claims: u128,
+	pub scope_accounts: u128,
 	pub clearing_reserved: u128,
 	pub clearing_expected: u128,
 	/// Allocations whose supply is not what their holders add up to, even on a second
@@ -69,13 +78,22 @@ pub struct ReconReport {
 	pub unheld: Vec<ServiceId>,
 	pub parked_rows: usize,
 	pub uncompensated_parked: usize,
+	/// Σ debits standing on `scope_account:main:treasury` (posted + pending).
+	pub treasury_debits: u128,
+	/// Σ what the owners approved paying out of the treasury (see the module header, 5).
+	pub treasury_debits_approved: u128,
 }
 
 impl ReconReport {
 	/// Whether every checked invariant held (no operator action needed). Unheld value is
 	/// not an invariant: a clean report can still list allocations nobody holds yet.
 	pub fn clean(&self) -> bool {
-		self.custody == self.claims && self.unclassified_claims == 0 && self.clearing_reserved == self.clearing_expected && self.units_drift.is_empty() && self.parked_rows == 0
+		self.custody == self.claims
+			&& self.unclassified_claims == 0
+			&& self.clearing_reserved == self.clearing_expected
+			&& self.units_drift.is_empty()
+			&& self.parked_rows == 0
+			&& self.treasury_debits == self.treasury_debits_approved
 	}
 }
 
@@ -116,6 +134,8 @@ impl Reconciliation {
 				report.custody = inv.custody;
 				report.claims = inv.claims;
 				report.unclassified_claims = inv.unclassified();
+				report.scope_claims = inv.scope_claims;
+				report.scope_accounts = inv.scope_accounts;
 				if !inv.balanced() {
 					error!(
 						custody = %inv.custody,
@@ -124,6 +144,8 @@ impl Reconciliation {
 						service_claims = %inv.service_claims,
 						clearing = %inv.clearing,
 						book_cash = %inv.book_cash,
+						scope_claims = %inv.scope_claims,
+						scope_accounts = %inv.scope_accounts,
 						retired_claims = %inv.retired_claims,
 						"reconciliation: CASH INVARIANT BROKEN — sum(custody) != sum(claims)"
 					);
@@ -178,6 +200,29 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: allocation registry read failed, per-allocation supply not verified this pass: {err}"),
 		}
 
+		// Treasury debits against what the owners approved. The two are read at different
+		// instants and the relay applies an approval's reserve after it commits, so a
+		// mismatch is re-read once before it is alerted.
+		self.check_treasury(&mut report).await?;
+		if report.treasury_debits != report.treasury_debits_approved {
+			self.check_treasury(&mut report).await?;
+		}
+		// The two directions call for different responses: an excess debit is money gone
+		// without say-so, a shortfall is an approved payment whose debit never landed.
+		if report.treasury_debits > report.treasury_debits_approved {
+			error!(
+				debited = %report.treasury_debits,
+				approved = %report.treasury_debits_approved,
+				"reconciliation: TREASURY DEBIT WITHOUT APPROVAL — money left banking's treasury that no approved payment accounts for"
+			);
+		} else if report.treasury_debits < report.treasury_debits_approved {
+			error!(
+				debited = %report.treasury_debits,
+				approved = %report.treasury_debits_approved,
+				"reconciliation: TREASURY APPROVAL WITHOUT DEBIT — an approved treasury payment or withdrawal has not been debited on the ledger"
+			);
+		}
+
 		// (4) Parked-row scan — every event the relay moved to the parked terminal state.
 		let parked = outbox::parked_rows(&self.pool).await?;
 		report.parked_rows = parked.len();
@@ -199,6 +244,25 @@ impl Reconciliation {
 			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
 		}
 		Ok(report)
+	}
+
+	async fn check_treasury(&self, report: &mut ReconReport) -> Result<(), sqlx::Error> {
+		let approved: Option<String> = sqlx::query_scalar(
+			"SELECT (COALESCE((SELECT SUM(amount::numeric) FROM payments WHERE from_kind = 'treasury' AND to_kind IS NOT NULL AND state IN ('approved', 'executed')), 0) \
+			 + COALESCE((SELECT SUM(amount::numeric) FROM withdrawals WHERE source = 'treasury' AND state IN ('queued', 'processing', 'completed')), 0))::text",
+		)
+		.fetch_one(&self.pool)
+		.await?;
+		report.treasury_debits_approved = approved.and_then(|sum| sum.parse().ok()).unwrap_or(0);
+		match self.ledger.total_debits(&Party::Treasury.claim_key()).await {
+			Ok(debits) => report.treasury_debits = debits,
+			// Unread is not a finding; match the approvals so `clean()` does not invent one.
+			Err(err) => {
+				warn!("reconciliation: treasury debits read failed, not verified this pass: {err}");
+				report.treasury_debits = report.treasury_debits_approved;
+			}
+		}
+		Ok(())
 	}
 
 	/// One allocation's supply against its holders, and whether anyone holds what it

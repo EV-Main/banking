@@ -372,6 +372,10 @@ function UserDrawer({ summary, onClose }: { summary: AdminUserSummary; onClose: 
             tip="admin.users.identity.token-version"
           />
           <Row label={t("admin.users.balance", "Balance")} value={balance ? `${formatUsdt(balance.amount, locale)} USDT` : "—"} />
+          {/* The two parts of `amount`: an operator asked why a withdrawal is refused needs
+              to see that money parked in a compartment cannot leave until moved to main. */}
+          <Row label={t("admin.users.balanceMain", "· main")} value={balance ? `${formatUsdt(balance.main, locale)} USDT` : "—"} />
+          <Row label={t("admin.users.balanceInCompartments", "· in compartments")} value={balance ? `${formatUsdt(balance.in_compartments, locale)} USDT` : "—"} />
         </Section>
 
         <Section title={t("admin.users.accessSecurity", "Access & security")}>

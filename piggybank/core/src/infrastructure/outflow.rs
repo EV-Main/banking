@@ -10,7 +10,7 @@
 
 use async_trait::async_trait;
 use domain::{error::DomainError, money::Network, users::UserId};
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 
 use crate::{
 	infrastructure::operations,
@@ -34,21 +34,27 @@ impl OutflowPolicy for PgOutflowPolicy {
 	}
 
 	async fn standing(&self, user: UserId) -> Result<Option<PayoutStanding>, DomainError> {
-		let row: Option<(bool, i32)> = sqlx::query_as("SELECT (frozen OR status = 'disabled'), kyc_level FROM users WHERE id = $1")
-			.bind(user.raw())
-			.fetch_optional(&self.pool)
-			.await
-			.map_err(|err| DomainError::Repository(err.to_string()))?;
-		Ok(row.map(|(blocked, kyc_level)| PayoutStanding {
-			blocked,
-			// The column is a signed `int4` the bridge mirrors from the identity plane. A
-			// negative (or otherwise impossible) tier is corrupt data, not a verification —
-			// degrade it to 0 so the caller's floor refuses.
-			kyc_level: u32::try_from(kyc_level).unwrap_or(0),
-		}))
+		standing(&self.pool, user).await
 	}
 
 	async fn frozen_rails(&self) -> Result<Vec<Network>, DomainError> {
 		operations::frozen_rails(&self.pool).await.map_err(|err| DomainError::Repository(err.to_string()))
 	}
+}
+
+/// [`OutflowPolicy::standing`] on any executor — a repository asks it on the connection it
+/// holds a claim's lock on, never on a second one from the pool.
+pub async fn standing<'c>(conn: impl PgExecutor<'c>, user: UserId) -> Result<Option<PayoutStanding>, DomainError> {
+	let row: Option<(bool, i32)> = sqlx::query_as("SELECT (frozen OR status = 'disabled'), kyc_level FROM users WHERE id = $1")
+		.bind(user.raw())
+		.fetch_optional(conn)
+		.await
+		.map_err(|err| DomainError::Repository(err.to_string()))?;
+	Ok(row.map(|(blocked, kyc_level)| PayoutStanding {
+		blocked,
+		// The column is a signed `int4` the bridge mirrors from the identity plane. A
+		// negative (or otherwise impossible) tier is corrupt data, not a verification —
+		// degrade it to 0 so the caller's floor refuses.
+		kyc_level: u32::try_from(kyc_level).unwrap_or(0),
+	}))
 }

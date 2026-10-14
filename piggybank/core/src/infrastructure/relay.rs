@@ -43,6 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
+	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
 	users::UserId,
 	withdrawals::{WithdrawalEvent, WithdrawalSource},
@@ -55,7 +56,7 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{
-		book, fee_accrual, issuance,
+		book, compartments, fee_accrual, issuance,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
 	},
@@ -68,7 +69,8 @@ use crate::{
 /// Distinct salts deriving a withdrawal's deterministic TigerBeetle transfer ids from
 /// the (stable) withdrawal id. The reservation locks the gross against the user's claim
 /// into clearing; settle posts that pending and redistributes the net to the rail's
-/// custody and the fee to the fee allocation's claim; fail/cancel void the pending (refund). A
+/// custody and the retained fee to the event's payee — banking's treasury since D17, the
+/// fee allocation on an event raised before; fail/cancel void the pending (refund). A
 /// completion references the reservation's id as its `pending_id`.
 const CLEARING_RESERVE: &[u8] = b"withdraw:clearing";
 const CLEARING_SETTLE: &[u8] = b"withdraw:clearing:settle";
@@ -135,6 +137,11 @@ const BOOK_RELEASE: &[u8] = b"book:release";
 const BOOK_FILL_UNITS: &[u8] = b"book:fill:units";
 const BOOK_FILL_CASH: &[u8] = b"book:fill:cash";
 const BOOK_FILL_FEE: &[u8] = b"book:fill:fee";
+
+/// Salt for a compartment move's one posted leg, derived from the MOVE id rather than the
+/// event id so an operator reconciling a `compartment_moves` row recomputes the transfer id
+/// from the row alone. FROZEN like every salt here.
+const COMPARTMENT_MOVE: &[u8] = b"compartment:move";
 
 /// Bound on consecutive `RetryBounded` attempts before a never-resolving retryable (a
 /// completion whose pending was itself parked, so it can never be found) is parked
@@ -388,6 +395,14 @@ impl Relay {
 		{
 			error!(seq = row.seq, order = %order_id, "relay: failed to mark the order rejected after its lock parked: {err}");
 		}
+		// A parked move is a refused move: the user is told it failed, the money it promised
+		// is spendable again, and an operator's unpark replays an event whose row is
+		// terminal — a no-op (see `dispatch`). Nothing of a move applies before its one leg.
+		if row.kind == CompartmentEvent::KIND
+			&& let Err(err) = compartments::mark_failed(&self.pool, row.aggregate_id, &format!("parked:{}", park_kind(reason))).await
+		{
+			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked compartment move failed: {err}");
+		}
 		if applied_legs > 0 {
 			error!(seq = row.seq, event_id = %row.event_id, aggregate = %row.aggregate, applied_legs, "relay: PARKED HALF-APPLIED event (compensation owed): {reason}");
 			if let Err(err) = outbox::mark_compensated(&self.pool, row.seq).await {
@@ -403,6 +418,36 @@ impl Relay {
 			Ok(ops) => ops,
 			Err(reason) => return Outcome::park(format!("unplannable event: {reason}")),
 		};
+		let is_move = row.kind == CompartmentEvent::KIND;
+		// Only a `pending` move may reach the ledger. A `failed` one is the user's refused
+		// intent: an operator unparking its event, or a replay, must not carry it out later.
+		// A `posted` one already did.
+		if is_move {
+			match compartments::move_state(&self.pool, row.aggregate_id).await {
+				Ok(Some(MoveState::Pending)) => {}
+				Ok(Some(MoveState::Posted | MoveState::Failed)) => return Outcome::Done,
+				Ok(None) => return Outcome::park("compartment move row is missing".into()),
+				Err(err) => return Outcome::Retry(format!("compartment move state read: {err}")),
+			}
+			// A replayed event (the reaper's re-enqueue) carries a new event id over the same
+			// transfer id: posting it again would answer `Exists`, but its saga step would
+			// collide with the first one's on `tb_transfer_id` and wedge the queue. The
+			// ledger is the authority on "already moved" — stamp the row and move on.
+			let Some(leg) = ops.first() else {
+				return Outcome::park("compartment move planned no leg".into());
+			};
+			match self.ledger.transfer_exists(leg.transfer_id).await {
+				Ok(true) =>
+					return match compartments::mark_posted(&self.pool, row.aggregate_id).await {
+						Ok(()) => Outcome::Done,
+						Err(err) => Outcome::Retry(format!("compartment move posted stamp: {err}")),
+					},
+				Ok(false) => {}
+				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
+				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
+				Err(err) => return Outcome::park(format!("compartment move applied check: {err}")),
+			}
+		}
 		// Settle-time liquidity pre-check. The relay is single-worker and sequential, so a
 		// Read-First check over *all* legs here guarantees a gated leg cannot fail with
 		// InsufficientFunds mid-event (which would half-apply and strand value). A shortfall
@@ -526,6 +571,14 @@ impl Relay {
 				}
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
+				// A move is one leg, so nothing applied before it: the refusal is the move's
+				// terminal outcome, recorded on its row, not an event for an operator.
+				Err(LedgerError::InsufficientFunds) if is_move => {
+					return match compartments::mark_failed(&self.pool, row.aggregate_id, MoveRefusal::InsufficientFunds.reason()).await {
+						Ok(()) => Outcome::Done,
+						Err(err) => Outcome::Retry(format!("compartment move failed stamp: {err}")),
+					};
+				}
 				Err(LedgerError::InsufficientFunds) => {
 					return Outcome::Park {
 						reason: "insufficient funds".into(),
@@ -565,6 +618,9 @@ impl Relay {
 			&& let Err(err) = project_trade(&self.pool, row).await
 		{
 			return Outcome::Retry(format!("book trade projection: {err}"));
+		}
+		if is_move && let Err(err) = compartments::mark_posted(&self.pool, row.aggregate_id).await {
+			return Outcome::Retry(format!("compartment move posted stamp: {err}"));
 		}
 		Outcome::Done
 	}
@@ -809,6 +865,26 @@ enum LedgerAction {
 	Broadcast(BroadcastRequest),
 }
 
+/// Σ what `row`'s legs will take out of `key` once the relay applies them — the event's
+/// share of [`claims::unapplied_debits`](super::claims::unapplied_debits). Read off the
+/// same plan the relay executes, so a new kind of event is counted the moment it can be
+/// relayed. Only new outflows count: a posted or reserved leg debiting `key`. Completing a
+/// pending takes nothing more than its reserve already locked, and a void gives back.
+pub(crate) fn planned_debit(row: &OutboxRow, key: &LedgerAccountKey) -> Result<u128, String> {
+	let mut total: u128 = 0;
+	for op in plan(row)? {
+		let legs = match &op.action {
+			LedgerAction::Post(transfer) | LedgerAction::Reserve(transfer) => std::slice::from_ref(transfer),
+			LedgerAction::PostLinked(transfers) => transfers.as_slice(),
+			LedgerAction::Complete(_) | LedgerAction::Broadcast(_) => &[],
+		};
+		for leg in legs.iter().filter(|leg| &leg.debit == key) {
+			total = total.checked_add(leg.amount).ok_or("planned debits overflow")?;
+		}
+	}
+	Ok(total)
+}
+
 /// Map an outbox event to the ledger op(s) (and any custody broadcast) it performs.
 /// `reference` (stamped into `user_data_128`) is always the aggregate id, tying every
 /// TB transfer back to its allocation/deposit/withdrawal for reconciliation.
@@ -848,8 +924,48 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: PaymentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(plan_payment(event, row.aggregate_id, reference))
 		}
+		"compartments" => {
+			let event: CompartmentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(vec![plan_compartment(event, row.aggregate_id, reference)])
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
+	}
+}
+
+/// The kind of a park, for a parked move's `failure_reason` (`parked:<kind>`): what the user
+/// and the operator need to tell apart, not the relay's full sentence.
+fn park_kind(reason: &str) -> &'static str {
+	if reason.starts_with("ledger conflict") {
+		"conflict"
+	} else if reason.starts_with("compartment move applied check") {
+		"applied_check"
+	} else if reason.starts_with("unplannable") {
+		"unplannable"
+	} else if reason.starts_with("retryable exhausted") {
+		"retry_exhausted"
+	} else {
+		"other"
+	}
+}
+
+/// A user's own move between `main` and a scope compartment: one posted claim-to-claim
+/// leg, net-zero on the cash invariant. A source that cannot cover it after all — another
+/// flow's reservation landed first — is refused by the claim's non-negative flag, and the
+/// move is stamped `failed` with nothing moved (see `dispatch`).
+fn plan_compartment(event: CompartmentEvent, aggregate_id: Uuid, reference: u128) -> PlannedOp {
+	let CompartmentEvent::Moved { user, from, to, amount, .. } = event;
+	PlannedOp {
+		role: "compartment_move",
+		transfer_id: tid(aggregate_id, COMPARTMENT_MOVE),
+		action: LedgerAction::Post(LedgerTransfer {
+			id: tid(aggregate_id, COMPARTMENT_MOVE),
+			debit: from.claim_key(user),
+			credit: to.claim_key(user),
+			amount: amount.base_units(),
+			code: TransferCode::CompartmentMove,
+			reference,
+		}),
 	}
 }
 
@@ -1301,16 +1417,16 @@ fn plan_payment(event: PaymentEvent, aggregate_id: Uuid, reference: u128) -> Vec
 ///   touched, so acceptance never depends on rail liquidity).
 /// - **Dispatched** → broadcast the net to custody (idempotent by withdrawal id).
 /// - **Settled** → post the clearing pending, then move net→`wallet:<net>` and (when
-///   non-zero) the retained fee→the event's `payee` claim (the `fee` allocation's). The
-///   `Cr wallet:<net>` is where rail
-///   liquidity is finally checked by the non-negative flag.
+///   non-zero) the retained fee→the event's `payee` account — banking's treasury since D17,
+///   the `fee` allocation's claim on an event raised before. The `Cr wallet:<net>` is where
+///   rail liquidity is finally checked by the non-negative flag.
 /// - **Failed/Cancelled** → void the clearing pending, refunding the source in full.
 ///
-/// The **source's claim** (`user:<uuid>`, or `fee` for a revenue payout) is the only
-/// thing a payout changes here — every other leg, id and guard is shared, which is the
-/// point of one saga rather than two. TigerBeetle's non-negative flag on `fee` is
-/// therefore the same last-line backstop against paying out more than the fund earned
-/// that it is against over-spending a user's claim.
+/// The **source's account** (`user:<uuid>`, or banking's treasury for an approved treasury
+/// payment) is the only thing that differs between the two — every other leg, id and guard
+/// is shared, which is the point of one saga rather than two. TigerBeetle's non-negative
+/// flag on the treasury is therefore the same last-line backstop against paying out more
+/// than banking earned that it is against over-spending a user's claim.
 fn plan_withdrawal(event: WithdrawalEvent, aggregate_id: Uuid, reference: u128) -> Result<Vec<PlannedOp>, String> {
 	Ok(match event {
 		WithdrawalEvent::Requested { source, amount, .. } => vec![PlannedOp {
@@ -1820,10 +1936,12 @@ mod tests {
 		legacy
 	}
 
-	// The same contract for the other two fee legs: the retained withdrawal fee and the
-	// book's taker fee land on the fee allocation, and a payload without a payee does not read.
+	// The same contract for the other two fee legs: the retained withdrawal fee lands in
+	// banking's treasury (D17) — or on the fee allocation when the stored event, raised
+	// before D17, says so — and the book's taker fee on the fee allocation. A payload without
+	// a payee does not read.
 	#[test]
-	fn the_withdrawal_and_taker_fees_are_paid_to_the_fee_allocation() {
+	fn the_withdrawal_fee_goes_to_the_treasury_and_the_taker_fee_to_the_fee_allocation() {
 		let withdrawal_id = domain::withdrawals::WithdrawalId::new();
 		let settled = WithdrawalEvent::Settled {
 			withdrawal_id,
@@ -1832,7 +1950,7 @@ mod tests {
 			amount: Usdt::parse_decimal("100").unwrap(),
 			fee: Usdt::parse_decimal("1").unwrap(),
 			tx_ref: domain::money::TxRef::parse("0xabc").unwrap(),
-			payee: Party::fee_payee(),
+			payee: domain::balance::FeePayee::treasury(),
 		};
 		let fee_leg = |event: WithdrawalEvent| {
 			let ops = plan_withdrawal(event, withdrawal_id.raw(), withdrawal_id.raw().as_u128()).unwrap();
@@ -1841,9 +1959,19 @@ mod tests {
 			transfer
 		};
 		let json = serde_json::to_string(&settled).unwrap();
-		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
+		assert_eq!(
+			fee_leg(serde_json::from_str(&json).unwrap()).credit,
+			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury())
+		);
 		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).id, tid(withdrawal_id.raw(), FEE_REDISTRIBUTE));
 		assert!(serde_json::from_value::<WithdrawalEvent>(without_payee(&json)).is_err());
+		let mut before_d17 = serde_json::from_str::<serde_json::Value>(&json).unwrap();
+		before_d17["payee"] = serde_json::json!({"kind": "service", "id": "fee"});
+		assert_eq!(
+			fee_leg(serde_json::from_value(before_d17).unwrap()).credit,
+			LedgerAccountKey::ServiceClaim(ServiceId::fee()),
+			"an event raised before D17 pays where it said it would"
+		);
 
 		let trade_id = TradeId::new();
 		let trade = BookEvent::TradeExecuted {
@@ -1870,6 +1998,32 @@ mod tests {
 		let json = serde_json::to_string(&trade).unwrap();
 		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
 		assert!(serde_json::from_value::<BookEvent>(without_payee(&json)).is_err());
+	}
+
+	// A move is one claim-to-claim leg in the direction the event names, with an id the
+	// move's row alone recomputes.
+	#[test]
+	fn a_compartment_move_posts_one_leg_between_the_users_own_claims() {
+		use domain::{
+			architecture::EmitsEvents,
+			scopes::{Compartment, CompartmentMove, CompartmentMoveId, ScopeId},
+		};
+		let user = UserId::new();
+		let sa = Compartment::parse("sa").unwrap();
+		for (from, to) in [(Compartment::Main, sa.clone()), (sa.clone(), Compartment::Main)] {
+			let id = CompartmentMoveId::new();
+			let mut moved = CompartmentMove::request(id, user, from.clone(), to.clone(), Usdt::parse_decimal("7").unwrap()).unwrap();
+			let event = moved.drain_events().remove(0);
+			let json = serde_json::to_string(&event).unwrap();
+			let op = plan_compartment(serde_json::from_str(&json).unwrap(), id.raw(), id.raw().as_u128());
+			let LedgerAction::Post(leg) = op.action else { panic!("a move is a posted leg") };
+			assert_eq!(leg.debit, from.claim_key(user));
+			assert_eq!(leg.credit, to.claim_key(user));
+			assert_eq!(leg.amount, Usdt::parse_decimal("7").unwrap().base_units());
+			assert_eq!(leg.code, TransferCode::CompartmentMove);
+			assert_eq!(leg.id, tid(id.raw(), COMPARTMENT_MOVE));
+		}
+		assert_eq!(sa.claim_key(user), LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap()));
 	}
 
 	// Guards the redemption settle leg order documented on the aggregate and PATTERNS:

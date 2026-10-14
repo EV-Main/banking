@@ -18,6 +18,11 @@
 //!     never broadcast, so voiding the clearing reservation (full refund) is always safe;
 //!     this is the backstop for a treasury worker that never dispatches.
 //!
+//!   - **`pending` compartment moves untouched past a few minutes, with no event left in
+//!     the outbox → RE-ENQUEUE.** A relay that did not know the event (an older build in a
+//!     rolling deploy or after a rollback) dispatched it as a no-op; replaying is safe
+//!     because the move's ledger transfer id derives from the move id.
+//!
 //! The auto-fail/cancel paths go through the same row-locked repository commands a user
 //! would (idempotent, drain the void event), so the relay reverses the money exactly once.
 
@@ -30,7 +35,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::ports::{RedemptionRepository, WithdrawalRepository};
+use crate::{
+	infrastructure::compartments,
+	ports::{RedemptionRepository, WithdrawalRepository},
+};
 
 /// How often the reaper sweeps for stuck sagas.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -40,6 +48,10 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// reservations and the `processing` path pages a human. 24h for v1, matching the NAV
 /// staleness horizon.
 const MAX_SAGA_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// A `pending` compartment move untouched this long, with nothing left in the outbox, is
+/// re-enqueued. The relay posts a move within seconds; minutes leave room for a backlog.
+const MOVE_REDRIVE_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// One reaper sweep's outcome — counts so the run loop and a test can assert without
 /// scraping logs.
@@ -51,6 +63,8 @@ pub struct ReaperReport {
 	pub reaped_queued_withdrawals: usize,
 	/// `queued` redemptions auto-failed (units returned).
 	pub reaped_queued_redemptions: usize,
+	/// `pending` compartment moves whose lost event was put back on the outbox.
+	pub redriven_compartment_moves: usize,
 }
 
 /// The reaper job: sweep on an interval until the process exits.
@@ -60,6 +74,7 @@ pub struct Reaper {
 	redemptions: Arc<dyn RedemptionRepository>,
 	notify: Arc<Notify>,
 	max_age: Duration,
+	move_redrive_after: Duration,
 }
 
 impl Reaper {
@@ -70,7 +85,14 @@ impl Reaper {
 			redemptions,
 			notify,
 			max_age: MAX_SAGA_AGE,
+			move_redrive_after: MOVE_REDRIVE_AFTER,
 		}
+	}
+
+	/// Test seam: replay a lost compartment move sooner than [`MOVE_REDRIVE_AFTER`].
+	pub fn with_move_redrive_after(mut self, after: Duration) -> Self {
+		self.move_redrive_after = after;
+		self
 	}
 
 	/// Test seam: a shorter abandonment window so an integration test need not wait 24h.
@@ -148,7 +170,17 @@ impl Reaper {
 			}
 		}
 
-		if report.reaped_queued_withdrawals > 0 || report.reaped_queued_redemptions > 0 {
+		// `pending` compartment moves whose event is gone — RE-ENQUEUE: the ledger transfer
+		// id is the move's, so a replay cannot post twice.
+		report.redriven_compartment_moves = compartments::redrive_stale_moves(&self.pool, self.move_redrive_after).await?;
+		if report.redriven_compartment_moves > 0 {
+			warn!(
+				count = report.redriven_compartment_moves,
+				"reaper: re-enqueued pending compartment moves whose event was dispatched without posting them"
+			);
+		}
+
+		if report.reaped_queued_withdrawals > 0 || report.reaped_queued_redemptions > 0 || report.redriven_compartment_moves > 0 {
 			self.notify.notify_one();
 		}
 		Ok(report)

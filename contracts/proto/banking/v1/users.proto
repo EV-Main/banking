@@ -17,7 +17,8 @@ service UsersService {
   // UpdateProfileRequest). Identity/auth fields (email, status) are not editable here.
   rpc UpdateProfile(UpdateProfileRequest) returns (UserProfile);
 
-  // The calling user's live balance, read straight from TigerBeetle (Read-First).
+  // The calling user's live balance — `main` plus their scope compartments — read straight
+  // from TigerBeetle (Read-First).
   // No Postgres-stored amount exists; the response is authoritative as of `as_of`.
   rpc GetBalance(GetUserBalanceRequest) returns (UserBalanceResponse);
 
@@ -124,8 +125,10 @@ message GetUserBalanceRequest {}
 
 // A live ledger balance for a user. `amount` and `pending` are u128 minor-unit
 // decimal STRINGS (proto3 has no u128; a string is lossless and matches
-// proto-loader's `longs: String`). An investor account is credit-normal, so
-// `amount` = posted credits − posted debits is non-negative by invariant.
+// proto-loader's `longs: String`). They cover the user's whole cash — the `main` claim
+// plus every scope compartment, split by `main` and `in_compartments` — and each account
+// is credit-normal, so `amount` (Σ posted credits − posted debits) is non-negative by
+// invariant.
 // `authoritative` is true when read directly from TigerBeetle; `as_of` is unix
 // seconds. The `authoritative`/`as_of` pair is the forward-compat seam for a future
 // read projection — a projection may later return `authoritative=false` rows with
@@ -136,6 +139,8 @@ message UserBalanceResponse {
   string pending = 2;
   bool authoritative = 3;
   int64 as_of = 4;
+  string main = 5;             // posted on the `main` claim
+  string in_compartments = 6;  // posted across the user's scope compartments
 }
 
 message RevokeTokensRequest {

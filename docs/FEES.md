@@ -163,8 +163,9 @@ today keeps accumulating as units at no cost. The settler is bound by the redeem
 mark on the product the settlement is refused, because converting one's own mark into the
 `fee` holders' cash is the same move the cooldown stops one step later.
 
-Every other fee the platform charges — the retained withdrawal fee, the book's taker fee —
-credits the same `service:fee`. A reserved allocation (`fee`, `fund`) charges no fee of its
+The book's taker fee credits the same `service:fee`. The retained withdrawal fee does not:
+it is banking's own and lands in banking's treasury, `scope_account:main:treasury` (D17) —
+withdrawal events raised before that change name `service:fee` and still pay it there. A reserved allocation (`fee`, `fund`) charges no fee of its
 own (`ScheduleFeePolicy` refuses it), takes no mark, and its holders exit only by
 redemption: `Redeem` on `fee` is priced by its computed NAV (cash on `service:fee` plus
 every product's fee class at that product's NAV, over the `fee` supply), paid out of

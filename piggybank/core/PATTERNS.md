@@ -40,7 +40,7 @@ ledger (`= 2`):
 | Layer | Accounts (`code`) | Normal | Non-negative flag | Network? |
 | --- | --- | --- | --- | --- |
 | **Treasury / custody** (assets) | `wallet:<net>` (10), `bank` (11) | debit (`debits − credits`) | `CreditsMustNotExceedDebits` | **per-rail** |
-| **Claims** (equity/liab) | `user:<uuid>` (20), `service:<id>` (30 — a product's, or the reserved `service:fee` / `service:fund`), `clearing` (50), `book_cash:<uuid>` (65) | credit (`credits − debits`) | `DebitsMustNotExceedCredits` | **network-agnostic** |
+| **Claims** (equity/liab) | `user:<uuid>` (20), `scope_claim:<scope>:<uuid>` (21 — a user's compartment in a scope), `service:<id>` (30 — a product's, or the reserved `service:fee` / `service:fund`), `scope_account:<scope>:<label>` (31 — a scope's own account, banking's treasury `scope_account:main:treasury` included), `clearing` (50), `book_cash:<uuid>` (65) | credit (`credits − debits`) | `DebitsMustNotExceedCredits` | **network-agnostic** |
 | **Retired claims** (#245) | `fund` (1), `fee` (40) | credit | as above | history: the rows stay in `tb_accounts` at zero, no live key names them (the cash scan still counts them by code); the codes are never reused |
 
 A deposit is one balanced transfer **`Dr wallet:<net> / Cr <claim>`** (textbook Dr Cash
@@ -799,7 +799,7 @@ acceptance and the clearing reserve must not depend on a flaky chain node.
 | --- | --- | --- |
 | `Requested` | `Queued` | reserve `Dr user:<uuid> / Cr clearing` (gross) — no rail touched |
 | `Dispatched` | `Processing` | `Custody::broadcast` the net on-chain |
-| `Settled` (N confs) | `Completed` | **post** the clearing pending, then `Dr clearing / Cr wallet:<net>` (net) + `Dr clearing / Cr service:fee` (the retained fee, to the event's `payee` — the `fee` allocation) |
+| `Settled` (N confs) | `Completed` | **post** the clearing pending, then `Dr clearing / Cr wallet:<net>` (net) + `Dr clearing / Cr scope_account:main:treasury` (the retained fee, to the event's `payee` — banking's treasury since D17; an event raised before names `service:fee` and still pays it) |
 | `Failed` (never landed) | `Failed` | **void** the clearing pending — refund in full |
 | `Cancelled` (still queued) | `Cancelled` | **void** the clearing pending — refund in full |
 
@@ -826,7 +826,7 @@ runbook for a stuck/parked withdrawal is
 [`docs/RUNBOOK-withdrawals.md`](../../docs/RUNBOOK-withdrawals.md). The fee leg is omitted when the fee is zero (TB rejects a
 zero-amount transfer); the policy enforces `min_withdrawal > fee` and the net must be
 representable at the chain's precision (no dust leaves). The global invariant holds at
-settle: `user` falls by `gross`, `wallet:<net>` by `net`, `service:fee` rises by `fee`,
+settle: `user` falls by `gross`, `wallet:<net>` by `net`, the treasury rises by `fee`,
 and `clearing` nets back to zero — so `sum(custody)` and `sum(claims)` both fall by
 exactly `net`.
 
@@ -865,10 +865,21 @@ without a restart, and a halt parks the withdrawal exactly like a window refusal
 
 ### Revenue payout — retired (#245); how earnings leave now
 
-The platform earns money in three places — the **retained fee** on every user withdrawal,
-the book's **taker fee**, and the settled 2-and-20 (§Fees → *Settlement*) — and all of it
-lands on one claim, the `fee` allocation's `service:fee`, held by people through `fee`
-units. There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
+The allocations earn money in two places — the book's **taker fee** and the settled
+2-and-20 (§Fees → *Settlement*) — and both land on one claim, the `fee` allocation's
+`service:fee`, held by people through `fee` units. The **retained fee** on every user
+withdrawal is banking's own and lands in banking's treasury, `scope_account:main:treasury`
+(D17), and so do the fees of every scope but invest, swept from their `(<scope>, fee)`
+collectors (`scope/v1/ledger.proto`, the fee route; invest's go to `(invest, alloc:fee)`).
+Nothing leaves the treasury until its spending is decided by concierge's scope approvals
+(`bank:treasury_surplus`, D24): `payments::open` refuses a payment order out of it
+(`Party::Treasury`) with `treasury spending waits for scope approvals`, and `execute` fails
+one approved before the close. The machinery it will use stays — a payment order, internal
+or on a rail through a treasury withdrawal (`WithdrawalSource::Treasury { payment }`, no
+fee, no owner standing to read). A treasury
+withdrawal names the order it executes — on the source, and in `withdrawals.payment_id`
+under a CHECK that only a treasury withdrawal has one — and reconciliation (5) holds every
+treasury debit to an approved order. There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
 two ways: a **holder's redemption** of `fee` units at `fee`'s derived NAV onto their own
 `user:<uuid>` claim (from where they withdraw under their own gates), or a **payment
 order** out of `service:fee` that the owners' consilium approved (`PaymentsService`, L2/L3
@@ -884,11 +895,87 @@ approval mail (`payout_approval`). All of it is removed, `CancelRevenuePayout` /
 `ListRevenuePayouts` included, and `0047_ownership_contract.sql` narrows
 `withdrawals.source` to `user` and drops `revenue_payout` / `payout_approval` from the
 `consilium` / `consilium_mail` CHECKs (production held no such row when it ran). A
-withdrawal is always a person's: `WithdrawalSource::User` is the only variant
-(`domain/src/withdrawals.rs`), so `require_dispatchable` (`application/withdrawals.rs`)
-reads the owner of every row. Old outbox payloads spell the field `user` and hold a bare
+withdrawal is a person's (`WithdrawalSource::User`) or, since D17, the treasury's
+(`WithdrawalSource::Treasury`, only from an approved payment order), and
+`require_dispatchable` (`application/withdrawals.rs`) reads the owner of every person's row. Old outbox payloads spell the field `user` and hold a bare
 UUID. `WithdrawalSource`'s string form and the `alias = "user"` on the events read those
 unchanged, so a row parked before the source existed still drains after it.
+
+## Compartments by scope (`domain::scopes`, `CompartmentService`)
+
+A user's wallet is split by **scope** (D9): `main` is their `user:<uuid>` claim — deposits
+land there and withdrawals leave from there — and every scope they enter holds a
+compartment, `scope_claim:<scope>:<uuid>`. Only the user moves money `main ⇄ scope`
+(`MoveFunds`), instantly and without a fee, never scope to scope.
+
+**A move IN** passes the scope's state (`scope_frozen` / `scope_closed`), the account's
+freeze (`user_frozen`), the outflow pause and the scope's policy. **A move OUT** — back to
+`main` — passes none of them: the money never leaves the platform, so a frozen user in a
+paused system still gets it back. Both need the source to cover the amount, at least
+`MIN_MOVE` (0.01 USDT, `amount_below_minimum`), and at most `MAX_MOVES_PER_MINUTE` (10)
+moves by the user in a rolling minute (`rate_limited`): every move is a transfer through
+the platform's one relay, and dust or a burst from one user is everyone's latency.
+
+**Checked under the locks, net of what is in flight.** One Postgres transaction takes an
+advisory lock on `(user, idempotency_key)` first — two requests under one key may name
+different sources — and answers a reused key with the stored move (a racer that still
+reaches the unique index gets ALREADY_EXISTS). Then a lock on the user, under which the
+per-minute count is taken, then the source claim's write lock
+(the one withdraw and subscribe take) and, for a move in, the target's, always in that
+order, and only then runs every check: for a move in, the scope's state, the account's
+freeze and the policy — the target's `posted + pending` plus the `pending` moves into it
+against `max_balance`, the `pending` + `posted` moves into the scope over 24 h against
+`max_moved_in_24h` — and for both directions what the source may spend. The loser of two
+racing moves is refused at once. A refusal writes nothing; a pass records the
+`compartment_moves` row and its event together.
+
+**One answer to "what may the user still spend".** `Ledger::spendable(key)` is the
+ledger's `available` less every debit of `key` the control plane recorded and the relay
+has not applied yet (`claims::unapplied_debits`): the owner's `pending` moves out of that
+compartment, and every outbox event neither dispatched nor parked whose relay plan posts or
+reserves a debit of `key` — a withdrawal's reserve, a subscription's cash leg, a buy's
+escrow, a payment's reserve. The unapplied debits are read before the ledger, because the
+relay applies first and marks dispatched after: the order can count a debit twice for a
+moment (a refusal that clears on retry), never miss it. Every Read-First on a user's money
+asks it: a withdrawal (`require_solvent`), a subscription, a buy order, a payment, a move.
+The withdrawal, subscription and buy repositories and the move store ask it twice: in the
+use case, and again through a `SpendGuard` (`ClaimCovers`) or the move's admission after
+they take the claim's lock and before they write — so two spends of one balance cannot
+both be recorded, whatever the relay has applied yet. Under the lock every control-plane
+read goes through `LockedReads` on the connection holding the lock (`claims::TxReads`):
+each waiter on the lock holds a pooled connection, and a holder asking the pool for a
+second one stalled the hub until the acquire timeout (#507). A parked event is not counted
+— the relay will not apply it on its own; unparked, it meets the ledger's non-negative
+flag. What stays advisory: a payment order's open-time check — the money is reserved at
+approval, by the relay.
+
+**A move is never lost and never runs twice.** The row is `pending` until the relay posts
+`Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id `uuid_v5(move_id,
+"compartment:move")`) and stamps it `posted`. If the ledger refuses it — another flow's
+reservation landed first — the relay stamps it `failed` (`failure_reason`), parks nothing,
+and never carries it out later. Any other park of a move's event (a ledger conflict, an
+unplannable payload, an exhausted retry) stamps it `failed` too, as `parked:<kind>`, which
+releases the money it promised; an unparked or replayed event of a `failed` move is a no-op.
+A `pending` move whose event a relay dispatched without posting (an older build that did
+not know the kind, in a rolling deploy or after a rollback) is re-enqueued by the
+[`reaper`](src/infrastructure/reaper.rs) after five minutes; the replay finds the transfer
+id already on the ledger if it was, and only stamps the row. A row the reaper cannot replay
+is logged and sent to the back of the queue; the others are not held up by it.
+
+The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will own it) and
+`scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
+`max_moved_in_24h`, `max_balance` on moves IN only; the automatic ceilings
+`auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
+USDT, stored for the scope ledger). `scope_accounts` records who owns each scope account:
+banking owns `(main, treasury)` — where its own fees land (D17) — and `(<scope>, fee)`.
+The scope list behind listings and totals is cached per process for 30 s; a move reads the
+scope row itself. `GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
+(`amount = main + in_compartments`) count the compartments; `GetTreasury` shows
+`held_in_compartments` and `banking_treasury`. Mandates are not served yet
+(`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): they need the
+per-client grants the scope ledger brings. The existing `service:fee` / `service:fund` /
+`service:<slug>` claims are untouched until the migration window moves them into scope
+accounts.
 
 ## Operations — the activity timeline (`OperationsService`)
 
@@ -1237,7 +1324,7 @@ TB always wins; the jobs run as `join!` branches of the composition root next to
 relay, on the relay's dedicated pool.
 
 [`reconciliation`](src/infrastructure/reconciliation.rs) (`Reconciliation::scan`) asserts
-and **alerts** (Sentry-shipped `error!`, no auto-write) on four things:
+and **alerts** (Sentry-shipped `error!`, no auto-write) on five things:
 
 1. the **global** posted `sum(custody) == sum(claims)` on the USDT ledger, read straight
    from TB via `Ledger::cash_invariant` with the claims broken down by whose they are
@@ -1260,10 +1347,14 @@ and **alerts** (Sentry-shipped `error!`, no auto-write) on four things:
    data migration seated its holders, and should be zero everywhere since;
 4. a scan of every `outbox.parked_at` row (with its `last_error` and `compensated_at`).
    The `last_error` column on a parked row is the first place to look when money didn't
-   move.
+   move;
+5. **banking's treasury debits vs what the owners approved** (D17): `Ledger::total_debits`
+   of `scope_account:main:treasury` (posted + pending) against Σ internal treasury orders
+   `approved`/`executed` plus Σ treasury withdrawals `queued`/`processing`/`completed`;
+   re-read once before it is alerted. A debit no approval accounts for is the alert.
 
 `ReconReport::clean` is (1) balanced and fully classified, (2) equal, (3) no drift, (4) no
-parked rows; unheld value does not make a report unclean.
+parked rows, (5) equal; unheld value does not make a report unclean.
 
 [`treasury_drift`](src/infrastructure/treasury_drift.rs) (`TreasuryDrift::scan_once`) is the
 **per-rail** counterpart, hourly and alert-only. The invariant above relates two TigerBeetle
@@ -1486,8 +1577,9 @@ return value while having already minted the key), tier 0 cannot withdraw *with 
 claim* (so the refusal is the gate, not insolvency), tier 1 does both, the unconfigured-rail
 `None` stays distinguishable from the unverified `Forbidden`, and a payment out of the
 `fee` allocation to a tier-0 investor is never gated. The ownership suites (#245) —
-`piggybank/core/tests/ownership_fee.rs` (settled fee cash and a retained withdrawal fee
-landing on `service:fee` and raising the `fee` holders' derived NAV, nothing new on the
+`piggybank/core/tests/ownership_fee.rs` (settled fee cash landing on `service:fee` and
+raising the `fee` holders' derived NAV, a retained withdrawal fee landing in banking's
+treasury instead and leaving that NAV alone, nothing new on the
 retired revenue claim, a hidden allocation's holder reading their position with its title
 and price, a reserved allocation taking no mark and no fee policy),
 `piggybank/core/tests/treasury_ownership.rs` (the treasury listing every allocation with

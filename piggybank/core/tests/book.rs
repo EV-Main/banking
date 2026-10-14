@@ -261,6 +261,7 @@ async fn wallet(h: &Harness, user: UserId) -> WalletBalance {
 		nav: &h.nav,
 		deposit_addresses: &NoRails,
 		users: &h.users,
+		compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(h.pool.clone()),
 	};
 	wallet_app::get_wallet(&ports, &[], KycGate::LIFTED, user).await.unwrap().balance
 }

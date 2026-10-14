@@ -10,21 +10,23 @@
 //!   wallet per [`Network`] (the per-rail liquidity), plus a mocked bank account.
 //!   Assets the platform holds. This is the **only** layer where network lives.
 //! - **Claims** (credit-normal, **network-agnostic**): whose value it is — a user's
-//!   claim (`UserClaim`), an allocation's pooled funds (`ServiceClaim`, the reserved
-//!   `fee` and `fund` allocations included), and queued-withdrawal funds
-//!   (`WithdrawalClearing`). USDT is one fungible pool, so a user has ONE claim, not
-//!   one per chain. There is no claim without an owner: the platform's own capital is
-//!   the `fund` allocation's claim, its earnings the `fee` allocation's, and both are
-//!   held by people through units.
+//!   claim (`UserClaim`, their `main` wallet) and their compartments in scopes
+//!   (`ScopeClaim`), an allocation's pooled funds (`ServiceClaim`, the reserved `fee` and
+//!   `fund` allocations included), a scope's own accounts (`ScopeAccount`, banking's
+//!   treasury among them), and queued-withdrawal funds (`WithdrawalClearing`). USDT is one
+//!   fungible pool, so a user has ONE claim per compartment, not one per chain. There is no
+//!   claim without an owner: the allocations' capital is the `fund` allocation's claim,
+//!   their earnings the `fee` allocation's, both held by people through units; banking's
+//!   own earnings are its treasury (D17).
 //!
 //! A management/performance fee never touches either layer while it is being charged:
 //! it moves *units* on the Share ledger, from the holder's `UserShares` to the product's
 //! fee class, `FeeShares` — the units the `fee` allocation holds in that product. Only
 //! the periodic bulk settlement of accumulated fee units crosses into cash, `Dr
 //! ServiceClaim / Cr ServiceClaim(fee)`: the product buys its fee class back from the
-//! `fee` allocation at the day's NAV. Every other fee the platform charges — the
-//! retained withdrawal fee, the book's taker fee — is paid to the same claim; the
-//! event that raises a fee names its payee ([`Party::fee_payee`]).
+//! `fee` allocation at the day's NAV. The book's taker fee is paid to the same claim; the
+//! retained withdrawal fee is banking's own and goes to its treasury (D17). The event that
+//! raises a fee names its payee ([`Party::fee_payee`], [`FeePayee`]).
 //!
 //! **Retired accounts.** The `fund` (code 1) and `fee` (40) claims and the company stake
 //! (63) were claims and holdings with nobody behind them. The data migration emptied them
@@ -51,6 +53,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
 	error::DomainError,
 	money::{Network, Usdt},
+	scopes::{ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
 
@@ -77,7 +80,7 @@ impl ServiceId {
 		&self.0
 	}
 
-	/// The **fee allocation** — the platform's earned money as a product of its own:
+	/// The **fee allocation** — the allocations' earned money as a product of its own:
 	/// the fee class of every product (the units a 2-and-20 charge moves) plus the cash
 	/// those units settle into. Hidden, never listed, and held by people through units
 	/// like any other allocation (issue #245).
@@ -139,6 +142,10 @@ pub enum Party {
 	/// An allocation's pooled money — a product's, or one of the platform's own
 	/// ([`ServiceId::fee`], [`ServiceId::fund`]).
 	Service(ServiceId),
+	/// banking's own treasury, `ScopeAccount(main, treasury)`, where the fees it charges
+	/// for its own service land (D17). Money leaves it like an allocation's — by a payment
+	/// the owners' consilium approved — so it is a party a payment may name as its SOURCE.
+	Treasury,
 }
 
 impl Party {
@@ -147,6 +154,7 @@ impl Party {
 		match self {
 			Self::User(_) => "user",
 			Self::Service(_) => "service",
+			Self::Treasury => "treasury",
 		}
 	}
 
@@ -155,6 +163,8 @@ impl Party {
 		match self {
 			Self::User(id) => id.to_string(),
 			Self::Service(id) => id.as_str().to_owned(),
+			// Non-null on purpose: the single-open-order-per-source index keys on the pair.
+			Self::Treasury => TREASURY_ID.to_owned(),
 		}
 	}
 
@@ -169,13 +179,15 @@ impl Party {
 				Ok(Self::User(Id::from_raw(uuid)))
 			}
 			("service", Some(raw)) => Ok(Self::Service(ServiceId::parse(raw)?)),
+			("treasury", Some(TREASURY_ID)) => Ok(Self::Treasury),
 			_ => Err(DomainError::Validation(format!("invalid party: {kind}"))),
 		}
 	}
 
-	/// The party every fee the platform charges is paid to: the `fee` allocation, whose
-	/// holders are people (issue #245). Carried on each fee-bearing event rather than
-	/// decided by the relay, so the relay's plan is a function of the payload alone.
+	/// The party every allocation fee is paid to — the book's taker fee and the fee-class
+	/// settlement: the `fee` allocation, whose holders are people (issue #245). Carried on
+	/// each fee-bearing event rather than decided by the relay, so the relay's plan is a
+	/// function of the payload alone. banking's own fees go to [`FeePayee::treasury`] (D17).
 	pub fn fee_payee() -> Self {
 		Self::Service(ServiceId::fee())
 	}
@@ -187,6 +199,48 @@ impl Party {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
 			Self::Service(service) => LedgerAccountKey::ServiceClaim(service.clone()),
+			Self::Treasury => FeePayee::treasury().claim_key(),
+		}
+	}
+}
+
+/// The `*_id` column value of [`Party::Treasury`].
+const TREASURY_ID: &str = "main:treasury";
+
+/// Where a fee banking retains for its own service lands — named on the event that raises
+/// it, like [`Party::fee_payee`], so the relay's plan stays a function of the payload.
+///
+/// Since D17 that is banking's treasury, `ScopeAccount(main, treasury)`. `Service` stays
+/// readable because every event raised before it names the `fee` allocation
+/// (`{"kind":"service","id":"fee"}`) — an undrained or parked one must still pay where it
+/// said it would, not be re-routed by a later build. Its own type rather than a `Party`:
+/// the payee names an ACCOUNT in the form the fee events have always written, and a party
+/// may be paid into while the treasury is only ever a payment's source.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum FeePayee {
+	/// An allocation's claim — the payee of every event raised before D17.
+	Service(ServiceId),
+	ScopeAccount {
+		scope: ScopeId,
+		label: ScopeAccountLabel,
+	},
+}
+
+impl FeePayee {
+	/// banking's treasury, `ScopeAccount(main, treasury)` (D17).
+	pub fn treasury() -> Self {
+		Self::ScopeAccount {
+			scope: ScopeId::main(),
+			label: ScopeAccountLabel::treasury(),
+		}
+	}
+
+	/// The credit-normal account the fee is posted to.
+	pub fn claim_key(&self) -> LedgerAccountKey {
+		match self {
+			Self::Service(service) => LedgerAccountKey::ServiceClaim(service.clone()),
+			Self::ScopeAccount { scope, label } => LedgerAccountKey::ScopeAccount(scope.clone(), label.clone()),
 		}
 	}
 }
@@ -258,6 +312,10 @@ pub enum AccountCode {
 	RetiredCompanyStake,
 	BookShares,
 	BookCash,
+	/// A user's compartment in a non-main scope.
+	ScopeClaim,
+	/// A scope's own account `(scope, label)`, `(main, treasury)` included.
+	ScopeAccount,
 }
 
 impl AccountCode {
@@ -267,7 +325,9 @@ impl AccountCode {
 			Self::CryptoWallet => 10,
 			Self::BankCustody => 11,
 			Self::UserClaim => 20,
+			Self::ScopeClaim => 21,
 			Self::ServiceClaim => 30,
+			Self::ScopeAccount => 31,
 			Self::RetiredFeeClaim => 40,
 			Self::WithdrawalClearing => 50,
 			Self::UserShares => 60,
@@ -288,7 +348,9 @@ impl AccountCode {
 			10 => Self::CryptoWallet,
 			11 => Self::BankCustody,
 			20 => Self::UserClaim,
+			21 => Self::ScopeClaim,
 			30 => Self::ServiceClaim,
+			31 => Self::ScopeAccount,
 			40 => Self::RetiredFeeClaim,
 			50 => Self::WithdrawalClearing,
 			60 => Self::UserShares,
@@ -373,6 +435,9 @@ pub enum TransferCode {
 	/// reconciliation reading the Share ledger alone can tell which burns the fund's
 	/// cash should account for.
 	UnitRetire,
+	/// A user moving their own money between `main` and a scope compartment, either way.
+	/// One code for both directions: the claim pair says which way it went.
+	CompartmentMove,
 }
 
 impl TransferCode {
@@ -407,6 +472,7 @@ impl TransferCode {
 			Self::BookFill => 50,
 			Self::BookFee => 51,
 			Self::UnitRetire => 53,
+			Self::CompartmentMove => 55,
 		}
 	}
 }
@@ -472,6 +538,14 @@ pub enum LedgerAccountKey {
 	/// seller out of it, a cancel or a price improvement hands the rest back. A claim like
 	/// any other, so `sum(custody) == sum(claims)` is untouched by a lock.
 	BookCash(UserId),
+	/// A user's compartment in a scope other than `main` (credit-normal, USDT ledger, one
+	/// per `(user, scope)`): their money earmarked for that scope's services. Their `main`
+	/// compartment is [`Self::UserClaim`]; a `ScopeClaim` keyed on `main` is never built
+	/// ([`crate::scopes::Compartment`] is the only path) and never parses.
+	ScopeClaim(UserId, ScopeId),
+	/// A scope's own money under a label its owner chose (credit-normal, USDT ledger):
+	/// `(main, treasury)` holds the fees banking charges for its own service (D17).
+	ScopeAccount(ScopeId, ScopeAccountLabel),
 }
 
 impl LedgerAccountKey {
@@ -488,6 +562,8 @@ impl LedgerAccountKey {
 			Self::FeeShares(service) => format!("shares_fee:{service}"),
 			Self::BookShares(service, user) => format!("book_shares:{service}:{user}"),
 			Self::BookCash(user) => format!("book_cash:{user}"),
+			Self::ScopeClaim(user, scope) => format!("scope_claim:{scope}:{user}"),
+			Self::ScopeAccount(scope, label) => format!("scope_account:{scope}:{label}"),
 		}
 	}
 
@@ -511,6 +587,8 @@ impl LedgerAccountKey {
 			Self::FeeShares(_) => AccountCode::FeeShares,
 			Self::BookShares(..) => AccountCode::BookShares,
 			Self::BookCash(_) => AccountCode::BookCash,
+			Self::ScopeClaim(..) => AccountCode::ScopeClaim,
+			Self::ScopeAccount(..) => AccountCode::ScopeAccount,
 		}
 	}
 
@@ -520,7 +598,8 @@ impl LedgerAccountKey {
 	pub fn normal(&self) -> Normal {
 		match self {
 			Self::CryptoWallet(_) | Self::BankCustody | Self::UserShares(..) | Self::FeeShares(_) | Self::BookShares(..) => Normal::Debit,
-			Self::UserClaim(_) | Self::ServiceClaim(_) | Self::WithdrawalClearing | Self::SharesOutstanding(_) | Self::BookCash(_) => Normal::Credit,
+			Self::UserClaim(_) | Self::ServiceClaim(_) | Self::WithdrawalClearing | Self::SharesOutstanding(_) | Self::BookCash(_) | Self::ScopeClaim(..) | Self::ScopeAccount(..) =>
+				Normal::Credit,
 		}
 	}
 
@@ -561,6 +640,20 @@ impl LedgerAccountKey {
 					"shares_fee" => ServiceId::parse(rest).map(Self::FeeShares),
 					"book_shares" => service_and_user(rest).map(|(service, user)| Self::BookShares(service, user)),
 					"book_cash" => user_id(rest).map(Self::BookCash),
+					// A scope id holds no ':', so the first ':' splits it off — a label may hold
+					// ':' of its own (`alloc:<slug>`).
+					"scope_claim" => {
+						let (scope, user) = rest.split_once(':').ok_or_else(|| DomainError::Validation(format!("malformed scope claim key: {raw}")))?;
+						let scope = ScopeId::parse(scope)?;
+						if scope.is_main() {
+							return Err(DomainError::Validation(format!("main has no scope claim: {raw}")));
+						}
+						Ok(Self::ScopeClaim(user_id(user)?, scope))
+					}
+					"scope_account" => {
+						let (scope, label) = rest.split_once(':').ok_or_else(|| DomainError::Validation(format!("malformed scope account key: {raw}")))?;
+						Ok(Self::ScopeAccount(ScopeId::parse(scope)?, ScopeAccountLabel::parse(label)?))
+					}
 					_ => Err(DomainError::Validation(format!("unknown logical key: {raw}"))),
 				}
 			}
@@ -611,6 +704,7 @@ mod tests {
 			Party::Service(ServiceId::parse("trading").unwrap()),
 			Party::Service(ServiceId::fee()),
 			Party::Service(ServiceId::fund()),
+			Party::Treasury,
 		] {
 			let back = Party::from_parts(party.kind_str(), Some(&party.id_str())).unwrap();
 			assert_eq!(party, back);
@@ -714,6 +808,8 @@ mod tests {
 			LedgerAccountKey::FeeShares(svc.clone()),
 			LedgerAccountKey::BookShares(svc, uid),
 			LedgerAccountKey::BookCash(uid),
+			LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("sa").unwrap()),
+			LedgerAccountKey::ScopeAccount(ScopeId::main(), ScopeAccountLabel::treasury()),
 		];
 		for key in live {
 			assert!(!key.account_code().is_retired(), "{key:?} derives a retired kind");
@@ -721,6 +817,43 @@ mod tests {
 			assert!(!matches!(key.logical_key().as_str(), "fund" | "fee"), "{key:?} derives a retired logical key");
 			assert!(!key.logical_key().starts_with("shares_company:"), "{key:?} derives a retired logical key");
 		}
+	}
+
+	#[test]
+	fn the_scope_keys_are_claims_on_the_cash_ledger() {
+		let uid = UserId::from_raw(uuid::Uuid::nil());
+		let compartment = LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("sa").unwrap());
+		assert_eq!(compartment.logical_key(), "scope_claim:sa:00000000-0000-0000-0000-000000000000");
+		assert_eq!((compartment.ledger(), compartment.normal(), compartment.network()), (Ledger::Usdt, Normal::Credit, None));
+		assert_eq!(compartment.account_code().code(), 21);
+		assert_ne!(compartment.logical_key(), LedgerAccountKey::UserClaim(uid).logical_key());
+		let treasury = FeePayee::treasury().claim_key();
+		assert_eq!(treasury.logical_key(), "scope_account:main:treasury");
+		assert_eq!((treasury.ledger(), treasury.normal()), (Ledger::Usdt, Normal::Credit));
+		assert_eq!(treasury.account_code().code(), 31);
+	}
+
+	// D17: banking's own fees go to its treasury, while an event raised before names the
+	// `fee` allocation in the shape a `Party` wrote — and must still read back as that.
+	#[test]
+	fn a_fee_payee_reads_both_the_treasury_and_the_legacy_party_shape() {
+		let json = serde_json::to_string(&FeePayee::treasury()).unwrap();
+		assert_eq!(json, r#"{"kind":"scope_account","id":{"scope":"main","label":"treasury"}}"#);
+		assert_eq!(serde_json::from_str::<FeePayee>(&json).unwrap(), FeePayee::treasury());
+		let legacy = serde_json::to_string(&Party::fee_payee()).unwrap();
+		let read = serde_json::from_str::<FeePayee>(&legacy).unwrap();
+		assert_eq!(read, FeePayee::Service(ServiceId::fee()));
+		assert_eq!(read.claim_key(), Party::fee_payee().claim_key());
+		assert!(serde_json::from_str::<FeePayee>(r#"{"kind":"user","id":"00000000-0000-0000-0000-000000000000"}"#).is_err());
+	}
+
+	#[test]
+	fn the_treasury_party_is_banking_s_scope_account() {
+		assert_eq!(Party::Treasury.claim_key(), FeePayee::treasury().claim_key());
+		assert_eq!(serde_json::to_string(&Party::Treasury).unwrap(), r#"{"kind":"treasury"}"#);
+		assert_eq!(serde_json::from_str::<Party>(r#"{"kind":"treasury"}"#).unwrap(), Party::Treasury);
+		assert!(Party::from_parts("treasury", None).is_err(), "the id column is never null for it");
+		assert!(Party::from_parts("treasury", Some("fee")).is_err());
 	}
 
 	#[test]
@@ -748,6 +881,9 @@ mod tests {
 			LedgerAccountKey::FeeShares(svc.clone()),
 			LedgerAccountKey::BookShares(svc, uid),
 			LedgerAccountKey::BookCash(uid),
+			LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("invest").unwrap()),
+			LedgerAccountKey::ScopeAccount(ScopeId::main(), ScopeAccountLabel::treasury()),
+			LedgerAccountKey::ScopeAccount(ScopeId::parse("sa").unwrap(), ScopeAccountLabel::parse("alloc:service_arb").unwrap()),
 		];
 		for key in keys {
 			let raw = key.logical_key();
@@ -764,6 +900,13 @@ mod tests {
 			"user:",
 			"vault:bep20",
 			"wallet:btc",
+			"scope_claim:sa",
+			"scope_claim:sa:not-a-uuid",
+			"scope_claim:Sa:00000000-0000-0000-0000-000000000000",
+			"scope_claim:main:00000000-0000-0000-0000-000000000000",
+			"scope_account:main",
+			"scope_account:main:",
+			"scope_account:main:Treasury",
 		] {
 			assert!(LedgerAccountKey::parse_logical_key(foreign).is_err(), "{foreign:?} parsed");
 		}
@@ -816,6 +959,8 @@ mod tests {
 			AccountCode::RetiredCompanyStake,
 			AccountCode::BookShares,
 			AccountCode::BookCash,
+			AccountCode::ScopeClaim,
+			AccountCode::ScopeAccount,
 		]
 		.map(AccountCode::code);
 		let mut sorted = account_codes;
@@ -852,6 +997,7 @@ mod tests {
 			TransferCode::BookFill,
 			TransferCode::BookFee,
 			TransferCode::UnitRetire,
+			TransferCode::CompartmentMove,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

@@ -144,7 +144,7 @@ impl CryptoAsset {
 /// **checked** (a money type must never silently wrap). Serializes as a **string**
 /// of base units — `serde_json` has no `u128` support, and a string is exact across
 /// JSON consumers (no float/`2^53` loss) for the event log.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Usdt(u128);
 impl Usdt {
 	pub const ZERO: Usdt = Usdt(0);

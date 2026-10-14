@@ -57,6 +57,7 @@ export const tips = {
   "wallet.balance.in-orders": { type: "input" },
   "wallet.balance.invested": { type: "input" },
   "wallet.balance.pending-withdrawal": { type: "input" },
+  "wallet.balance.in-compartments": { type: "input" },
   "wallet.deposit.network": { type: "input" },
   "wallet.deposit.address": { type: "input" },
   "wallet.deposit.min-confirmations": { type: "input" },

@@ -26,6 +26,7 @@ use piggybank_core::{
 			BridgeConsumer,
 			endpoint::{BridgeTlsFiles, bridge_endpoint},
 		},
+		compartments::PgCompartments,
 		consilium::PgConsilia,
 		consilium_mailer::{self, ConsiliumMailer},
 		consilium_sweeper::ConsiliumSweeper,
@@ -67,8 +68,8 @@ use piggybank_core::{
 		withdrawals::PgWithdrawals,
 	},
 	ports::{
-		AllocationRegistry, BookStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
-		PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
+		AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
+		PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
 	},
 	services,
 };
@@ -493,6 +494,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let (provisioner, provision_rx) = provisioner_channel();
 	let (auth_service, authorizer) = AuthService::try_new(auth_config, provisioner).await.context("failed to build the auth service")?;
 
+	let compartments: Arc<dyn CompartmentStore> = Arc::new(PgCompartments::new(pool.clone()));
 	let state = AppState::new(
 		pool,
 		ledger,
@@ -524,6 +526,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		config.payment_consent_url_base.clone(),
 		rails.ton.as_ref().is_some_and(|ton| ton.is_testnet),
 		outflow,
+		compartments,
 	);
 
 	tracing::info!(core = %config.grpc_addr, auth = %config.auth_grpc_addr, "piggybank listening");

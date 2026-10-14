@@ -195,7 +195,14 @@ async fn reset_governance(h: &Harness) {
 		.await
 		.unwrap();
 	sqlx::query("DELETE FROM consilium WHERE kind = 'payment'").execute(&h.pool).await.unwrap();
-	sqlx::query("DELETE FROM payments WHERE id = ANY($1)").bind(&orders).execute(&h.pool).await.unwrap();
+	// A treasury order and the withdrawal executing it reference each other (0052), so both
+	// go in one statement, where the foreign keys are checked once, at its end. The
+	// withdrawal's reservation stays on the ledger, which nothing in this binary reconciles.
+	sqlx::query("WITH executing AS (DELETE FROM withdrawals WHERE payment_id = ANY($1)) DELETE FROM payments WHERE id = ANY($1)")
+		.bind(&orders)
+		.execute(&h.pool)
+		.await
+		.unwrap();
 	for statement in [
 		"DELETE FROM outbox WHERE aggregate = 'payment' AND aggregate_id = ANY($1)",
 		"DELETE FROM event_log WHERE aggregate = 'payment' AND aggregate_id = ANY($1)",
@@ -2048,4 +2055,67 @@ fn assert_mark_description(mail: &serde_json::Value, service: &ServiceId, reason
 		assert_eq!(mail[empty], "", "a mark names no rail and no payment: {empty}");
 	}
 	assert!(mail["current"].is_null() && mail["proposed"].is_null(), "a mark proposes no fee terms: {mail}");
+}
+
+/// banking's treasury (D17) collects the withdrawal fees, and pays nothing out until its
+/// spending is decided by concierge's scope approvals (`bank:treasury_surplus`, D24): an
+/// order out of it — into a claim on the platform or out to an address — is refused at
+/// open, before any owner is asked.
+#[tokio::test]
+async fn the_treasury_takes_fees_in_and_pays_nothing_out() {
+	use domain::{
+		balance::Party,
+		money::WalletAddress,
+		payments::{PaymentDestination, PaymentReason, PaymentTerms},
+	};
+
+	let _guard = exclusive_governance().await;
+	let Some(h) = harness().await else {
+		eprintln!("DATABASE_URL unset — skipping the consilium suite");
+		return;
+	};
+	reset_governance(&h).await;
+	let roster = owners(&h, 3).await;
+	let treasury = Party::Treasury.claim_key();
+	h.ledger
+		.post(&LedgerTransfer {
+			id: Uuid::new_v4().as_u128(),
+			debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
+			credit: treasury.clone(),
+			amount: usdt("300").base_units(),
+			code: TransferCode::WithdrawFee,
+			reference: 0,
+		})
+		.await
+		.unwrap();
+	h.relay.drain().await;
+	let consilia_before: i64 = sqlx::query_scalar("SELECT count(*) FROM consilium").fetch_one(&h.pool).await.unwrap();
+	let address = WalletAddress::parse(Network::Bep20, "0x52908400098527886E0F7030069857D2E4169EE7").unwrap();
+	for to in [
+		PaymentDestination::Internal(Party::Service(ServiceId::fee())),
+		PaymentDestination::External { network: Network::Bep20, address },
+	] {
+		let terms = PaymentTerms::new(Party::Treasury, to, usdt("50"), PaymentReason::new("pay the auditors").unwrap()).unwrap();
+		let refused = payments_app::open(&ports(&h).payment_ports(), roster[0], terms, now()).await;
+		assert!(
+			matches!(&refused, Err(DomainError::Precondition(reason)) if reason == payments_app::TREASURY_SPENDING_CLOSED),
+			"{refused:?}"
+		);
+	}
+	let consilia_after: i64 = sqlx::query_scalar("SELECT count(*) FROM consilium").fetch_one(&h.pool).await.unwrap();
+	assert_eq!(consilia_after, consilia_before, "no owner was asked");
+	let orders: i64 = sqlx::query_scalar("SELECT count(*) FROM payments WHERE from_kind = 'treasury'").fetch_one(&h.pool).await.unwrap();
+	assert_eq!(orders, 0, "nothing recorded");
+	assert_eq!(h.ledger.balance(&treasury).await.unwrap().available(), usdt("300").base_units(), "the fees stay put");
+
+	// Nobody pays INTO the treasury.
+	assert!(
+		PaymentTerms::new(
+			Party::Service(ServiceId::fee()),
+			PaymentDestination::Internal(Party::Treasury),
+			usdt("1"),
+			PaymentReason::new("no").unwrap()
+		)
+		.is_err()
+	);
 }

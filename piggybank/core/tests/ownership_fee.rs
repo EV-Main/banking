@@ -5,10 +5,11 @@
 //!
 //! What these pin down is the ownership chain, end to end:
 //!
-//! 1. **A fee is the `fee` allocation's, and the allocation is its people's.** A product's
-//!    settled fee class, a retained withdrawal fee and a taker fee all land on
-//!    `service:fee`, whose price is what it holds over its supply — so a person holding
-//!    `fee` units sees their position rise as fees accrue and settle.
+//! 1. **An allocation fee is the `fee` allocation's, and the allocation is its people's.** A
+//!    product's settled fee class and a taker fee land on `service:fee`, whose price is what
+//!    it holds over its supply — so a person holding `fee` units sees their position rise as
+//!    fees accrue and settle. A retained withdrawal fee is banking's own and goes to its
+//!    treasury instead (D17), leaving the `fee` holders' price where it was.
 //! 2. **A reserved allocation's cash is never queued for.** A redemption of `fee` units
 //!    the claim cannot cover is refused outright; once fee units are settled into cash,
 //!    the same redemption completes.
@@ -216,11 +217,11 @@ async fn fund_party(h: &Harness, party: Party, amount: &str) {
 			balance_app::record_deposit(&h.deposits, &h.notify, tx_ref, user, Network::Bep20, usdt(amount)).await.unwrap();
 			common::drain_to_quiescence(&h.relay, &h.pool).await;
 		}
-		Party::Service(service) => {
+		allocation_or_treasury => {
 			let transfer = LedgerTransfer {
 				id: Uuid::new_v4().as_u128(),
 				debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
-				credit: LedgerAccountKey::ServiceClaim(service),
+				credit: allocation_or_treasury.claim_key(),
 				amount: usdt(amount).base_units(),
 				code: TransferCode::Deposit,
 				reference: 0,
@@ -416,10 +417,11 @@ async fn settled_fee_cash_lands_in_the_fee_allocation_and_its_holders_nav_rises(
 	assert_eq!(mine.units, granted);
 }
 
-/// A retained withdrawal fee is the `fee` allocation's too — the same claim, the same
-/// holders — so a person holding `fee` units sees their NAV rise by the fee over the supply.
+/// A retained withdrawal fee is banking's own (D17): it lands in banking's treasury,
+/// `ScopeAccount(main, treasury)`, and the `fee` allocation — its claim and its holders'
+/// NAV — does not move.
 #[tokio::test]
-async fn a_retained_withdrawal_fee_lands_in_the_fee_allocation_and_raises_its_holders_nav() {
+async fn a_retained_withdrawal_fee_lands_in_the_treasury_not_the_fee_allocation() {
 	let Some(h) = harness().await else { return };
 	let (user, owner) = (person(&h).await, person(&h).await);
 	fund_user(&h, user, "100").await;
@@ -428,7 +430,8 @@ async fn a_retained_withdrawal_fee_lands_in_the_fee_allocation_and_raises_its_ho
 	grant_fee_units(&h, owner, "10").await;
 	let claim_before = cash_of(&h, fee_claim()).await;
 	let quote_before = funds_app::nav_of(&h.nav, h.ledger.as_ref(), &ServiceId::fee()).await.unwrap();
-	let supply = units_of(&h, LedgerAccountKey::SharesOutstanding(ServiceId::fee())).await;
+	let treasury = domain::balance::FeePayee::treasury().claim_key();
+	let treasury_before = cash_of(&h, treasury.clone()).await;
 
 	let network = Network::Bep20;
 	let ports = withdrawal_app::WithdrawalPorts {
@@ -454,11 +457,9 @@ async fn a_retained_withdrawal_fee_lands_in_the_fee_allocation_and_raises_its_ho
 		.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 
-	assert_eq!(cash_of(&h, fee_claim()).await, claim_before.checked_add(fee).unwrap(), "the retained fee is the fee allocation's");
-	let nav_after = fee_nav(&h).await;
-	let value_after = quote_before.aum.expect("a computed value").checked_add(fee).unwrap();
-	assert_eq!(nav_after, Nav::from_aum(value_after, supply).unwrap(), "and its holders' NAV rose by the fee over the supply");
-	assert!(nav_after > quote_before.nav);
+	assert_eq!(cash_of(&h, treasury).await, treasury_before.checked_add(fee).unwrap(), "the retained fee is banking's treasury's");
+	assert_eq!(cash_of(&h, fee_claim()).await, claim_before, "the fee allocation's claim did not move");
+	assert_eq!(fee_nav(&h).await, quote_before.nav, "nor did its holders' NAV");
 }
 
 /// A holder of `fee` units exits like any investor — priced at the allocation's NAV,

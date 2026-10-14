@@ -28,6 +28,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
+	payments::PaymentId,
 	users::UserId,
 	withdrawals::{Withdrawal, WithdrawalId, WithdrawalPolicy, WithdrawalSource},
 };
@@ -36,7 +37,11 @@ use tracing::warn;
 
 use crate::{
 	config::KycGate,
-	ports::{Custody, OutflowPolicy, WithdrawalRepository, ledger::Ledger, outflow::PayoutStanding},
+	ports::{
+		Custody, OutflowPolicy, WithdrawalRepository,
+		ledger::{ClaimCovers, Ledger},
+		outflow::PayoutStanding,
+	},
 };
 
 /// What a caller is told when the outflow kill-switch is engaged. One constant for the
@@ -191,6 +196,36 @@ pub async fn check_user_withdrawal(ledger: &dyn Ledger, gates: &AdmissionGates<'
 	require_solvent(ledger, source, amount).await
 }
 
+/// An L1 payment out of banking's treasury (D17), executing an order the owners' consilium
+/// approved: always queued, like [`queue_withdrawal`], so the dispatch re-reads the pause
+/// and the rail freeze when the money actually leaves. There is no account to freeze or
+/// verify — the consilium is the say-so — and no fee: it would be paid to the treasury out
+/// of the treasury.
+pub async fn queue_treasury_withdrawal(
+	ports: &WithdrawalPorts<'_>,
+	gates: &AdmissionGates<'_>,
+	id: WithdrawalId,
+	payment: PaymentId,
+	network: Network,
+	address: WalletAddress,
+	amount: Usdt,
+) -> Result<Withdrawal, DomainError> {
+	require_configured(gates.configured, network)?;
+	require_unfrozen_rail(gates.policy, network).await?;
+	open_withdrawal(ports, id, WithdrawalSource::Treasury { payment }, network, address, amount, false).await
+}
+
+/// Would a treasury payout be accepted *right now*, without recording anything? The payment
+/// order's open-time pre-check, as [`check_user_withdrawal`] is for an investor's.
+pub async fn check_treasury_withdrawal(ledger: &dyn Ledger, gates: &AdmissionGates<'_>, network: Network, address: WalletAddress, amount: Usdt) -> Result<(), DomainError> {
+	require_configured(gates.configured, network)?;
+	require_unfrozen_rail(gates.policy, network).await?;
+	// The order is not minted yet; the source here only carries the shape to validate.
+	let source = WithdrawalSource::Treasury { payment: PaymentId::new() };
+	Withdrawal::request(WithdrawalId::new(), source, network, address, amount, WithdrawalPolicy::fee_for(source, network))?;
+	require_solvent(ledger, source, amount).await
+}
+
 /// Rail gate — the withdrawable view no longer offers an unconfigured rail, but a direct
 /// API caller could otherwise queue a withdrawal that only a manual operator settle (the
 /// stub custody fallthrough) could ever ship. Pre-existing withdrawals on a since-
@@ -210,13 +245,12 @@ async fn require_unfrozen_rail(policy: &dyn OutflowPolicy, network: Network) -> 
 	Ok(())
 }
 
-/// Read-First on the source's claim: the spendable balance (posted minus what other
-/// in-flight withdrawals have already reserved) must cover the gross. TigerBeetle's
-/// non-negative flag is the hard backstop.
+/// Read-First on the source's claim: the spendable balance ([`Ledger::spendable`] — available
+/// on the ledger minus every debit of the claim recorded and not yet applied) must cover the
+/// gross. TigerBeetle's non-negative flag is the hard backstop.
 async fn require_solvent(ledger: &dyn Ledger, source: WithdrawalSource, amount: Usdt) -> Result<(), DomainError> {
-	let claim = ledger.balance(&source.claim_key()).await?;
-	if Usdt::from_base_units(claim.available()) < amount {
-		return Err(DomainError::Validation("insufficient available balance to withdraw".into()));
+	if Usdt::from_base_units(ledger.spendable(&source.claim_key()).await?) < amount {
+		return Err(DomainError::Validation(INSUFFICIENT_TO_WITHDRAW.into()));
 	}
 	Ok(())
 }
@@ -244,10 +278,20 @@ async fn open_withdrawal(
 	if dispatch_immediately && rail_covers(ports, network, withdrawal.net_amount()).await? {
 		withdrawal.dispatch()?;
 	}
-	ports.withdrawals.open(&mut withdrawal).await?;
+	// The same question again under the claim's lock: a move or a buy recorded between the
+	// first answer and the write must not leave both spends standing on one balance.
+	let guard = ClaimCovers {
+		ledger: ports.ledger,
+		key: source.claim_key(),
+		amount: amount.base_units(),
+		refusal: INSUFFICIENT_TO_WITHDRAW,
+	};
+	ports.withdrawals.open(&mut withdrawal, &guard).await?;
 	ports.relay.notify_one();
 	Ok(withdrawal)
 }
+
+const INSUFFICIENT_TO_WITHDRAW: &str = "insufficient available balance to withdraw";
 
 /// Read-First #2 — rail liquidity: dispatchable liquidity is `min(TB rail, on-chain
 /// treasury)`. The TB `wallet:<net>` balance alone over-counts — it includes confirmed
@@ -295,7 +339,11 @@ pub async fn require_outflows_enabled(policy: &dyn OutflowPolicy) -> Result<(), 
 async fn require_dispatchable(policy: &dyn OutflowPolicy, gate: KycGate, withdrawal: &Withdrawal) -> Result<(), DomainError> {
 	require_outflows_enabled(policy).await?;
 	require_unfrozen_rail(policy, withdrawal.network()).await?;
-	let owner = withdrawal.user();
+	// A treasury payout has no owner to freeze or verify: the owners' consilium approved
+	// it. The pause and the rail freeze above still hold it.
+	let Some(owner) = withdrawal.user() else {
+		return Ok(());
+	};
 	let standing = policy
 		.standing(owner)
 		.await?
@@ -351,7 +399,7 @@ pub async fn cancel_withdrawal(withdrawals: &dyn WithdrawalRepository, relay: &N
 		entity: "withdrawal",
 		id: id.to_string(),
 	})?;
-	if existing.user() != user {
+	if existing.user() != Some(user) {
 		return Err(DomainError::Forbidden("not your withdrawal".into()));
 	}
 	let withdrawal = withdrawals.cancel(id).await?;

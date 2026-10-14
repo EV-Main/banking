@@ -283,6 +283,7 @@ async fn get_wallet_presents_only_configured_rails() {
 					nav: &nav,
 					deposit_addresses: &addresses,
 					users: &users,
+					compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(pool.clone()),
 				},
 				&[Network::Bep20],
 				KycGate::ENFORCED,

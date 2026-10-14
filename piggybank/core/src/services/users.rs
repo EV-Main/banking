@@ -11,16 +11,15 @@
 
 use concierge_domain::authz::bank;
 use domain::{
-	balance::LedgerAccountKey,
 	money::Usdt,
-	users::{ProfileFields, User},
+	users::{ProfileFields, User, UserId},
 };
 use evbanking_contracts::banking::v1::{self as pb, users_service_server::UsersService};
 use tonic::{Request, Response, Status};
 
 use crate::{
 	AppState,
-	application::users as users_app,
+	application::{compartments as compartments_app, users as users_app},
 	services::support::{caller_id, map_err, optional, parse_user_id, require_permission, resolve_target_user, unix_now},
 };
 
@@ -64,20 +63,7 @@ impl UsersService for UsersSvc {
 
 	async fn get_balance(&self, request: Request<pb::GetUserBalanceRequest>) -> Result<Response<pb::UserBalanceResponse>, Status> {
 		let id = caller_id(&request)?;
-		// The user's single unified claim, read live from TigerBeetle (Read-First);
-		// credit-normal, so non-negative.
-		let balance = self
-			.state
-			.ledger
-			.balance(&LedgerAccountKey::UserClaim(id))
-			.await
-			.map_err(|_| Status::unavailable("ledger unavailable"))?;
-		Ok(Response::new(pb::UserBalanceResponse {
-			amount: Usdt::from_base_units(balance.posted).to_decimal_string(),
-			pending: Usdt::from_base_units(balance.pending).to_decimal_string(),
-			authoritative: true,
-			as_of: unix_now(),
-		}))
+		user_balance(&self.state, id).await.map(Response::new)
 	}
 
 	async fn revoke_tokens(&self, request: Request<pb::RevokeTokensRequest>) -> Result<Response<pb::RevokeTokensResponse>, Status> {
@@ -102,20 +88,25 @@ impl UsersService for UsersSvc {
 		// matching neither. See `resolve_target_user` for why disabled/frozen targets
 		// still resolve.
 		let target = resolve_target_user(&self.state, &request.get_ref().user_id).await?;
-		// The user's single unified claim, read live from TigerBeetle (Read-First).
-		let balance = self
-			.state
-			.ledger
-			.balance(&LedgerAccountKey::UserClaim(target))
-			.await
-			.map_err(|_| Status::unavailable("ledger unavailable"))?;
-		Ok(Response::new(pb::UserBalanceResponse {
-			amount: Usdt::from_base_units(balance.posted).to_decimal_string(),
-			pending: Usdt::from_base_units(balance.pending).to_decimal_string(),
-			authoritative: true,
-			as_of: unix_now(),
-		}))
+		user_balance(&self.state, target).await.map(Response::new)
 	}
+}
+
+/// The user's whole cash, read live from TigerBeetle (Read-First): the `main` claim plus
+/// every scope compartment, both credit-normal, so non-negative.
+async fn user_balance(state: &AppState, user: UserId) -> Result<pb::UserBalanceResponse, Status> {
+	let held = compartments_app::holdings(state.compartments.as_ref(), state.ledger.as_ref(), user)
+		.await
+		.map_err(|_| Status::unavailable("ledger unavailable"))?;
+	let sum = |a: Usdt, b: Usdt| a.checked_add(b).ok_or_else(|| Status::unavailable("ledger unavailable"));
+	Ok(pb::UserBalanceResponse {
+		amount: sum(held.main.posted, held.compartments.posted)?.to_decimal_string(),
+		pending: sum(held.main.pending, held.compartments.pending)?.to_decimal_string(),
+		authoritative: true,
+		as_of: unix_now(),
+		main: held.main.posted.to_decimal_string(),
+		in_compartments: held.compartments.posted.to_decimal_string(),
+	})
 }
 
 fn user_to_proto(user: &User) -> pb::UserProfile {

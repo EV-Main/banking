@@ -1,9 +1,12 @@
 //! `withdrawals` bounded context — on-chain withdrawals out of the fund.
 //!
-//! The claim debited is always an investor's own ([`WithdrawalSource::User`]). The fund's
+//! The claim debited is an investor's own ([`WithdrawalSource::User`]) or, for an L1
+//! payment the owners' consilium approved, banking's treasury ([`WithdrawalSource::Treasury`],
+//! D17). The fund's
 //! earnings used to leave by a second source — the revenue payout — which #245 retired:
-//! every fee is the `fee` allocation's, held by people, and cash leaves it only through a
-//! holder's redemption onto their own claim and then their own withdrawal.
+//! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
+//! through a holder's redemption onto their own claim and then their own withdrawal. The
+//! withdrawal fee itself is banking's own and lands in its treasury (D17).
 //!
 //! A withdrawal moves that claim out of the fund and onto an external
 //! address. It is the **dangerous direction** (value leaves the system), so it is a
@@ -27,9 +30,10 @@ use ev::architecture::{AggregateRoot, DomainEvent, EmitsEvents, Entity, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	balance::{LedgerAccountKey, Party},
+	balance::{FeePayee, LedgerAccountKey},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
+	payments::PaymentId,
 	users::UserId,
 };
 
@@ -38,33 +42,55 @@ pub type WithdrawalId = Id<WithdrawalTag>;
 /// Phantom tag making [`WithdrawalId`] a distinct, incompatible identity type.
 pub struct WithdrawalTag;
 
-/// **Whose money leaves** — the claim a withdrawal debits. One variant since #245 retired
-/// the revenue payout; kept as a type because the saga, the relay's legs and the stored
-/// `source` column are all written against "a source", and a second one would be a variant
-/// here, not a parallel saga.
+/// **Whose money leaves** — the claim a withdrawal debits: an investor's, or banking's
+/// treasury paying out what the owners' consilium approved (D17). The saga, the relay's
+/// legs and the stored `source` column are all written against "a source", so the second
+/// one is a variant here, not a parallel saga.
 ///
 /// The wire form is the user's UUID as a string, so an `event_log`/`outbox` payload
 /// written before the field was a source (it held a bare UUID) still reads back as
 /// [`WithdrawalSource::User`]. Together with the `alias` on [`WithdrawalEvent`]'s `source`
-/// field there is nothing to backfill and no undrained row that stops deserializing.
+/// field there is nothing to backfill and no undrained row that stops deserializing. The
+/// treasury's is `treasury:<payment id>`, which no UUID can be.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum WithdrawalSource {
 	/// An investor's own unified claim (`user:<uuid>`).
 	User(UserId),
+	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever executing `payment`,
+	/// an order the owners' consilium approved. The order rides on the source so no
+	/// treasury withdrawal can exist without the approval it spends (a schema CHECK says
+	/// the same of the row).
+	Treasury { payment: PaymentId },
 }
+
+const TREASURY_WIRE: &str = "treasury";
 
 impl WithdrawalSource {
 	/// The stored/wire discriminant.
 	pub fn as_wire(&self) -> String {
 		match self {
 			Self::User(user) => user.to_string(),
+			Self::Treasury { payment } => format!("{TREASURY_WIRE}:{payment}"),
+		}
+	}
+
+	/// The stored `source` column value (`user` | `treasury`); the user id rides beside it.
+	pub fn column(&self) -> &'static str {
+		match self {
+			Self::User(_) => "user",
+			Self::Treasury { .. } => TREASURY_WIRE,
 		}
 	}
 
 	/// Parse the stored/wire form. The retired `revenue` literal is not UUID-shaped and
 	/// is refused like any other junk.
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
+		if let Some(payment) = raw.strip_prefix(TREASURY_WIRE).and_then(|rest| rest.strip_prefix(':')) {
+			return uuid::Uuid::parse_str(payment)
+				.map(|id| Self::Treasury { payment: Id::from_raw(id) })
+				.map_err(|_| DomainError::Validation(format!("unknown withdrawal source: {raw}")));
+		}
 		uuid::Uuid::parse_str(raw)
 			.map(|id| Self::User(Id::from_raw(id)))
 			.map_err(|_| DomainError::Validation(format!("unknown withdrawal source: {raw}")))
@@ -74,13 +100,23 @@ impl WithdrawalSource {
 	pub fn claim_key(&self) -> LedgerAccountKey {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
+			Self::Treasury { .. } => crate::balance::FeePayee::treasury().claim_key(),
 		}
 	}
 
-	/// The user this withdrawal belongs to.
-	pub fn user(&self) -> UserId {
+	/// The user this withdrawal belongs to; `None` for the treasury's.
+	pub fn user(&self) -> Option<UserId> {
 		match self {
-			Self::User(user) => *user,
+			Self::User(user) => Some(*user),
+			Self::Treasury { .. } => None,
+		}
+	}
+
+	/// The approved payment order a treasury withdrawal executes; `None` for a user's.
+	pub fn payment(&self) -> Option<PaymentId> {
+		match self {
+			Self::User(_) => None,
+			Self::Treasury { payment } => Some(*payment),
 		}
 	}
 }
@@ -122,6 +158,8 @@ impl WithdrawalPolicy {
 	pub fn fee_for(source: WithdrawalSource, network: Network) -> Usdt {
 		match source {
 			WithdrawalSource::User(_) => Self::fee(network),
+			// The fee would be paid to the treasury out of the treasury.
+			WithdrawalSource::Treasury { .. } => Usdt::ZERO,
 		}
 	}
 }
@@ -291,7 +329,7 @@ impl Withdrawal {
 			amount: self.amount,
 			fee: self.fee,
 			tx_ref,
-			payee: Party::fee_payee(),
+			payee: FeePayee::treasury(),
 		});
 		Ok(())
 	}
@@ -349,8 +387,8 @@ impl Withdrawal {
 		self.source
 	}
 
-	/// The owning investor.
-	pub fn user(&self) -> UserId {
+	/// The owning investor; `None` for a treasury payout.
+	pub fn user(&self) -> Option<UserId> {
 		self.source.user()
 	}
 
@@ -430,9 +468,10 @@ pub enum WithdrawalEvent {
 		fee: Usdt,
 	},
 	/// Confirmed on-chain (relay: post the clearing pending, then move net→`wallet:<net>`
-	/// and the retained fee→`payee`'s claim).
+	/// and the retained fee→`payee`'s account).
 	///
-	/// `payee` is the `fee` allocation (#245).
+	/// `payee` is banking's treasury (D17); an event raised before names the `fee`
+	/// allocation and still pays it.
 	Settled {
 		withdrawal_id: WithdrawalId,
 		#[serde(alias = "user")]
@@ -441,7 +480,7 @@ pub enum WithdrawalEvent {
 		amount: Usdt,
 		fee: Usdt,
 		tx_ref: TxRef,
-		payee: Party,
+		payee: FeePayee,
 	},
 	/// Broadcast confirmed not to have landed — void the clearing reservation (refund).
 	Failed {
@@ -623,6 +662,14 @@ mod tests {
 		assert!(WithdrawalSource::parse("revenue").is_err());
 		assert!(WithdrawalSource::parse("fund").is_err());
 		assert!(WithdrawalSource::parse("").is_err());
+		let payment = crate::payments::PaymentId::new();
+		let treasury = WithdrawalSource::Treasury { payment };
+		assert_eq!(WithdrawalSource::parse(&treasury.as_wire()).unwrap(), treasury);
+		assert_eq!(treasury.as_wire(), format!("treasury:{payment}"));
+		assert!(WithdrawalSource::parse("treasury").is_err(), "a treasury withdrawal names its payment");
+		assert!(WithdrawalSource::parse("treasury:nope").is_err());
+		assert_eq!((treasury.user(), treasury.payment()), (None, Some(payment)));
+		assert_eq!(WithdrawalPolicy::fee_for(treasury, Network::Bep20), Usdt::ZERO);
 	}
 
 	#[test]

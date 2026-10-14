@@ -8,7 +8,8 @@
 //! `available + pending_withdrawal == posted` by construction and the figures cannot
 //! drift. `in_orders` is the cash the book holds in escrow for the user's resting buy
 //! orders (`BookCash`, a second claim account of theirs); `invested` is the sum of
-//! active stakes valued at NAV, the units escrowed by resting sell orders included.
+//! active stakes valued at NAV, the units escrowed by resting sell orders included;
+//! `in_compartments` is the user's money in scope compartments (D9), still theirs.
 //! Network re-enters only as a transaction attribute: a per-rail deposit address and a
 //! per-rail withdrawable view
 //! (`instant = min(available, rail liquidity)`, the accept-and-queue degradation hint).
@@ -35,13 +36,14 @@ use domain::{
 };
 
 use crate::{
-	application::funds as funds_app,
+	application::{compartments as compartments_app, funds as funds_app},
 	config::KycGate,
-	ports::{DepositAddresses, Deposits, FundPositionReader, NavMarks, UserRepository, deposit_addresses::MigratedAddress, deposits::DepositRecord, ledger::Ledger},
+	ports::{CompartmentStore, DepositAddresses, Deposits, FundPositionReader, NavMarks, UserRepository, deposit_addresses::MigratedAddress, deposits::DepositRecord, ledger::Ledger},
 };
 
 /// A user's single, network-agnostic balance, segmented by lifecycle. Every figure is
-/// non-negative; `total = available + in_orders + invested + pending_withdrawal`.
+/// non-negative; `total = available + in_orders + invested + pending_withdrawal +
+/// in_compartments` — the `main` wallet's terms plus what sits in scope compartments.
 /// `available` and `pending_withdrawal` are two views of the same claim (`posted −
 /// reserved` and `reserved`), so their sum is the claim's `posted` by construction —
 /// never a moment where they diverge and `total` double-counts an in-flight withdrawal.
@@ -63,7 +65,11 @@ pub struct WalletBalance {
 	/// locked). Read from the ledger, not the `withdrawals` projection, so it stays in
 	/// lockstep with `available` off one balance read.
 	pub pending_withdrawal: Usdt,
-	/// `available + in_orders + invested + pending_withdrawal` — the user's whole position.
+	/// The user's money in their scope compartments (Σ `scope_claim` posted) — theirs, just
+	/// earmarked for a scope (D9).
+	pub in_compartments: Usdt,
+	/// `available + in_orders + invested + pending_withdrawal + in_compartments` — the
+	/// user's whole position.
 	pub total: Usdt,
 }
 
@@ -118,6 +124,8 @@ pub struct WalletPorts<'a> {
 	pub deposit_addresses: &'a dyn DepositAddresses,
 	/// The control-plane user row carrying the bridge-mirrored KYC tier.
 	pub users: &'a dyn UserRepository,
+	/// The scopes the user may hold compartments in — `in_compartments` sums them.
+	pub compartments: &'a dyn CompartmentStore,
 }
 
 /// The driven ports the single-rail deposit-address read borrows. Kept separate from
@@ -151,28 +159,34 @@ async fn is_verified(gate: KycGate, users: &dyn UserRepository, user: UserId) ->
 /// is nothing to withhold and every configured rail carries its address.
 pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: KycGate, user: UserId) -> Result<Wallet, DomainError> {
 	let (ledger, positions, nav, deposit_addresses) = (ports.ledger, ports.positions, ports.nav, ports.deposit_addresses);
-	// Layer 1 — the single unified claim. The ledger speaks raw base units; wrap into
-	// the typed `Usdt` at this boundary. `available` and `pending_withdrawal` are the two
+	// Layer 1 — the single unified claim. `available` and `pending_withdrawal` are the two
 	// sides of this one balance (`posted − reserved` and `reserved`), so they can never
 	// disagree about an in-flight withdrawal — the reserve (`Dr user / Cr clearing`
 	// pending) is the only thing that locks a claim, and it moves both fields together.
-	let claim = ledger.balance(&LedgerAccountKey::UserClaim(user)).await?;
-	let available = Usdt::from_base_units(claim.available());
+	// The compartments are read in the same ledger lookup as the claim, so `total` adds
+	// two figures of one instant.
+	let (held, book_cash, held_positions) = tokio::try_join!(
+		compartments_app::holdings(ports.compartments, ledger, user),
+		async { ledger.balance(&LedgerAccountKey::BookCash(user)).await.map_err(DomainError::from) },
+		positions.list(user),
+	)?;
+	let claim = held.main;
+	let available = claim.available();
 	// Sourced from `reserved`, NOT the `withdrawals` table: the projection counted a row
 	// the instant it was created, while the ledger reserve applies asynchronously — so the
 	// two summed as if simultaneously consistent and `total` transiently (or permanently,
 	// if a reserve parked) overstated the claim by the gross.
-	let pending_withdrawal = Usdt::from_base_units(claim.locked);
-	// The book's cash escrow is a separate account, so it is a separate read; posted,
-	// because a lock and a release are both posted transfers (nothing pends on it).
-	let in_orders = Usdt::from_base_units(ledger.balance(&LedgerAccountKey::BookCash(user)).await?.posted);
+	let pending_withdrawal = claim.locked;
+	// The book's cash escrow is a separate account; posted, because a lock and a release
+	// are both posted transfers (nothing pends on it).
+	let in_orders = Usdt::from_base_units(book_cash.posted);
 
 	// invested = the value of the user's fund positions: live units × current NAV, the
 	// units a resting sell escrowed included — a sell order moves them `Dr BookShares /
 	// Cr UserShares`, and a wallet that read only the holding would show the stake
 	// shrinking the moment an order rests.
 	let mut invested = Usdt::ZERO;
-	for position in positions.list(user).await? {
+	for position in held_positions {
 		let held = Shares::from_base_units(ledger.balance(&LedgerAccountKey::UserShares(position.service.clone(), user)).await?.posted);
 		let escrowed = Shares::from_base_units(ledger.balance(&LedgerAccountKey::BookShares(position.service.clone(), user)).await?.posted);
 		let owned = held.checked_add(escrowed).ok_or_else(|| DomainError::Repository("position units overflow".into()))?;
@@ -186,12 +200,15 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 
 	// total is the whole claim (its settled `posted`, which still carries the reserved
 	// gross as a pending debit until the withdrawal settles) plus the book's cash escrow
-	// plus invested — so `total == available + pending_withdrawal + in_orders + invested`
-	// by construction, and a buy order moves cash between two of its terms without
-	// moving the sum.
-	let total = Usdt::from_base_units(claim.posted)
+	// plus invested plus the compartments — so `total == available + pending_withdrawal +
+	// in_orders + invested + in_compartments` by construction, and a buy order or a move
+	// between `main` and a compartment shifts cash between terms without moving the sum.
+	let in_compartments = held.compartments.posted;
+	let total = claim
+		.posted
 		.checked_add(in_orders)
 		.and_then(|sum| sum.checked_add(invested))
+		.and_then(|sum| sum.checked_add(in_compartments))
 		.ok_or_else(|| DomainError::Repository("wallet total overflow".into()))?;
 
 	let balance = WalletBalance {
@@ -199,6 +216,7 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 		in_orders,
 		invested,
 		pending_withdrawal,
+		in_compartments,
 		total,
 	};
 

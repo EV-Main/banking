@@ -47,6 +47,7 @@ pub mod allocations;
 pub mod auth_sync;
 pub mod balance;
 pub mod book;
+pub mod compartments;
 pub mod consilium;
 pub(crate) mod credentials;
 pub mod fees;

@@ -185,14 +185,16 @@ impl From<cc::ListGrantsResponse> for GrantHolderList {
 // ── piggybank: wallet ────────────────────────────────────────────────────────
 
 /// The unified balance by lifecycle: `total = available + in_orders + invested +
-/// pending_withdrawal`. `in_orders` is the cash the book holds for the caller's resting
-/// buy orders — still theirs, so it is inside `total` and outside `available`.
+/// pending_withdrawal + in_compartments`. `in_orders` is the cash the book holds for the
+/// caller's resting buy orders, `in_compartments` the caller's money in scope compartments —
+/// both still theirs, so inside `total` and outside `available`.
 #[derive(Default, Serialize)]
 pub struct Balance {
 	pub available: String,
 	pub in_orders: String,
 	pub invested: String,
 	pub pending_withdrawal: String,
+	pub in_compartments: String,
 	pub total: String,
 }
 
@@ -203,6 +205,7 @@ impl From<bk::Balance> for Balance {
 			in_orders: b.in_orders,
 			invested: b.invested,
 			pending_withdrawal: b.pending_withdrawal,
+			in_compartments: b.in_compartments,
 			total: b.total,
 		}
 	}
@@ -1251,13 +1254,15 @@ list_dto! {
 	}
 }
 
-/// A live user balance (the user-detail drawer).
+/// A live user balance (the user-detail drawer): `amount = main + in_compartments`.
 #[derive(Serialize)]
 pub struct UserBalance {
 	pub amount: String,
 	pub pending: String,
 	pub authoritative: bool,
 	pub as_of: String,
+	pub main: String,
+	pub in_compartments: String,
 }
 
 impl From<bk::UserBalanceResponse> for UserBalance {
@@ -1267,6 +1272,8 @@ impl From<bk::UserBalanceResponse> for UserBalance {
 			pending: b.pending,
 			authoritative: b.authoritative,
 			as_of: b.as_of.to_string(),
+			main: b.main,
+			in_compartments: b.in_compartments,
 		}
 	}
 }
@@ -1325,6 +1332,10 @@ pub struct AllocationTreasury {
 	pub nav: String,
 	pub nav_posted_at: String,
 	pub holders: Vec<UnitHolding>,
+	/// banking's own treasury beside the `fee` allocation (D17) — set on the Revenue
+	/// screen's answer only, absent from every treasury line.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub banking_treasury: Option<AllocationClaim>,
 }
 
 impl From<bk::AllocationTreasury> for AllocationTreasury {
@@ -1338,6 +1349,7 @@ impl From<bk::AllocationTreasury> for AllocationTreasury {
 			nav: a.nav,
 			nav_posted_at: a.nav_posted_at_unix.to_string(),
 			holders: a.holders.into_iter().filter_map(UnitHolding::from_wire).collect(),
+			banking_treasury: a.banking_treasury.map(AllocationClaim::from),
 		}
 	}
 }
@@ -1354,6 +1366,10 @@ pub struct Treasury {
 	pub reserved_for_withdrawals: String,
 	pub held_by_users: String,
 	pub allocations: Vec<AllocationTreasury>,
+	/// banking's own treasury (D17), a line of its own; zeros from a plane older than it.
+	pub banking_treasury: AllocationClaim,
+	/// Σ users' scope compartments — still people's.
+	pub held_in_compartments: String,
 }
 
 impl From<bk::Treasury> for Treasury {
@@ -1378,6 +1394,8 @@ impl From<bk::Treasury> for Treasury {
 			reserved_for_withdrawals: t.reserved_for_withdrawals,
 			held_by_users: t.held_by_users,
 			allocations: t.allocations.into_iter().map(AllocationTreasury::from).collect(),
+			banking_treasury: t.banking_treasury.map(AllocationClaim::from).unwrap_or_default(),
+			held_in_compartments: t.held_in_compartments,
 		}
 	}
 }
@@ -1468,9 +1486,9 @@ impl From<bk::RedemptionQueue> for RedemptionQueue {
 	}
 }
 
-/// One withdrawal awaiting operator action (admin Withdrawals screen). `source` is
-/// always `user` since #245 retired the revenue payout (the hub's CHECK admits nothing
-/// else), so every row names its investor.
+/// One withdrawal awaiting operator action (admin Withdrawals screen). `source` is `user`
+/// (the row names its investor) or `treasury` — an approved payment out of banking's
+/// treasury (D17), with empty `user_id` and `email`.
 #[derive(Serialize)]
 pub struct WithdrawalQueueItem {
 	pub withdrawal_id: String,
@@ -2582,7 +2600,8 @@ mod tests {
 			in_orders: "12.12".into(),
 			invested: "50".into(),
 			pending_withdrawal: "0".into(),
-			total: "150".into(),
+			total: "160".into(),
+			in_compartments: "10".into(),
 		});
 		assert_eq!(
 			(
@@ -2590,9 +2609,10 @@ mod tests {
 				balance.in_orders.as_str(),
 				balance.invested.as_str(),
 				balance.pending_withdrawal.as_str(),
+				balance.in_compartments.as_str(),
 				balance.total.as_str()
 			),
-			("87.88", "12.12", "50", "0", "150")
+			("87.88", "12.12", "50", "0", "10", "160")
 		);
 	}
 
@@ -2652,6 +2672,7 @@ mod tests {
 					nav: "1.25".into(),
 					nav_posted_at_unix: 0,
 					holders: vec![holding("user", "d4d6", "64"), holding("user", "e5e7", "16")],
+					banking_treasury: None,
 				},
 				bk::AllocationTreasury {
 					service: "quy-nhon".into(),
@@ -2662,10 +2683,27 @@ mod tests {
 					nav: "1.00".into(),
 					nav_posted_at_unix: 1_750_000_000,
 					holders: vec![holding("allocation", "fee", "20"), bk::UnitHolding { holder: None, units: "5".into() }],
+					banking_treasury: None,
 				},
 			],
+			banking_treasury: Some(bk::AllocationClaim {
+				posted: "7".into(),
+				available: "5".into(),
+				reserved: "2".into(),
+			}),
+			held_in_compartments: "30".into(),
 		});
 		assert_eq!((treasury.held_by_users.as_str(), treasury.total_custody.as_str()), ("400", "1500"));
+		assert_eq!(
+			(
+				treasury.banking_treasury.posted.as_str(),
+				treasury.banking_treasury.reserved.as_str(),
+				treasury.held_in_compartments.as_str()
+			),
+			("7", "2", "30"),
+			"banking's treasury and the compartments cross as lines of their own"
+		);
+		assert!(treasury.allocations.iter().all(|line| line.banking_treasury.is_none()), "never per allocation line");
 		let [fee, product] = treasury.allocations.as_slice() else { panic!("two allocations") };
 		assert_eq!((fee.service.as_str(), fee.access.as_str(), fee.nav_posted_at.as_str()), ("fee", "hidden", "0"));
 		assert_eq!((fee.claim.posted.as_str(), fee.claim.available.as_str(), fee.claim.reserved.as_str()), ("100", "90", "10"));

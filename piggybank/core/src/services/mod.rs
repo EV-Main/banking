@@ -17,8 +17,8 @@ use std::{future::Future, net::SocketAddr};
 use evbanking_auth::{TokenClass, grpc_auth_layer};
 use evbanking_contracts::banking::v1::{
 	allocations_service_server::AllocationsServiceServer, balance_service_server::BalanceServiceServer, book_service_server::BookServiceServer,
-	consilium_approval_service_server::ConsiliumApprovalServiceServer, consilium_service_server::ConsiliumServiceServer, fees_service_server::FeesServiceServer,
-	funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer, operations_service_server::OperationsServiceServer,
+	compartment_service_server::CompartmentServiceServer, consilium_approval_service_server::ConsiliumApprovalServiceServer, consilium_service_server::ConsiliumServiceServer,
+	fees_service_server::FeesServiceServer, funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer, operations_service_server::OperationsServiceServer,
 	payment_consent_service_server::PaymentConsentServiceServer, payments_service_server::PaymentsServiceServer, users_service_server::UsersServiceServer,
 	wallet_service_server::WalletServiceServer,
 };
@@ -33,6 +33,7 @@ use crate::{
 		allocations::AllocationsSvc,
 		balance::BalanceSvc,
 		book::BookSvc,
+		compartments::CompartmentSvc,
 		consilium::{ConsiliumApprovalSvc, ConsiliumSvc},
 		fees::FeesSvc,
 		funds::FundsSvc,
@@ -47,6 +48,7 @@ use crate::{
 pub mod allocations;
 pub mod balance;
 pub mod book;
+pub mod compartments;
 pub mod consilium;
 pub mod fees;
 pub mod funds;
@@ -106,6 +108,7 @@ pub async fn serve(addr: SocketAddr, state: AppState, shutdown: impl Future<Outp
 		.add_service(ConsiliumApprovalServiceServer::new(ConsiliumApprovalSvc::new(state.clone())))
 		.add_service(auth.layer(PaymentsServiceServer::new(PaymentsSvc::new(state.clone()))))
 		.add_service(PaymentConsentServiceServer::new(PaymentConsentSvc::new(state.clone())))
+		.add_service(auth.layer(CompartmentServiceServer::new(CompartmentSvc::new(state.clone()))))
 		.add_service(auth.layer(WalletServiceServer::new(WalletSvc::new(state))))
 		.serve_with_shutdown(addr, shutdown)
 		.await

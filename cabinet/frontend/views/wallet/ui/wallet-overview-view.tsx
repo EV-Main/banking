@@ -104,17 +104,28 @@ export function WalletOverviewView({ initial }: { initial?: ResourceSeed<Wallet>
               so it would break this row — the chips carry the inline tips instead. */}
           <p className="hidden whitespace-nowrap text-sm text-ink-soft lg:block">{t("wallet.oneFungibleBalance", "≈ ${amount} · one fungible balance", { amount: formatUsdt(balance?.total, locale) })}</p>
         </div>
-        {/* Four chips, one per term of the balance identity (total = available + in orders
-            + invested + pending withdrawal). Two columns at 390px, not four: four leave
+        {/* Five chips, one per term of the balance identity (total = available + in orders
+            + invested + pending withdrawal + in compartments) — drop one and the chips stop
+            adding up to the figure beside them. Two columns at 390px, not four: four leave
             ~55px for a label, which no short form fits. The short forms date from the
             three-across layout and stay, since a 2×2 chip still shares its row with a dot
-            and a tip. i18n-max: 7 on every `label`; the `wideLabel` forms only render from
-            `lg`, where the chips size to their content. */}
+            and a tip. i18n-max: 7 on every `label` of a half-width chip; the fifth spans
+            both columns below `lg`, so it has room for its long form there. The `wideLabel`
+            forms only render from `lg`, where the chips size to their content. */}
         <div className="grid grid-cols-2 gap-2.5 lg:flex lg:shrink-0">
           <Chip label={t("wallet.chip.availShort", "AVAIL")} wideLabel={t("wallet.chip.avail", "AVAILABLE")} dot="bg-positive" value={balance?.available} loading={loading} tip="wallet.balance.available" />
           <Chip label={t("wallet.chip.inOrdersShort", "ORDERS")} wideLabel={t("wallet.chip.inOrders", "IN ORDERS")} dot="bg-chart-4" value={balance?.in_orders} loading={loading} tip="wallet.balance.in-orders" />
           <Chip label={t("wallet.chip.investShort", "INVEST")} wideLabel={t("wallet.chip.invest", "INVESTED")} dot="bg-accent-warn" value={balance?.invested} loading={loading} tip="wallet.balance.invested" />
           <Chip label={t("wallet.pendWd", "PEND WD")} wideLabel={t("wallet.chip.pendingWd", "PENDING WD")} dot="bg-accent-debug" value={balance?.pending_withdrawal} loading={loading} tip="wallet.balance.pending-withdrawal" />
+          <Chip
+            label={t("wallet.chip.inCompartments", "IN COMPARTMENTS")}
+            wideLabel={t("wallet.chip.inCompartments", "IN COMPARTMENTS")}
+            dot="bg-chart-5"
+            value={balance?.in_compartments}
+            loading={loading}
+            tip="wallet.balance.in-compartments"
+            className="col-span-2 lg:col-span-1"
+          />
         </div>
       </StaggerItem>
 
@@ -184,10 +195,10 @@ export function WalletOverviewView({ initial }: { initial?: ResourceSeed<Wallet>
 
 // The label shortens on mobile (`AVAIL`) and spells out from `lg` up — the Figma frames use
 // both, and the chip is too narrow at 390px for the long form.
-function Chip({ label, wideLabel, dot, value, loading, tip }: { label: string; wideLabel: string; dot: string; value: string | undefined; loading: boolean; tip: TipKey }) {
+function Chip({ label, wideLabel, dot, value, loading, tip, className }: { label: string; wideLabel: string; dot: string; value: string | undefined; loading: boolean; tip: TipKey; className?: string }) {
   const locale = useLocale();
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border px-2.5 py-2.5 lg:px-4 lg:py-3.5">
+    <div className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border px-2.5 py-2.5 lg:px-4 lg:py-3.5", className)}>
       <span className="flex items-center gap-1.5">
         <span className={cn("size-1.5 shrink-0 rounded-full lg:size-2", dot)} />
         <span className="truncate text-xs font-medium text-ink-soft">

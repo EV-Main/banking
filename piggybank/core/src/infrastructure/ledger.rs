@@ -16,13 +16,13 @@ use domain::{
 	architecture::Gateway,
 	balance::{AccountCode, LedgerAccountKey, Normal},
 };
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use tigerbeetle as tb;
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::tigerbeetle::TigerBeetle,
-	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, PendingCompletion},
+	infrastructure::{claims::TxReads, tigerbeetle::TigerBeetle},
+	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LockedReads, PendingCompletion},
 };
 
 /// The USDT cash ledger id (`Ledger::Usdt`) — the plane `cash_invariant` scans; each
@@ -54,7 +54,8 @@ const TB_CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const TB_CASH_INVARIANT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The TigerBeetle-backed [`Ledger`]. Holds the shared TB client and a Postgres pool
-/// for the `tb_accounts` id-map only (never an amount).
+/// for the `tb_accounts` id-map — and, for [`Ledger::spendable`], the debits recorded but
+/// not yet applied, which only the control plane knows of yet.
 pub struct TbLedger {
 	tb: Arc<TigerBeetle>,
 	pool: PgPool,
@@ -63,6 +64,25 @@ pub struct TbLedger {
 impl TbLedger {
 	pub fn new(tb: Arc<TigerBeetle>, pool: PgPool) -> Self {
 		Self { tb, pool }
+	}
+
+	/// The balance of `key` whose id the map gave as `id`; `None` — never touched — is zero.
+	async fn balance_of(&self, key: &LedgerAccountKey, id: Option<u128>) -> Result<LedgerBalance, LedgerError> {
+		let Some(id) = id else {
+			return Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 });
+		};
+		let call = self
+			.tb
+			.client()
+			.lookup_accounts(&[id])
+			.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
+		let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
+			.await?
+			.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
+		match accounts.first() {
+			Some(account) => normalized(key, account),
+			None => Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 }),
+		}
 	}
 
 	/// Look up an existing account id from the map (no allocation).
@@ -198,6 +218,18 @@ impl TbLedger {
 	}
 }
 
+/// The id the map holds for `key`, read on `conn` — the connection a spend holds its
+/// claim's lock on ([`LockedReads::account_id`]). Ids are minted once and never rewritten,
+/// so this reads the same row [`TbLedger`] resolves through its pool.
+pub async fn account_id(conn: &mut PgConnection, key: &LedgerAccountKey) -> Result<Option<u128>, LedgerError> {
+	let row = sqlx::query_scalar::<_, Vec<u8>>("SELECT tb_account_id FROM tb_accounts WHERE logical_key = $1")
+		.bind(key.logical_key())
+		.fetch_optional(conn)
+		.await
+		.map_err(|e| LedgerError::Unavailable(format!("account map read: {e}")))?;
+	row.map(|bytes| u128_from_be(&bytes)).transpose()
+}
+
 impl Gateway for TbLedger {}
 
 #[async_trait]
@@ -207,9 +239,18 @@ impl Ledger for TbLedger {
 	}
 
 	async fn balance(&self, key: &LedgerAccountKey) -> Result<LedgerBalance, LedgerError> {
+		let id = self.resolve_id(&key.logical_key()).await?;
+		self.balance_of(key, id).await
+	}
+
+	async fn balance_locked(&self, key: &LedgerAccountKey, reads: &mut dyn LockedReads) -> Result<LedgerBalance, LedgerError> {
+		let id = reads.account_id(key).await?;
+		self.balance_of(key, id).await
+	}
+
+	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
 		let Some(id) = self.resolve_id(&key.logical_key()).await? else {
-			// No id-map row ⇒ the account was never touched ⇒ balance is zero.
-			return Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 });
+			return Ok(0);
 		};
 		let call = self
 			.tb
@@ -219,28 +260,46 @@ impl Ledger for TbLedger {
 		let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
 			.await?
 			.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
-		let Some(account) = accounts.first() else {
-			return Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 });
-		};
-		// Normalize to the account's natural side. `posted` is a real non-negative
-		// invariant (the TB flag guarantees it), so an underflow there is a genuine
-		// ledger inconsistency. `pending` (in-flight inflow) and `locked` (in-flight
-		// outflow reserved against this account) are the two sides of a pending and are
-		// legitimately one-sided, so they saturate to zero rather than error.
-		let (posted, pending, locked) = match key.normal() {
-			Normal::Credit => (
-				account.credits_posted.checked_sub(account.debits_posted),
-				account.credits_pending.saturating_sub(account.debits_pending),
-				account.debits_pending.saturating_sub(account.credits_pending),
-			),
-			Normal::Debit => (
-				account.debits_posted.checked_sub(account.credits_posted),
-				account.debits_pending.saturating_sub(account.credits_pending),
-				account.credits_pending.saturating_sub(account.debits_pending),
-			),
-		};
-		let posted = posted.ok_or_else(|| LedgerError::Conflict("balance underflow".into()))?;
-		Ok(LedgerBalance { posted, pending, locked })
+		Ok(accounts.first().map_or(0, |account| account.debits_posted.saturating_add(account.debits_pending)))
+	}
+
+	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		let mut conn = self.pool.acquire().await.map_err(|e| LedgerError::Unavailable(format!("control-plane connection: {e}")))?;
+		self.spendable_locked(key, &mut TxReads::new(&mut conn)).await
+	}
+
+	async fn balances(&self, keys: &[LedgerAccountKey]) -> Result<Vec<LedgerBalance>, LedgerError> {
+		let logical: Vec<String> = keys.iter().map(LedgerAccountKey::logical_key).collect();
+		let rows = sqlx::query_as::<_, (String, Vec<u8>)>("SELECT logical_key, tb_account_id FROM tb_accounts WHERE logical_key = ANY($1)")
+			.bind(&logical)
+			.fetch_all(&self.pool)
+			.await
+			.map_err(|e| LedgerError::Unavailable(format!("account map read: {e}")))?;
+		let mut id_of = std::collections::HashMap::with_capacity(rows.len());
+		for (key, bytes) in rows {
+			id_of.insert(key, u128_from_be(&bytes)?);
+		}
+		let ids: Vec<u128> = id_of.values().copied().collect();
+		let mut found = std::collections::HashMap::with_capacity(ids.len());
+		for chunk in ids.chunks(LOOKUP_ACCOUNTS_MAX) {
+			let call = self
+				.tb
+				.client()
+				.lookup_accounts(chunk)
+				.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
+			let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
+				.await?
+				.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
+			found.extend(accounts.into_iter().map(|account| (account.id, account)));
+		}
+		// A key never touched (no map row) or not yet created in TB holds nothing.
+		keys.iter()
+			.zip(&logical)
+			.map(|(key, logical)| match id_of.get(logical).and_then(|id| found.get(id)) {
+				Some(account) => normalized(key, account),
+				None => Ok(LedgerBalance { posted: 0, pending: 0, locked: 0 }),
+			})
+			.collect()
 	}
 
 	async fn transfer_exists(&self, id: u128) -> Result<bool, LedgerError> {
@@ -462,6 +521,8 @@ impl Ledger for TbLedger {
 					Some(CashSide::ServiceClaims) => &mut inv.service_claims,
 					Some(CashSide::Clearing) => &mut inv.clearing,
 					Some(CashSide::BookCash) => &mut inv.book_cash,
+					Some(CashSide::ScopeClaims) => &mut inv.scope_claims,
+					Some(CashSide::ScopeAccounts) => &mut inv.scope_accounts,
 					Some(CashSide::RetiredClaims) => &mut inv.retired_claims,
 					Some(CashSide::Custody) | None => continue,
 				};
@@ -487,6 +548,28 @@ pub async fn seed_singletons(ledger: &dyn Ledger) -> Result<(), LedgerError> {
 	ledger.ensure_account(&LedgerAccountKey::WithdrawalClearing).await?;
 	ledger.ensure_account(&LedgerAccountKey::BankCustody).await?;
 	Ok(())
+}
+
+/// An account's balance on its natural side. `posted` is a real non-negative invariant (the
+/// TB flag guarantees it), so an underflow there is a genuine ledger inconsistency.
+/// `pending` (in-flight inflow) and `locked` (in-flight outflow reserved against this
+/// account) are the two sides of a pending and are legitimately one-sided, so they
+/// saturate to zero rather than error.
+fn normalized(key: &LedgerAccountKey, account: &tb::Account) -> Result<LedgerBalance, LedgerError> {
+	let (posted, pending, locked) = match key.normal() {
+		Normal::Credit => (
+			account.credits_posted.checked_sub(account.debits_posted),
+			account.credits_pending.saturating_sub(account.debits_pending),
+			account.debits_pending.saturating_sub(account.credits_pending),
+		),
+		Normal::Debit => (
+			account.debits_posted.checked_sub(account.credits_posted),
+			account.debits_pending.saturating_sub(account.credits_pending),
+			account.credits_pending.saturating_sub(account.debits_pending),
+		),
+	};
+	let posted = posted.ok_or_else(|| LedgerError::Conflict(format!("balance underflow on {}", key.logical_key())))?;
+	Ok(LedgerBalance { posted, pending, locked })
 }
 
 /// Map a single TigerBeetle transfer status to a [`LedgerError`]. The idempotent-

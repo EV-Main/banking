@@ -22,7 +22,7 @@
 
 use domain::{
 	allocations::{Allocation, AllocationAccess},
-	balance::{LedgerAccountKey, ServiceId},
+	balance::{LedgerAccountKey, Party, ServiceId},
 	error::DomainError,
 	money::{Network, Shares, TxRef, Usdt},
 	subscriptions::{Subscription, SubscriptionId},
@@ -38,7 +38,13 @@ use crate::{
 		issuance::UnitHolding,
 		ownership::{self as ownership_app, AllocationClaim},
 	},
-	ports::{AllocationRegistry, Custody, Deposits, SubscriptionRepository, custody::InboundTransfer, deposit_addresses::DepositAddresses, ledger::Ledger, nav::NavMarks},
+	ports::{
+		AllocationRegistry, Custody, Deposits, SubscriptionRepository,
+		custody::InboundTransfer,
+		deposit_addresses::DepositAddresses,
+		ledger::{Ledger, NoSpendCheck},
+		nav::NavMarks,
+	},
 };
 
 /// Per-rail on-chain liquidity (the treasury / Layer 2). `custody` is
@@ -76,6 +82,12 @@ pub struct Treasury {
 	pub total_custody: Usdt,
 	/// Layer 1 — Σ `user:<id>` claims: what people hold directly, outside any allocation.
 	pub held_by_users: Usdt,
+	/// Layer 1 — Σ users' scope compartments (`scope_claim`): still people's, earmarked for
+	/// a scope (D9).
+	pub held_in_compartments: Usdt,
+	/// banking's own treasury (`scope_account:main:treasury`, D17) — not an allocation, so
+	/// a line of its own.
+	pub banking_treasury: AllocationClaim,
 	/// Layer 1 — every allocation the registry knows, the hidden `fee` and `fund` included,
 	/// each with its claim, its supply and who holds it.
 	pub allocations: Vec<AllocationTreasury>,
@@ -95,8 +107,8 @@ pub struct AllocationTreasury {
 	pub access: AllocationAccess,
 	/// The allocation's cash: settled, reserved by approved payments out of it, and the
 	/// difference. Grows by every subscription, every settled fee class and (for `fee`)
-	/// every retained withdrawal or taker fee; falls by a holder's redemption or a
-	/// payment the owners approved out of it.
+	/// every taker fee — the retained withdrawal fee goes to banking's treasury instead
+	/// (D17); falls by a holder's redemption or a payment the owners approved out of it.
 	pub claim: AllocationClaim,
 	/// Units outstanding — what the cash and the held fee classes are divided over.
 	pub units_outstanding: Shares,
@@ -303,7 +315,9 @@ pub async fn seed_fund_capital(
 		}
 		tracing::warn!(tx_ref = %tx_ref.as_str(), %depositor, "seed capital: the deposit was recorded but its fund subscription was never opened — re-opening it");
 	}
-	ports.subscriptions.open(&mut subscription).await?;
+	// The cash is the seed's own deposit, booked in this same operation and not on the
+	// ledger yet — there is nothing for a cover check to read.
+	ports.subscriptions.open(&mut subscription, &NoSpendCheck).await?;
 	ports.funds.relay.notify_one();
 	Ok(SeededCapital {
 		recorded,
@@ -428,7 +442,10 @@ pub async fn treasury(ports: &TreasuryPorts<'_>) -> Result<Treasury, DomainError
 		});
 	}
 	let bank = Usdt::from_base_units(ports.ledger.balance(&LedgerAccountKey::BankCustody).await?.posted);
-	let held_by_users = Usdt::from_base_units(ports.ledger.cash_invariant().await?.user_claims);
+	let claims = ports.ledger.cash_invariant().await?;
+	let held_by_users = Usdt::from_base_units(claims.user_claims);
+	let held_in_compartments = Usdt::from_base_units(claims.scope_claims);
+	let banking_treasury = banking_treasury(ports.ledger).await?;
 	let mut allocations = Vec::new();
 	for allocation in ports.allocations.list_all().await? {
 		allocations.push(allocation_treasury(ports.ledger, ports.nav, &allocation).await?);
@@ -439,9 +456,17 @@ pub async fn treasury(ports: &TreasuryPorts<'_>) -> Result<Treasury, DomainError
 		bank,
 		total_custody,
 		held_by_users,
+		held_in_compartments,
+		banking_treasury,
 		allocations,
 		reserved_for_withdrawals,
 	})
+}
+
+/// banking's own treasury (D17): settled, reserved by approved payments out of it, and what
+/// is left — the same three-way split an allocation's claim is read in.
+pub async fn banking_treasury(ledger: &dyn Ledger) -> Result<AllocationClaim, DomainError> {
+	Ok(ledger.balance(&Party::Treasury.claim_key()).await?.into())
 }
 
 /// One allocation's treasury line: the registry row the caller has in hand, its

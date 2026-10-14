@@ -1119,10 +1119,6 @@
     "en": "Notices waived · {n, plural, one {# holder} other {# holders}}",
     "t": "Thông báo được miễn · {n, plural, other {# người nắm giữ}}"
   },
-  "admin.fundRevenue": {
-    "en": "Fund revenue",
-    "t": "Doanh thu quỹ"
-  },
   "admin.holder.allocation": {
     "en": "Allocation",
     "t": "Phân bổ"
@@ -2188,8 +2184,8 @@
     "t": "Hash giao dịch đã đào (0x…)"
   },
   "admin.withdrawals.subtitle": {
-    "en": "Dispatch, settle, or fail withdrawals — investors' and the fund's own payouts",
-    "t": "Gửi lệnh, tất toán hoặc báo lỗi các lệnh rút — của nhà đầu tư và của chính quỹ"
+    "en": "Dispatch, settle, or fail withdrawals — investors' and payouts from banking's treasury",
+    "t": "Gửi lệnh, tất toán hoặc báo lỗi các lệnh rút — của nhà đầu tư và các khoản chi từ ngân quỹ của banking"
   },
   "approval.amount": {
     "en": "Amount",
@@ -6152,8 +6148,8 @@
     "t": "Đã đầu tư"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal.",
-    "t": "Bạn chỉ có một số dư USDT duy nhất — các mạng chỉ là cách bạn nạp và rút. Thẻ này chia số dư đó thành Tổng = Khả dụng + Trong lệnh + Đã đầu tư + Đang chờ rút."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
+    "t": "Bạn chỉ có một số dư USDT duy nhất — các mạng chỉ là cách bạn nạp và rút. Thẻ này chia số dư đó thành Tổng = Khả dụng + Trong lệnh + Đã đầu tư + Đang chờ rút + Trong ngăn."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
@@ -7490,5 +7486,57 @@
   "auth.usePasskey": {
     "en": "Use a passkey",
     "t": "Dùng khóa truy cập"
+  },
+  "admin.revenue.bankingTreasuryNote": {
+    "en": "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. Nothing is paid out of it until scope approvals cover treasury spending.",
+    "t": "Phí rút tiền được chuyển về đây, không vào phân bổ phí: đây là tiền riêng của banking, không ai nắm giữ qua đơn vị. Chưa chi khoản nào từ đây cho đến khi phê duyệt của scope bao quát chi tiêu ngân quỹ."
+  },
+  "admin.revenue.treasuryPostedHint": {
+    "en": "retained withdrawal fees, reserved included",
+    "t": "phí rút tiền đã giữ lại, gồm cả phần đã đặt trước"
+  },
+  "admin.treasury.bankingTreasury": {
+    "en": "Banking treasury",
+    "t": "Ngân quỹ của banking"
+  },
+  "admin.treasury.bankingTreasuryAccess": {
+    "en": "banking's own",
+    "t": "của riêng banking"
+  },
+  "admin.treasury.bankingTreasuryHolders": {
+    "en": "withdrawal fees · spending closed for now",
+    "t": "phí rút tiền · tạm khóa chi tiêu"
+  },
+  "admin.treasury.heldInCompartments": {
+    "en": "Held in compartments",
+    "t": "Nắm giữ trong ngăn"
+  },
+  "admin.treasury.heldInCompartmentsHint": {
+    "en": "users' scope compartments · still theirs",
+    "t": "các ngăn theo scope của người dùng · vẫn là của họ"
+  },
+  "admin.users.balanceInCompartments": {
+    "en": "· in compartments",
+    "t": "· trong ngăn"
+  },
+  "admin.users.balanceMain": {
+    "en": "· main",
+    "t": "· chính"
+  },
+  "admin.withdrawals.source.treasury": {
+    "en": "Banking treasury",
+    "t": "Ngân quỹ của banking"
+  },
+  "tips.wallet.balance.in-compartments.body": {
+    "en": "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it.",
+    "t": "USDT bạn đã chuyển vào ngăn của một dịch vụ. Vẫn là của bạn và được tính vào tổng — hãy chuyển lại về số dư chính để rút."
+  },
+  "tips.wallet.balance.in-compartments.title": {
+    "en": "In compartments",
+    "t": "Trong ngăn"
+  },
+  "wallet.chip.inCompartments": {
+    "en": "IN COMPARTMENTS",
+    "t": "TRONG NGĂN"
   }
 }

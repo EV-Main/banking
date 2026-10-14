@@ -95,6 +95,9 @@ impl AppState {
 				party.kind
 			))),
 			"service" => ServiceId::parse(&party.id).map(Party::Service).map_err(map_err),
+			// banking's own treasury (D17). The id is optional on the wire; there is one.
+			"treasury" if party.id.is_empty() || party.id == Party::Treasury.id_str() => Ok(Party::Treasury),
+			"treasury" => Err(Status::invalid_argument(format!("treasury party id must be empty or {}", Party::Treasury.id_str()))),
 			"user" => {
 				let raw = Uuid::parse_str(&party.id).map_err(|_| Status::invalid_argument("invalid user id"))?;
 				let resolved = match self.users.resolve_issuance_by_concierge_id(ConciergeUserId::from_raw(raw)).await.map_err(map_err)? {

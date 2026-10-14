@@ -2,10 +2,12 @@
 //! exploit. Real Postgres **and** TigerBeetle (no mocks, per the project rules); runs
 //! when `DATABASE_URL` is set and a TigerBeetle replica is reachable, skips otherwise.
 //!
-//! The race: `request_withdrawal`'s Read-First reads TigerBeetle, which lags
-//! committed-but-undrained outbox rows — so a double-submit of the full balance passes
-//! the solvency check twice and commits two Requested(+Dispatched) pairs. The relay
-//! then parks the second reserve (`InsufficientFunds`), but without a guard the
+//! The race: `request_withdrawal`'s Read-First used to read TigerBeetle alone, which lags
+//! committed-but-undrained outbox rows — so a double-submit of the full balance passed
+//! the solvency check twice and committed two Requested(+Dispatched) pairs. The Read-First
+//! now counts the undrained reserve and refuses the second (#507); the guard below stays
+//! for a pair it could not stop — one written by an older build during a rolling deploy.
+//! The relay parks the second reserve (`InsufficientFunds`), but without a guard the
 //! trailing Dispatched row still reaches custody: the Broadcast op has no TB leg to
 //! refuse it, and real money leaves the chain with nothing locked behind it.
 //!
@@ -22,7 +24,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	users::{Email, UserId},
-	withdrawals::{WithdrawalId, WithdrawalState},
+	withdrawals::{Withdrawal, WithdrawalId, WithdrawalPolicy, WithdrawalSource, WithdrawalState},
 };
 use piggybank_core::{
 	application::{balance as balance_app, withdrawals as withdrawal_app},
@@ -31,7 +33,7 @@ use piggybank_core::{
 	ports::{
 		UserRepository, WithdrawalRepository,
 		custody::{BroadcastRequest, Custody, CustodyError},
-		ledger::Ledger,
+		ledger::{Ledger, NoSpendCheck},
 	},
 };
 use sqlx::PgPool;
@@ -126,11 +128,11 @@ async fn active_user(h: &Harness) -> UserId {
 	user
 }
 
-/// The double-submit exploit, end to end. Two full-balance withdrawals are accepted
-/// back-to-back (the second passes the Read-First because the first's reserve is only
-/// in the outbox, not yet in TB). After one drain: the first broadcasts, the second's
-/// reserve parks, and — the fix under test — the second's broadcast is REFUSED, so
-/// custody is asked to move money exactly once.
+/// The double-submit exploit, end to end. Two full-balance withdrawals are recorded
+/// back-to-back while the first's reserve is only in the outbox, not yet in TB — the
+/// second past the cover check, as an older build would have let it through. After one
+/// drain: the first broadcasts, the second's reserve parks, and — the fix under test — the
+/// second's broadcast is REFUSED, so custody is asked to move money exactly once.
 #[tokio::test]
 async fn a_withdrawal_whose_reserve_parked_is_never_broadcast() {
 	let Some(h) = harness().await else { return };
@@ -169,17 +171,20 @@ async fn a_withdrawal_whose_reserve_parked_is_never_broadcast() {
 		.await
 		.unwrap();
 	}
-	let second = withdrawal_app::request_withdrawal(
+	let refused = withdrawal_app::request_withdrawal(
 		&withdrawal_ports(&h),
 		&admission(&h, KycGate::ENFORCED),
 		WithdrawalId::new(),
 		user,
 		network,
-		destination,
+		destination.clone(),
 		usdt("100"),
 	)
-	.await
-	.expect("the second request passes the Read-First — TB lags the undrained outbox");
+	.await;
+	assert!(refused.is_err(), "the Read-First counts the undrained reserve: {refused:?}");
+	let source = WithdrawalSource::User(user);
+	let mut second = Withdrawal::request(WithdrawalId::new(), source, network, destination, usdt("100"), WithdrawalPolicy::fee_for(source, network)).unwrap();
+	h.withdrawals.open(&mut second, &NoSpendCheck).await.unwrap();
 	if second.state() == WithdrawalState::Queued {
 		withdrawal_app::dispatch_withdrawal(
 			h.withdrawals.as_ref(),

@@ -102,11 +102,14 @@ async fn seed_one_of_each(pool: &PgPool, user: UserId) -> (TxRef, WithdrawalId, 
 	age_deposit(pool, &tx_ref, 4).await;
 
 	let mut withdrawal = Withdrawal::request(WithdrawalId::new(), WithdrawalSource::User(user), Network::Bep20, address(), usdt("50"), usdt("1")).expect("build withdrawal");
-	withdrawals.open(&mut withdrawal).await.expect("open withdrawal");
+	withdrawals.open(&mut withdrawal, &piggybank_core::ports::ledger::NoSpendCheck).await.expect("open withdrawal");
 	age_withdrawal(pool, withdrawal.id(), 1).await;
 
 	let mut subscription = Subscription::open(SubscriptionId::new(), user, service(), usdt("200"), Nav::SEED).expect("build subscription");
-	subscriptions.open(&mut subscription).await.expect("open subscription");
+	subscriptions
+		.open(&mut subscription, &piggybank_core::ports::ledger::NoSpendCheck)
+		.await
+		.expect("open subscription");
 	age_subscription(pool, subscription.id(), 3).await;
 
 	let mut redemption = Redemption::request(RedemptionId::new(), user, service(), Shares::parse_decimal("10").unwrap()).expect("build redemption");

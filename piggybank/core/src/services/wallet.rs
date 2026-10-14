@@ -47,6 +47,7 @@ impl WalletService for WalletSvc {
 				nav: self.state.nav.as_ref(),
 				deposit_addresses: self.state.deposit_addresses.as_ref(),
 				users: self.state.users.as_ref(),
+				compartments: self.state.compartments.as_ref(),
 			},
 			&live_rails(&self.state).await?,
 			self.state.kyc_gate,
@@ -61,6 +62,7 @@ impl WalletService for WalletSvc {
 				pending_withdrawal: wallet.balance.pending_withdrawal.to_decimal_string(),
 				total: wallet.balance.total.to_decimal_string(),
 				in_orders: wallet.balance.in_orders.to_decimal_string(),
+				in_compartments: wallet.balance.in_compartments.to_decimal_string(),
 			}),
 			deposit_addresses: wallet
 				.deposit_addresses

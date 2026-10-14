@@ -29,8 +29,8 @@ use domain::{book::MatchingEngine, money::Network};
 use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
-	AllocationRegistry, BookStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
-	PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
+	AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
+	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -122,6 +122,9 @@ pub struct AppState {
 	/// dispatch RPC and a payment order's execution. One handle, so the three cannot read
 	/// the pause differently. Built here from the pool rather than passed in.
 	pub outflow: Arc<dyn OutflowPolicy>,
+	/// The scopes banking knows, their policies, and users' moves between `main` and a
+	/// scope compartment. Control plane only; the relay posts each move.
+	pub compartments: Arc<dyn CompartmentStore>,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
 	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
@@ -170,6 +173,7 @@ impl AppState {
 		payment_consent_url_base: String,
 		ton_is_testnet: bool,
 		outflow: Arc<dyn OutflowPolicy>,
+		compartments: Arc<dyn CompartmentStore>,
 	) -> Self {
 		Self {
 			pool,
@@ -202,6 +206,7 @@ impl AppState {
 			payment_consent_url_base,
 			ton_is_testnet,
 			outflow,
+			compartments,
 		}
 	}
 }
