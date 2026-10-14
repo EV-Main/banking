@@ -62,7 +62,7 @@ cabinet-backend   → evbanking_contracts, evconcierge_contracts (git: EV-invest
 
 | Crate                                | Role                                                                                                                                            | wasm-safe |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `domain/`                            | Pure DDD types over `ev::architecture`; the bounded contexts (`balance`, `users`, `withdrawals`, `subscriptions`, `redemptions`, `book`, `auth`). Source of truth across platform. | **yes**   |
+| `domain/`                            | Pure DDD types over `ev::architecture`; the bounded contexts (`balance`, `scopes`, `users`, `withdrawals`, `subscriptions`, `redemptions`, `book`, `auth`). Source of truth across platform. | **yes**   |
 | `evbanking_contracts` (`contracts/`) | gRPC wire contracts: tonic client+server stubs from `proto/`. Other repos import it for the client stubs.                                       | no        |
 | `evbanking_auth` (`piggybank/auth/`) | The auth **service** (issuance gRPC + in-process `Authorizer` channel) **and** the shared verification flow (JWKS verify + interceptor).        | no        |
 | `piggybank-core` (`piggybank/core/`) | The hub server: composition root that runs the core gRPC services and the auth service as in-process tasks; data-plane services + infra.        | no        |
@@ -77,9 +77,10 @@ dependency of `domain` — so `domain` stays wasm-safe for service frontends.
 
 | Context       | Owns                                                    | Authoritative store        |
 | ------------- | ------------------------------------------------------- | -------------------------- |
-| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. The platform's own money is the reserved `fee` / `fund` allocations, held by people through units (#245) — there is no company-owned claim | TigerBeetle              |
+| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. The allocations' money is the reserved `fee` / `fund` allocations, held by people through units (#245); banking's own is its treasury, `scope_account:main:treasury`, where the withdrawal fees land and which pays out only through the owners' consilium (D17) | TigerBeetle              |
+| `scopes`        | a user's wallet split by scope: `main` (the user's claim) and a compartment per scope entered (`scope_claim`), moved between only by the user (`CompartmentService`); the scope registry and policies; scope accounts `(scope, label)` and who owns them | Postgres + TigerBeetle     |
 | `users`         | investor accounts and their investments                 | Postgres + TigerBeetle     |
-| `withdrawals`   | user withdrawals to chain (accept-and-queue saga)       | Postgres + TigerBeetle     |
+| `withdrawals`   | withdrawals to chain (accept-and-queue saga): a user's, or the treasury's for an approved payment | Postgres + TigerBeetle     |
 | `subscriptions` | buying fund units at NAV (the service currency, mint)   | Postgres + TigerBeetle     |
 | `redemptions`   | redeeming fund units to cash (accept-and-queue saga)    | Postgres + TigerBeetle     |
 | `book`          | the secondary market: holders trading an allocation's units with each other (orders, price-time matching, DvP settlement) | Postgres + TigerBeetle     |

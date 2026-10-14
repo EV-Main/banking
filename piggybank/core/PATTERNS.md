@@ -905,21 +905,34 @@ freeze (`user_frozen`), the outflow pause and the scope's policy. **A move OUT**
 `main` — passes none of them: the money never leaves the platform, so a frozen user in a
 paused system still gets it back. Both need the source to cover the amount.
 
-**Checked under the lock, net of what is in flight.** One Postgres transaction takes the
-source claim's write lock (the one withdraw and subscribe take) and, for a move in, the
-target's — always in that order — answers a reused idempotency key with the stored move,
-and only then asks the checks: the source's TigerBeetle `available` less the user's
-`pending` moves out of it; for a move in, the target's `posted + pending` plus the
-`pending` moves into it against `max_balance`, and the `pending` + `posted` moves into the
-scope over 24 h against `max_moved_in_24h`. The loser of two racing moves is refused at
-once. A refusal writes nothing; a pass records the `compartment_moves` row and its event
-together.
+**Checked under the locks, net of what is in flight.** One Postgres transaction takes an
+advisory lock on `(user, idempotency_key)` first — two requests under one key may name
+different sources — and answers a reused key with the stored move (a racer that still
+reaches the unique index gets ALREADY_EXISTS). Then it takes the source claim's write lock
+(the one withdraw and subscribe take) and, for a move in, the target's, always in that
+order, and only then runs every check: for a move in, the scope's state, the account's
+freeze and the policy — the target's `posted + pending` plus the `pending` moves into it
+against `max_balance`, the `pending` + `posted` moves into the scope over 24 h against
+`max_moved_in_24h` — and for both directions what the source may spend. The loser of two
+racing moves is refused at once. A refusal writes nothing; a pass records the
+`compartment_moves` row and its event together.
+
+**One answer to "what may the user still spend".** `Ledger::spendable(key)` is the
+ledger's `available` less the owner's `pending` moves out of that compartment — moves the
+relay has not posted yet. Every Read-First on a user's money asks it: a withdrawal
+(`require_solvent`), a subscription, a buy order, a payment, a move. So a move recorded a
+moment ago is already spent for a withdrawal that follows it, refused at once instead of
+parking in the relay. The other direction stays optimistic as before: a withdrawal's or a
+subscription's reservation is not in the ledger until the relay applies it, and a move
+that overtakes it fails in the relay (`failed`, `insufficient_funds`).
 
 **A move is never lost and never runs twice.** The row is `pending` until the relay posts
 `Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id `uuid_v5(move_id,
 "compartment:move")`) and stamps it `posted`. If the ledger refuses it — another flow's
 reservation landed first — the relay stamps it `failed` (`failure_reason`), parks nothing,
-and never carries it out later: an unparked or replayed event of a `failed` move is a no-op.
+and never carries it out later. Any other park of a move's event (a ledger conflict, an
+unplannable payload, an exhausted retry) stamps it `failed` too, as `parked:<kind>`, which
+releases the money it promised; an unparked or replayed event of a `failed` move is a no-op.
 A `pending` move whose event a relay dispatched without posting (an older build that did
 not know the kind, in a rolling deploy or after a rollback) is re-enqueued by the
 [`reaper`](src/infrastructure/reaper.rs) after five minutes; the replay finds the transfer
@@ -931,7 +944,8 @@ The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will o
 `auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
 USDT, stored for the scope ledger). `scope_accounts` records who owns each scope account:
 banking owns `(main, treasury)` — where its own fees land (D17) — and `(<scope>, fee)`.
-`GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
+The scope list behind listings and totals is cached per process for 30 s; a move reads the
+scope row itself. `GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
 (`amount = main + in_compartments`) count the compartments; `GetTreasury` shows
 `held_in_compartments` and `banking_treasury`. Mandates are not served yet
 (`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): they need the
