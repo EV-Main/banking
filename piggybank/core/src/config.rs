@@ -894,6 +894,13 @@ fn check_server_tls(cert_pem: &str, key_pem: &str, client_ca_pem: &str) -> color
 	let mut roots = RootCertStore::empty();
 	for ca in CertificateDer::pem_slice_iter(client_ca_pem.as_bytes()) {
 		let ca = ca.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+		// webpki takes any certificate as a trust anchor, a leaf included; with a leaf here the
+		// hub boots healthy and then refuses every client in the handshake. Only a CA may stand.
+		if !der_is_ca(ca.as_ref()) {
+			return Err(eyre!(
+				"SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE holds a certificate that is not a CA (basicConstraints CA:TRUE missing)"
+			));
+		}
 		roots.add(ca).map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
 	}
 	// The provider is named rather than taken from the process default, so this check means
@@ -909,6 +916,57 @@ fn check_server_tls(cert_pem: &str, key_pem: &str, client_ca_pem: &str) -> color
 		.with_single_cert(chain, key)
 		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE / SCOPE_LEDGER_TLS_KEY_PEM_FILE: {e}"))?;
 	Ok(())
+}
+
+/// One DER TLV at the head of `der`: `(tag, contents, rest)`. Definite lengths only, which is
+/// all DER allows; `None` on anything malformed.
+fn der_tlv(der: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+	let (&tag, rest) = der.split_first()?;
+	let (&first, rest) = rest.split_first()?;
+	let (len, rest) = if first < 0x80 {
+		(usize::from(first), rest)
+	} else {
+		let count = usize::from(first & 0x7f);
+		if count == 0 || count > 4 || rest.len() < count {
+			return None;
+		}
+		let (bytes, rest) = rest.split_at(count);
+		(bytes.iter().fold(0usize, |len, b| (len << 8) | usize::from(*b)), rest)
+	};
+	(rest.len() >= len).then(|| (tag, &rest[..len], &rest[len..]))
+}
+
+/// Whether an X.509 certificate's basicConstraints says `cA = TRUE`. Walks Certificate →
+/// tbsCertificate → extensions `[3]` → the extension with OID 2.5.29.19 → its value. No
+/// extension, or `cA` absent (DEFAULT FALSE), is not a CA. Hand-walked so the check needs no
+/// X.509 crate for one boolean.
+fn der_is_ca(certificate: &[u8]) -> bool {
+	const BASIC_CONSTRAINTS: &[u8] = &[0x55, 0x1d, 0x13];
+	let Some((0x30, cert, _)) = der_tlv(certificate) else { return false };
+	let Some((0x30, mut tbs, _)) = der_tlv(cert) else { return false };
+	while let Some((tag, contents, rest)) = der_tlv(tbs) {
+		tbs = rest;
+		if tag != 0xa3 {
+			continue;
+		}
+		let Some((0x30, mut extensions, _)) = der_tlv(contents) else { return false };
+		while let Some((0x30, extension, rest)) = der_tlv(extensions) {
+			extensions = rest;
+			let Some((0x06, oid, mut fields)) = der_tlv(extension) else { return false };
+			if oid != BASIC_CONSTRAINTS {
+				continue;
+			}
+			// `critical BOOLEAN DEFAULT FALSE` may precede the value.
+			if let Some((0x01, _, rest)) = der_tlv(fields) {
+				fields = rest;
+			}
+			let Some((0x04, value, _)) = der_tlv(fields) else { return false };
+			let Some((0x30, constraints, _)) = der_tlv(value) else { return false };
+			return matches!(der_tlv(constraints), Some((0x01, [flag], _)) if *flag != 0);
+		}
+		return false;
+	}
+	false
 }
 
 impl ScopeLedgerSettings {
@@ -1026,6 +1084,19 @@ mod tests {
 	}
 
 	#[test]
+	fn only_a_certificate_with_ca_true_counts_as_a_ca() {
+		use rustls::pki_types::{CertificateDer, pem::PemObject};
+		let der = |name: &str| CertificateDer::from_pem_file(scope_fixture(name)).unwrap();
+		assert!(der_is_ca(der("ca.pem").as_ref()));
+		assert!(der_is_ca(der("foreign-ca.pem").as_ref()));
+		for leaf in ["invest.pem", "server.pem", "stranger.pem"] {
+			assert!(!der_is_ca(der(leaf).as_ref()), "{leaf} is CA:FALSE");
+		}
+		assert!(!der_is_ca(b""));
+		assert!(!der_is_ca(&[0x30, 0x82, 0xff]), "a truncated certificate");
+	}
+
+	#[test]
 	fn the_grants_file_refuses_what_would_grant_too_much_or_nothing() {
 		let ok = grants_json(&invest_client(), r#"{"client_id":"invest","scope":"invest","label_prefix":"alloc:","compartments":true}"#);
 		let (clients, grants) = ScopeLedgerSettings::parse_grants(&ok).unwrap();
@@ -1080,6 +1151,9 @@ mod tests {
 
 		let err = format!("{:#}", ScopeLedgerSettings::read(files("server.key")).err().expect("a key is not a CA"));
 		assert!(err.contains("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE"), "{err}");
+
+		let err = format!("{:#}", ScopeLedgerSettings::read(files("invest.pem")).err().expect("a leaf is not a CA"));
+		assert!(err.contains("not a CA"), "{err}");
 
 		let wrong_key = |key: &str| {
 			if key == "SCOPE_LEDGER_TLS_KEY_PEM_FILE" {
