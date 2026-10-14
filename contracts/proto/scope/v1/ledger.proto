@@ -13,16 +13,22 @@ syntax = "proto3";
 //     only through `main`, and only the user moves it `main ⇄ scope` (that is
 //     `banking.v1.CompartmentService`, never this API);
 //   - a SCOPE ACCOUNT `(scope, label)` — the scope's own money (an allocation's cash
-//     `alloc:<slug>`, the scope's fee pool `fee`, …). It belongs to the client that
-//     opened it (`owner_client`); banking does not know what a label means.
+//     `alloc:<slug>`, …). It belongs to the client that opened it (`owner_client`);
+//     banking does not know what a label means. One label is banking's own in every
+//     scope: `(<scope>, fee)`, opened by banking when it learns the scope, owned by
+//     banking (`owner_client = banking`) — see the fee route below.
 //
 // IDENTIFIERS. A scope id is concierge's tenant name, `[a-z][a-z0-9_]{0,31}`. A user is
 // always their `auth_subject` — the opaque, immutable account subject the identity
 // plane provisions both planes against; never parse it. `subject_ref` is the caller's
-// own reference for the business object behind a call, `<type>:<uuid>` (e.g.
-// `subscription:4f0c…`), at most 128 bytes, REQUIRED on every mutating request:
-// banking stores it, echoes it in the result and in `MoneyEvents`, and puts it on the
-// approval it opens for a `Request*` call.
+// own reference for the business object behind a call, REQUIRED on every mutating
+// request, at most 128 bytes, matching concierge's form exactly:
+//   ^[a-z][a-z0-9_]*:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+// (a type, a colon, a lowercase UUID — `subscription:4f0c…`). Banking stores it and
+// echoes it in the result and in `MoneyEvents`. It never travels to an approval:
+// the approval banking opens for a `Request*` call carries banking's OWN ref,
+// `pending_operation:<operation_id>`, and the caller's ref stays on the
+// `PendingOperation` and in the money events.
 //
 // GRANTS — who may call what. The caller is a service client, identified today by its
 // mTLS identity mapped statically to a `client_id` (until `typ=service` tokens carry
@@ -32,17 +38,24 @@ syntax = "proto3";
 // A grant lets the client open accounts whose label starts with `label_prefix` in that
 // scope (invest@sa → `alloc:`, the panel@sa → its own labels) and, only with
 // `compartments`, touch users' compartments in the scope (Reserve, Charge, Capture into
-// a user, Payout). Anything outside the caller's grants is PERMISSION_DENIED.
+// a user, Payout) and hold users' mandates there. Anything outside the caller's grants
+// is PERMISSION_DENIED.
 //
 // BOUNDARY.
 //   - `scope = main` is refused (PERMISSION_DENIED): `main` and `(main, treasury)` are
 //     banking's own. An unknown scope is NOT_FOUND.
-//   - A scope account is DEBITED only by its owner (`not_account_owner`). Money is
-//     credited only to accounts the caller owns, the one exception being the fee route
-//     below. No RPC addresses two scopes, except that route.
-//   - The fee route: `Transfer` with `reason = FEE_SWEEP` from `(<scope>, fee)` to
-//     `(invest, fee)` — the only movement between scopes a service makes without an
-//     approval. Every other one goes through `RequestTransfer`.
+//   - DEBIT: a scope account is debited only by its owner (`not_account_owner`).
+//   - CREDIT: scope accounts — only the caller's own, except `(<scope>, fee)` through
+//     `Transfer` with `reason = FEE_SWEEP`; users' compartments — only with the
+//     `compartments` flag.
+//   - The fee route. Any client granted in a scope may credit `(<scope>, fee)` from its
+//     own accounts with FEE_SWEEP. No client ever debits a `fee` collector: banking
+//     alone sweeps every `(<scope>, fee)`, `invest` included, into `(invest, alloc:fee)`
+//     automatically — the only movement between scopes without an approval.
+//     `(invest, alloc:fee)` is the cash of the `fee` allocation and an ordinary account
+//     of its owner (the invest client), so fee-class redemptions are paid from it. A
+//     client's call never addresses two scopes; every other cross-scope movement is a
+//     `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,
 //     Transfer, Request*): FAILED_PRECONDITION `scope_frozen`; credits and reads go on.
 //   - A frozen user takes no new debit of their compartment (Reserve, Charge):
@@ -58,7 +71,8 @@ syntax = "proto3";
 // user on evinvest.ltd.
 //
 // AUTOMATIC vs APPROVED. A saga's routine steps run at once: Capture of a hold, Payout
-// with an automatic reason, Transfer with `FEE_SWEEP`. They are bounded by the
+// with an automatic reason, Transfer with `FEE_SWEEP`. Capture is bounded by the
+// mandate, not by the automatic ceilings. Payout and Transfer are bounded by the
 // per-(client, scope) automatic ceilings of the scope's policy (`auto_payout_per_op`,
 // `auto_payout_24h`, `auto_transfer_24h`; defaults 1000 / 5000 / 5000 USDT, rolling
 // 24 h). Past a ceiling, or for any other purpose, the call is FAILED_PRECONDITION
@@ -66,6 +80,11 @@ syntax = "proto3";
 // banking stores the operation whole, opens the approval itself (it is the sole
 // proposer and executor of `bank:*` kinds), and executes it once when approved — one
 // approval, one execution.
+//
+// VISIBILITY. A client sees only what it is party to: holds it placed and charges it
+// made (anyone else's id is the same NOT_FOUND as an unknown one), operations it
+// requested, balances of accounts it owns. The balance of `(<scope>, fee)` is
+// banking's alone.
 //
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
@@ -109,7 +128,8 @@ service ScopeLedgerService {
   rpc Capture(CaptureRequest) returns (Hold);
 
   // Release whatever the hold still holds back to the user's compartment. Voiding an
-  // already voided, expired or fully captured hold returns it unchanged.
+  // already voided, expired or fully captured hold returns it unchanged. Capture, Void
+  // and GetHold act only on holds the caller placed; anyone else's is NOT_FOUND.
   rpc Void(VoidRequest) returns (Hold);
 
   // One-shot debit of a user's compartment into a scope account the caller owns,
@@ -123,15 +143,17 @@ service ScopeLedgerService {
   // every line posts or none does. At most 1000 lines; more is INVALID_ARGUMENT.
   rpc Payout(PayoutRequest) returns (ScopePayout);
 
-  // Move money between two accounts the caller owns in the scope, or along the fee
-  // route, for an AUTOMATIC reason (FEE_SWEEP) and within the automatic ceilings.
+  // Move money from an account the caller owns into `(scope, fee)`, for an AUTOMATIC
+  // reason (FEE_SWEEP) and within the automatic ceilings. Any other move between
+  // accounts is a `RequestTransfer`.
   rpc Transfer(TransferRequest) returns (ScopeTransfer);
 
   // Ask for a payout that needs the owners' or the scope admins' approval — a
   // discretionary payout, a distribution to every holder, or one past the automatic
-  // ceilings. Banking opens a `bank:scope_payout` approval and executes the payout
-  // once it is approved; the result appears as PAID_OUT events carrying this
-  // `subject_ref`, and in `GetPendingOperation`.
+  // ceilings. Banking opens a `bank:scope_payout` approval (subject
+  // `pending_operation:<operation_id>`) and executes the payout once it is approved;
+  // the result appears as PAID_OUT events carrying the caller's `subject_ref`, and in
+  // `GetPendingOperation`.
   rpc RequestPayout(RequestPayoutRequest) returns (PendingOperation);
 
   // Ask for a transfer that needs approval — between two accounts of the scope
@@ -142,11 +164,13 @@ service ScopeLedgerService {
   // sees it; anyone else gets NOT_FOUND.
   rpc GetPendingOperation(GetPendingOperationRequest) returns (PendingOperation);
 
-  // Balances of the scope's accounts, read live from the ledger (the NAV input). An
-  // empty `labels` returns every account of the scope; an unknown label is NOT_FOUND.
+  // Balances of the CALLER's accounts in the scope, read live from the ledger (the NAV
+  // input). An empty `labels` returns every account the caller owns there; a label
+  // that is unknown or not the caller's (`fee` included) is the same NOT_FOUND.
   rpc GetBalances(GetBalancesRequest) returns (GetBalancesResponse);
 
-  // One hold as it stands now — the saga's recovery read after a timeout.
+  // One hold the caller placed, as it stands now — the saga's recovery read after a
+  // timeout.
   rpc GetHold(GetHoldRequest) returns (Hold);
 }
 
@@ -219,8 +243,11 @@ message Hold {
   int64 created_at = 9;
   string subject_ref = 10;
   // The mandate the hold was placed under — what decides whether a capture into
-  // another user's compartment (BOOK_FILL) is allowed.
+  // another user's compartment (BOOK_FILL) is allowed, for the hold's whole life,
+  // even after the user replaces that mandate.
   string mandate_id = 11;
+  // The client that placed the hold — the only one that may capture, void or read it.
+  string placed_by_client = 12;
 }
 
 message CaptureRequest {
@@ -266,6 +293,8 @@ message ScopeCharge {
   string subject_ref = 7;
   string memo = 8;
   string mandate_id = 9;
+  // The client that charged — the only one that sees the charge.
+  string charged_by_client = 10;
 }
 
 // Why money leaves a scope account for users' compartments without an approval.
@@ -284,8 +313,8 @@ enum PayoutReason {
 // `RequestTransfer`.
 enum TransferReason {
   TRANSFER_REASON_UNSPECIFIED = 0;
-  // Fees collected into the scope's `fee` account, or the fee route
-  // `(<scope>, fee) → (invest, fee)`.
+  // Fees collected from the caller's account into `(scope, fee)`. Banking's own sweep
+  // `(<scope>, fee) → (invest, alloc:fee)` carries it too.
   TRANSFER_REASON_FEE_SWEEP = 1;
 }
 
@@ -326,8 +355,7 @@ message TransferRequest {
   string scope = 1;
   // Debited; the caller must own it.
   string from_label = 2;
-  // Credited: an account the caller owns in the scope, or — FEE_SWEEP from `fee`
-  // only — `fee` in `to_scope`.
+  // Credited: `fee` (the scope's fee account).
   string to_label = 3;
   string amount = 4;
   string idempotency_key = 5;
@@ -335,8 +363,6 @@ message TransferRequest {
   string memo = 7;
   // Required; UNSPECIFIED is INVALID_ARGUMENT.
   TransferReason reason = 8;
-  // Empty = `scope`. Only `invest`, and only on the fee route.
-  string to_scope = 9;
 }
 
 message ScopeTransfer {
@@ -349,7 +375,8 @@ message ScopeTransfer {
   string subject_ref = 7;
   string memo = 8;
   TransferReason reason = 9;
-  // The credited account's scope (= `scope` unless it crossed scopes).
+  // The credited account's scope (= `scope` unless an approved scope transfer or
+  // banking's fee sweep crossed scopes).
   string to_scope = 10;
   // Set when the transfer executes an approved `RequestTransfer`.
   string operation_id = 11;
@@ -377,7 +404,8 @@ message RequestTransferRequest {
   // Empty = `scope` (`bank:account_transfer`); another scope makes it
   // `bank:scope_transfer`, which the platform owners always decide.
   string to_scope = 3;
-  // Must exist in the destination scope.
+  // Must exist in the destination scope and be the caller's own there (a `fee`
+  // account never is).
   string to_label = 4;
   string amount = 5;
   string idempotency_key = 6;
@@ -406,9 +434,11 @@ enum PendingOperationState {
 // A requested operation, as banking stored it. The approval's payload is computed from
 // THIS record, never from a later call, so what the approvers saw is what executes.
 message PendingOperation {
+  // A lowercase UUID; the approval's subject is `pending_operation:<operation_id>`.
   string operation_id = 1;
   string scope = 2;
   PendingOperationState state = 3;
+  // The caller's own ref, as requested — never sent to the approval.
   string subject_ref = 4;
   // The concierge approval banking opened; empty until it is opened.
   string approval_id = 5;

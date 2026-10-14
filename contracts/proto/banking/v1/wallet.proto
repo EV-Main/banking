@@ -138,7 +138,7 @@ message DepositList {
 // the compartments are built behind it. Every RPC acts on the caller's own `sub`.
 //
 // FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,
-// `MoveFunds`, `GrantMandate`, `RevokeMandate`, and
+// `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and
 // `InvoicePaymentService.PayInvoice` — is accepted only from
 // `Origin: https://evinvest.ltd`. A scope's host may read balances and history
 // cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result
@@ -167,8 +167,12 @@ service CompartmentService {
   // Let a scope's service draw on the caller's compartment in that scope — hold it
   // (a subscription, a buy order) or charge it — within caps the caller sets. This is
   // the only consent a service's debit stands on; without it the service can only
-  // send an invoice. One live mandate per (scope, client): granting again replaces it.
-  // Naturally confirmed on the caller's first move into the scope, on one screen.
+  // send an invoice. A client that banking's grants do not allow to touch users'
+  // compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,
+  // client): granting again replaces it — new holds and charges draw on the new one,
+  // while holds already standing stay under the mandate they were placed with (its
+  // BOOK_FILL still decides their captures) until they finish. Naturally confirmed on
+  // the caller's first move into the scope, on one screen.
   rpc GrantMandate(GrantMandateRequest) returns (Mandate);
 
   // End a mandate at once. Every hold the client still has on the caller's compartment

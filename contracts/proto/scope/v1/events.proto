@@ -13,12 +13,19 @@ import "scope/v1/ledger.proto";
 // holds a grant in. Positions are global to the money plane, so a filtered stream has
 // gaps: a consumer must not expect `position` to step by one. Read-only and never
 // compacted: a consumer dedupes by `event_id` and orders one aggregate's events by
-// `aggregate_version`. A scope outside the caller's grants is PERMISSION_DENIED — a
-// scope sees its own holds, charges, payouts, transfers, invoices, accounts, pending
-// operations, its users' compartment moves and mandates for it, and nothing of any
-// other scope. A movement between two scopes (the fee route, an approved scope
-// transfer) appears in BOTH scopes' streams, one event each, `counterparty_scope`
-// naming the other side.
+// `aggregate_version`. A scope outside the caller's grants is PERMISSION_DENIED.
+//
+// VISIBILITY is per CLIENT, not per scope. A client receives only events of:
+//   - accounts it owns (opened, credited, debited — whoever caused it);
+//   - holds it placed, charges it made, payouts, transfers, invoices and operations
+//     it initiated;
+//   - mandates users granted or revoked for it, and the compartment moves
+//     (COMPARTMENT_IN / _OUT) of users who hold a live mandate for it in that scope.
+// Nothing about a user's compartment the client has no part in, and nothing of another
+// client's accounts, reaches it. `balance_after` lists only accounts the receiving
+// client owns. A movement between two scopes (banking's fee sweep, an approved scope
+// transfer) appears once per side, `counterparty_scope` naming the other, each side
+// delivered by the same rules.
 //
 // Kinds will be added. A consumer that meets an unknown `kind` must park that event
 // and keep its cursor moving, not stop: banking may ship a kind before every consumer
@@ -65,7 +72,8 @@ message MoneyEvent {
     // A scope account was opened. `to` = the account.
     KIND_ACCOUNT_OPENED = 1;
     // A user moved money from `main` into their compartment in this scope.
-    // `auth_subject`, `amount`.
+    // `auth_subject`, `amount`. Delivered only to clients the user holds a live
+    // mandate for in the scope.
     KIND_COMPARTMENT_IN = 2;
     // A user moved money from their compartment in this scope back to `main`.
     KIND_COMPARTMENT_OUT = 3;
@@ -91,7 +99,7 @@ message MoneyEvent {
     KIND_INVOICE_CANCELLED = 13;
     KIND_INVOICE_EXPIRED = 14;
     // `ref_id` = mandate id; `auth_subject`. A grant replacing a live mandate is one
-    // GRANTED for the new id.
+    // GRANTED for the new id; holds already standing keep the old mandate id.
     KIND_MANDATE_GRANTED = 15;
     // A revoke voids the client's active holds on the user: HOLD_VOIDED follows for each.
     KIND_MANDATE_REVOKED = 16;
@@ -122,7 +130,8 @@ message MoneyEvent {
   // The service client whose call caused the event; empty when the user or banking
   // itself did.
   string initiator_client = 13;
-  // Balances of this scope's accounts the event moved, right after it.
+  // Balances, right after the event, of the accounts it moved that the RECEIVING
+  // client owns; a user's compartment and another client's account never appear.
   repeated AccountBalance balance_after = 14;
   // Hold events: what the hold still holds after the event.
   string hold_remaining = 15;
