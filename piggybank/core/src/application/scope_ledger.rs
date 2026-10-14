@@ -26,7 +26,7 @@ use crate::ports::{
 	scope_ledger::{OwnedAccount, RPC_OPEN_ACCOUNT, RPC_TRANSFER, Recorded, RecordedTransfer, RequestKey, ScopeLedgerStore, StoredRequest, TransferAdmission, TransferFacts},
 };
 
-/// Longest idempotency key accepted, in bytes (`ledger.proto`).
+/// Longest idempotency key accepted, in characters (`ledger.proto`: "1..128 chars").
 const MAX_IDEMPOTENCY_KEY: usize = 128;
 
 /// The driven ports and the configuration the scope ledger use cases borrow.
@@ -63,8 +63,14 @@ pub struct TransferRequest {
 }
 
 fn check_key(key: &str) -> Result<(), DomainError> {
-	if key.is_empty() || key.len() > MAX_IDEMPOTENCY_KEY {
-		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} bytes")));
+	let chars = key.chars().count();
+	if chars == 0 || chars > MAX_IDEMPOTENCY_KEY {
+		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} characters")));
+	}
+	// The key is echoed into logs and compared byte for byte; a control character there is a
+	// client bug, and two keys differing only by one would read alike to an operator.
+	if key.chars().any(char::is_control) {
+		return Err(DomainError::Validation("idempotency_key must not contain control characters".into()));
 	}
 	Ok(())
 }
@@ -178,6 +184,12 @@ pub async fn transfer(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: 
 	if request.from.is_reserved() {
 		return Err(TransferError::Refused(LedgerRefusal::NotAccountOwner));
 	}
+	// Owning the account is not enough: the label must still be inside one of the client's
+	// grants as configured NOW, so taking a prefix away also takes away the debit of every
+	// account opened under it (the money stays, readable, for an approved transfer).
+	if !ports.grants.may_open(client, &request.scope, &request.from) {
+		return Err(TransferError::Refused(LedgerRefusal::NotGranted));
+	}
 	// The one automatic destination (`ledger.proto`, the fee route).
 	if request.to != ScopeAccountLabel::fee() {
 		return Err(TransferError::Refused(LedgerRefusal::ApprovalRequired));
@@ -245,7 +257,7 @@ impl TransferAdmission for Admission<'_> {
 		// banking opens `(<scope>, fee)` when it learns the scope; a scope without it is
 		// banking's fault, not the caller's, and nothing is moved into an account nobody owns.
 		if !facts.destination_owner.as_ref().is_some_and(ClientId::is_banking) {
-			return Err(DomainError::Repository(format!("scope {} has no fee collector owned by banking", transfer.scope())).into());
+			return Err(TransferError::Internal(format!("scope {} has no fee collector owned by banking", transfer.scope())));
 		}
 		// A freeze stops new debits; a closed scope still lets its accounts be swept.
 		match scope.state {

@@ -66,10 +66,13 @@ pub struct RecordedTransfer {
 	pub created_at: i64,
 }
 
-/// Why a transfer did not happen: a refusal the wire names by its reason, or anything else.
+/// Why a call did not happen: a refusal the wire names by its reason, a broken invariant of
+/// banking's own (INTERNAL — no retry fixes it, and it is not the caller's to know why), or
+/// anything else.
 #[derive(Debug)]
 pub enum TransferError {
 	Refused(LedgerRefusal),
+	Internal(String),
 	Domain(DomainError),
 }
 

@@ -3,8 +3,11 @@
 -- TigerBeetle (`scope_account:<scope>:<label>`, code 31, since 0052); these rows are who
 -- asked for what, under which key, and where each transfer stands.
 --
--- REVERSIBILITY: DROP TABLE scope_transfers, scope_ledger_requests;
---   ALTER TABLE scope_policies DROP COLUMN auto_transfer_per_op;
+-- Every statement is IF NOT EXISTS: the rollback below may leave the tables and the column in
+-- place, and re-applying after it must not fail on them.
+--
+-- REVERSIBILITY: DROP TABLE IF EXISTS scope_transfers, scope_ledger_requests;
+--   ALTER TABLE scope_policies DROP COLUMN IF EXISTS auto_transfer_per_op;
 --   Safe only while no transfer has been recorded. Once one has, its TigerBeetle transfer
 --   outlives the rows: drop them and the ledger still shows the money moved, with nothing in
 --   Postgres saying who moved it or under which key a retry would find it.
@@ -22,7 +25,7 @@ SET LOCAL lock_timeout = '3s';
 -- the 24 h one 0052 stored. 1000 USDT, like `auto_payout_per_op` (ORG-RESTRUCTURE-PLAN §3.9).
 -- A constant default makes the column metadata-only: no table rewrite, no long lock.
 ALTER TABLE scope_policies
-	ADD COLUMN auto_transfer_per_op TEXT NOT NULL DEFAULT '1000000000000000000000' CHECK (auto_transfer_per_op ~ '^[0-9]+$');
+	ADD COLUMN IF NOT EXISTS auto_transfer_per_op TEXT NOT NULL DEFAULT '1000000000000000000000' CHECK (auto_transfer_per_op ~ '^[0-9]+$');
 
 -- Every mutating scope-ledger call that went through, by its idempotency key — unique per
 -- (calling client, scope, RPC), as the contract has it. `terms` is the canonical rendering of
@@ -30,7 +33,7 @@ ALTER TABLE scope_policies
 -- all of it and a key reused for other terms is told so. `result_id` names what the call
 -- produced: the label for `open_account`, the transfer id for `transfer`. Written in the same
 -- transaction as the thing it names, so a key never points at nothing.
-CREATE TABLE scope_ledger_requests (
+CREATE TABLE IF NOT EXISTS scope_ledger_requests (
 	client_id       TEXT NOT NULL CHECK (client_id ~ '^[a-z][a-z0-9_-]{0,63}$'),
 	scope           TEXT NOT NULL CHECK (scope ~ '^[a-z][a-z0-9_]{0,31}$'),
 	-- A shape, not a list: each later RPC (Payout, Reserve, …) adds its name without an ALTER.
@@ -47,7 +50,7 @@ CREATE TABLE scope_ledger_requests (
 -- transaction and stamps `posted`, or `failed` when the ledger refuses it; both are terminal.
 -- A `pending` row is promised away: it counts against the source account's spendable and
 -- against the client's rolling 24 h ceiling until it is posted or fails.
-CREATE TABLE scope_transfers (
+CREATE TABLE IF NOT EXISTS scope_transfers (
 	id             UUID PRIMARY KEY,
 	client_id      TEXT NOT NULL CHECK (client_id ~ '^[a-z][a-z0-9_-]{0,63}$'),
 	scope          TEXT NOT NULL CHECK (scope ~ '^[a-z][a-z0-9_]{0,31}$'),
@@ -67,10 +70,14 @@ CREATE TABLE scope_transfers (
 	-- RequestTransfer may, and neither is recorded here yet.
 	CHECK (to_scope = scope),
 	CHECK (from_label <> to_label),
+	-- banking's own labels are never a client's source, and a fee sweep only lands in `fee` —
+	-- the rules the use case and the domain already hold, kept by the table too.
+	CHECK (from_label NOT IN ('fee', 'treasury')),
+	CHECK (reason <> 'fee_sweep' OR to_label = 'fee'),
 	CHECK ((state = 'failed') = (failure_reason IS NOT NULL))
 );
 -- The rolling 24 h ceiling per (client, scope).
-CREATE INDEX scope_transfers_ceiling_idx ON scope_transfers (client_id, scope, created_at);
+CREATE INDEX IF NOT EXISTS scope_transfers_ceiling_idx ON scope_transfers (client_id, scope, created_at);
 -- The Read-First sum of an account's in-flight debits, and the reaper's scan.
-CREATE INDEX scope_transfers_pending_idx ON scope_transfers (scope, from_label) WHERE state = 'pending';
-CREATE INDEX scope_transfers_stale_idx ON scope_transfers (updated_at) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS scope_transfers_pending_idx ON scope_transfers (scope, from_label) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS scope_transfers_stale_idx ON scope_transfers (updated_at) WHERE state = 'pending';

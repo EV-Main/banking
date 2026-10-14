@@ -14,7 +14,7 @@ use domain::{
 	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
 	money::{Network, Usdt},
-	scope_ledger::{ClientId, Grant, Grants, LedgerRefusal, SubjectRef, TransferReason, canonical},
+	scope_ledger::{ClientId, Grant, Grants, LedgerRefusal, SubjectRef, TransferReason, TransferTerms, canonical},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId, ScopeState},
 };
 use piggybank_core::{
@@ -259,6 +259,12 @@ async fn a_label_another_client_owns_is_already_taken() {
 		domain_err(ledger_app::get_balances(&ports(&h, &after), &second, &scope, &[label("a:one")]).await),
 		DomainError::NotFound { .. }
 	));
+	// Inside the second client's prefix now, and still not its account to debit.
+	fund(&h, &scope, "a:one", "1").await;
+	assert_eq!(
+		refusal(ledger_app::transfer(&ports(&h, &after), &second, sweep(&scope, "a:one", "1", &key())).await),
+		LedgerRefusal::NotAccountOwner
+	);
 }
 
 #[tokio::test]
@@ -342,7 +348,12 @@ async fn a_sweep_debits_only_the_callers_own_account_and_only_into_fee() {
 	fund(&h, &scope, "panel:main", "10").await;
 	fund(&h, &scope, "fee", "10").await;
 
-	for (from, why) in [("fee", "banking's collector"), ("panel:main", "another client's account"), ("alloc:none", "no such account")] {
+	assert_eq!(
+		refusal(ledger_app::transfer(&p, &client, sweep(&scope, "panel:main", "1", &key())).await),
+		LedgerRefusal::NotGranted,
+		"another client's account, under a prefix the caller is not granted"
+	);
+	for (from, why) in [("fee", "banking's collector"), ("alloc:none", "no such account")] {
 		assert_eq!(
 			refusal(ledger_app::transfer(&p, &client, sweep(&scope, from, "1", &key())).await),
 			LedgerRefusal::NotAccountOwner,
@@ -459,17 +470,36 @@ async fn one_key_under_two_rpcs_is_two_keys() {
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
+/// Until a backend is waiting on a lock the WINNER's transaction holds — so the winner is
+/// committed only once the call is genuinely queued behind its uncommitted rows.
+async fn wait_blocked_by(pool: &PgPool, winner_pid: i32) {
+	let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+	loop {
+		let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))")
+			.bind(winner_pid)
+			.fetch_one(pool)
+			.await
+			.unwrap();
+		if waiting > 0 {
+			return;
+		}
+		assert!(std::time::Instant::now() < deadline, "the call never waited on the winner's rows");
+		tokio::task::yield_now().await;
+	}
+}
+
 /// The unique index behind the key lock: a key another transaction holds uncommitted makes
-/// this call wait on the index, and once that one commits the call answers with what it
-/// recorded (23505 → re-read) instead of an internal error.
+/// this call wait, and once that one commits the call answers with what it recorded (23505 →
+/// re-read) instead of an internal error.
 #[tokio::test]
-async fn a_key_won_by_a_concurrent_call_is_answered_with_its_result() {
+async fn a_key_won_by_a_concurrent_open_is_answered_with_its_result() {
 	let Some(h) = harness().await else { return };
 	let client = fresh_client();
 	let scope = own_scope(&h).await;
 	let grants = Grants::new(vec![grant(&client, &scope, "alloc:")]).unwrap();
 	let k = key();
 	let mut winner = h.pool.begin().await.unwrap();
+	let winner_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()").fetch_one(&mut *winner).await.unwrap();
 	sqlx::query("INSERT INTO scope_accounts (scope, label, owner_client) VALUES ($1, 'alloc:raced', $2)")
 		.bind(scope.as_str())
 		.bind(client.as_str())
@@ -488,22 +518,110 @@ async fn a_key_won_by_a_concurrent_call_is_answered_with_its_result() {
 	let raced_label = label("alloc:raced");
 	let call = ledger_app::open_account(&p, &client, &scope, &raced_label, &k);
 	let release = async {
-		// Commit only once the call is blocked behind the winner's uncommitted rows.
-		let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-		loop {
-			let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE NOT granted").fetch_one(&h.pool).await.unwrap();
-			if waiting > 0 {
-				break;
-			}
-			assert!(std::time::Instant::now() < deadline, "the call never waited on the winner's rows");
-			tokio::task::yield_now().await;
-		}
+		wait_blocked_by(&h.pool, winner_pid).await;
 		winner.commit().await.unwrap();
 	};
 	let (answered, ()) = tokio::join!(call, release);
 	let answered = answered.expect("the winner's result, not an error");
 	assert_eq!(answered.account.label, raced_label);
 	assert_eq!(answered.account.owner, client);
+}
+
+/// The same race on `Transfer`: the call passes every check and records its own transfer,
+/// then meets the winner's key on the unique index; it rolls its transfer back and answers
+/// with the winner's.
+#[tokio::test]
+async fn a_key_won_by_a_concurrent_transfer_is_answered_with_its_result() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = client_with_account(&h, "alloc:", "alloc:one").await;
+	fund(&h, &scope, "alloc:one", "10").await;
+	let k = key();
+	let request = sweep(&scope, "alloc:one", "2", &k);
+	let terms = TransferTerms {
+		client: client.clone(),
+		scope: scope.clone(),
+		from: request.from.clone(),
+		to: request.to.clone(),
+		amount: request.amount,
+		reason: request.reason,
+		subject_ref: request.subject_ref.clone(),
+		memo: request.memo.clone(),
+	};
+	let won = Uuid::new_v4();
+	let mut winner = h.pool.begin().await.unwrap();
+	let winner_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()").fetch_one(&mut *winner).await.unwrap();
+	sqlx::query(
+		"INSERT INTO scope_transfers (id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref, memo, state) \
+		 VALUES ($1, $2, $3, 'alloc:one', $3, 'fee', $4, 'fee_sweep', $5, '', 'posted')",
+	)
+	.bind(won)
+	.bind(client.as_str())
+	.bind(scope.as_str())
+	.bind(usdt("2").base_units().to_string())
+	.bind(terms.subject_ref.as_str())
+	.execute(&mut *winner)
+	.await
+	.unwrap();
+	sqlx::query("INSERT INTO scope_ledger_requests (client_id, scope, rpc, idempotency_key, terms, result_id) VALUES ($1, $2, 'transfer', $3, $4, $5)")
+		.bind(client.as_str())
+		.bind(scope.as_str())
+		.bind(&k)
+		.bind(terms.canonical())
+		.bind(won.to_string())
+		.execute(&mut *winner)
+		.await
+		.unwrap();
+	let p = ports(&h, &grants);
+	let call = ledger_app::transfer(&p, &client, request);
+	let release = async {
+		wait_blocked_by(&h.pool, winner_pid).await;
+		winner.commit().await.unwrap();
+	};
+	let (answered, ()) = tokio::join!(call, release);
+	let answered = answered.expect("the winner's result, not an error");
+	assert_eq!(answered.transfer.id().raw(), won, "the winner's transfer");
+	let mine: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_transfers WHERE scope = $1")
+		.bind(scope.as_str())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(mine, 1, "the loser's own transfer rolled back with its key");
+	let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox o JOIN scope_transfers t ON t.id = o.aggregate_id WHERE t.scope = $1")
+		.bind(scope.as_str())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(queued, 0, "and nothing reached the outbox");
+}
+
+#[tokio::test]
+async fn a_prefix_taken_away_takes_the_debit_with_it() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, _) = client_with_account(&h, "alloc:", "alloc:one").await;
+	fund(&h, &scope, "alloc:one", "10").await;
+	// The configuration now grants the client another prefix in the scope, not `alloc:`.
+	let regranted = Grants::new(vec![grant(&client, &scope, "panel:")]).unwrap();
+	let p = ports(&h, &regranted);
+	assert_eq!(
+		refusal(ledger_app::transfer(&p, &client, sweep(&scope, "alloc:one", "1", &key())).await),
+		LedgerRefusal::NotGranted
+	);
+	assert_eq!(posted(&h, &scope, "alloc:one").await, usdt("10"), "the money stays where it is");
+}
+
+#[tokio::test]
+async fn an_idempotency_key_is_1_to_128_characters_without_control_characters() {
+	let Some(h) = harness().await else { return };
+	let client = fresh_client();
+	let scope = own_scope(&h).await;
+	let grants = Grants::new(vec![grant(&client, &scope, "alloc:")]).unwrap();
+	let p = ports(&h, &grants);
+	let (p, client, scope) = (&p, &client, &scope);
+	let open = |k: String| async move { ledger_app::open_account(p, client, scope, &label("alloc:keyed"), &k).await };
+	assert!(open("é".repeat(128)).await.is_ok(), "128 characters, 256 bytes");
+	for (bad, why) in [(String::new(), "empty"), ("k".repeat(129), "129 characters"), ("a\nb".to_owned(), "a control character")] {
+		assert!(matches!(domain_err(open(bad).await), DomainError::Validation(_)), "{why}");
+	}
 }
 
 #[tokio::test]

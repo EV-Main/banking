@@ -438,6 +438,15 @@ impl ScopeTransfer {
 		if terms.from == terms.to {
 			return Err(DomainError::Validation("a transfer needs two different accounts".into()));
 		}
+		// The domain's own floor under the use case's checks: no client transfer debits one
+		// of banking's labels, and a fee sweep only ever lands in the fee collector.
+		if terms.from.is_reserved() {
+			return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.from)));
+		}
+		match terms.reason {
+			TransferReason::FeeSweep if terms.to != ScopeAccountLabel::fee() => return Err(DomainError::Validation("a fee sweep goes into the fee collector".into())),
+			TransferReason::FeeSweep => {}
+		}
 		validate_memo(&terms.memo)?;
 		Ok(Self {
 			id,
@@ -697,6 +706,16 @@ mod tests {
 		let same = TransferTerms { from: label("fee"), ..terms() };
 		assert!(ScopeTransfer::request(ScopeTransferId::new(), same).is_err(), "same account twice");
 		assert!(ScopeTransfer::request(ScopeTransferId::new(), TransferTerms { amount: Usdt::ZERO, ..terms() }).is_err());
+		let from_treasury = TransferTerms { from: label("treasury"), ..terms() };
+		assert!(
+			matches!(ScopeTransfer::request(ScopeTransferId::new(), from_treasury), Err(DomainError::Forbidden(_))),
+			"banking's own label is never a source"
+		);
+		let sideways = TransferTerms {
+			to: label("alloc:other"),
+			..terms()
+		};
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), sideways).is_err(), "a fee sweep lands only in fee");
 	}
 
 	#[test]
