@@ -51,7 +51,7 @@ export function RevenueView() {
         {/* A hub older than D17 sends no treasury beside `fee`: that reads as unavailable,
             not as a zero nobody reported. */}
         <BankingTreasuryCards claim={fee?.banking_treasury ?? null} loading={!fee && !failed} unavailable={failed || (fee !== null && !fee.banking_treasury)} />
-        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.bankingTreasuryNote", "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. The owners approve every payment out of it.")}</p>
+        <p className="max-w-3xl text-xs text-ink-soft">{t("admin.revenue.bankingTreasuryNote", "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. Nothing is paid out of it until scope approvals cover treasury spending.")}</p>
       </StaggerItem>
 
       <StaggerItem as="section" className="space-y-3">

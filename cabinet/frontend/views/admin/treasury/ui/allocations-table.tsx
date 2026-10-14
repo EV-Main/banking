@@ -114,7 +114,7 @@ function BankingTreasuryRow({ claim }: { claim: AllocationClaim }) {
       <ClaimCell claim={claim} />
       <td className="px-5 py-3 text-right text-ink-soft">—</td>
       <td className="px-5 py-3 text-right text-ink-soft">—</td>
-      <td className="px-5 py-3 text-xs text-ink-soft">{t("admin.treasury.bankingTreasuryHolders", "withdrawal fees · paid out by the owners")}</td>
+      <td className="px-5 py-3 text-xs text-ink-soft">{t("admin.treasury.bankingTreasuryHolders", "withdrawal fees · spending closed for now")}</td>
     </tr>
   );
 }

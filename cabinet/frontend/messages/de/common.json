@@ -7480,8 +7480,8 @@
     "t": "Mit Passkey anmelden"
   },
   "admin.revenue.bankingTreasuryNote": {
-    "en": "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. The owners approve every payment out of it.",
-    "t": "Auszahlungsgebühren landen hier, nicht in der Gebühren-Allokation: Eigenmittel von banking, von niemandem über Anteile gehalten. Jede Zahlung daraus genehmigen die Eigentümer."
+    "en": "Withdrawal fees land here, not in the fee allocation: banking's own cash, held by no one through units. Nothing is paid out of it until scope approvals cover treasury spending.",
+    "t": "Auszahlungsgebühren landen hier, nicht in der Gebührenallokation: eigenes Geld von banking, über Anteile hält es niemand. Ausgezahlt wird daraus nichts, bis Scope-Freigaben die Ausgaben der Treasury abdecken."
   },
   "admin.revenue.treasuryPostedHint": {
     "en": "retained withdrawal fees, reserved included",
@@ -7496,8 +7496,8 @@
     "t": "Eigenmittel von banking"
   },
   "admin.treasury.bankingTreasuryHolders": {
-    "en": "withdrawal fees · paid out by the owners",
-    "t": "Auszahlungsgebühren · Zahlungen genehmigen die Eigentümer"
+    "en": "withdrawal fees · spending closed for now",
+    "t": "Auszahlungsgebühren · Ausgaben vorerst gesperrt"
   },
   "admin.treasury.heldInCompartments": {
     "en": "Held in compartments",
