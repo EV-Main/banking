@@ -163,7 +163,9 @@ impl UnitHolder {
 			| LedgerAccountKey::ServiceClaim(_)
 			| LedgerAccountKey::WithdrawalClearing
 			| LedgerAccountKey::BankCustody
-			| LedgerAccountKey::BookCash(_) => None,
+			| LedgerAccountKey::BookCash(_)
+			| LedgerAccountKey::ScopeClaim(..)
+			| LedgerAccountKey::ScopeAccount(..) => None,
 		}
 	}
 

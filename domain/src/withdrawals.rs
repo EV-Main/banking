@@ -2,8 +2,9 @@
 //!
 //! The claim debited is always an investor's own ([`WithdrawalSource::User`]). The fund's
 //! earnings used to leave by a second source — the revenue payout — which #245 retired:
-//! every fee is the `fee` allocation's, held by people, and cash leaves it only through a
-//! holder's redemption onto their own claim and then their own withdrawal.
+//! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
+//! through a holder's redemption onto their own claim and then their own withdrawal. The
+//! withdrawal fee itself is banking's own and lands in its treasury (D17).
 //!
 //! A withdrawal moves that claim out of the fund and onto an external
 //! address. It is the **dangerous direction** (value leaves the system), so it is a
@@ -27,7 +28,7 @@ use ev::architecture::{AggregateRoot, DomainEvent, EmitsEvents, Entity, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	balance::{LedgerAccountKey, Party},
+	balance::{FeePayee, LedgerAccountKey},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	users::UserId,
@@ -291,7 +292,7 @@ impl Withdrawal {
 			amount: self.amount,
 			fee: self.fee,
 			tx_ref,
-			payee: Party::fee_payee(),
+			payee: FeePayee::treasury(),
 		});
 		Ok(())
 	}
@@ -430,9 +431,10 @@ pub enum WithdrawalEvent {
 		fee: Usdt,
 	},
 	/// Confirmed on-chain (relay: post the clearing pending, then move net→`wallet:<net>`
-	/// and the retained fee→`payee`'s claim).
+	/// and the retained fee→`payee`'s account).
 	///
-	/// `payee` is the `fee` allocation (#245).
+	/// `payee` is banking's treasury (D17); an event raised before names the `fee`
+	/// allocation and still pays it.
 	Settled {
 		withdrawal_id: WithdrawalId,
 		#[serde(alias = "user")]
@@ -441,7 +443,7 @@ pub enum WithdrawalEvent {
 		amount: Usdt,
 		fee: Usdt,
 		tx_ref: TxRef,
-		payee: Party,
+		payee: FeePayee,
 	},
 	/// Broadcast confirmed not to have landed — void the clearing reservation (refund).
 	Failed {

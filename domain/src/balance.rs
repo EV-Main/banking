@@ -51,6 +51,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
 	error::DomainError,
 	money::{Network, Usdt},
+	scopes::{ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
 
@@ -173,9 +174,10 @@ impl Party {
 		}
 	}
 
-	/// The party every fee the platform charges is paid to: the `fee` allocation, whose
-	/// holders are people (issue #245). Carried on each fee-bearing event rather than
-	/// decided by the relay, so the relay's plan is a function of the payload alone.
+	/// The party every allocation fee is paid to — the book's taker fee and the fee-class
+	/// settlement: the `fee` allocation, whose holders are people (issue #245). Carried on
+	/// each fee-bearing event rather than decided by the relay, so the relay's plan is a
+	/// function of the payload alone. banking's own fees go to [`FeePayee::treasury`] (D17).
 	pub fn fee_payee() -> Self {
 		Self::Service(ServiceId::fee())
 	}
@@ -187,6 +189,43 @@ impl Party {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
 			Self::Service(service) => LedgerAccountKey::ServiceClaim(service.clone()),
+		}
+	}
+}
+
+/// Where a fee banking retains for its own service lands — named on the event that raises
+/// it, like [`Party::fee_payee`], so the relay's plan stays a function of the payload.
+///
+/// Since D17 that is banking's treasury, `ScopeAccount(main, treasury)`. `Service` stays
+/// readable because every event raised before it names the `fee` allocation
+/// (`{"kind":"service","id":"fee"}`) — an undrained or parked one must still pay where it
+/// said it would, not be re-routed by a later build. Its own type rather than a `Party`
+/// variant: a scope account is not a party a payment may name.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum FeePayee {
+	/// An allocation's claim — the payee of every event raised before D17.
+	Service(ServiceId),
+	ScopeAccount {
+		scope: ScopeId,
+		label: ScopeAccountLabel,
+	},
+}
+
+impl FeePayee {
+	/// banking's treasury, `ScopeAccount(main, treasury)` (D17).
+	pub fn treasury() -> Self {
+		Self::ScopeAccount {
+			scope: ScopeId::main(),
+			label: ScopeAccountLabel::treasury(),
+		}
+	}
+
+	/// The credit-normal account the fee is posted to.
+	pub fn claim_key(&self) -> LedgerAccountKey {
+		match self {
+			Self::Service(service) => LedgerAccountKey::ServiceClaim(service.clone()),
+			Self::ScopeAccount { scope, label } => LedgerAccountKey::ScopeAccount(scope.clone(), label.clone()),
 		}
 	}
 }
@@ -258,6 +297,10 @@ pub enum AccountCode {
 	RetiredCompanyStake,
 	BookShares,
 	BookCash,
+	/// A user's compartment in a non-main scope.
+	ScopeClaim,
+	/// A scope's own account `(scope, label)`, `(main, treasury)` included.
+	ScopeAccount,
 }
 
 impl AccountCode {
@@ -267,7 +310,9 @@ impl AccountCode {
 			Self::CryptoWallet => 10,
 			Self::BankCustody => 11,
 			Self::UserClaim => 20,
+			Self::ScopeClaim => 21,
 			Self::ServiceClaim => 30,
+			Self::ScopeAccount => 31,
 			Self::RetiredFeeClaim => 40,
 			Self::WithdrawalClearing => 50,
 			Self::UserShares => 60,
@@ -288,7 +333,9 @@ impl AccountCode {
 			10 => Self::CryptoWallet,
 			11 => Self::BankCustody,
 			20 => Self::UserClaim,
+			21 => Self::ScopeClaim,
 			30 => Self::ServiceClaim,
+			31 => Self::ScopeAccount,
 			40 => Self::RetiredFeeClaim,
 			50 => Self::WithdrawalClearing,
 			60 => Self::UserShares,
@@ -373,6 +420,9 @@ pub enum TransferCode {
 	/// reconciliation reading the Share ledger alone can tell which burns the fund's
 	/// cash should account for.
 	UnitRetire,
+	/// A user moving their own money between `main` and a scope compartment, either way.
+	/// One code for both directions: the claim pair says which way it went.
+	CompartmentMove,
 }
 
 impl TransferCode {
@@ -407,6 +457,7 @@ impl TransferCode {
 			Self::BookFill => 50,
 			Self::BookFee => 51,
 			Self::UnitRetire => 53,
+			Self::CompartmentMove => 55,
 		}
 	}
 }
@@ -472,6 +523,14 @@ pub enum LedgerAccountKey {
 	/// seller out of it, a cancel or a price improvement hands the rest back. A claim like
 	/// any other, so `sum(custody) == sum(claims)` is untouched by a lock.
 	BookCash(UserId),
+	/// A user's compartment in a scope other than `main` (credit-normal, USDT ledger, one
+	/// per `(user, scope)`): their money earmarked for that scope's services. Their `main`
+	/// compartment is [`Self::UserClaim`]; a `ScopeClaim` keyed on `main` is never built
+	/// ([`crate::scopes::Compartment`] is the only path) and never parses.
+	ScopeClaim(UserId, ScopeId),
+	/// A scope's own money under a label its owner chose (credit-normal, USDT ledger):
+	/// `(main, treasury)` holds the fees banking charges for its own service (D17).
+	ScopeAccount(ScopeId, ScopeAccountLabel),
 }
 
 impl LedgerAccountKey {
@@ -488,6 +547,8 @@ impl LedgerAccountKey {
 			Self::FeeShares(service) => format!("shares_fee:{service}"),
 			Self::BookShares(service, user) => format!("book_shares:{service}:{user}"),
 			Self::BookCash(user) => format!("book_cash:{user}"),
+			Self::ScopeClaim(user, scope) => format!("scope_claim:{scope}:{user}"),
+			Self::ScopeAccount(scope, label) => format!("scope_account:{scope}:{label}"),
 		}
 	}
 
@@ -511,6 +572,8 @@ impl LedgerAccountKey {
 			Self::FeeShares(_) => AccountCode::FeeShares,
 			Self::BookShares(..) => AccountCode::BookShares,
 			Self::BookCash(_) => AccountCode::BookCash,
+			Self::ScopeClaim(..) => AccountCode::ScopeClaim,
+			Self::ScopeAccount(..) => AccountCode::ScopeAccount,
 		}
 	}
 
@@ -520,7 +583,8 @@ impl LedgerAccountKey {
 	pub fn normal(&self) -> Normal {
 		match self {
 			Self::CryptoWallet(_) | Self::BankCustody | Self::UserShares(..) | Self::FeeShares(_) | Self::BookShares(..) => Normal::Debit,
-			Self::UserClaim(_) | Self::ServiceClaim(_) | Self::WithdrawalClearing | Self::SharesOutstanding(_) | Self::BookCash(_) => Normal::Credit,
+			Self::UserClaim(_) | Self::ServiceClaim(_) | Self::WithdrawalClearing | Self::SharesOutstanding(_) | Self::BookCash(_) | Self::ScopeClaim(..) | Self::ScopeAccount(..) =>
+				Normal::Credit,
 		}
 	}
 
@@ -561,6 +625,20 @@ impl LedgerAccountKey {
 					"shares_fee" => ServiceId::parse(rest).map(Self::FeeShares),
 					"book_shares" => service_and_user(rest).map(|(service, user)| Self::BookShares(service, user)),
 					"book_cash" => user_id(rest).map(Self::BookCash),
+					// A scope id holds no ':', so the first ':' splits it off — a label may hold
+					// ':' of its own (`alloc:<slug>`).
+					"scope_claim" => {
+						let (scope, user) = rest.split_once(':').ok_or_else(|| DomainError::Validation(format!("malformed scope claim key: {raw}")))?;
+						let scope = ScopeId::parse(scope)?;
+						if scope.is_main() {
+							return Err(DomainError::Validation(format!("main has no scope claim: {raw}")));
+						}
+						Ok(Self::ScopeClaim(user_id(user)?, scope))
+					}
+					"scope_account" => {
+						let (scope, label) = rest.split_once(':').ok_or_else(|| DomainError::Validation(format!("malformed scope account key: {raw}")))?;
+						Ok(Self::ScopeAccount(ScopeId::parse(scope)?, ScopeAccountLabel::parse(label)?))
+					}
 					_ => Err(DomainError::Validation(format!("unknown logical key: {raw}"))),
 				}
 			}
@@ -714,6 +792,8 @@ mod tests {
 			LedgerAccountKey::FeeShares(svc.clone()),
 			LedgerAccountKey::BookShares(svc, uid),
 			LedgerAccountKey::BookCash(uid),
+			LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("sa").unwrap()),
+			LedgerAccountKey::ScopeAccount(ScopeId::main(), ScopeAccountLabel::treasury()),
 		];
 		for key in live {
 			assert!(!key.account_code().is_retired(), "{key:?} derives a retired kind");
@@ -721,6 +801,34 @@ mod tests {
 			assert!(!matches!(key.logical_key().as_str(), "fund" | "fee"), "{key:?} derives a retired logical key");
 			assert!(!key.logical_key().starts_with("shares_company:"), "{key:?} derives a retired logical key");
 		}
+	}
+
+	#[test]
+	fn the_scope_keys_are_claims_on_the_cash_ledger() {
+		let uid = UserId::from_raw(uuid::Uuid::nil());
+		let compartment = LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("sa").unwrap());
+		assert_eq!(compartment.logical_key(), "scope_claim:sa:00000000-0000-0000-0000-000000000000");
+		assert_eq!((compartment.ledger(), compartment.normal(), compartment.network()), (Ledger::Usdt, Normal::Credit, None));
+		assert_eq!(compartment.account_code().code(), 21);
+		assert_ne!(compartment.logical_key(), LedgerAccountKey::UserClaim(uid).logical_key());
+		let treasury = FeePayee::treasury().claim_key();
+		assert_eq!(treasury.logical_key(), "scope_account:main:treasury");
+		assert_eq!((treasury.ledger(), treasury.normal()), (Ledger::Usdt, Normal::Credit));
+		assert_eq!(treasury.account_code().code(), 31);
+	}
+
+	// D17: banking's own fees go to its treasury, while an event raised before names the
+	// `fee` allocation in the shape a `Party` wrote — and must still read back as that.
+	#[test]
+	fn a_fee_payee_reads_both_the_treasury_and_the_legacy_party_shape() {
+		let json = serde_json::to_string(&FeePayee::treasury()).unwrap();
+		assert_eq!(json, r#"{"kind":"scope_account","id":{"scope":"main","label":"treasury"}}"#);
+		assert_eq!(serde_json::from_str::<FeePayee>(&json).unwrap(), FeePayee::treasury());
+		let legacy = serde_json::to_string(&Party::fee_payee()).unwrap();
+		let read = serde_json::from_str::<FeePayee>(&legacy).unwrap();
+		assert_eq!(read, FeePayee::Service(ServiceId::fee()));
+		assert_eq!(read.claim_key(), Party::fee_payee().claim_key());
+		assert!(serde_json::from_str::<FeePayee>(r#"{"kind":"user","id":"00000000-0000-0000-0000-000000000000"}"#).is_err());
 	}
 
 	#[test]
@@ -748,6 +856,9 @@ mod tests {
 			LedgerAccountKey::FeeShares(svc.clone()),
 			LedgerAccountKey::BookShares(svc, uid),
 			LedgerAccountKey::BookCash(uid),
+			LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("invest").unwrap()),
+			LedgerAccountKey::ScopeAccount(ScopeId::main(), ScopeAccountLabel::treasury()),
+			LedgerAccountKey::ScopeAccount(ScopeId::parse("sa").unwrap(), ScopeAccountLabel::parse("alloc:service_arb").unwrap()),
 		];
 		for key in keys {
 			let raw = key.logical_key();
@@ -764,6 +875,13 @@ mod tests {
 			"user:",
 			"vault:bep20",
 			"wallet:btc",
+			"scope_claim:sa",
+			"scope_claim:sa:not-a-uuid",
+			"scope_claim:Sa:00000000-0000-0000-0000-000000000000",
+			"scope_claim:main:00000000-0000-0000-0000-000000000000",
+			"scope_account:main",
+			"scope_account:main:",
+			"scope_account:main:Treasury",
 		] {
 			assert!(LedgerAccountKey::parse_logical_key(foreign).is_err(), "{foreign:?} parsed");
 		}
@@ -816,6 +934,8 @@ mod tests {
 			AccountCode::RetiredCompanyStake,
 			AccountCode::BookShares,
 			AccountCode::BookCash,
+			AccountCode::ScopeClaim,
+			AccountCode::ScopeAccount,
 		]
 		.map(AccountCode::code);
 		let mut sorted = account_codes;
@@ -852,6 +972,7 @@ mod tests {
 			TransferCode::BookFill,
 			TransferCode::BookFee,
 			TransferCode::UnitRetire,
+			TransferCode::CompartmentMove,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();
