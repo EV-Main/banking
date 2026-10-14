@@ -50,12 +50,15 @@ syntax = "proto3";
 //     `compartments` flag.
 //   - The fee route. Any client granted in a scope may credit `(<scope>, fee)` from its
 //     own accounts with FEE_SWEEP. No client ever debits a `fee` collector: banking
-//     alone sweeps every `(<scope>, fee)`, `invest` included, into `(invest, alloc:fee)`
-//     automatically — the only movement between scopes without an approval.
-//     `(invest, alloc:fee)` is the cash of the `fee` allocation and an ordinary account
-//     of its owner (the invest client), so fee-class redemptions are paid from it. A
-//     client's call never addresses two scopes; every other cross-scope movement is a
-//     `RequestTransfer`.
+//     alone sweeps each one automatically, and where to depends on the scope (D24):
+//       - `(invest, fee)` → `(invest, alloc:fee)`, inside the scope. `(invest, alloc:fee)`
+//         is the cash of the `fee` allocation and an ordinary account of its owner (the
+//         invest client), so fee-class redemptions are paid from it. Only invest's own
+//         fees ever reach it;
+//       - `(<any other scope>, fee)` → `(main, treasury)`, banking's own — the only
+//         movement out of a scope without an approval, and never into another scope.
+//     A client's call never addresses two scopes; every other movement between scopes
+//     is a `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,
 //     Transfer, Request*): FAILED_PRECONDITION `scope_frozen`; credits and reads go on.
 //   - A frozen user takes no new debit of their compartment (Reserve, Charge):
@@ -314,7 +317,8 @@ enum PayoutReason {
 enum TransferReason {
   TRANSFER_REASON_UNSPECIFIED = 0;
   // Fees collected from the caller's account into `(scope, fee)`. Banking's own sweep
-  // `(<scope>, fee) → (invest, alloc:fee)` carries it too.
+  // carries it too: `(invest, fee) → (invest, alloc:fee)`, and `(<other scope>, fee) →
+  // (main, treasury)`.
   TRANSFER_REASON_FEE_SWEEP = 1;
 }
 
@@ -375,8 +379,8 @@ message ScopeTransfer {
   string subject_ref = 7;
   string memo = 8;
   TransferReason reason = 9;
-  // The credited account's scope (= `scope` unless an approved scope transfer or
-  // banking's fee sweep crossed scopes).
+  // The credited account's scope (= `scope` unless an approved scope transfer crossed
+  // scopes, or banking's fee sweep of a scope other than invest moved it to `main`).
   string to_scope = 10;
   // Set when the transfer executes an approved `RequestTransfer`.
   string operation_id = 11;
