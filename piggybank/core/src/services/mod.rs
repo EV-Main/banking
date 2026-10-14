@@ -55,6 +55,7 @@ pub mod funds;
 pub mod health;
 pub mod operations;
 pub mod payments;
+pub mod scope_ledger;
 pub(crate) mod support;
 pub mod users;
 pub mod wallet;
@@ -73,6 +74,10 @@ pub mod wallet;
 /// future inter-service surfaces). `HealthService` is left **unwrapped** so its liveness
 /// (`Check`) and readiness (`Readiness`) probes stay public for the BFF and any
 /// orchestrator/LB — they are infrastructure probes, not data services.
+///
+/// `scope.v1.ScopeLedgerService` is NOT served here: it is the service-facing money surface,
+/// on a listener of its own that speaks only mTLS under the SERVICE token class
+/// ([`scope_ledger::serve`]).
 ///
 /// `ConsiliumApprovalService` is the one DATA service left unwrapped, for the same reason
 /// the auth service's own routes are: the emailed approval token IS its credential. An owner
