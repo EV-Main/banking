@@ -50,6 +50,7 @@ use piggybank_core::{
 		reconciliation::Reconciliation,
 		redemptions::PgRedemptions,
 		relay::Relay,
+		scope_events::ScopeEventsConsumer,
 		signer_addresses::SignerDepositAddresses,
 		subscriptions::PgSubscriptions,
 		sweep::Sweep,
@@ -380,6 +381,14 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		config.bridge_service_token.clone(),
 		Duration::from_secs(config.bridge_poll_secs),
 	));
+	// The scope registry follows concierge's scope stream over the same seam and token: a
+	// scope concierge freezes or closes stops taking money into its compartments here.
+	let scope_events = ScopeEventsConsumer::new(
+		pool.clone(),
+		concierge_endpoint.connect_lazy(),
+		config.bridge_service_token.clone(),
+		Duration::from_secs(config.bridge_poll_secs),
+	);
 
 	// ── auth service + user provisioning (in-process) ──────────────────────────
 	// Auth owns the keys/JWKS and hands core an `Authorizer` (core → auth, verify);
@@ -552,6 +561,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		dispatcher_done,
 		fee_sweeper_done,
 		bridge_done,
+		scope_events_done,
 		watcher_done,
 		withdrawal_watcher_done,
 		sweep_done,
@@ -584,6 +594,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 			"bridge",
 			infallible(run_or_idle(shutdown.clone(), bridge.map(|consumer| consumer.run(shutdown.clone()))))
 		),
+		branch(&shutdown, "scope events", infallible(scope_events.run(shutdown.clone()))),
 		branch(
 			&shutdown,
 			"deposit watcher",
@@ -673,6 +684,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		.and(dispatcher_done)
 		.and(fee_sweeper_done)
 		.and(bridge_done)
+		.and(scope_events_done)
 		.and(watcher_done)
 		.and(withdrawal_watcher_done)
 		.and(sweep_done)

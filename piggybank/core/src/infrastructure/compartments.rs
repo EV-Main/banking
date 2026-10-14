@@ -77,6 +77,10 @@ macro_rules! concat_move_select {
 }
 const SELECT_ALL_SCOPES: &str = concat!(select_scopes!(), " ORDER BY s.id");
 const SELECT_ONE_SCOPE: &str = concat!(select_scopes!(), " WHERE s.id = $1");
+/// The scope a move in decides against, held until the move commits: the scope stream's
+/// consumer writes a state under `FOR UPDATE`, so a freeze cannot commit between this read
+/// and the move it admits, and a move that starts after the freeze reads it.
+const SELECT_ONE_SCOPE_FOR_SHARE: &str = concat!(select_scopes!(), " WHERE s.id = $1 FOR SHARE OF s");
 
 type ScopeRow = (String, String, String, i32, Option<String>, Option<String>, Option<String>, String, String, String, i64);
 
@@ -152,8 +156,8 @@ async fn sum_amounts<'c>(conn: impl sqlx::PgExecutor<'c>, sql: &'static str, use
 	})
 }
 
-async fn scope_on<'c>(conn: impl sqlx::PgExecutor<'c>, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
-	sqlx::query_as::<_, ScopeRow>(SELECT_ONE_SCOPE)
+async fn scope_on<'c>(conn: impl sqlx::PgExecutor<'c>, sql: &'static str, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
+	sqlx::query_as::<_, ScopeRow>(sql)
 		.bind(id.as_str())
 		.fetch_optional(conn)
 		.await
@@ -190,7 +194,7 @@ impl CompartmentStore for PgCompartments {
 	}
 
 	async fn scope(&self, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
-		scope_on(&self.pool, id).await
+		scope_on(&self.pool, SELECT_ONE_SCOPE, id).await
 	}
 
 	async fn find_move(&self, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError> {
@@ -232,7 +236,7 @@ impl CompartmentStore for PgCompartments {
 		if movement.is_move_in() {
 			in_flight.pending_into_target = sum_amounts(&mut *tx, PENDING_IN, user, movement.to().as_str()).await?;
 			in_flight.moved_in_24h = sum_amounts(&mut *tx, MOVED_IN_24H, user, movement.scope().as_str()).await?;
-			in_flight.scope = scope_on(&mut *tx, movement.scope()).await?;
+			in_flight.scope = scope_on(&mut *tx, SELECT_ONE_SCOPE_FOR_SHARE, movement.scope()).await?;
 			in_flight.standing = outflow::standing(&mut *tx, user).await?;
 		}
 		// The refusal rolls the transaction back with nothing written.
