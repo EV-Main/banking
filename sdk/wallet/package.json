@@ -1,0 +1,60 @@
+{
+  "name": "@evinvest/wallet",
+  "version": "0.1.1",
+  "description": "Host wrappers for the banking wallet microfrontends: the wallet and the pay-invoice button, and the popup helper that carries a money action to evinvest.ltd and brings its result back by postMessage. A thin layer over @evinvest/mfe.",
+  "license": "BlueOak-1.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EV-Main/banking.git",
+    "directory": "sdk/wallet"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup && tsup --config tsup.react.config.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepare": "tsup && tsup --config tsup.react.config.ts"
+  },
+  "peerDependencies": {
+    "@evinvest/mfe": ">=0.1.0 <1",
+    "react": "^18 || ^19"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@evinvest/mfe": "^0.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
