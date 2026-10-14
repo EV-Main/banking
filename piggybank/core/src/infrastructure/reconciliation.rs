@@ -207,11 +207,19 @@ impl Reconciliation {
 		if report.treasury_debits != report.treasury_debits_approved {
 			self.check_treasury(&mut report).await?;
 		}
-		if report.treasury_debits != report.treasury_debits_approved {
+		// The two directions call for different responses: an excess debit is money gone
+		// without say-so, a shortfall is an approved payment whose debit never landed.
+		if report.treasury_debits > report.treasury_debits_approved {
 			error!(
 				debited = %report.treasury_debits,
 				approved = %report.treasury_debits_approved,
 				"reconciliation: TREASURY DEBIT WITHOUT APPROVAL — money left banking's treasury that no approved payment accounts for"
+			);
+		} else if report.treasury_debits < report.treasury_debits_approved {
+			error!(
+				debited = %report.treasury_debits,
+				approved = %report.treasury_debits_approved,
+				"reconciliation: TREASURY APPROVAL WITHOUT DEBIT — an approved treasury payment or withdrawal has not been debited on the ledger"
 			);
 		}
 
