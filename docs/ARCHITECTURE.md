@@ -243,7 +243,8 @@ roots, and global tokens/uikit must cascade in.
 - **Page-level** = the same element mounted at a route
   (`cabinet/frontend/app/(mfe)/[service]/[[...slug]]`); the cabinet keeps its chrome.
 - **React producer** (other repos): wrap a component as a custom element with
-  `@r2wc/react-to-web-component` directly — the hub ships no producer SDK. _Optional_ optimization for React-to-React widgets: Module
+  `@r2wc/react-to-web-component` directly — the hub ships no producer SDK.
+  _Optional_ optimization for React-to-React widgets: Module
   Federation 2.0 **runtime** (`@module-federation/runtime` + `bridge-react`) to
   share one React instance — never `@module-federation/nextjs-mf`
   (App-Router-unsupported, sunsetting).

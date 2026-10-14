@@ -28,23 +28,40 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          case "$TAG" in
-            @evinvest/wallet-v*) ;;
-            *) echo "::error::'$TAG' is not an @evinvest/wallet-v<version> tag" >&2; exit 1 ;;
-          esac
+          # Strict, so a dispatched tag can only ever name a semver of this package.
+          re='^@evinvest/wallet-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$'
+          if [[ ! "$TAG" =~ $re ]]; then
+            echo "::error::not an @evinvest/wallet-v<semver> tag: $TAG" >&2
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG##*-v}" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
       - name: Checkout the tag
         uses: actions/checkout@v5
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
+          # Full history for the ancestry check below; no token left in .git/config
+          # for `npm ci` install scripts to read.
+          fetch-depth: 0
+          persist-credentials: false
+      # A tag pushed onto an unmerged branch commit must not reach npm. HEAD, not
+      # GITHUB_SHA: on workflow_dispatch GITHUB_SHA is the dispatching branch, not the tag.
+      - name: Require the tag to be on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$(git rev-parse HEAD) is not on main" >&2
+            exit 1
+          fi
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
-      # OIDC publishing needs npm >= 11.5.1.
-      - run: npm install -g npm@latest
+      # OIDC publishing needs npm >= 11.5.1, and the npm bundled with the runner's cached
+      # Node 24 may be older. Pinned: this job can mint an id-token, so it never installs
+      # whatever `latest` happens to be.
+      - run: npm install -g npm@11.21.0
       - name: Check, test and publish
         working-directory: sdk/wallet
         env:
@@ -54,4 +71,8 @@ jobs:
           npm ci
           npm run typecheck
           npm test
-          npm publish --access public
+          # npm 11 refuses a prerelease without an explicit dist-tag, and `latest` must
+          # never point at one.
+          dist_tag=latest
+          case "$VERSION" in *-*) dist_tag=next ;; esac
+          npm publish --provenance --access public --tag "$dist_tag"
