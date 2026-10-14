@@ -41,6 +41,13 @@
 //!      freshness, not a money invariant, and any database no consumer follows (every
 //!      test's) would read dirty for a reason that says nothing about the money.
 //!
+//!   7. **Every scope account has an owner** — value on a `scope_account:<scope>:<label>`
+//!      the ledger holds with no `scope_accounts` row saying whose it is
+//!      ([`scope_ledger::unowned_scope_accounts`]). Scope accounts are already in (1) — the
+//!      cash invariant counts them by code — so this is not about the sum but about the
+//!      attribution: a scope account no client and not banking owns is money nobody may
+//!      debit and nobody answers for. An alert, and part of [`ReconReport::clean`].
+//!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
 
@@ -56,7 +63,7 @@ use crate::{
 	infrastructure::{
 		outbox,
 		scope_events::{self, StreamFreshness},
-		telemetry,
+		scope_ledger, telemetry,
 	},
 	ports::{AllocationRegistry, ledger::Ledger},
 };
@@ -101,6 +108,8 @@ pub struct ReconReport {
 	/// The scope stream's standing this pass; `None` when it could not be read. Outside
 	/// [`Self::clean`] (see the module header, 6).
 	pub scope_stream: Option<StreamFreshness>,
+	/// Scope accounts holding value with no owner on record, by logical key (module header, 7).
+	pub unowned_scope_accounts: Vec<String>,
 }
 
 impl ReconReport {
@@ -113,6 +122,7 @@ impl ReconReport {
 			&& self.units_drift.is_empty()
 			&& self.parked_rows == 0
 			&& self.treasury_debits == self.treasury_debits_approved
+			&& self.unowned_scope_accounts.is_empty()
 	}
 }
 
@@ -278,10 +288,47 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope stream cursor read failed, freshness not verified this pass: {err}"),
 		}
 
+		// (7) Every scope account holding value has an owner. A read failure skips it this
+		// pass, like the other ledger reads.
+		match scope_ledger::unowned_scope_accounts(&self.pool).await {
+			Ok(keys) =>
+				for logical_key in keys {
+					self.check_unowned(logical_key, &mut report).await;
+				},
+			Err(err) => warn!("reconciliation: scope account owners read failed, attribution not verified this pass: {err}"),
+		}
+
 		if report.clean() {
 			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
 		}
 		Ok(report)
+	}
+
+	/// One scope account the ledger knows and no owner row names: alerted when it holds
+	/// anything, posted or in flight either way. An empty one is a harmless leftover (a ledger account
+	/// opened by a read), not a finding.
+	async fn check_unowned(&self, logical_key: String, report: &mut ReconReport) {
+		let key = match LedgerAccountKey::parse_logical_key(&logical_key) {
+			Ok(key) => key,
+			Err(err) => {
+				warn!(%logical_key, "reconciliation: a code-31 ledger account does not parse as a scope account: {err}");
+				return;
+			}
+		};
+		match self.ledger.balance(&key).await {
+			Ok(balance) if balance.posted == 0 && balance.pending == 0 && balance.locked == 0 => {}
+			Ok(balance) => {
+				error!(
+					%logical_key,
+					posted = %balance.posted,
+					pending = %balance.pending,
+					locked = %balance.locked,
+					"reconciliation: SCOPE ACCOUNT WITHOUT OWNER — value on a scope account no client and not banking owns"
+				);
+				report.unowned_scope_accounts.push(logical_key);
+			}
+			Err(err) => warn!(%logical_key, "reconciliation: unowned scope account balance read failed, not verified this pass: {err}"),
+		}
 	}
 
 	async fn check_treasury(&self, report: &mut ReconReport) -> Result<(), sqlx::Error> {

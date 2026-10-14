@@ -43,6 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
+	scope_ledger::{LedgerRefusal, ScopeLedgerEvent},
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
 	users::UserId,
@@ -59,6 +60,7 @@ use crate::{
 		book, compartments, fee_accrual, issuance,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
+		scope_ledger,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
@@ -142,6 +144,68 @@ const BOOK_FILL_FEE: &[u8] = b"book:fill:fee";
 /// event id so an operator reconciling a `compartment_moves` row recomputes the transfer id
 /// from the row alone. FROZEN like every salt here.
 const COMPARTMENT_MOVE: &[u8] = b"compartment:move";
+
+/// Salt for a scope transfer's one posted leg, derived from the TRANSFER id for the same
+/// reason. FROZEN.
+const SCOPE_TRANSFER: &[u8] = b"scope:transfer";
+
+/// An event whose one ledger leg is recorded on a control-plane row of its own — `pending`
+/// until the relay posts it, then `posted`, or `failed` for good when the ledger refuses it.
+/// A compartment move and a client's scope transfer are the two; both follow one discipline
+/// (see `dispatch`), so it is spelled once.
+#[derive(Clone, Copy)]
+enum Posting {
+	Move,
+	ScopeTransfer,
+}
+
+impl Posting {
+	fn of(kind: &str) -> Option<Self> {
+		if kind == CompartmentEvent::KIND {
+			Some(Self::Move)
+		} else if kind == ScopeLedgerEvent::KIND {
+			Some(Self::ScopeTransfer)
+		} else {
+			None
+		}
+	}
+
+	const fn name(self) -> &'static str {
+		match self {
+			Self::Move => "compartment move",
+			Self::ScopeTransfer => "scope transfer",
+		}
+	}
+
+	/// The reason recorded on a row the ledger refused for want of funds — the wire's own.
+	const fn insufficient_funds(self) -> &'static str {
+		match self {
+			Self::Move => MoveRefusal::InsufficientFunds.reason(),
+			Self::ScopeTransfer => LedgerRefusal::InsufficientFunds.reason(),
+		}
+	}
+
+	async fn state(self, pool: &PgPool, id: Uuid) -> Result<Option<MoveState>, sqlx::Error> {
+		match self {
+			Self::Move => compartments::move_state(pool, id).await,
+			Self::ScopeTransfer => scope_ledger::transfer_state(pool, id).await,
+		}
+	}
+
+	async fn mark_posted(self, pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+		match self {
+			Self::Move => compartments::mark_posted(pool, id).await,
+			Self::ScopeTransfer => scope_ledger::mark_posted(pool, id).await,
+		}
+	}
+
+	async fn mark_failed(self, pool: &PgPool, id: Uuid, reason: &str) -> Result<(), sqlx::Error> {
+		match self {
+			Self::Move => compartments::mark_failed(pool, id, reason).await,
+			Self::ScopeTransfer => scope_ledger::mark_failed(pool, id, reason).await,
+		}
+	}
+}
 
 /// Bound on consecutive `RetryBounded` attempts before a never-resolving retryable (a
 /// completion whose pending was itself parked, so it can never be found) is parked
@@ -395,13 +459,13 @@ impl Relay {
 		{
 			error!(seq = row.seq, order = %order_id, "relay: failed to mark the order rejected after its lock parked: {err}");
 		}
-		// A parked move is a refused move: the user is told it failed, the money it promised
-		// is spendable again, and an operator's unpark replays an event whose row is
-		// terminal — a no-op (see `dispatch`). Nothing of a move applies before its one leg.
-		if row.kind == CompartmentEvent::KIND
-			&& let Err(err) = compartments::mark_failed(&self.pool, row.aggregate_id, &format!("parked:{}", park_kind(reason))).await
+		// A parked move (or scope transfer) is a refused one: the caller is told it failed, the
+		// money it promised is spendable again, and an operator's unpark replays an event whose
+		// row is terminal — a no-op (see `dispatch`). Nothing of it applies before its one leg.
+		if let Some(posting) = Posting::of(&row.kind)
+			&& let Err(err) = posting.mark_failed(&self.pool, row.aggregate_id, &format!("parked:{}", park_kind(reason))).await
 		{
-			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked compartment move failed: {err}");
+			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked {} failed: {err}", posting.name());
 		}
 		if applied_legs > 0 {
 			error!(seq = row.seq, event_id = %row.event_id, aggregate = %row.aggregate, applied_legs, "relay: PARKED HALF-APPLIED event (compensation owed): {reason}");
@@ -418,34 +482,35 @@ impl Relay {
 			Ok(ops) => ops,
 			Err(reason) => return Outcome::park(format!("unplannable event: {reason}")),
 		};
-		let is_move = row.kind == CompartmentEvent::KIND;
-		// Only a `pending` move may reach the ledger. A `failed` one is the user's refused
+		let posting = Posting::of(&row.kind);
+		// Only a `pending` move or transfer may reach the ledger. A `failed` one is a refused
 		// intent: an operator unparking its event, or a replay, must not carry it out later.
 		// A `posted` one already did.
-		if is_move {
-			match compartments::move_state(&self.pool, row.aggregate_id).await {
+		if let Some(posting) = posting {
+			let name = posting.name();
+			match posting.state(&self.pool, row.aggregate_id).await {
 				Ok(Some(MoveState::Pending)) => {}
 				Ok(Some(MoveState::Posted | MoveState::Failed)) => return Outcome::Done,
-				Ok(None) => return Outcome::park("compartment move row is missing".into()),
-				Err(err) => return Outcome::Retry(format!("compartment move state read: {err}")),
+				Ok(None) => return Outcome::park(format!("{name} row is missing")),
+				Err(err) => return Outcome::Retry(format!("{name} state read: {err}")),
 			}
 			// A replayed event (the reaper's re-enqueue) carries a new event id over the same
 			// transfer id: posting it again would answer `Exists`, but its saga step would
 			// collide with the first one's on `tb_transfer_id` and wedge the queue. The
 			// ledger is the authority on "already moved" — stamp the row and move on.
 			let Some(leg) = ops.first() else {
-				return Outcome::park("compartment move planned no leg".into());
+				return Outcome::park(format!("{name} planned no leg"));
 			};
 			match self.ledger.transfer_exists(leg.transfer_id).await {
 				Ok(true) =>
-					return match compartments::mark_posted(&self.pool, row.aggregate_id).await {
+					return match posting.mark_posted(&self.pool, row.aggregate_id).await {
 						Ok(()) => Outcome::Done,
-						Err(err) => Outcome::Retry(format!("compartment move posted stamp: {err}")),
+						Err(err) => Outcome::Retry(format!("{name} posted stamp: {err}")),
 					},
 				Ok(false) => {}
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
-				Err(err) => return Outcome::park(format!("compartment move applied check: {err}")),
+				Err(err) => return Outcome::park(format!("{name} applied check: {err}")),
 			}
 		}
 		// Settle-time liquidity pre-check. The relay is single-worker and sequential, so a
@@ -571,15 +636,16 @@ impl Relay {
 				}
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
-				// A move is one leg, so nothing applied before it: the refusal is the move's
-				// terminal outcome, recorded on its row, not an event for an operator.
-				Err(LedgerError::InsufficientFunds) if is_move => {
-					return match compartments::mark_failed(&self.pool, row.aggregate_id, MoveRefusal::InsufficientFunds.reason()).await {
-						Ok(()) => Outcome::Done,
-						Err(err) => Outcome::Retry(format!("compartment move failed stamp: {err}")),
-					};
-				}
 				Err(LedgerError::InsufficientFunds) => {
+					// A move or a scope transfer is one leg, so nothing applied before it: the
+					// refusal is its terminal outcome, recorded on its row, not an event for an
+					// operator.
+					if let Some(posting) = posting {
+						return match posting.mark_failed(&self.pool, row.aggregate_id, posting.insufficient_funds()).await {
+							Ok(()) => Outcome::Done,
+							Err(err) => Outcome::Retry(format!("{} failed stamp: {err}", posting.name())),
+						};
+					}
 					return Outcome::Park {
 						reason: "insufficient funds".into(),
 						applied_legs: applied,
@@ -619,8 +685,10 @@ impl Relay {
 		{
 			return Outcome::Retry(format!("book trade projection: {err}"));
 		}
-		if is_move && let Err(err) = compartments::mark_posted(&self.pool, row.aggregate_id).await {
-			return Outcome::Retry(format!("compartment move posted stamp: {err}"));
+		if let Some(posting) = posting
+			&& let Err(err) = posting.mark_posted(&self.pool, row.aggregate_id).await
+		{
+			return Outcome::Retry(format!("{} posted stamp: {err}", posting.name()));
 		}
 		Outcome::Done
 	}
@@ -928,6 +996,10 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: CompartmentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(vec![plan_compartment(event, row.aggregate_id, reference)])
 		}
+		"scope_ledger" => {
+			let event: ScopeLedgerEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(vec![plan_scope_ledger(event, row.aggregate_id, reference)])
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
 	}
@@ -938,7 +1010,7 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 fn park_kind(reason: &str) -> &'static str {
 	if reason.starts_with("ledger conflict") {
 		"conflict"
-	} else if reason.starts_with("compartment move applied check") {
+	} else if reason.starts_with("compartment move applied check") || reason.starts_with("scope transfer applied check") {
 		"applied_check"
 	} else if reason.starts_with("unplannable") {
 		"unplannable"
@@ -964,6 +1036,32 @@ fn plan_compartment(event: CompartmentEvent, aggregate_id: Uuid, reference: u128
 			credit: to.claim_key(user),
 			amount: amount.base_units(),
 			code: TransferCode::CompartmentMove,
+			reference,
+		}),
+	}
+}
+
+/// A client's transfer between two scope accounts: one posted account-to-account leg,
+/// net-zero on the cash invariant. A source that cannot cover it after all is refused by the
+/// account's non-negative flag, and the transfer is stamped `failed` with nothing moved.
+fn plan_scope_ledger(event: ScopeLedgerEvent, aggregate_id: Uuid, reference: u128) -> PlannedOp {
+	let ScopeLedgerEvent::Transferred {
+		scope,
+		from_label,
+		to_scope,
+		to_label,
+		amount,
+		..
+	} = event;
+	PlannedOp {
+		role: "scope_transfer",
+		transfer_id: tid(aggregate_id, SCOPE_TRANSFER),
+		action: LedgerAction::Post(LedgerTransfer {
+			id: tid(aggregate_id, SCOPE_TRANSFER),
+			debit: LedgerAccountKey::ScopeAccount(scope, from_label),
+			credit: LedgerAccountKey::ScopeAccount(to_scope, to_label),
+			amount: amount.base_units(),
+			code: TransferCode::ScopeTransfer,
 			reference,
 		}),
 	}

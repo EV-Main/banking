@@ -32,6 +32,8 @@
 //!   depth/tape/candle reads, and the per-product policy.
 //! - [`compartments`] — Postgres adapter for the scope registry, the scope policies and
 //!   users' compartment moves (the money itself is posted by the relay).
+//! - [`scope_ledger`] — Postgres adapter for the scope ledger: scope-account owners, the
+//!   service clients' idempotency keys and their transfers (posted by the relay).
 //! - [`scope_events`] — the consumer of concierge's scope stream: keeps `scopes` (state,
 //!   version) as concierge has them, registering scopes banking has not seen.
 //! - [`operation_feed`] — the read-side merge of the four money projections into one
@@ -78,6 +80,7 @@ pub mod reconciliation;
 pub mod redemptions;
 pub mod relay;
 pub mod scope_events;
+pub mod scope_ledger;
 pub mod signer_addresses;
 pub mod singleton;
 pub mod subscriptions;

@@ -42,6 +42,9 @@
 //! [`ownership`] is the read of who holds an allocation — its claim, its supply and its
 //! holders, summed from the ledger — behind the cap table, the treasury and the
 //! reconciliation's "every unit at a holder" checks.
+//! [`scope_ledger`] is what a scope's own service may do with money in its scope — open an
+//! account, read its balances, sweep fees into the scope's collector — held against banking's
+//! grants for the client the transport proved.
 
 pub mod allocations;
 pub mod auth_sync;
@@ -56,6 +59,7 @@ pub mod issuance;
 pub mod operations;
 pub mod ownership;
 pub mod payments;
+pub mod scope_ledger;
 pub mod users;
 pub mod wallet;
 pub mod withdrawals;

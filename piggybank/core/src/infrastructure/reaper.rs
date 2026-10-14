@@ -21,7 +21,8 @@
 //!   - **`pending` compartment moves untouched past a few minutes, with no event left in
 //!     the outbox → RE-ENQUEUE.** A relay that did not know the event (an older build in a
 //!     rolling deploy or after a rollback) dispatched it as a no-op; replaying is safe
-//!     because the move's ledger transfer id derives from the move id.
+//!     because the move's ledger transfer id derives from the move id. A client's `pending`
+//!     scope transfer is replayed the same way, for the same reason.
 //!
 //! The auto-fail/cancel paths go through the same row-locked repository commands a user
 //! would (idempotent, drain the void event), so the relay reverses the money exactly once.
@@ -36,7 +37,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::compartments,
+	infrastructure::{compartments, scope_ledger},
 	ports::{RedemptionRepository, WithdrawalRepository},
 };
 
@@ -49,8 +50,9 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 /// staleness horizon.
 const MAX_SAGA_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// A `pending` compartment move untouched this long, with nothing left in the outbox, is
-/// re-enqueued. The relay posts a move within seconds; minutes leave room for a backlog.
+/// A `pending` compartment move (or scope transfer) untouched this long, with nothing left in
+/// the outbox, is re-enqueued. The relay posts one within seconds; minutes leave room for a
+/// backlog.
 const MOVE_REDRIVE_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// One reaper sweep's outcome — counts so the run loop and a test can assert without
@@ -65,6 +67,8 @@ pub struct ReaperReport {
 	pub reaped_queued_redemptions: usize,
 	/// `pending` compartment moves whose lost event was put back on the outbox.
 	pub redriven_compartment_moves: usize,
+	/// `pending` scope transfers whose lost event was put back on the outbox.
+	pub redriven_scope_transfers: usize,
 }
 
 /// The reaper job: sweep on an interval until the process exits.
@@ -89,7 +93,8 @@ impl Reaper {
 		}
 	}
 
-	/// Test seam: replay a lost compartment move sooner than [`MOVE_REDRIVE_AFTER`].
+	/// Test seam: replay a lost compartment move or scope transfer sooner than
+	/// [`MOVE_REDRIVE_AFTER`].
 	pub fn with_move_redrive_after(mut self, after: Duration) -> Self {
 		self.move_redrive_after = after;
 		self
@@ -180,7 +185,15 @@ impl Reaper {
 			);
 		}
 
-		if report.reaped_queued_withdrawals > 0 || report.reaped_queued_redemptions > 0 || report.redriven_compartment_moves > 0 {
+		report.redriven_scope_transfers = scope_ledger::redrive_stale_transfers(&self.pool, self.move_redrive_after).await?;
+		if report.redriven_scope_transfers > 0 {
+			warn!(
+				count = report.redriven_scope_transfers,
+				"reaper: re-enqueued pending scope transfers whose event was dispatched without posting them"
+			);
+		}
+
+		if report.reaped_queued_withdrawals > 0 || report.reaped_queued_redemptions > 0 || report.redriven_compartment_moves > 0 || report.redriven_scope_transfers > 0 {
 			self.notify.notify_one();
 		}
 		Ok(report)
