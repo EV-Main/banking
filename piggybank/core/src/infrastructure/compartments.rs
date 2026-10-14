@@ -12,7 +12,7 @@ use domain::{
 	architecture::{AggregateRoot, DomainEvent},
 	error::DomainError,
 	money::Usdt,
-	scopes::{Compartment, CompartmentEvent, CompartmentMove, CompartmentMoveId, MoveState, ScopeId, ScopePolicy, ScopeState},
+	scopes::{Compartment, CompartmentEvent, CompartmentMove, CompartmentMoveId, MAX_MOVES_PER_MINUTE, MoveRefusal, MoveState, ScopeId, ScopePolicy, ScopeState},
 	users::UserId,
 };
 use sqlx::{PgConnection, PgPool};
@@ -205,6 +205,17 @@ impl CompartmentStore for PgCompartments {
 			tx.commit().await.map_err(repo_err)?;
 			return Ok(MoveOutcome::Existing(existing));
 		}
+		// One lock per user so the per-minute count below cannot be raced past by moves out
+		// of two different compartments.
+		outbox::lock_named(&mut tx, &format!("compartment_user:{user}")).await?;
+		let recent: i64 = sqlx::query_scalar("SELECT count(*) FROM compartment_moves WHERE user_id = $1 AND created_at > now() - interval '1 minute'")
+			.bind(user.raw())
+			.fetch_one(&mut *tx)
+			.await
+			.map_err(repo_err)?;
+		if recent >= MAX_MOVES_PER_MINUTE {
+			return Err(MoveError::Refused(MoveRefusal::RateLimited));
+		}
 		// The source's lock is the one every writer that spends that claim takes (withdraw,
 		// subscribe), so their writes serialize with this one. A move in also takes the
 		// target's, always second: only a move in ever holds two, and it takes them in one
@@ -277,12 +288,40 @@ pub async fn mark_failed(pool: &PgPool, id: Uuid, reason: &str) -> Result<(), sq
 	Ok(())
 }
 
+/// Put one stale move's event back on the outbox; `false` when it was posted or failed
+/// since the scan.
+async fn redrive_one(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+	let mut tx = pool.begin().await?;
+	let row = sqlx::query_as::<_, MoveRow>(concat_move_select!("WHERE id = $1 AND state = 'pending' FOR UPDATE"))
+		.bind(id)
+		.fetch_optional(&mut *tx)
+		.await?;
+	let Some(row) = row else { return Ok(false) };
+	let recorded = recorded_move(row).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+	let movement = &recorded.movement;
+	let event = CompartmentEvent::Moved {
+		move_id: movement.id(),
+		user: movement.user(),
+		from: movement.from().clone(),
+		to: movement.to().clone(),
+		amount: movement.amount(),
+	};
+	let payload = serde_json::to_string(&event).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+	outbox::insert_event(&mut tx, Uuid::new_v4(), CompartmentMove::NAME, id, CompartmentEvent::KIND, &payload, true)
+		.await
+		.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+	sqlx::query("UPDATE compartment_moves SET updated_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+	tx.commit().await?;
+	Ok(true)
+}
+
 /// Re-enqueue every `pending` move untouched for `older_than` whose event is no longer
 /// waiting in the outbox — the relay that dispatched it did not post it (an older build that
 /// did not know the kind, during a rolling deploy or a rollback). A parked event is still in
 /// the outbox (parked rows are undispatched) and is left to the operator. The replay is
 /// safe however often it runs: the ledger transfer id derives from the move id, so a move
-/// that did post answers `Exists` and is stamped `posted`. Returns how many it re-enqueued.
+/// that did post answers `Exists` and is stamped `posted`. A row that cannot be replayed is
+/// logged and skipped. Returns how many it re-enqueued.
 pub async fn redrive_stale_moves(pool: &PgPool, older_than: Duration) -> Result<usize, sqlx::Error> {
 	let stale: Vec<Uuid> = sqlx::query_scalar(
 		"SELECT m.id FROM compartment_moves m WHERE m.state = 'pending' AND m.updated_at < now() - make_interval(secs => $1) \
@@ -293,29 +332,18 @@ pub async fn redrive_stale_moves(pool: &PgPool, older_than: Duration) -> Result<
 	.await?;
 	let mut redriven = 0;
 	for id in stale {
-		let mut tx = pool.begin().await?;
-		let row = sqlx::query_as::<_, MoveRow>(concat_move_select!("WHERE id = $1 AND state = 'pending' FOR UPDATE"))
-			.bind(id)
-			.fetch_optional(&mut *tx)
-			.await?;
-		// Posted or failed since the scan: nothing to replay.
-		let Some(row) = row else { continue };
-		let recorded = recorded_move(row).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-		let movement = &recorded.movement;
-		let event = CompartmentEvent::Moved {
-			move_id: movement.id(),
-			user: movement.user(),
-			from: movement.from().clone(),
-			to: movement.to().clone(),
-			amount: movement.amount(),
-		};
-		let payload = serde_json::to_string(&event).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-		outbox::insert_event(&mut tx, Uuid::new_v4(), CompartmentMove::NAME, id, CompartmentEvent::KIND, &payload, true)
-			.await
-			.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
-		sqlx::query("UPDATE compartment_moves SET updated_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
-		tx.commit().await?;
-		redriven += 1;
+		match redrive_one(pool, id).await {
+			Ok(true) => redriven += 1,
+			Ok(false) => {}
+			// One unreadable row must not stop the others being replayed. Its `updated_at`
+			// is bumped so it waits its turn again instead of heading every scan.
+			Err(err) => {
+				tracing::warn!(move_id = %id, "reaper: could not replay a pending compartment move: {err}");
+				if let Err(err) = sqlx::query("UPDATE compartment_moves SET updated_at = now() WHERE id = $1").bind(id).execute(pool).await {
+					tracing::warn!(move_id = %id, "reaper: could not push the unreplayable move back in the queue: {err}");
+				}
+			}
+		}
 	}
 	Ok(redriven)
 }

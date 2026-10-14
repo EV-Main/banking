@@ -12,7 +12,7 @@
 
 use domain::{
 	money::Usdt,
-	scopes::{Compartment, ScopeId},
+	scopes::{Compartment, MoveRefusal, ScopeId},
 };
 use evbanking_contracts::banking::v1::{self as pb, compartment_service_server::CompartmentService};
 use tonic::{Request, Response, Status};
@@ -74,6 +74,7 @@ impl CompartmentService for CompartmentSvc {
 			.await
 			.map_err(|err| match err {
 				// The reason is the whole message: clients branch on (code, message).
+				MoveError::Refused(refusal @ MoveRefusal::AmountBelowMinimum) => Status::invalid_argument(refusal.reason()),
 				MoveError::Refused(refusal) => Status::failed_precondition(refusal.reason()),
 				MoveError::Domain(err) => map_err(err),
 			})?;

@@ -24,6 +24,8 @@ use domain::{
 	users::UserId,
 };
 
+use crate::ports::ledger::SpendGuard;
+
 #[async_trait]
 pub trait BookStore: Send + Sync {
 	/// The allocation's trading terms, or `None` when no operator has set any — which
@@ -54,8 +56,9 @@ pub trait BookStore: Send + Sync {
 	///
 	/// A rejection by the engine writes nothing. A `client_order_id` the caller already
 	/// used (a race two concurrent retries lose to each other) writes nothing either and
-	/// answers with the standing row.
-	async fn place(&self, order: Order, engine: &dyn MatchingEngine, policy: &BookPolicy, nav: Nav) -> Result<PlaceOutcome, DomainError>;
+	/// answers with the standing row. `guard` runs under the order's lock — for a buy the
+	/// user's claim lock — before anything is written.
+	async fn place(&self, order: Order, engine: &dyn MatchingEngine, policy: &BookPolicy, nav: Nav, guard: &dyn SpendGuard) -> Result<PlaceOutcome, DomainError>;
 
 	/// Take a resting order off the book under the book's write lock, bumping the
 	/// revision and draining the release of its unspent escrow. Idempotent on an order

@@ -792,7 +792,7 @@ async fn a_parked_subscribe_cash_leg_leaves_no_cost_basis() {
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 
 	let mut subscription = Subscription::open(SubscriptionId::new(), user, service.clone(), usdt("100"), Nav::SEED).unwrap();
-	subs.open(&mut subscription).await.unwrap();
+	subs.open(&mut subscription, &piggybank_core::ports::ledger::NoSpendCheck).await.unwrap();
 	// The park IS what this test pins, so the one-pass drain stays here: `drain_to_quiescence`
 	// reports a park raised during the call as a failure.
 	h.relay.drain().await;

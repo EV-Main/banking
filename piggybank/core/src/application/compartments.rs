@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use domain::{
 	error::DomainError,
 	money::Usdt,
-	scopes::{Compartment, CompartmentMove, CompartmentMoveId, MoveInFacts, MoveRefusal, ScopeId, ScopeState},
+	scopes::{Compartment, CompartmentMove, CompartmentMoveId, MIN_MOVE, MoveInFacts, MoveRefusal, ScopeId, ScopeState},
 	users::UserId,
 };
 use tokio::sync::Notify;
@@ -164,6 +164,9 @@ pub async fn get_scope_policy(ports: &CompartmentPorts<'_>, user: UserId, scope:
 pub async fn move_funds(ports: &CompartmentPorts<'_>, user: UserId, from: Compartment, to: Compartment, amount: Usdt, idempotency_key: &str) -> Result<RecordedMove, MoveError> {
 	if idempotency_key.is_empty() || idempotency_key.len() > MAX_IDEMPOTENCY_KEY {
 		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} bytes")).into());
+	}
+	if amount < MIN_MOVE {
+		return Err(MoveError::Refused(MoveRefusal::AmountBelowMinimum));
 	}
 	let mut movement = CompartmentMove::request(CompartmentMoveId::new(), user, from, to, amount)?;
 	if let Some(original) = ports.store.find_move(user, idempotency_key).await? {

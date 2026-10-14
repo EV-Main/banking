@@ -28,13 +28,18 @@
 //!      decide whose it is. After the 2026-09-27 data migration it reads zero everywhere.
 //!   4. **Parked-row scan** — every `outbox.parked_at` row, surfaced with its
 //!      `last_error` and whether it has been flagged for compensation.
+//!   5. **Treasury debits vs approvals** (D17) — everything debited from banking's
+//!      treasury must be an approved payment out of it: the internal treasury orders the
+//!      owners approved (`approved` / `executed`) plus the treasury withdrawals still
+//!      standing (`queued` / `processing` / `completed`), each tied to its order by
+//!      `withdrawals.payment_id`. A debit nobody approved is an alert.
 //!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
 
 use std::{sync::Arc, time::Duration};
 
-use domain::balance::{LedgerAccountKey, ServiceId};
+use domain::balance::{LedgerAccountKey, Party, ServiceId};
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -73,13 +78,22 @@ pub struct ReconReport {
 	pub unheld: Vec<ServiceId>,
 	pub parked_rows: usize,
 	pub uncompensated_parked: usize,
+	/// Σ debits standing on `scope_account:main:treasury` (posted + pending).
+	pub treasury_debits: u128,
+	/// Σ what the owners approved paying out of the treasury (see the module header, 5).
+	pub treasury_debits_approved: u128,
 }
 
 impl ReconReport {
 	/// Whether every checked invariant held (no operator action needed). Unheld value is
 	/// not an invariant: a clean report can still list allocations nobody holds yet.
 	pub fn clean(&self) -> bool {
-		self.custody == self.claims && self.unclassified_claims == 0 && self.clearing_reserved == self.clearing_expected && self.units_drift.is_empty() && self.parked_rows == 0
+		self.custody == self.claims
+			&& self.unclassified_claims == 0
+			&& self.clearing_reserved == self.clearing_expected
+			&& self.units_drift.is_empty()
+			&& self.parked_rows == 0
+			&& self.treasury_debits == self.treasury_debits_approved
 	}
 }
 
@@ -186,6 +200,21 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: allocation registry read failed, per-allocation supply not verified this pass: {err}"),
 		}
 
+		// Treasury debits against what the owners approved. The two are read at different
+		// instants and the relay applies an approval's reserve after it commits, so a
+		// mismatch is re-read once before it is alerted.
+		self.check_treasury(&mut report).await?;
+		if report.treasury_debits != report.treasury_debits_approved {
+			self.check_treasury(&mut report).await?;
+		}
+		if report.treasury_debits != report.treasury_debits_approved {
+			error!(
+				debited = %report.treasury_debits,
+				approved = %report.treasury_debits_approved,
+				"reconciliation: TREASURY DEBIT WITHOUT APPROVAL — money left banking's treasury that no approved payment accounts for"
+			);
+		}
+
 		// (4) Parked-row scan — every event the relay moved to the parked terminal state.
 		let parked = outbox::parked_rows(&self.pool).await?;
 		report.parked_rows = parked.len();
@@ -207,6 +236,25 @@ impl Reconciliation {
 			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
 		}
 		Ok(report)
+	}
+
+	async fn check_treasury(&self, report: &mut ReconReport) -> Result<(), sqlx::Error> {
+		let approved: Option<String> = sqlx::query_scalar(
+			"SELECT (COALESCE((SELECT SUM(amount::numeric) FROM payments WHERE from_kind = 'treasury' AND to_kind IS NOT NULL AND state IN ('approved', 'executed')), 0) \
+			 + COALESCE((SELECT SUM(amount::numeric) FROM withdrawals WHERE source = 'treasury' AND state IN ('queued', 'processing', 'completed')), 0))::text",
+		)
+		.fetch_one(&self.pool)
+		.await?;
+		report.treasury_debits_approved = approved.and_then(|sum| sum.parse().ok()).unwrap_or(0);
+		match self.ledger.total_debits(&Party::Treasury.claim_key()).await {
+			Ok(debits) => report.treasury_debits = debits,
+			// Unread is not a finding; match the approvals so `clean()` does not invent one.
+			Err(err) => {
+				warn!("reconciliation: treasury debits read failed, not verified this pass: {err}");
+				report.treasury_debits = report.treasury_debits_approved;
+			}
+		}
+		Ok(())
 	}
 
 	/// One allocation's supply against its holders, and whether anyone holds what it

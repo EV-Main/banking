@@ -37,7 +37,7 @@ use crate::{
 	ports::{
 		allocations::AllocationRegistry,
 		book::{BookLevel, BookPolicyRecord, BookStore, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade},
-		ledger::Ledger,
+		ledger::{ClaimCovers, Ledger, NoSpendCheck, SpendGuard},
 		nav::NavMarks,
 		outflow::OutflowPolicy,
 	},
@@ -248,6 +248,17 @@ pub async fn place_order(ports: &BookPorts<'_>, user: UserId, request: PlaceOrde
 			Locked::Cash(reserve)
 		}
 	};
+	// A buy's reserve is asked again under the claim lock the store takes for it; a sell
+	// spends units, which the position row lock and the holding's ledger flag guard.
+	let guard: Box<dyn SpendGuard + '_> = match &reserved {
+		Locked::Cash(reserve) => Box::new(ClaimCovers {
+			ledger: ports.ledger,
+			key: LedgerAccountKey::UserClaim(user),
+			amount: reserve.base_units(),
+			refusal: "insufficient available balance to buy",
+		}),
+		Locked::Units(_) => Box::new(NoSpendCheck),
+	};
 	let nav = current_nav(ports.nav, ports.ledger, &request.service).await?;
 	let order = Order::place(
 		OrderId::new(),
@@ -261,7 +272,7 @@ pub async fn place_order(ports: &BookPorts<'_>, user: UserId, request: PlaceOrde
 		size,
 		reserved,
 	);
-	match ports.store.place(order, ports.engine, &policy, nav).await? {
+	match ports.store.place(order, ports.engine, &policy, nav, guard.as_ref()).await? {
 		PlaceOutcome::Placed { order, revision, .. } => {
 			ports.relay.notify_one();
 			ports.feed.publish(&request.service, revision);

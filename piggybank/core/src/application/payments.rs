@@ -395,7 +395,16 @@ async fn create_withdrawal(ports: &PaymentPorts<'_>, order: &PaymentOrder) -> Re
 		// banking's treasury (D17): the owners' consilium approved the order, so the
 		// withdrawal opens with no account gate of its own — only the rail's.
 		Party::Treasury =>
-			withdrawal_app::queue_treasury_withdrawal(&ports.withdrawal_ports(), &ports.admission_gates(), withdrawal, *network, address.clone(), order.terms().amount()).await,
+			withdrawal_app::queue_treasury_withdrawal(
+				&ports.withdrawal_ports(),
+				&ports.admission_gates(),
+				withdrawal,
+				order.id(),
+				*network,
+				address.clone(),
+				order.terms().amount(),
+			)
+			.await,
 		// Refused at open; stated here too so the match is total and a row that somehow
 		// carries this shape fails visibly rather than paying from a source the saga does not
 		// open a withdrawal for.

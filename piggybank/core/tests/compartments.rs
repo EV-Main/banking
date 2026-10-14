@@ -613,3 +613,85 @@ async fn one_key_across_two_sources_records_one_move() {
 	assert_eq!(recorded, 1);
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
+
+/// Dust and bursts are refused before they reach the platform's one relay.
+#[tokio::test]
+async fn a_move_below_the_minimum_or_past_the_rate_is_refused() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "1").await;
+	assert_eq!(refusal(move_funds(&h, user, "main", "sa", "0.009", &key()).await), MoveRefusal::AmountBelowMinimum);
+	for _ in 0..domain::scopes::MAX_MOVES_PER_MINUTE {
+		move_funds(&h, user, "main", "sa", "0.01", &key()).await.expect("within the rate");
+	}
+	assert_eq!(refusal(move_funds(&h, user, "main", "sa", "0.01", &key()).await), MoveRefusal::RateLimited);
+	assert_eq!(
+		refusal(move_funds(&h, user, "sa", "main", "0.01", &key()).await),
+		MoveRefusal::RateLimited,
+		"per user, either direction"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+/// A withdrawal's cover is asked again under the claim's lock: the repository refuses a
+/// spend the claim no longer covers, whatever the use case read before it.
+#[tokio::test]
+async fn the_withdrawal_repository_checks_the_cover_under_its_lock() {
+	use piggybank_core::ports::{WithdrawalRepository, ledger::ClaimCovers};
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "10").await;
+	move_funds(&h, user, "main", "sa", "8", &key()).await.unwrap();
+	let mut withdrawal = domain::withdrawals::Withdrawal::request(
+		domain::withdrawals::WithdrawalId::new(),
+		domain::withdrawals::WithdrawalSource::User(user),
+		Network::Bep20,
+		domain::money::WalletAddress::parse(Network::Bep20, "0x52908400098527886E0F7030069857D2E4169EE7").unwrap(),
+		usdt("5"),
+		usdt("1"),
+	)
+	.unwrap();
+	let guard = ClaimCovers {
+		ledger: h.ledger.as_ref(),
+		key: LedgerAccountKey::UserClaim(user),
+		amount: usdt("5").base_units(),
+		refusal: "insufficient available balance to withdraw",
+	};
+	let refused = PgWithdrawals::new(h.pool.clone()).open(&mut withdrawal, &guard).await;
+	assert!(matches!(refused, Err(DomainError::Validation(_))), "{refused:?}");
+	let recorded: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawals WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(recorded, 0);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+/// Money leaving banking's treasury that no approved payment accounts for is a finding.
+#[tokio::test]
+async fn an_unapproved_treasury_debit_is_reported() {
+	use piggybank_core::infrastructure::{allocations::PgAllocations, reconciliation::Reconciliation};
+	let Some(h) = harness().await else { return };
+	let reconciliation = Reconciliation::new(h.pool.clone(), h.ledger.clone(), Arc::new(PgAllocations::new(h.pool.clone())));
+	let before = reconciliation.scan().await.unwrap();
+	let treasury = domain::balance::Party::Treasury.claim_key();
+	for (debit, credit) in [
+		(LedgerAccountKey::CryptoWallet(Network::Bep20), treasury.clone()),
+		(treasury, LedgerAccountKey::CryptoWallet(Network::Bep20)),
+	] {
+		h.ledger
+			.post(&LedgerTransfer {
+				id: Uuid::new_v4().as_u128(),
+				debit,
+				credit,
+				amount: usdt("3").base_units(),
+				code: TransferCode::WithdrawFee,
+				reference: 0,
+			})
+			.await
+			.unwrap();
+	}
+	let after = reconciliation.scan().await.unwrap();
+	assert_eq!(after.treasury_debits - before.treasury_debits, usdt("3").base_units());
+	assert_eq!(after.treasury_debits_approved, before.treasury_debits_approved, "nobody approved it");
+	assert!(!after.clean());
+}

@@ -38,7 +38,13 @@ use crate::{
 		issuance::UnitHolding,
 		ownership::{self as ownership_app, AllocationClaim},
 	},
-	ports::{AllocationRegistry, Custody, Deposits, SubscriptionRepository, custody::InboundTransfer, deposit_addresses::DepositAddresses, ledger::Ledger, nav::NavMarks},
+	ports::{
+		AllocationRegistry, Custody, Deposits, SubscriptionRepository,
+		custody::InboundTransfer,
+		deposit_addresses::DepositAddresses,
+		ledger::{Ledger, NoSpendCheck},
+		nav::NavMarks,
+	},
 };
 
 /// Per-rail on-chain liquidity (the treasury / Layer 2). `custody` is
@@ -309,7 +315,9 @@ pub async fn seed_fund_capital(
 		}
 		tracing::warn!(tx_ref = %tx_ref.as_str(), %depositor, "seed capital: the deposit was recorded but its fund subscription was never opened — re-opening it");
 	}
-	ports.subscriptions.open(&mut subscription).await?;
+	// The cash is the seed's own deposit, booked in this same operation and not on the
+	// ledger yet — there is nothing for a cover check to read.
+	ports.subscriptions.open(&mut subscription, &NoSpendCheck).await?;
 	ports.funds.relay.notify_one();
 	Ok(SeededCapital {
 		recorded,

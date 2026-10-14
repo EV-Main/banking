@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{fees::parse_units, outbox},
-	ports::SubscriptionRepository,
+	ports::{SubscriptionRepository, ledger::SpendGuard},
 };
 
 pub struct PgSubscriptions {
@@ -82,11 +82,12 @@ async fn insert_row(conn: &mut PgConnection, subscription: &Subscription) -> Res
 
 #[async_trait]
 impl SubscriptionRepository for PgSubscriptions {
-	async fn open(&self, subscription: &mut Subscription) -> Result<(), DomainError> {
+	async fn open(&self, subscription: &mut Subscription, guard: &dyn SpendGuard) -> Result<(), DomainError> {
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
 		// Same shared per-user lock the withdrawal path takes — both spend this user's unified
 		// claim, so they must serialize on one target (see [`outbox::lock_user`]).
 		outbox::lock_user(&mut tx, subscription.user().raw()).await?;
+		guard.check().await?;
 		insert_row(&mut tx, subscription).await?;
 		outbox::drain_to_outbox(&mut tx, subscription, true).await?;
 		tx.commit().await.map_err(repo_err)?;

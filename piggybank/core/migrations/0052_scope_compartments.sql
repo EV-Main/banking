@@ -7,7 +7,8 @@
 -- REVERSIBILITY: DROP TABLE compartment_moves, scope_accounts, scope_policies, scopes;
 --   ALTER TABLE payments DROP CONSTRAINT payments_from_kind_check,
 --     ADD CONSTRAINT payments_from_kind_check CHECK (from_kind IN ('user', 'service'));
---   ALTER TABLE withdrawals DROP CONSTRAINT withdrawals_source_check,
+--   ALTER TABLE withdrawals DROP CONSTRAINT withdrawals_treasury_names_its_payment,
+--     DROP COLUMN payment_id, DROP CONSTRAINT withdrawals_source_check,
 --     ADD CONSTRAINT withdrawals_source_check CHECK (source IN ('user'));
 --   Safe only while no move has been recorded and nothing was paid out of the treasury. Once
 --   a move has, its TigerBeetle transfer and the compartment balance it created outlive the
@@ -74,6 +75,8 @@ CREATE TABLE compartment_moves (
 	CHECK ((state = 'failed') = (failure_reason IS NOT NULL)),
 	UNIQUE (user_id, idempotency_key)
 );
+-- The per-user rate limit (moves in the last minute).
+CREATE INDEX compartment_moves_recent_idx ON compartment_moves (user_id, created_at);
 -- The Read-First sums of a user's in-flight moves, and the reaper's scan.
 CREATE INDEX compartment_moves_pending_idx ON compartment_moves (user_id, from_scope, to_scope) WHERE state = 'pending';
 CREATE INDEX compartment_moves_stale_idx ON compartment_moves (updated_at) WHERE state = 'pending';
@@ -95,6 +98,10 @@ INSERT INTO scope_accounts (scope, label, owner_client) VALUES
 ALTER TABLE payments
 	DROP CONSTRAINT payments_from_kind_check,
 	ADD CONSTRAINT payments_from_kind_check CHECK (from_kind IN ('user', 'service', 'treasury'));
+-- A treasury withdrawal exists only to execute an approved payment order: the order it
+-- spends is on the row, and no other kind of withdrawal carries one.
 ALTER TABLE withdrawals
 	DROP CONSTRAINT withdrawals_source_check,
-	ADD CONSTRAINT withdrawals_source_check CHECK (source IN ('user', 'treasury'));
+	ADD CONSTRAINT withdrawals_source_check CHECK (source IN ('user', 'treasury')),
+	ADD COLUMN payment_id UUID REFERENCES payments (id),
+	ADD CONSTRAINT withdrawals_treasury_names_its_payment CHECK ((source = 'treasury') = (payment_id IS NOT NULL));

@@ -29,7 +29,7 @@ use crate::{
 	ports::{
 		FundPositionReader, RedemptionRepository, SubscriptionRepository, UnitFlow,
 		allocations::{AllocationRecord, AllocationRegistry},
-		ledger::{HoldingScope, Ledger},
+		ledger::{ClaimCovers, HoldingScope, Ledger, SpendGuard},
 		nav::{NavMarks, Valuation},
 	},
 };
@@ -305,14 +305,18 @@ pub async fn subscribe(ports: &FundPorts<'_>, subscriptions: &dyn SubscriptionRe
 		)));
 	}
 	let allocation = allocations_app::require_subscribable(ports.allocations, &service, user).await?;
-	// Net of the user's compartment moves still in flight (`Ledger::spendable`).
-	if Usdt::from_base_units(ports.ledger.spendable(&LedgerAccountKey::UserClaim(user)).await?) < cash {
-		return Err(DomainError::Validation("insufficient available balance to subscribe".into()));
-	}
+	let covers = ClaimCovers {
+		ledger: ports.ledger,
+		key: LedgerAccountKey::UserClaim(user),
+		amount: cash.base_units(),
+		refusal: "insufficient available balance to subscribe",
+	};
+	// Asked now to refuse before pricing, and again by the repository under the claim lock.
+	covers.check().await?;
 	let price = dealing_nav(ports.nav, ports.ledger, &service, now_unix).await?;
 	allocation.ensure_capacity(issued_units(ports.ledger, &service).await?, Shares::from_cash(cash, price)?)?;
 	let mut subscription = Subscription::open(SubscriptionId::new(), user, service, cash, price)?;
-	subscriptions.open(&mut subscription).await?;
+	subscriptions.open(&mut subscription, &covers).await?;
 	ports.relay.notify_one();
 	Ok(subscription)
 }

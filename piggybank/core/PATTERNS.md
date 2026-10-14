@@ -871,7 +871,10 @@ The allocations earn money in two places — the book's **taker fee** and the se
 withdrawal is banking's own and lands in banking's treasury, `scope_account:main:treasury`
 (D17); money leaves the treasury only by a payment order out of it (`Party::Treasury`) that
 the owners' consilium approved — internally, or on a rail through a treasury withdrawal
-(`WithdrawalSource::Treasury`, no fee, no owner standing to read). There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
+(`WithdrawalSource::Treasury { payment }`, no fee, no owner standing to read). A treasury
+withdrawal names the order it executes — on the source, and in `withdrawals.payment_id`
+under a CHECK that only a treasury withdrawal has one — and reconciliation (5) holds every
+treasury debit to an approved order. There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
 two ways: a **holder's redemption** of `fee` units at `fee`'s derived NAV onto their own
 `user:<uuid>` claim (from where they withdraw under their own gates), or a **payment
 order** out of `service:fee` that the owners' consilium approved (`PaymentsService`, L2/L3
@@ -903,12 +906,16 @@ compartment, `scope_claim:<scope>:<uuid>`. Only the user moves money `main ⇄ s
 **A move IN** passes the scope's state (`scope_frozen` / `scope_closed`), the account's
 freeze (`user_frozen`), the outflow pause and the scope's policy. **A move OUT** — back to
 `main` — passes none of them: the money never leaves the platform, so a frozen user in a
-paused system still gets it back. Both need the source to cover the amount.
+paused system still gets it back. Both need the source to cover the amount, at least
+`MIN_MOVE` (0.01 USDT, `amount_below_minimum`), and at most `MAX_MOVES_PER_MINUTE` (10)
+moves by the user in a rolling minute (`rate_limited`): every move is a transfer through
+the platform's one relay, and dust or a burst from one user is everyone's latency.
 
 **Checked under the locks, net of what is in flight.** One Postgres transaction takes an
 advisory lock on `(user, idempotency_key)` first — two requests under one key may name
 different sources — and answers a reused key with the stored move (a racer that still
-reaches the unique index gets ALREADY_EXISTS). Then it takes the source claim's write lock
+reaches the unique index gets ALREADY_EXISTS). Then a lock on the user, under which the
+per-minute count is taken, then the source claim's write lock
 (the one withdraw and subscribe take) and, for a move in, the target's, always in that
 order, and only then runs every check: for a move in, the scope's state, the account's
 freeze and the policy — the target's `posted + pending` plus the `pending` moves into it
@@ -922,9 +929,13 @@ ledger's `available` less the owner's `pending` moves out of that compartment �
 relay has not posted yet. Every Read-First on a user's money asks it: a withdrawal
 (`require_solvent`), a subscription, a buy order, a payment, a move. So a move recorded a
 moment ago is already spent for a withdrawal that follows it, refused at once instead of
-parking in the relay. The other direction stays optimistic as before: a withdrawal's or a
-subscription's reservation is not in the ledger until the relay applies it, and a move
-that overtakes it fails in the relay (`failed`, `insufficient_funds`).
+parking in the relay. The withdrawal, subscription and buy repositories ask it twice: in
+the use case, and again through a `SpendGuard` (`ClaimCovers`) after `open` / `place`
+takes the claim's lock and before it writes — so a move and a withdrawal of one balance
+cannot both be recorded. What stays optimistic: a withdrawal's or a subscription's own
+reservation is not in the ledger until the relay applies it, so a move admitted between its
+record and the relay fails in the relay (`failed`, `insufficient_funds`); and a payment
+order's open-time check is advisory — the money is reserved at approval, by the relay.
 
 **A move is never lost and never runs twice.** The row is `pending` until the relay posts
 `Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id `uuid_v5(move_id,
@@ -936,7 +947,8 @@ releases the money it promised; an unparked or replayed event of a `failed` move
 A `pending` move whose event a relay dispatched without posting (an older build that did
 not know the kind, in a rolling deploy or after a rollback) is re-enqueued by the
 [`reaper`](src/infrastructure/reaper.rs) after five minutes; the replay finds the transfer
-id already on the ledger if it was, and only stamps the row.
+id already on the ledger if it was, and only stamps the row. A row the reaper cannot replay
+is logged and sent to the back of the queue; the others are not held up by it.
 
 The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will own it) and
 `scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
@@ -1300,7 +1312,7 @@ TB always wins; the jobs run as `join!` branches of the composition root next to
 relay, on the relay's dedicated pool.
 
 [`reconciliation`](src/infrastructure/reconciliation.rs) (`Reconciliation::scan`) asserts
-and **alerts** (Sentry-shipped `error!`, no auto-write) on four things:
+and **alerts** (Sentry-shipped `error!`, no auto-write) on five things:
 
 1. the **global** posted `sum(custody) == sum(claims)` on the USDT ledger, read straight
    from TB via `Ledger::cash_invariant` with the claims broken down by whose they are
@@ -1323,10 +1335,14 @@ and **alerts** (Sentry-shipped `error!`, no auto-write) on four things:
    data migration seated its holders, and should be zero everywhere since;
 4. a scan of every `outbox.parked_at` row (with its `last_error` and `compensated_at`).
    The `last_error` column on a parked row is the first place to look when money didn't
-   move.
+   move;
+5. **banking's treasury debits vs what the owners approved** (D17): `Ledger::total_debits`
+   of `scope_account:main:treasury` (posted + pending) against Σ internal treasury orders
+   `approved`/`executed` plus Σ treasury withdrawals `queued`/`processing`/`completed`;
+   re-read once before it is alerted. A debit no approval accounts for is the alert.
 
 `ReconReport::clean` is (1) balanced and fully classified, (2) equal, (3) no drift, (4) no
-parked rows; unheld value does not make a report unclean.
+parked rows, (5) equal; unheld value does not make a report unclean.
 
 [`treasury_drift`](src/infrastructure/treasury_drift.rs) (`TreasuryDrift::scan_once`) is the
 **per-rail** counterpart, hourly and alert-only. The invariant above relates two TigerBeetle

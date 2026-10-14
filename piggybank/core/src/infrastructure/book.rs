@@ -38,7 +38,10 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::outbox,
-	ports::book::{BookDepth, BookLevel, BookPolicyRecord, BookStore, CancelOutcome, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade},
+	ports::{
+		book::{BookDepth, BookLevel, BookPolicyRecord, BookStore, CancelOutcome, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade},
+		ledger::SpendGuard,
+	},
 };
 
 /// The `event_log.aggregate` names the book's facts are filed under — an order's lock and
@@ -537,7 +540,7 @@ impl BookStore for PgBook {
 		raw.map(|price| parse_units(&price, "best price").map(Price::from_base_units)).transpose()
 	}
 
-	async fn place(&self, mut order: Order, engine: &dyn MatchingEngine, policy: &BookPolicy, nav: Nav) -> Result<PlaceOutcome, DomainError> {
+	async fn place(&self, mut order: Order, engine: &dyn MatchingEngine, policy: &BookPolicy, nav: Nav, guard: &dyn SpendGuard) -> Result<PlaceOutcome, DomainError> {
 		let service = order.service().clone();
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
 		lock_book(&mut tx, &service).await?;
@@ -562,6 +565,7 @@ impl BookStore for PgBook {
 		if let Some(existing) = find_by_client_id(&mut tx, order.user(), order.client_order_id()).await? {
 			return Ok(PlaceOutcome::Existing(existing));
 		}
+		guard.check().await?;
 
 		let (sql, side) = match order.side() {
 			Side::Buy => (SELECT_ASKS_CROSSING, Side::Sell),

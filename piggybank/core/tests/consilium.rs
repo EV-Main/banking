@@ -195,7 +195,14 @@ async fn reset_governance(h: &Harness) {
 		.await
 		.unwrap();
 	sqlx::query("DELETE FROM consilium WHERE kind = 'payment'").execute(&h.pool).await.unwrap();
-	sqlx::query("DELETE FROM payments WHERE id = ANY($1)").bind(&orders).execute(&h.pool).await.unwrap();
+	// A treasury order and the withdrawal executing it reference each other (0052), so both
+	// go in one statement, where the foreign keys are checked once, at its end. The
+	// withdrawal's reservation stays on the ledger, which nothing in this binary reconciles.
+	sqlx::query("WITH executing AS (DELETE FROM withdrawals WHERE payment_id = ANY($1)) DELETE FROM payments WHERE id = ANY($1)")
+		.bind(&orders)
+		.execute(&h.pool)
+		.await
+		.unwrap();
 	for statement in [
 		"DELETE FROM outbox WHERE aggregate = 'payment' AND aggregate_id = ANY($1)",
 		"DELETE FROM event_log WHERE aggregate = 'payment' AND aggregate_id = ANY($1)",
@@ -2138,7 +2145,13 @@ async fn the_treasury_pays_out_under_the_owners_quorum_internally_and_on_a_rail(
 		.await
 		.unwrap()
 		.expect("the order queued its withdrawal");
-	assert_eq!(withdrawal.source(), WithdrawalSource::Treasury);
+	assert_eq!(withdrawal.source(), WithdrawalSource::Treasury { payment: paid }, "the withdrawal names the order it executes");
+	let stored: Option<Uuid> = sqlx::query_scalar("SELECT payment_id FROM withdrawals WHERE id = $1")
+		.bind(withdrawal.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(stored, Some(paid.raw()));
 	assert_eq!(withdrawal.user(), None);
 	assert_eq!(withdrawal.state(), WithdrawalState::Queued, "always queued, so the dispatch re-reads the pause");
 	assert!(withdrawal.fee().is_zero(), "no fee paid by the treasury to itself");

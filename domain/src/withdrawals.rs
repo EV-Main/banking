@@ -33,6 +33,7 @@ use crate::{
 	balance::{FeePayee, LedgerAccountKey},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
+	payments::PaymentId,
 	users::UserId,
 };
 
@@ -50,15 +51,17 @@ pub struct WithdrawalTag;
 /// written before the field was a source (it held a bare UUID) still reads back as
 /// [`WithdrawalSource::User`]. Together with the `alias` on [`WithdrawalEvent`]'s `source`
 /// field there is nothing to backfill and no undrained row that stops deserializing. The
-/// treasury is the literal `treasury`, which no UUID can be.
+/// treasury's is `treasury:<payment id>`, which no UUID can be.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum WithdrawalSource {
 	/// An investor's own unified claim (`user:<uuid>`).
 	User(UserId),
-	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever through a payment
-	/// order the owners approved.
-	Treasury,
+	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever executing `payment`,
+	/// an order the owners' consilium approved. The order rides on the source so no
+	/// treasury withdrawal can exist without the approval it spends (a schema CHECK says
+	/// the same of the row).
+	Treasury { payment: PaymentId },
 }
 
 const TREASURY_WIRE: &str = "treasury";
@@ -68,7 +71,7 @@ impl WithdrawalSource {
 	pub fn as_wire(&self) -> String {
 		match self {
 			Self::User(user) => user.to_string(),
-			Self::Treasury => TREASURY_WIRE.to_owned(),
+			Self::Treasury { payment } => format!("{TREASURY_WIRE}:{payment}"),
 		}
 	}
 
@@ -76,15 +79,17 @@ impl WithdrawalSource {
 	pub fn column(&self) -> &'static str {
 		match self {
 			Self::User(_) => "user",
-			Self::Treasury => TREASURY_WIRE,
+			Self::Treasury { .. } => TREASURY_WIRE,
 		}
 	}
 
 	/// Parse the stored/wire form. The retired `revenue` literal is not UUID-shaped and
 	/// is refused like any other junk.
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
-		if raw == TREASURY_WIRE {
-			return Ok(Self::Treasury);
+		if let Some(payment) = raw.strip_prefix(TREASURY_WIRE).and_then(|rest| rest.strip_prefix(':')) {
+			return uuid::Uuid::parse_str(payment)
+				.map(|id| Self::Treasury { payment: Id::from_raw(id) })
+				.map_err(|_| DomainError::Validation(format!("unknown withdrawal source: {raw}")));
 		}
 		uuid::Uuid::parse_str(raw)
 			.map(|id| Self::User(Id::from_raw(id)))
@@ -95,7 +100,7 @@ impl WithdrawalSource {
 	pub fn claim_key(&self) -> LedgerAccountKey {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
-			Self::Treasury => crate::balance::FeePayee::treasury().claim_key(),
+			Self::Treasury { .. } => crate::balance::FeePayee::treasury().claim_key(),
 		}
 	}
 
@@ -103,7 +108,15 @@ impl WithdrawalSource {
 	pub fn user(&self) -> Option<UserId> {
 		match self {
 			Self::User(user) => Some(*user),
-			Self::Treasury => None,
+			Self::Treasury { .. } => None,
+		}
+	}
+
+	/// The approved payment order a treasury withdrawal executes; `None` for a user's.
+	pub fn payment(&self) -> Option<PaymentId> {
+		match self {
+			Self::User(_) => None,
+			Self::Treasury { payment } => Some(*payment),
 		}
 	}
 }
@@ -146,7 +159,7 @@ impl WithdrawalPolicy {
 		match source {
 			WithdrawalSource::User(_) => Self::fee(network),
 			// The fee would be paid to the treasury out of the treasury.
-			WithdrawalSource::Treasury => Usdt::ZERO,
+			WithdrawalSource::Treasury { .. } => Usdt::ZERO,
 		}
 	}
 }
@@ -649,10 +662,14 @@ mod tests {
 		assert!(WithdrawalSource::parse("revenue").is_err());
 		assert!(WithdrawalSource::parse("fund").is_err());
 		assert!(WithdrawalSource::parse("").is_err());
-		assert_eq!(WithdrawalSource::parse("treasury").unwrap(), WithdrawalSource::Treasury);
-		assert_eq!(WithdrawalSource::parse(&WithdrawalSource::Treasury.as_wire()).unwrap(), WithdrawalSource::Treasury);
-		assert_eq!(WithdrawalSource::Treasury.user(), None);
-		assert_eq!(WithdrawalPolicy::fee_for(WithdrawalSource::Treasury, Network::Bep20), Usdt::ZERO);
+		let payment = crate::payments::PaymentId::new();
+		let treasury = WithdrawalSource::Treasury { payment };
+		assert_eq!(WithdrawalSource::parse(&treasury.as_wire()).unwrap(), treasury);
+		assert_eq!(treasury.as_wire(), format!("treasury:{payment}"));
+		assert!(WithdrawalSource::parse("treasury").is_err(), "a treasury withdrawal names its payment");
+		assert!(WithdrawalSource::parse("treasury:nope").is_err());
+		assert_eq!((treasury.user(), treasury.payment()), (None, Some(payment)));
+		assert_eq!(WithdrawalPolicy::fee_for(treasury, Network::Bep20), Usdt::ZERO);
 	}
 
 	#[test]

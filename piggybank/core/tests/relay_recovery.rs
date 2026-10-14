@@ -614,6 +614,14 @@ impl Ledger for FailFeeLegOnce {
 		self.inner.transfer_exists(id).await
 	}
 
+	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		self.inner.total_debits(key).await
+	}
+
+	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		self.inner.spendable(key).await
+	}
+
 	async fn transfer_amount(&self, id: u128) -> Result<Option<u128>, LedgerError> {
 		self.inner.transfer_amount(id).await
 	}

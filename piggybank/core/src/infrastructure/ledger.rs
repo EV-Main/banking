@@ -227,6 +227,21 @@ impl Ledger for TbLedger {
 		}
 	}
 
+	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
+		let Some(id) = self.resolve_id(&key.logical_key()).await? else {
+			return Ok(0);
+		};
+		let call = self
+			.tb
+			.client()
+			.lookup_accounts(&[id])
+			.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
+		let accounts = deadline("lookup_accounts", call, TB_CALL_TIMEOUT)
+			.await?
+			.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
+		Ok(accounts.first().map_or(0, |account| account.debits_posted.saturating_add(account.debits_pending)))
+	}
+
 	async fn spendable(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
 		let available = self.balance(key).await?.available();
 		let promised = match key {

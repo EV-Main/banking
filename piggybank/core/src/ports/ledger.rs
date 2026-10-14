@@ -33,6 +33,11 @@ pub trait Ledger: Gateway {
 	/// Live balance for an account, normalized to its natural side (Read-First).
 	async fn balance(&self, key: &LedgerAccountKey) -> Result<LedgerBalance, LedgerError>;
 
+	/// Everything ever debited from `key` that still stands: posted debits plus pending
+	/// ones (a voided pending leaves both). Raw base units. What reconciliation sets against
+	/// the control plane's record of what was allowed to leave an account.
+	async fn total_debits(&self, key: &LedgerAccountKey) -> Result<u128, LedgerError>;
+
 	/// What a new spend out of `key` may take right now, in raw base units: the ledger's
 	/// [`LedgerBalance::available`] less what the account's owner has already promised away
 	/// in compartment moves the relay has not posted yet. THE ONE ANSWER every Read-First on
@@ -106,6 +111,45 @@ pub trait Ledger: Gateway {
 	/// claims` always holds; reconciliation asserts it and alerts if TB and the design
 	/// ever diverge. Returns raw 18-dp USDT base units.
 	async fn cash_invariant(&self) -> Result<CashInvariant, LedgerError>;
+}
+
+/// A spend's last check, run by the repository that records the spend AFTER it takes the
+/// claim's write lock and before it writes — so two spends of one claim (a withdrawal and a
+/// move, a buy and a subscription) cannot both pass on the same money. The application
+/// says what to check ([`ClaimCovers`]); the repository says when.
+#[async_trait]
+pub trait SpendGuard: Send + Sync {
+	async fn check(&self) -> Result<(), DomainError>;
+}
+
+/// The guard for a spend that needs no cover check — one whose money is booked in the same
+/// operation (a seed's deposit), or a sell that spends units, not cash.
+pub struct NoSpendCheck;
+
+#[async_trait]
+impl SpendGuard for NoSpendCheck {
+	async fn check(&self) -> Result<(), DomainError> {
+		Ok(())
+	}
+}
+
+/// `key` still covers `amount` — [`Ledger::spendable`], net of in-flight compartment moves.
+/// A shortfall is `Validation(refusal)`, the wording each flow has always answered with.
+pub struct ClaimCovers<'a> {
+	pub ledger: &'a dyn Ledger,
+	pub key: LedgerAccountKey,
+	pub amount: u128,
+	pub refusal: &'static str,
+}
+
+#[async_trait]
+impl SpendGuard for ClaimCovers<'_> {
+	async fn check(&self) -> Result<(), DomainError> {
+		if self.ledger.spendable(&self.key).await? < self.amount {
+			return Err(DomainError::Validation(self.refusal.into()));
+		}
+		Ok(())
+	}
 }
 
 /// Which side of the cash invariant a USDT-ledger account counts on, by its kind — the

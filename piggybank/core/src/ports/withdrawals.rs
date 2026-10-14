@@ -16,12 +16,15 @@ use domain::{
 	withdrawals::{Withdrawal, WithdrawalId, WithdrawalSource},
 };
 
+use crate::ports::ledger::SpendGuard;
+
 #[async_trait]
 pub trait WithdrawalRepository: Repository<Aggregate = Withdrawal> + Reader<Aggregate = Withdrawal> {
 	/// Persist a brand-new withdrawal and drain its events (`Requested`, plus
 	/// `Dispatched` when the rail was liquid at request time) atomically — the relay
-	/// reserves the gross against the user's claim into clearing, then broadcasts.
-	async fn open(&self, withdrawal: &mut Withdrawal) -> Result<(), DomainError>;
+	/// reserves the gross against the user's claim into clearing, then broadcasts. `guard`
+	/// runs under the source claim's lock, before anything is written.
+	async fn open(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard) -> Result<(), DomainError>;
 
 	/// Dispatch a queued withdrawal whose rail now has liquidity (the treasury worker):
 	/// apply [`Withdrawal::dispatch`] under the row lock, persist + drain the

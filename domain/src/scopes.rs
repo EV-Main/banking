@@ -282,7 +282,19 @@ pub enum MoveRefusal {
 	ScopeClosed,
 	UserFrozen,
 	InsufficientFunds,
+	/// Under [`MIN_MOVE`]: the one refusal that is the caller's input, so INVALID_ARGUMENT.
+	AmountBelowMinimum,
+	/// More than [`MAX_MOVES_PER_MINUTE`] moves by the user in the last minute.
+	RateLimited,
 }
+
+/// The smallest move: 0.01 USDT. Every move is a ledger transfer through the platform's one
+/// relay, so dust moves would be a cheap way to crowd it.
+pub const MIN_MOVE: Usdt = Usdt::from_base_units(10_000_000_000_000_000);
+
+/// How many moves one user may record in a rolling minute — for the same reason as
+/// [`MIN_MOVE`]: the relay is single, and one user's script is everyone's latency.
+pub const MAX_MOVES_PER_MINUTE: i64 = 10;
 
 impl MoveRefusal {
 	pub const fn reason(self) -> &'static str {
@@ -295,6 +307,8 @@ impl MoveRefusal {
 			Self::ScopeClosed => "scope_closed",
 			Self::UserFrozen => "user_frozen",
 			Self::InsufficientFunds => "insufficient_funds",
+			Self::AmountBelowMinimum => "amount_below_minimum",
+			Self::RateLimited => "rate_limited",
 		}
 	}
 }
@@ -605,12 +619,23 @@ mod tests {
 			MoveRefusal::ScopeClosed,
 			MoveRefusal::UserFrozen,
 			MoveRefusal::InsufficientFunds,
+			MoveRefusal::AmountBelowMinimum,
+			MoveRefusal::RateLimited,
 		]
 		.map(MoveRefusal::reason);
 		assert_eq!(
 			reasons,
 			[
-				"kyc_level", "max_per_move", "max_moved_in_24h", "max_balance", "scope_frozen", "scope_closed", "user_frozen", "insufficient_funds"
+				"kyc_level",
+				"max_per_move",
+				"max_moved_in_24h",
+				"max_balance",
+				"scope_frozen",
+				"scope_closed",
+				"user_frozen",
+				"insufficient_funds",
+				"amount_below_minimum",
+				"rate_limited"
 			]
 		);
 	}
