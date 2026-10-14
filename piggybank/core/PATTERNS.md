@@ -970,17 +970,86 @@ UNIMPLEMENTED; a scope it registers is closed to moves in until an operator sets
 policy — [`docs/RUNBOOK-scope-policy.md`](../../docs/RUNBOOK-scope-policy.md)) and
 `scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
 `max_moved_in_24h`, `max_balance` on moves IN only; the automatic ceilings
-`auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
-USDT, stored for the scope ledger). `scope_accounts` records who owns each scope account:
-banking owns `(main, treasury)` — where its own fees land (D17) — and `(<scope>, fee)`.
+`auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_per_op` / `auto_transfer_24h`,
+defaults 1000 / 5000 / 1000 / 5000 USDT, which the [scope ledger](#scope-ledger--the-service-facing-money-surface-domainscope_ledger-scopeledgerservice)
+enforces). `scope_accounts` records who owns each scope account: banking owns `(main,
+treasury)` — where its own fees land (D17) — and `(<scope>, fee)`; every other row is a
+client's, written by `OpenAccount`.
 The scope list behind listings and totals is cached per process for 30 s; a move reads the
 scope row itself. `GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
 (`amount = main + in_compartments`) count the compartments; `GetTreasury` shows
 `held_in_compartments` and `banking_treasury`. Mandates are not served yet
-(`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): they need the
-per-client grants the scope ledger brings. The existing `service:fee` / `service:fund` /
+(`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): the per-client grants
+they need exist now (below), the mandates themselves come with the scope ledger's next part. The existing `service:fee` / `service:fund` /
 `service:<slug>` claims are untouched until the migration window moves them into scope
 accounts.
+
+## Scope ledger — the service-facing money surface (`domain::scope_ledger`, `ScopeLedgerService`)
+
+`scope/v1/ledger.proto` is how a scope's own service (invest, the SA panel) moves money in
+its scope. Part 1 serves `OpenAccount`, `GetBalances` and `Transfer`; the rest is
+UNIMPLEMENTED with the reason (mandates, holds, payouts, approvals come next).
+
+**Its own listener, mTLS only** (`services::scope_ledger`, `config::ScopeLedgerSettings`):
+`SCOPE_LEDGER_BIND` turns it on, and then the server certificate, the client CA and the
+grants file are all required and checked at boot. HTTP/2 only — no `accept_http1`, no
+gRPC-Web — so nothing a browser speaks reaches it. Two layers stand in front of the
+service, both mounted in `serve_with` and nowhere else: `ClientIdentityLayer` maps the
+presented certificate (SHA-256 of its DER, the grants file's `cert_sha256`) to a
+`ClientId`, the **only** source of the caller's identity — not the token's `sub`, not a
+field; and the auth layer on `TokenClass::Service` (`aud=banking-services`, `typ=service`).
+`tests/scope_ledger_listener.rs` is the guard that the service is never reachable without
+them. Production cannot mint `typ=service` tokens yet (no `MintServiceToken` RPC): until it
+can, a client cannot get past the auth layer, which is the safe failure.
+
+**Grants are banking's configuration** (`SCOPE_LEDGER_GRANTS_FILE`): `(client_id, scope,
+label_prefix, compartments)`. The load refuses `client_id = "banking"` (banking owns `fee`
+and `treasury`), `scope = main`, an empty prefix (it would cover `fee`), two prefixes in one
+scope where one starts with the other, and a grant to a client no certificate maps to. At
+call time `main` and a scope the client holds no grant in are the same PERMISSION_DENIED
+`not_granted` — a client cannot probe which scopes exist — and only a granted scope banking
+has not heard of from concierge is NOT_FOUND.
+
+**Ownership.** `OpenAccount` writes `scope_accounts (scope, label, owner_client)` for a label
+under the caller's prefix; `fee` and `treasury` are refused **by the label**
+(`ScopeAccountLabel::is_reserved`) whatever a prefix covers, a label another client owns is
+ALREADY_EXISTS, and the owner opening its label again gets the existing account. Only the
+owner debits an account; a debit of `fee`/`treasury`, of someone else's account or of one
+that does not exist is the same PERMISSION_DENIED `not_account_owner`. `GetBalances`
+answers only the caller's accounts (`fee` included in "not yours": NOT_FOUND).
+
+**Transfer** is a client's automatic fee sweep: from an account it owns into `(scope, fee)`,
+`reason = FEE_SWEEP`; any other destination is `approval_required` (the client asks with
+`RequestTransfer`, not served yet). One Postgres transaction takes, in order, the key lock
+`(client, scope, rpc, key)`, the ceiling lock `(client, scope)`, the scope row `FOR SHARE`
+(a freeze cannot commit between the check and the record) and the source account's claim
+lock, then checks: owner, `scope_frozen` (a closed scope's accounts can still be swept),
+the automatic ceilings — `auto_transfer_per_op` and `auto_transfer_24h` over the client's
+`pending` + `posted` transfers in the scope over a rolling 24 h, across every account it
+owns there — and `spendable_locked` of the source, which counts `pending` transfers out of
+it from `scope_transfers`. A refusal writes nothing; a pass records the row, the key and the
+outbox event together. The relay posts `Dr scope_account:<s>:<from> / Cr
+scope_account:<s>:fee` (`TransferCode::ScopeTransfer`, id `uuid_v5(transfer_id,
+"scope:transfer")`) and stamps `posted`, or `failed` when the ledger refuses it — the same
+single-leg discipline as a compartment move (`relay::Posting`), the same reaper replay of a
+`pending` row an older relay dispatched without posting.
+
+**Idempotency** (`scope_ledger_requests`): a key is unique per `(client, scope, rpc)` and
+stored with the canonical rendering of every term the call named (length-prefixed fields:
+from, to, amount in base units, reason, `subject_ref`, memo). A repeat with the same terms
+returns the original result, even after a freeze; other terms are ALREADY_EXISTS. The key
+lock makes a second insert unreachable; should the unique index still fire (23505), the call
+rolls back and answers with what the winner recorded.
+
+**Reconciliation** counts scope accounts in the cash invariant by code (since #507) and,
+since part 1, alerts on value on a scope account no `scope_accounts` row owns
+(`unowned_scope_accounts`, part of `clean()`).
+
+**`ServiceClaim(svc)` is not migrated here.** The allocation claims stay on
+`service:<slug>` until the units migration window (§6.5 of the org plan): each one becomes
+`ScopeAccount(<scope of the allocation>, alloc:<slug>)` owned by the invest client, moved by
+one posted transfer per allocation `Dr service:<slug> / Cr scope_account:<scope>:alloc:<slug>`
+in the same window that moves units to invest, with the owner rows written before the money.
 
 ## Operations — the activity timeline (`OperationsService`)
 
@@ -1179,6 +1248,9 @@ aggregate, applied under the row lock; the TB non-negative flag is the ledger ba
 | `GetUserBalance` | operator | `require_permission`; resolves the CONCIERGE id first via the bridge mirror (`users.concierge_user_id`), then the banking id; unknown ⇒ `NOT_FOUND` | — |
 | `ListParkedEvents` | operator | `require_permission` | — |
 | `UnparkEvent` | admin (`OutboxManage`) | `require_permission` | parked ∧ not dispatched ∧ **not compensated** (the double-apply guard) |
+| `ScopeLedgerService.OpenAccount` | a service client | own listener: mTLS client certificate → `ClientId`, `typ=service` token | grant in the scope (not `main`) ∧ label under the client's prefix ∧ not `fee`/`treasury` ∧ not another client's; idempotent by `(client, scope, rpc, key)` |
+| `ScopeLedgerService.GetBalances` | a service client | as above | grant in the scope; only accounts the client owns |
+| `ScopeLedgerService.Transfer` | a service client | as above | grant ∧ owns the source ∧ source not `fee`/`treasury` ∧ destination `fee` ∧ scope not frozen ∧ automatic ceilings per `(client, scope)` ∧ spendable ≥ amount (TB flag backstop); idempotent by `(client, scope, rpc, key)` |
 
 The `kyc_level ≥ 1` arms above are the **enforced** position of the deployment switch
 (`KYC_GATE_ENABLED`, enforced unless explicitly lifted — see **The switch** under the
