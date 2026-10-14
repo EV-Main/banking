@@ -992,15 +992,35 @@ UNIMPLEMENTED with the reason (mandates, holds, payouts, approvals come next).
 
 **Its own listener, mTLS only** (`services::scope_ledger`, `config::ScopeLedgerSettings`):
 `SCOPE_LEDGER_BIND` turns it on, and then the server certificate, the client CA and the
-grants file are all required and checked at boot. HTTP/2 only — no `accept_http1`, no
-gRPC-Web — so nothing a browser speaks reaches it. Two layers stand in front of the
-service, both mounted in `serve_with` and nowhere else: `ClientIdentityLayer` maps the
-presented certificate (SHA-256 of its DER, the grants file's `cert_sha256`) to a
-`ClientId`, the **only** source of the caller's identity — not the token's `sub`, not a
-field; and the auth layer on `TokenClass::Service` (`aud=banking-services`, `typ=service`).
-`tests/scope_ledger_listener.rs` is the guard that the service is never reachable without
-them. Production cannot mint `typ=service` tokens yet (no `MintServiceToken` RPC): until it
-can, a client cannot get past the auth layer, which is the safe failure.
+grants file are all required and checked at boot — the TLS material is parsed into the very
+rustls server config the listener will run, so a broken key or a certificate that is not
+the key's exits 78 before the hub says it is listening. `main` installs the process-level
+rustls provider (`ring`, `crypto.rs`) before anything else: the graph carries both `ring`
+and `aws-lc-rs`, and a rustls server refuses to pick — the first listener panicked on its
+first handshake until it did (`tests/scope_ledger_boot.rs`, a binary of its own, guards it).
+
+HTTP/2 only: ALPN offers only h2, so an HTTP/1.1 client fails the handshake, and a gRPC-Web
+request sent over h2 is refused by a content-type gate (tonic itself does not look and
+would decode it as gRPC). Two layers stand in front of the service, both mounted in
+`serve_with` and nowhere else, the certificate outside the token: `ClientIdentityLayer`
+maps the presented certificate (SHA-256 of its DER, the grants file's `cert_sha256`) to a
+`ClientId`, the **only** source of the caller's identity; inside it, the auth layer on
+`TokenClass::Service` (`aud=banking-services`, `typ=service`). The token is then bound to
+the certificate: its `sub` must be that client's id, or the call is PERMISSION_DENIED
+`token is not this client's` — a token copied off one client is useless on another's
+connection. `tests/scope_ledger_listener.rs` is the guard that the service is never
+reachable without them. Production cannot mint `typ=service` tokens yet (no
+`MintServiceToken` RPC): until it can, a client cannot get past the auth layer, which is
+the safe failure.
+
+**Revoking a service client** is done on the certificate side, not the token: drop its
+fingerprint from the grants file (or its grants) and roll the hub — the next call is
+UNAUTHENTICATED (or `not_granted`) whatever token it carries, since every call needs both.
+A service token carries no `token_version` worth checking (minted at 0, nothing stores a
+floor for a service) and lives `AUTH_SERVICE_TTL_SECS` (300 s by default); a stolen token
+without the client's private key is already useless by the binding above. A stolen key is
+a certificate revocation: re-issue the client's certificate and replace the fingerprint
+(two may be listed during the swap).
 
 **Grants are banking's configuration** (`SCOPE_LEDGER_GRANTS_FILE`): `(client_id, scope,
 label_prefix, compartments)`. The load refuses `client_id = "banking"` (banking owns `fee`
@@ -1015,8 +1035,11 @@ under the caller's prefix; `fee` and `treasury` are refused **by the label**
 (`ScopeAccountLabel::is_reserved`) whatever a prefix covers, a label another client owns is
 ALREADY_EXISTS, and the owner opening its label again gets the existing account. Only the
 owner debits an account; a debit of `fee`/`treasury`, of someone else's account or of one
-that does not exist is the same PERMISSION_DENIED `not_account_owner`. `GetBalances`
-answers only the caller's accounts (`fee` included in "not yours": NOT_FOUND).
+that does not exist is the same PERMISSION_DENIED `not_account_owner`. A debit also needs
+the label inside one of the client's grants as configured **now** — a prefix taken away
+takes away the debit of the accounts opened under it (`not_granted`), while the money stays
+readable. `GetBalances` answers only the caller's accounts (`fee` included in "not yours":
+NOT_FOUND), at most 256 labels per call, repeats answered once.
 
 **Transfer** is a client's automatic fee sweep: from an account it owns into `(scope, fee)`,
 `reason = FEE_SWEEP`; any other destination is `approval_required` (the client asks with
@@ -1027,14 +1050,16 @@ lock, then checks: owner, `scope_frozen` (a closed scope's accounts can still be
 the automatic ceilings — `auto_transfer_per_op` and `auto_transfer_24h` over the client's
 `pending` + `posted` transfers in the scope over a rolling 24 h, across every account it
 owns there — and `spendable_locked` of the source, which counts `pending` transfers out of
-it from `scope_transfers`. A refusal writes nothing; a pass records the row, the key and the
+it from `scope_transfers`. A scope without banking's fee collector is banking's broken
+invariant, INTERNAL, never the caller's to retry. A refusal writes nothing; a pass records the row, the key and the
 outbox event together. The relay posts `Dr scope_account:<s>:<from> / Cr
 scope_account:<s>:fee` (`TransferCode::ScopeTransfer`, id `uuid_v5(transfer_id,
 "scope:transfer")`) and stamps `posted`, or `failed` when the ledger refuses it — the same
 single-leg discipline as a compartment move (`relay::Posting`), the same reaper replay of a
 `pending` row an older relay dispatched without posting.
 
-**Idempotency** (`scope_ledger_requests`): a key is unique per `(client, scope, rpc)` and
+**Idempotency** (`scope_ledger_requests`): a key (1..128 characters, no control characters)
+is unique per `(client, scope, rpc)` and
 stored with the canonical rendering of every term the call named (length-prefixed fields:
 from, to, amount in base units, reason, `subject_ref`, memo). A repeat with the same terms
 returns the original result, even after a freeze; other terms are ALREADY_EXISTS. The key
@@ -1248,9 +1273,9 @@ aggregate, applied under the row lock; the TB non-negative flag is the ledger ba
 | `GetUserBalance` | operator | `require_permission`; resolves the CONCIERGE id first via the bridge mirror (`users.concierge_user_id`), then the banking id; unknown ⇒ `NOT_FOUND` | — |
 | `ListParkedEvents` | operator | `require_permission` | — |
 | `UnparkEvent` | admin (`OutboxManage`) | `require_permission` | parked ∧ not dispatched ∧ **not compensated** (the double-apply guard) |
-| `ScopeLedgerService.OpenAccount` | a service client | own listener: mTLS client certificate → `ClientId`, `typ=service` token | grant in the scope (not `main`) ∧ label under the client's prefix ∧ not `fee`/`treasury` ∧ not another client's; idempotent by `(client, scope, rpc, key)` |
+| `ScopeLedgerService.OpenAccount` | a service client | own listener: mTLS client certificate → `ClientId`, `typ=service` token whose `sub` is that client | grant in the scope (not `main`) ∧ label under the client's prefix ∧ not `fee`/`treasury` ∧ not another client's; idempotent by `(client, scope, rpc, key)` |
 | `ScopeLedgerService.GetBalances` | a service client | as above | grant in the scope; only accounts the client owns |
-| `ScopeLedgerService.Transfer` | a service client | as above | grant ∧ owns the source ∧ source not `fee`/`treasury` ∧ destination `fee` ∧ scope not frozen ∧ automatic ceilings per `(client, scope)` ∧ spendable ≥ amount (TB flag backstop); idempotent by `(client, scope, rpc, key)` |
+| `ScopeLedgerService.Transfer` | a service client | as above | grant ∧ a current grant covers the source's label ∧ owns the source ∧ source not `fee`/`treasury` ∧ destination `fee` ∧ scope not frozen ∧ automatic ceilings per `(client, scope)` ∧ spendable ≥ amount (TB flag backstop); idempotent by `(client, scope, rpc, key)` |
 
 The `kyc_level ≥ 1` arms above are the **enforced** position of the deployment switch
 (`KYC_GATE_ENABLED`, enforced unless explicitly lifted — see **The switch** under the
