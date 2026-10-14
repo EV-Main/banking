@@ -1,21 +1,26 @@
 //! Postgres adapter for [`CompartmentStore`] — the scope registry, the scope policies and
-//! users' compartment moves (`scopes`, `scope_policies`, `compartment_moves`, migration 0052).
+//! users' compartment moves (`scopes`, `scope_policies`, `compartment_moves`, migration 0052)
+//! — plus the two control-plane steps of a move's life outside the request: the relay's
+//! `posted`/`failed` stamp and the reaper's replay of a `pending` move whose event was lost.
 //! Amounts are 18-dp base units as TEXT; nothing here sums money the ledger holds — the
-//! rolling 24 h total is a policy figure over the recorded moves, added up in Rust.
+//! in-flight and 24 h figures are sums over recorded moves, added up in Rust.
+
+use std::time::Duration;
 
 use async_trait::async_trait;
 use domain::{
+	architecture::{AggregateRoot, DomainEvent},
 	error::DomainError,
 	money::Usdt,
-	scopes::{Compartment, CompartmentMove, CompartmentMoveId, ScopeId, ScopePolicy, ScopeState},
+	scopes::{Compartment, CompartmentEvent, CompartmentMove, CompartmentMoveId, MoveState, ScopeId, ScopePolicy, ScopeState},
 	users::UserId,
 };
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
 	infrastructure::outbox,
-	ports::compartments::{CompartmentStore, MoveOutcome, RecordedMove, ScopeRecord},
+	ports::compartments::{CompartmentStore, InFlight, MoveAdmission, MoveError, MoveOutcome, RecordedMove, ScopeRecord},
 };
 
 pub struct PgCompartments {
@@ -43,6 +48,14 @@ macro_rules! select_scopes {
 		 COALESCE(p.auto_transfer_24h, '5000000000000000000000'), \
 		 EXTRACT(EPOCH FROM COALESCE(p.updated_at, s.created_at))::BIGINT \
 		 FROM scopes s LEFT JOIN scope_policies p ON p.scope = s.id"
+	};
+}
+macro_rules! concat_move_select {
+	($tail:literal) => {
+		concat!(
+			"SELECT id, user_id, from_scope, to_scope, amount, state, failure_reason, EXTRACT(EPOCH FROM created_at)::BIGINT FROM compartment_moves ",
+			$tail
+		)
 	};
 }
 const SELECT_ALL_SCOPES: &str = concat!(select_scopes!(), " ORDER BY s.id");
@@ -80,12 +93,10 @@ fn scope_record(row: ScopeRow) -> Result<ScopeRecord, DomainError> {
 	})
 }
 
-const SELECT_MOVE: &str = "SELECT id, user_id, from_scope, to_scope, amount, EXTRACT(EPOCH FROM created_at)::BIGINT FROM compartment_moves WHERE user_id = $1 AND idempotency_key = $2";
-
-type MoveRow = (Uuid, Uuid, String, String, String, i64);
+type MoveRow = (Uuid, Uuid, String, String, String, String, Option<String>, i64);
 
 fn recorded_move(row: MoveRow) -> Result<RecordedMove, DomainError> {
-	let (id, user, from, to, raw_amount, created_at) = row;
+	let (id, user, from, to, raw_amount, state, failure_reason, created_at) = row;
 	let corrupt = |e: DomainError| DomainError::Repository(format!("compartment move {id}: {e}"));
 	let movement = CompartmentMove::restore(
 		CompartmentMoveId::from_raw(id),
@@ -95,19 +106,38 @@ fn recorded_move(row: MoveRow) -> Result<RecordedMove, DomainError> {
 		amount("amount", &raw_amount)?,
 	)
 	.map_err(corrupt)?;
-	Ok(RecordedMove { movement, created_at })
+	Ok(RecordedMove {
+		movement,
+		state: MoveState::parse(&state).map_err(corrupt)?,
+		failure_reason,
+		created_at,
+	})
 }
 
-async fn find_move_in(tx: &mut Transaction<'_, Postgres>, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError> {
-	sqlx::query_as::<_, MoveRow>(SELECT_MOVE)
+async fn find_move_on(conn: &mut PgConnection, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError> {
+	sqlx::query_as::<_, MoveRow>(concat_move_select!("WHERE user_id = $1 AND idempotency_key = $2"))
 		.bind(user.raw())
 		.bind(idempotency_key)
-		.fetch_optional(&mut **tx)
+		.fetch_optional(conn)
 		.await
 		.map_err(repo_err)?
 		.map(recorded_move)
 		.transpose()
 }
+
+/// Σ of a set of stored amounts.
+async fn sum_amounts(conn: &mut PgConnection, sql: &'static str, user: UserId, compartment: &str) -> Result<Usdt, DomainError> {
+	let amounts: Vec<String> = sqlx::query_scalar(sql).bind(user.raw()).bind(compartment).fetch_all(conn).await.map_err(repo_err)?;
+	amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
+		total
+			.checked_add(amount("amount", raw)?)
+			.ok_or_else(|| DomainError::Repository(format!("moves of {compartment} overflow")))
+	})
+}
+
+const PENDING_OUT: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND from_scope = $2 AND state = 'pending'";
+const PENDING_IN: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND state = 'pending'";
+const MOVED_IN_24H: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND state IN ('pending', 'posted') AND created_at > now() - interval '24 hours'";
 
 #[async_trait]
 impl CompartmentStore for PgCompartments {
@@ -132,62 +162,125 @@ impl CompartmentStore for PgCompartments {
 	}
 
 	async fn find_move(&self, user: UserId, idempotency_key: &str) -> Result<Option<RecordedMove>, DomainError> {
-		sqlx::query_as::<_, MoveRow>(SELECT_MOVE)
-			.bind(user.raw())
-			.bind(idempotency_key)
-			.fetch_optional(&self.pool)
-			.await
-			.map_err(repo_err)?
-			.map(recorded_move)
-			.transpose()
+		let mut conn = self.pool.acquire().await.map_err(repo_err)?;
+		find_move_on(&mut conn, user, idempotency_key).await
 	}
 
-	async fn moved_in_24h(&self, user: UserId, scope: &ScopeId) -> Result<Usdt, DomainError> {
-		let amounts: Vec<String> = sqlx::query_scalar("SELECT amount FROM compartment_moves WHERE user_id = $1 AND to_scope = $2 AND created_at > now() - interval '24 hours'")
-			.bind(user.raw())
-			.bind(scope.as_str())
-			.fetch_all(&self.pool)
-			.await
-			.map_err(repo_err)?;
-		amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
-			total
-				.checked_add(amount("amount", raw)?)
-				.ok_or_else(|| DomainError::Repository(format!("24 h total moved into {scope} overflows")))
-		})
-	}
-
-	async fn record_move(&self, movement: &mut CompartmentMove, idempotency_key: &str) -> Result<MoveOutcome, DomainError> {
+	async fn record_move(&self, movement: &mut CompartmentMove, idempotency_key: &str, admission: &dyn MoveAdmission) -> Result<MoveOutcome, MoveError> {
+		let user = movement.user();
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
-		// The lock every writer that spends this claim takes (withdraw, subscribe), so their
-		// writes serialize. The caller's Read-First stays optimistic, as theirs does: a move
-		// that loses a race is refused by the claim's non-negative flag and parks in the
-		// relay with nothing moved.
-		outbox::lock_claim(&mut tx, &movement.from().claim_key(movement.user())).await?;
-		let inserted = sqlx::query_scalar::<_, Uuid>(
+		// The source's lock is the one every writer that spends that claim takes (withdraw,
+		// subscribe), so their writes serialize with this one. A move in also takes the
+		// target's, always second: only a move in ever holds two, and it takes them in one
+		// order, so two moves cannot wait on each other.
+		outbox::lock_claim(&mut tx, &movement.from().claim_key(user)).await?;
+		if movement.is_move_in() {
+			outbox::lock_claim(&mut tx, &movement.to().claim_key(user)).await?;
+		}
+		if let Some(existing) = find_move_on(&mut tx, user, idempotency_key).await? {
+			tx.commit().await.map_err(repo_err)?;
+			return Ok(MoveOutcome::Existing(existing));
+		}
+		let mut in_flight = InFlight {
+			pending_out_of_source: sum_amounts(&mut tx, PENDING_OUT, user, movement.from().as_str()).await?,
+			..InFlight::default()
+		};
+		if movement.is_move_in() {
+			in_flight.pending_into_target = sum_amounts(&mut tx, PENDING_IN, user, movement.to().as_str()).await?;
+			in_flight.moved_in_24h = sum_amounts(&mut tx, MOVED_IN_24H, user, movement.scope().as_str()).await?;
+		}
+		// The refusal rolls the transaction back with nothing written.
+		admission.admit(&in_flight).await?;
+		let (id, created_at) = sqlx::query_as::<_, (Uuid, i64)>(
 			"INSERT INTO compartment_moves (id, user_id, from_scope, to_scope, amount, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6) \
-			 ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING id",
+			 RETURNING id, EXTRACT(EPOCH FROM created_at)::BIGINT",
 		)
 		.bind(movement.id().raw())
-		.bind(movement.user().raw())
+		.bind(user.raw())
 		.bind(movement.from().as_str())
 		.bind(movement.to().as_str())
 		.bind(movement.amount().base_units().to_string())
 		.bind(idempotency_key)
-		.fetch_optional(&mut *tx)
+		.fetch_one(&mut *tx)
 		.await
 		.map_err(repo_err)?;
-		if inserted.is_none() {
-			let existing = find_move_in(&mut tx, movement.user(), idempotency_key)
-				.await?
-				.ok_or_else(|| DomainError::Repository(format!("compartment move key {idempotency_key:?} conflicted but no row holds it")))?;
-			tx.commit().await.map_err(repo_err)?;
-			return Ok(MoveOutcome::Existing(existing));
-		}
 		outbox::drain_to_outbox(&mut tx, movement, true).await?;
-		let recorded = find_move_in(&mut tx, movement.user(), idempotency_key)
-			.await?
-			.ok_or_else(|| DomainError::Repository(format!("compartment move {} vanished inside its own transaction", movement.id())))?;
 		tx.commit().await.map_err(repo_err)?;
-		Ok(MoveOutcome::Recorded(recorded))
+		let recorded = CompartmentMove::restore(CompartmentMoveId::from_raw(id), user, movement.from().clone(), movement.to().clone(), movement.amount())?;
+		Ok(MoveOutcome::Recorded(RecordedMove {
+			movement: recorded,
+			state: MoveState::Pending,
+			failure_reason: None,
+			created_at,
+		}))
 	}
+}
+
+/// Where move `id` stands, `None` when no row holds it. The relay reads it before posting:
+/// only a `pending` move may still reach the ledger.
+pub async fn move_state(pool: &PgPool, id: Uuid) -> Result<Option<MoveState>, sqlx::Error> {
+	let state: Option<String> = sqlx::query_scalar("SELECT state FROM compartment_moves WHERE id = $1").bind(id).fetch_optional(pool).await?;
+	state.map(|raw| MoveState::parse(&raw).map_err(|e| sqlx::Error::Decode(Box::new(e)))).transpose()
+}
+
+/// The ledger took the move. Only a `pending` row moves; a repeat is a no-op.
+pub async fn mark_posted(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+	sqlx::query("UPDATE compartment_moves SET state = 'posted', updated_at = now() WHERE id = $1 AND state = 'pending'")
+		.bind(id)
+		.execute(pool)
+		.await?;
+	Ok(())
+}
+
+/// The ledger refused the move: terminal, nothing moved, never executed later.
+pub async fn mark_failed(pool: &PgPool, id: Uuid, reason: &str) -> Result<(), sqlx::Error> {
+	sqlx::query("UPDATE compartment_moves SET state = 'failed', failure_reason = $2, updated_at = now() WHERE id = $1 AND state = 'pending'")
+		.bind(id)
+		.bind(reason)
+		.execute(pool)
+		.await?;
+	Ok(())
+}
+
+/// Re-enqueue every `pending` move untouched for `older_than` whose event is no longer
+/// waiting in the outbox — the relay that dispatched it did not post it (an older build that
+/// did not know the kind, during a rolling deploy or a rollback). A parked event is still in
+/// the outbox (parked rows are undispatched) and is left to the operator. The replay is
+/// safe however often it runs: the ledger transfer id derives from the move id, so a move
+/// that did post answers `Exists` and is stamped `posted`. Returns how many it re-enqueued.
+pub async fn redrive_stale_moves(pool: &PgPool, older_than: Duration) -> Result<usize, sqlx::Error> {
+	let stale: Vec<Uuid> = sqlx::query_scalar(
+		"SELECT m.id FROM compartment_moves m WHERE m.state = 'pending' AND m.updated_at < now() - make_interval(secs => $1) \
+		 AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.dispatched_at IS NULL AND o.aggregate_id = m.id) ORDER BY m.updated_at LIMIT 100",
+	)
+	.bind(older_than.as_secs_f64())
+	.fetch_all(pool)
+	.await?;
+	let mut redriven = 0;
+	for id in stale {
+		let mut tx = pool.begin().await?;
+		let row = sqlx::query_as::<_, MoveRow>(concat_move_select!("WHERE id = $1 AND state = 'pending' FOR UPDATE"))
+			.bind(id)
+			.fetch_optional(&mut *tx)
+			.await?;
+		// Posted or failed since the scan: nothing to replay.
+		let Some(row) = row else { continue };
+		let recorded = recorded_move(row).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+		let movement = &recorded.movement;
+		let event = CompartmentEvent::Moved {
+			move_id: movement.id(),
+			user: movement.user(),
+			from: movement.from().clone(),
+			to: movement.to().clone(),
+			amount: movement.amount(),
+		};
+		let payload = serde_json::to_string(&event).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+		outbox::insert_event(&mut tx, Uuid::new_v4(), CompartmentMove::NAME, id, CompartmentEvent::KIND, &payload, true)
+			.await
+			.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+		sqlx::query("UPDATE compartment_moves SET updated_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+		tx.commit().await?;
+		redriven += 1;
+	}
+	Ok(redriven)
 }

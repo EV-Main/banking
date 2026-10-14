@@ -865,10 +865,13 @@ without a restart, and a halt parks the withdrawal exactly like a window refusal
 
 ### Revenue payout — retired (#245); how earnings leave now
 
-The platform earns money in three places — the **retained fee** on every user withdrawal,
-the book's **taker fee**, and the settled 2-and-20 (§Fees → *Settlement*) — and all of it
-lands on one claim, the `fee` allocation's `service:fee`, held by people through `fee`
-units. There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
+The allocations earn money in two places — the book's **taker fee** and the settled
+2-and-20 (§Fees → *Settlement*) — and both land on one claim, the `fee` allocation's
+`service:fee`, held by people through `fee` units. The **retained fee** on every user
+withdrawal is banking's own and lands in banking's treasury, `scope_account:main:treasury`
+(D17); money leaves the treasury only by a payment order out of it (`Party::Treasury`) that
+the owners' consilium approved — internally, or on a rail through a treasury withdrawal
+(`WithdrawalSource::Treasury`, no fee, no owner standing to read). There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly
 two ways: a **holder's redemption** of `fee` units at `fee`'s derived NAV onto their own
 `user:<uuid>` claim (from where they withdraw under their own gates), or a **payment
 order** out of `service:fee` that the owners' consilium approved (`PaymentsService`, L2/L3
@@ -884,9 +887,9 @@ approval mail (`payout_approval`). All of it is removed, `CancelRevenuePayout` /
 `ListRevenuePayouts` included, and `0047_ownership_contract.sql` narrows
 `withdrawals.source` to `user` and drops `revenue_payout` / `payout_approval` from the
 `consilium` / `consilium_mail` CHECKs (production held no such row when it ran). A
-withdrawal is always a person's: `WithdrawalSource::User` is the only variant
-(`domain/src/withdrawals.rs`), so `require_dispatchable` (`application/withdrawals.rs`)
-reads the owner of every row. Old outbox payloads spell the field `user` and hold a bare
+withdrawal is a person's (`WithdrawalSource::User`) or, since D17, the treasury's
+(`WithdrawalSource::Treasury`, only from an approved payment order), and
+`require_dispatchable` (`application/withdrawals.rs`) reads the owner of every person's row. Old outbox payloads spell the field `user` and hold a bare
 UUID. `WithdrawalSource`'s string form and the `alias = "user"` on the events read those
 unchanged, so a row parked before the source existed still drains after it.
 
@@ -895,14 +898,32 @@ unchanged, so a row parked before the source existed still drains after it.
 A user's wallet is split by **scope** (D9): `main` is their `user:<uuid>` claim — deposits
 land there and withdrawals leave from there — and every scope they enter holds a
 compartment, `scope_claim:<scope>:<uuid>`. Only the user moves money `main ⇄ scope`
-(`MoveFunds`), instantly and without a fee, never scope to scope. A move is the house write
-path: Read-First (scope known and not frozen/closed for a move in, the account not frozen,
-the scope's policy for a move in, the source's available balance), then one Postgres
-transaction under the source claim's write lock records the `compartment_moves` row
-(unique per `(user, idempotency_key)` — a repeat returns the original) and its event, and
-the relay posts `Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id
-`uuid_v5(move_id, "compartment:move")`). A raced move that the source no longer covers is
-refused by the claim's flag and parks, with nothing moved.
+(`MoveFunds`), instantly and without a fee, never scope to scope.
+
+**A move IN** passes the scope's state (`scope_frozen` / `scope_closed`), the account's
+freeze (`user_frozen`), the outflow pause and the scope's policy. **A move OUT** — back to
+`main` — passes none of them: the money never leaves the platform, so a frozen user in a
+paused system still gets it back. Both need the source to cover the amount.
+
+**Checked under the lock, net of what is in flight.** One Postgres transaction takes the
+source claim's write lock (the one withdraw and subscribe take) and, for a move in, the
+target's — always in that order — answers a reused idempotency key with the stored move,
+and only then asks the checks: the source's TigerBeetle `available` less the user's
+`pending` moves out of it; for a move in, the target's `posted + pending` plus the
+`pending` moves into it against `max_balance`, and the `pending` + `posted` moves into the
+scope over 24 h against `max_moved_in_24h`. The loser of two racing moves is refused at
+once. A refusal writes nothing; a pass records the `compartment_moves` row and its event
+together.
+
+**A move is never lost and never runs twice.** The row is `pending` until the relay posts
+`Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id `uuid_v5(move_id,
+"compartment:move")`) and stamps it `posted`. If the ledger refuses it — another flow's
+reservation landed first — the relay stamps it `failed` (`failure_reason`), parks nothing,
+and never carries it out later: an unparked or replayed event of a `failed` move is a no-op.
+A `pending` move whose event a relay dispatched without posting (an older build that did
+not know the kind, in a rolling deploy or after a rollback) is re-enqueued by the
+[`reaper`](src/infrastructure/reaper.rs) after five minutes; the replay finds the transfer
+id already on the ledger if it was, and only stamps the row.
 
 The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will own it) and
 `scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
@@ -910,10 +931,13 @@ The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will o
 `auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
 USDT, stored for the scope ledger). `scope_accounts` records who owns each scope account:
 banking owns `(main, treasury)` — where its own fees land (D17) — and `(<scope>, fee)`.
-Mandates are not served yet (`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates`
-empty): they need the per-client grants the scope ledger brings. The existing
-`service:fee` / `service:fund` / `service:<slug>` claims are untouched until the migration
-window moves them into scope accounts.
+`GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
+(`amount = main + in_compartments`) count the compartments; `GetTreasury` shows
+`held_in_compartments` and `banking_treasury`. Mandates are not served yet
+(`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): they need the
+per-client grants the scope ledger brings. The existing `service:fee` / `service:fund` /
+`service:<slug>` claims are untouched until the migration window moves them into scope
+accounts.
 
 ## Operations — the activity timeline (`OperationsService`)
 

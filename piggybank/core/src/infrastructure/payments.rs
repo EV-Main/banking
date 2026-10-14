@@ -290,7 +290,8 @@ pub(crate) async fn detail_of(conn: &mut PgConnection, to: &PaymentDestination) 
 			.await
 			.map_err(repo_err)?
 			.map(EndDetail::ProductTitle),
-		None => None,
+		// Never a destination; the label says all there is.
+		Some(Party::Treasury) | None => None,
 	})
 }
 
@@ -1176,7 +1177,7 @@ impl PaymentFeed for PgPayments {
 			match order.terms().to().party() {
 				Some(Party::User(user)) => user_ids.push(user.raw()),
 				Some(Party::Service(service)) => services.push(service.as_str().to_owned()),
-				None => {}
+				Some(Party::Treasury) | None => {}
 			}
 		}
 		let mut email_by_user = HashMap::new();
@@ -1211,7 +1212,7 @@ impl PaymentFeed for PgPayments {
 				let destination_detail = match order.terms().to().party() {
 					Some(Party::User(user)) => email_by_user.get(&user.raw()).cloned().map(EndDetail::Mailbox),
 					Some(Party::Service(service)) => title_by_service.get(service.as_str()).cloned().map(EndDetail::ProductTitle),
-					None => None,
+					Some(Party::Treasury) | None => None,
 				};
 				Ok(PaymentView {
 					consilium_id: consilium_by_payment.get(&id).copied(),

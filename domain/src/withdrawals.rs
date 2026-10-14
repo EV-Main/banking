@@ -1,6 +1,8 @@
 //! `withdrawals` bounded context — on-chain withdrawals out of the fund.
 //!
-//! The claim debited is always an investor's own ([`WithdrawalSource::User`]). The fund's
+//! The claim debited is an investor's own ([`WithdrawalSource::User`]) or, for an L1
+//! payment the owners' consilium approved, banking's treasury ([`WithdrawalSource::Treasury`],
+//! D17). The fund's
 //! earnings used to leave by a second source — the revenue payout — which #245 retired:
 //! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
 //! through a holder's redemption onto their own claim and then their own withdrawal. The
@@ -39,33 +41,51 @@ pub type WithdrawalId = Id<WithdrawalTag>;
 /// Phantom tag making [`WithdrawalId`] a distinct, incompatible identity type.
 pub struct WithdrawalTag;
 
-/// **Whose money leaves** — the claim a withdrawal debits. One variant since #245 retired
-/// the revenue payout; kept as a type because the saga, the relay's legs and the stored
-/// `source` column are all written against "a source", and a second one would be a variant
-/// here, not a parallel saga.
+/// **Whose money leaves** — the claim a withdrawal debits: an investor's, or banking's
+/// treasury paying out what the owners' consilium approved (D17). The saga, the relay's
+/// legs and the stored `source` column are all written against "a source", so the second
+/// one is a variant here, not a parallel saga.
 ///
 /// The wire form is the user's UUID as a string, so an `event_log`/`outbox` payload
 /// written before the field was a source (it held a bare UUID) still reads back as
 /// [`WithdrawalSource::User`]. Together with the `alias` on [`WithdrawalEvent`]'s `source`
-/// field there is nothing to backfill and no undrained row that stops deserializing.
+/// field there is nothing to backfill and no undrained row that stops deserializing. The
+/// treasury is the literal `treasury`, which no UUID can be.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum WithdrawalSource {
 	/// An investor's own unified claim (`user:<uuid>`).
 	User(UserId),
+	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever through a payment
+	/// order the owners approved.
+	Treasury,
 }
+
+const TREASURY_WIRE: &str = "treasury";
 
 impl WithdrawalSource {
 	/// The stored/wire discriminant.
 	pub fn as_wire(&self) -> String {
 		match self {
 			Self::User(user) => user.to_string(),
+			Self::Treasury => TREASURY_WIRE.to_owned(),
+		}
+	}
+
+	/// The stored `source` column value (`user` | `treasury`); the user id rides beside it.
+	pub fn column(&self) -> &'static str {
+		match self {
+			Self::User(_) => "user",
+			Self::Treasury => TREASURY_WIRE,
 		}
 	}
 
 	/// Parse the stored/wire form. The retired `revenue` literal is not UUID-shaped and
 	/// is refused like any other junk.
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
+		if raw == TREASURY_WIRE {
+			return Ok(Self::Treasury);
+		}
 		uuid::Uuid::parse_str(raw)
 			.map(|id| Self::User(Id::from_raw(id)))
 			.map_err(|_| DomainError::Validation(format!("unknown withdrawal source: {raw}")))
@@ -75,13 +95,15 @@ impl WithdrawalSource {
 	pub fn claim_key(&self) -> LedgerAccountKey {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
+			Self::Treasury => crate::balance::FeePayee::treasury().claim_key(),
 		}
 	}
 
-	/// The user this withdrawal belongs to.
-	pub fn user(&self) -> UserId {
+	/// The user this withdrawal belongs to; `None` for the treasury's.
+	pub fn user(&self) -> Option<UserId> {
 		match self {
-			Self::User(user) => *user,
+			Self::User(user) => Some(*user),
+			Self::Treasury => None,
 		}
 	}
 }
@@ -123,6 +145,8 @@ impl WithdrawalPolicy {
 	pub fn fee_for(source: WithdrawalSource, network: Network) -> Usdt {
 		match source {
 			WithdrawalSource::User(_) => Self::fee(network),
+			// The fee would be paid to the treasury out of the treasury.
+			WithdrawalSource::Treasury => Usdt::ZERO,
 		}
 	}
 }
@@ -350,8 +374,8 @@ impl Withdrawal {
 		self.source
 	}
 
-	/// The owning investor.
-	pub fn user(&self) -> UserId {
+	/// The owning investor; `None` for a treasury payout.
+	pub fn user(&self) -> Option<UserId> {
 		self.source.user()
 	}
 
@@ -625,6 +649,10 @@ mod tests {
 		assert!(WithdrawalSource::parse("revenue").is_err());
 		assert!(WithdrawalSource::parse("fund").is_err());
 		assert!(WithdrawalSource::parse("").is_err());
+		assert_eq!(WithdrawalSource::parse("treasury").unwrap(), WithdrawalSource::Treasury);
+		assert_eq!(WithdrawalSource::parse(&WithdrawalSource::Treasury.as_wire()).unwrap(), WithdrawalSource::Treasury);
+		assert_eq!(WithdrawalSource::Treasury.user(), None);
+		assert_eq!(WithdrawalPolicy::fee_for(WithdrawalSource::Treasury, Network::Bep20), Usdt::ZERO);
 	}
 
 	#[test]

@@ -297,6 +297,14 @@ export type BankingV1AllocationTreasury = {
      * holders
      */
     holders?: Array<BankingV1UnitHolding>;
+    /**
+     * banking_treasury
+     *
+     * Set by `GetFundRevenue` only: banking's own treasury beside the `fee` allocation, a
+     * separate line because it is not the allocation's (D17) — the withdrawal fees land
+     * there. Absent on every allocation line of `GetTreasury`, which carries it once.
+     */
+    banking_treasury?: BankingV1AllocationClaim;
 };
 
 /**
@@ -304,7 +312,7 @@ export type BankingV1AllocationTreasury = {
  *
  * The user's single, network-agnostic balance, segmented by lifecycle. Every figure is
  * a TigerBeetle-authoritative decimal USDT string; total = available + in_orders +
- * invested + pending_withdrawal.
+ * invested + pending_withdrawal + in_compartments.
  */
 export type BankingV1Balance = {
     /**
@@ -328,7 +336,7 @@ export type BankingV1Balance = {
     /**
      * total
      *
-     * available + in_orders + invested + pending_withdrawal
+     * available + in_orders + invested + pending_withdrawal + in_compartments
      */
     total?: string;
     /**
@@ -337,6 +345,12 @@ export type BankingV1Balance = {
      * cash escrowed by the caller's resting buy orders on the book (still theirs)
      */
     in_orders?: string;
+    /**
+     * in_compartments
+     *
+     * the caller's money in scope compartments (CompartmentService), still theirs
+     */
+    in_compartments?: string;
 };
 
 /**
@@ -718,6 +732,18 @@ export type BankingV1CompartmentMove = {
      * unix seconds
      */
     created_at?: number | string;
+    /**
+     * state
+     *
+     * pending | posted | failed
+     */
+    state?: string;
+    /**
+     * failure_reason
+     *
+     * set only when `failed` (e.g. `insufficient_funds`)
+     */
+    failure_reason?: string;
 };
 
 /**
@@ -3156,8 +3182,10 @@ export type BankingV1Party = {
     /**
      * kind
      *
-     * user | service. (`piggybank` and `revenue` are retired, #245 — the platform's money is
-     * the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
+     * user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's
+     * money is the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
+     * `treasury` is banking's own (D17), a SOURCE only, under the owners' consilium like an
+     * allocation; its id is empty or `main:treasury`.
      */
     kind?: string;
     /**
@@ -3508,7 +3536,7 @@ export type BankingV1PaymentEnd = {
     /**
      * kind
      *
-     * service | user, or `external` for an address.
+     * service | user | treasury, or `external` for an address.
      */
     kind?: string;
     /**
@@ -4971,6 +4999,19 @@ export type BankingV1Treasury = {
      * allocations
      */
     allocations?: Array<BankingV1AllocationTreasury>;
+    /**
+     * banking_treasury
+     *
+     * banking's own treasury, `scope_account:main:treasury` (D17): the withdrawal fees it
+     * retained, less what the owners approved paying out of it.
+     */
+    banking_treasury?: BankingV1AllocationClaim;
+    /**
+     * held_in_compartments
+     *
+     * Σ users' scope compartments — still people's
+     */
+    held_in_compartments?: string;
 };
 
 /**
@@ -5230,6 +5271,8 @@ export type BankingV1UpdateProfileRequest = {
  * read projection — a projection may later return `authoritative=false` rows with
  * no breaking proto change. (Named for the users surface; the company-money
  * `BalanceService` owns its own balance messages.)
+ * `amount` and `pending` cover the user's whole cash: `main` plus every scope
+ * compartment; `main` and `in_compartments` split `amount` (posted) between the two.
  */
 export type BankingV1UserBalanceResponse = {
     /**
@@ -5248,6 +5291,18 @@ export type BankingV1UserBalanceResponse = {
      * as_of
      */
     as_of?: number | string;
+    /**
+     * main
+     *
+     * posted on the `main` claim
+     */
+    main?: string;
+    /**
+     * in_compartments
+     *
+     * posted across the user's scope compartments
+     */
+    in_compartments?: string;
 };
 
 /**

@@ -140,6 +140,10 @@ pub enum Party {
 	/// An allocation's pooled money — a product's, or one of the platform's own
 	/// ([`ServiceId::fee`], [`ServiceId::fund`]).
 	Service(ServiceId),
+	/// banking's own treasury, `ScopeAccount(main, treasury)`, where the fees it charges
+	/// for its own service land (D17). Money leaves it like an allocation's — by a payment
+	/// the owners' consilium approved — so it is a party a payment may name as its SOURCE.
+	Treasury,
 }
 
 impl Party {
@@ -148,6 +152,7 @@ impl Party {
 		match self {
 			Self::User(_) => "user",
 			Self::Service(_) => "service",
+			Self::Treasury => "treasury",
 		}
 	}
 
@@ -156,6 +161,8 @@ impl Party {
 		match self {
 			Self::User(id) => id.to_string(),
 			Self::Service(id) => id.as_str().to_owned(),
+			// Non-null on purpose: the single-open-order-per-source index keys on the pair.
+			Self::Treasury => TREASURY_ID.to_owned(),
 		}
 	}
 
@@ -170,6 +177,7 @@ impl Party {
 				Ok(Self::User(Id::from_raw(uuid)))
 			}
 			("service", Some(raw)) => Ok(Self::Service(ServiceId::parse(raw)?)),
+			("treasury", Some(TREASURY_ID)) => Ok(Self::Treasury),
 			_ => Err(DomainError::Validation(format!("invalid party: {kind}"))),
 		}
 	}
@@ -189,9 +197,13 @@ impl Party {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
 			Self::Service(service) => LedgerAccountKey::ServiceClaim(service.clone()),
+			Self::Treasury => FeePayee::treasury().claim_key(),
 		}
 	}
 }
+
+/// The `*_id` column value of [`Party::Treasury`].
+const TREASURY_ID: &str = "main:treasury";
 
 /// Where a fee banking retains for its own service lands — named on the event that raises
 /// it, like [`Party::fee_payee`], so the relay's plan stays a function of the payload.
@@ -199,8 +211,9 @@ impl Party {
 /// Since D17 that is banking's treasury, `ScopeAccount(main, treasury)`. `Service` stays
 /// readable because every event raised before it names the `fee` allocation
 /// (`{"kind":"service","id":"fee"}`) — an undrained or parked one must still pay where it
-/// said it would, not be re-routed by a later build. Its own type rather than a `Party`
-/// variant: a scope account is not a party a payment may name.
+/// said it would, not be re-routed by a later build. Its own type rather than a `Party`:
+/// the payee names an ACCOUNT in the form the fee events have always written, and a party
+/// may be paid into while the treasury is only ever a payment's source.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum FeePayee {
@@ -689,6 +702,7 @@ mod tests {
 			Party::Service(ServiceId::parse("trading").unwrap()),
 			Party::Service(ServiceId::fee()),
 			Party::Service(ServiceId::fund()),
+			Party::Treasury,
 		] {
 			let back = Party::from_parts(party.kind_str(), Some(&party.id_str())).unwrap();
 			assert_eq!(party, back);
@@ -829,6 +843,15 @@ mod tests {
 		assert_eq!(read, FeePayee::Service(ServiceId::fee()));
 		assert_eq!(read.claim_key(), Party::fee_payee().claim_key());
 		assert!(serde_json::from_str::<FeePayee>(r#"{"kind":"user","id":"00000000-0000-0000-0000-000000000000"}"#).is_err());
+	}
+
+	#[test]
+	fn the_treasury_party_is_banking_s_scope_account() {
+		assert_eq!(Party::Treasury.claim_key(), FeePayee::treasury().claim_key());
+		assert_eq!(serde_json::to_string(&Party::Treasury).unwrap(), r#"{"kind":"treasury"}"#);
+		assert_eq!(serde_json::from_str::<Party>(r#"{"kind":"treasury"}"#).unwrap(), Party::Treasury);
+		assert!(Party::from_parts("treasury", None).is_err(), "the id column is never null for it");
+		assert!(Party::from_parts("treasury", Some("fee")).is_err());
 	}
 
 	#[test]

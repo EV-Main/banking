@@ -191,6 +191,34 @@ pub async fn check_user_withdrawal(ledger: &dyn Ledger, gates: &AdmissionGates<'
 	require_solvent(ledger, source, amount).await
 }
 
+/// An L1 payment out of banking's treasury (D17), executing an order the owners' consilium
+/// approved: always queued, like [`queue_withdrawal`], so the dispatch re-reads the pause
+/// and the rail freeze when the money actually leaves. There is no account to freeze or
+/// verify — the consilium is the say-so — and no fee: it would be paid to the treasury out
+/// of the treasury.
+pub async fn queue_treasury_withdrawal(
+	ports: &WithdrawalPorts<'_>,
+	gates: &AdmissionGates<'_>,
+	id: WithdrawalId,
+	network: Network,
+	address: WalletAddress,
+	amount: Usdt,
+) -> Result<Withdrawal, DomainError> {
+	require_configured(gates.configured, network)?;
+	require_unfrozen_rail(gates.policy, network).await?;
+	open_withdrawal(ports, id, WithdrawalSource::Treasury, network, address, amount, false).await
+}
+
+/// Would a treasury payout be accepted *right now*, without recording anything? The payment
+/// order's open-time pre-check, as [`check_user_withdrawal`] is for an investor's.
+pub async fn check_treasury_withdrawal(ledger: &dyn Ledger, gates: &AdmissionGates<'_>, network: Network, address: WalletAddress, amount: Usdt) -> Result<(), DomainError> {
+	require_configured(gates.configured, network)?;
+	require_unfrozen_rail(gates.policy, network).await?;
+	let source = WithdrawalSource::Treasury;
+	Withdrawal::request(WithdrawalId::new(), source, network, address, amount, WithdrawalPolicy::fee_for(source, network))?;
+	require_solvent(ledger, source, amount).await
+}
+
 /// Rail gate — the withdrawable view no longer offers an unconfigured rail, but a direct
 /// API caller could otherwise queue a withdrawal that only a manual operator settle (the
 /// stub custody fallthrough) could ever ship. Pre-existing withdrawals on a since-
@@ -295,7 +323,11 @@ pub async fn require_outflows_enabled(policy: &dyn OutflowPolicy) -> Result<(), 
 async fn require_dispatchable(policy: &dyn OutflowPolicy, gate: KycGate, withdrawal: &Withdrawal) -> Result<(), DomainError> {
 	require_outflows_enabled(policy).await?;
 	require_unfrozen_rail(policy, withdrawal.network()).await?;
-	let owner = withdrawal.user();
+	// A treasury payout has no owner to freeze or verify: the owners' consilium approved
+	// it. The pause and the rail freeze above still hold it.
+	let Some(owner) = withdrawal.user() else {
+		return Ok(());
+	};
 	let standing = policy
 		.standing(owner)
 		.await?
@@ -351,7 +383,7 @@ pub async fn cancel_withdrawal(withdrawals: &dyn WithdrawalRepository, relay: &N
 		entity: "withdrawal",
 		id: id.to_string(),
 	})?;
-	if existing.user() != user {
+	if existing.user() != Some(user) {
 		return Err(DomainError::Forbidden("not your withdrawal".into()));
 	}
 	let withdrawal = withdrawals.cancel(id).await?;

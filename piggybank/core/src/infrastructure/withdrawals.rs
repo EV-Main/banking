@@ -63,10 +63,7 @@ struct WithdrawalRow {
 
 impl WithdrawalRow {
 	fn source(&self) -> Result<WithdrawalSource, DomainError> {
-		match (self.source.as_str(), self.user_id) {
-			("user", Some(user)) => Ok(WithdrawalSource::User(UserId::from_raw(user))),
-			_ => Err(DomainError::Repository(format!("withdrawal {} has an inconsistent source", self.id))),
-		}
+		source_of(self.id, &self.source, self.user_id)
 	}
 
 	fn into_domain(self) -> Result<Withdrawal, DomainError> {
@@ -89,6 +86,15 @@ impl WithdrawalRow {
 	}
 }
 
+/// The `(source, user_id)` column pair back into a source; the schema pairs them by CHECK.
+fn source_of(id: Uuid, source: &str, user_id: Option<Uuid>) -> Result<WithdrawalSource, DomainError> {
+	match (source, user_id) {
+		("user", Some(user)) => Ok(WithdrawalSource::User(UserId::from_raw(user))),
+		("treasury", None) => Ok(WithdrawalSource::Treasury),
+		_ => Err(DomainError::Repository(format!("withdrawal {id} has an inconsistent source"))),
+	}
+}
+
 fn repo_err(err: sqlx::Error) -> DomainError {
 	DomainError::Repository(err.to_string())
 }
@@ -96,8 +102,8 @@ fn repo_err(err: sqlx::Error) -> DomainError {
 async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal) -> Result<(), DomainError> {
 	sqlx::query("INSERT INTO withdrawals (id, source, user_id, network, address, amount, fee, state, tx_ref) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)")
 		.bind(withdrawal.id().raw())
-		.bind("user")
-		.bind(withdrawal.user().raw())
+		.bind(withdrawal.source().column())
+		.bind(withdrawal.user().map(|user| user.raw()))
 		.bind(withdrawal.network().as_str())
 		.bind(withdrawal.address().as_str())
 		.bind(withdrawal.amount().base_units().to_string())
@@ -264,10 +270,7 @@ impl WithdrawalRepository for PgWithdrawals {
 			.map(|(id, source, user_id, email, network, address, amount, fee, state, created_at)| {
 				let amount = Usdt::from_base_units(amount.parse::<u128>().map_err(|_| DomainError::Repository("malformed withdrawal amount".into()))?);
 				let fee = Usdt::from_base_units(fee.parse::<u128>().map_err(|_| DomainError::Repository("malformed withdrawal fee".into()))?);
-				let source = match (source.as_str(), user_id) {
-					("user", Some(user)) => WithdrawalSource::User(UserId::from_raw(user)),
-					_ => return Err(DomainError::Repository(format!("withdrawal {id} has an inconsistent source"))),
-				};
+				let source = source_of(id, &source, user_id)?;
 				Ok(QueuedWithdrawal {
 					id: WithdrawalId::from_raw(id),
 					source,

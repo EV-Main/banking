@@ -21,7 +21,9 @@ use crate::{
 	AppState,
 	application::{
 		balance::{self as balance_app, AllocationTreasury},
-		consilium as consilium_app, funds as funds_app, wallet as wallet_app, withdrawals as withdrawal_app,
+		consilium as consilium_app, funds as funds_app,
+		ownership::AllocationClaim,
+		wallet as wallet_app, withdrawals as withdrawal_app,
 	},
 	services::{
 		allocations::holding_to_proto,
@@ -98,6 +100,8 @@ impl BalanceService for BalanceSvc {
 			reserved_for_withdrawals: t.reserved_for_withdrawals.to_decimal_string(),
 			held_by_users: t.held_by_users.to_decimal_string(),
 			allocations: t.allocations.iter().map(allocation_treasury_to_proto).collect(),
+			banking_treasury: Some(claim_to_proto(&t.banking_treasury)),
+			held_in_compartments: t.held_in_compartments.to_decimal_string(),
 		}))
 	}
 
@@ -389,7 +393,8 @@ impl BalanceService for BalanceSvc {
 				.map(|w| pb::WithdrawalQueueItem {
 					withdrawal_id: w.id.to_string(),
 					source: "user".to_owned(),
-					user_id: w.source.user().to_string(),
+					// Empty for a treasury payout, which belongs to no user.
+					user_id: w.source.user().map(|user| user.to_string()).unwrap_or_default(),
 					email: w.email,
 					network: w.network.as_str().to_owned(),
 					address: w.address,
@@ -407,10 +412,15 @@ impl BalanceService for BalanceSvc {
 	/// is paid by redeeming, and a payment out of its claim is the owners' consilium.
 	async fn get_fund_revenue(&self, request: Request<pb::GetFundRevenueRequest>) -> Result<Response<pb::AllocationTreasury>, Status> {
 		require_permission(&self.state, &request, bank::Consilium::Manage).await?;
-		let fee = balance_app::fee_allocation(self.state.allocations.as_ref(), self.state.ledger.as_ref(), self.state.nav.as_ref())
-			.await
-			.map_err(map_err)?;
-		Ok(Response::new(allocation_treasury_to_proto(&fee)))
+		let (fee, treasury) = tokio::try_join!(
+			balance_app::fee_allocation(self.state.allocations.as_ref(), self.state.ledger.as_ref(), self.state.nav.as_ref()),
+			balance_app::banking_treasury(self.state.ledger.as_ref()),
+		)
+		.map_err(map_err)?;
+		Ok(Response::new(pb::AllocationTreasury {
+			banking_treasury: Some(claim_to_proto(&treasury)),
+			..allocation_treasury_to_proto(&fee)
+		}))
 	}
 
 	async fn rotate_deposit_address(&self, request: Request<pb::RotateDepositAddressRequest>) -> Result<Response<pb::RotateDepositAddressResponse>, Status> {
@@ -475,14 +485,20 @@ fn allocation_treasury_to_proto(line: &AllocationTreasury) -> pb::AllocationTrea
 		service: line.service.to_string(),
 		title: line.title.clone(),
 		access: line.access.as_str().to_owned(),
-		claim: Some(pb::AllocationClaim {
-			posted: line.claim.posted.to_decimal_string(),
-			available: line.claim.available.to_decimal_string(),
-			reserved: line.claim.reserved.to_decimal_string(),
-		}),
+		claim: Some(claim_to_proto(&line.claim)),
 		units_outstanding: line.units_outstanding.to_decimal_string(),
 		nav: line.nav.nav.to_decimal_string(),
 		nav_posted_at_unix: line.nav.posted_at_unix,
 		holders: line.holders.iter().map(holding_to_proto).collect(),
+		// Carried once, by `GetFundRevenue`; never per allocation line.
+		banking_treasury: None,
+	}
+}
+
+fn claim_to_proto(claim: &AllocationClaim) -> pb::AllocationClaim {
+	pb::AllocationClaim {
+		posted: claim.posted.to_decimal_string(),
+		available: claim.available.to_decimal_string(),
+		reserved: claim.reserved.to_decimal_string(),
 	}
 }

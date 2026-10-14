@@ -59,25 +59,26 @@ pub(super) fn caller_id<T>(request: &Request<T>) -> Result<UserId, Status> {
 /// per RPC; the decision itself is [`money_caller_gate`]. A control-plane read failure
 /// fails CLOSED (UNAVAILABLE) — a money op never proceeds when the gate can't be read.
 pub(super) async fn unfrozen_caller<T>(state: &AppState, request: &Request<T>) -> Result<UserId, Status> {
-	let (is_access, sub, token_version) = {
-		let claims = claims_of(request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
-		(claims.is_access(), claims.sub.clone(), claims.token_version)
-	};
-	if !is_access {
-		return Err(Status::permission_denied("access token required"));
-	}
-	let user = parse_user_id(&sub)?;
-	let target = state.users.resolve_issuance_by_banking_id(user).await.map_err(|_| Status::unavailable("internal error"))?;
-	let paused = state.outflow.outflows_paused().await.map_err(|_| Status::unavailable("internal error"))?;
-	money_caller_gate(token_version, target.as_ref(), paused)?;
-	Ok(user)
+	gated_caller(state, request, MoneyGate::ALL).await
 }
 
-/// [`unfrozen_caller`] without the freeze, for a handler whose wire names a frozen account
-/// in its own vocabulary (`CompartmentService.MoveFunds` answers `user_frozen`) and reads
-/// the freeze itself. Revocation and the pause are answered exactly as there, in the same
-/// order. A caller with no local row passes: the use case's own standing read refuses it.
-pub(super) async fn unpaused_caller<T>(state: &AppState, request: &Request<T>) -> Result<UserId, Status> {
+/// Which of the money-path gates a handler applies. Revocation always applies; the pause and
+/// the freeze stop money that is about to move on the caller's say-so, and a handler whose
+/// money never leaves the caller — `MoveFunds` out of a compartment back to `main` — or
+/// that names the freeze in its own wire vocabulary (`user_frozen`) turns them off.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct MoneyGate {
+	pub pause: bool,
+	pub freeze: bool,
+}
+
+impl MoneyGate {
+	pub const ALL: Self = Self { pause: true, freeze: true };
+}
+
+/// [`unfrozen_caller`] with the gates `gate` names. One resolve per RPC; the pause is read
+/// only when it applies.
+pub(super) async fn gated_caller<T>(state: &AppState, request: &Request<T>, gate: MoneyGate) -> Result<UserId, Status> {
 	let (is_access, sub, token_version) = {
 		let claims = claims_of(request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
 		(claims.is_access(), claims.sub.clone(), claims.token_version)
@@ -87,12 +88,8 @@ pub(super) async fn unpaused_caller<T>(state: &AppState, request: &Request<T>) -
 	}
 	let user = parse_user_id(&sub)?;
 	let target = state.users.resolve_issuance_by_banking_id(user).await.map_err(|_| Status::unavailable("internal error"))?;
-	if target.is_some_and(|target| token_version < target.token_version) {
-		return Err(Status::unauthenticated("tokens revoked"));
-	}
-	if state.outflow.outflows_paused().await.map_err(|_| Status::unavailable("internal error"))? {
-		return Err(Status::failed_precondition(OUTFLOWS_PAUSED));
-	}
+	let paused = gate.pause && state.outflow.outflows_paused().await.map_err(|_| Status::unavailable("internal error"))?;
+	money_caller_gate(token_version, target.as_ref(), paused, gate)?;
 	Ok(user)
 }
 
@@ -104,13 +101,17 @@ pub(super) async fn unpaused_caller<T>(state: &AppState, request: &Request<T>) -
 /// outflows are paused. A missing row fails CLOSED like a freeze: every caller reaches this
 /// with a minted money token, and minting resolved the same row, so `None` is not the
 /// ordinary "not provisioned yet" but a state the gate cannot evaluate, on a path whose
-/// next step moves money.
-fn money_caller_gate(token_version: u64, target: Option<&IssuanceTarget>, paused: bool) -> Result<(), Status> {
+/// next step moves money. Without the freeze gate a missing row passes: the use case
+/// reads the caller's standing itself.
+fn money_caller_gate(token_version: u64, target: Option<&IssuanceTarget>, paused: bool, gate: MoneyGate) -> Result<(), Status> {
 	if target.is_some_and(|target| token_version < target.token_version) {
 		return Err(Status::unauthenticated("tokens revoked"));
 	}
-	if paused {
+	if gate.pause && paused {
 		return Err(Status::failed_precondition(OUTFLOWS_PAUSED));
+	}
+	if !gate.freeze {
+		return Ok(());
 	}
 	match target {
 		Some(target) if !target.disabled => Ok(()),
@@ -266,7 +267,22 @@ mod tests {
 	}
 
 	fn code(token_version: u64, target: Option<&IssuanceTarget>, paused: bool) -> Option<Code> {
-		money_caller_gate(token_version, target, paused).err().map(|status| status.code())
+		money_caller_gate(token_version, target, paused, MoneyGate::ALL).err().map(|status| status.code())
+	}
+
+	#[test]
+	fn a_gate_without_pause_and_freeze_still_answers_revocation() {
+		let none = MoneyGate { pause: false, freeze: false };
+		let (live, frozen) = (target(false, 5), target(true, 5));
+		let gate = |token_version, target, paused| money_caller_gate(token_version, target, paused, none).err().map(|status| status.code());
+		assert_eq!(gate(4, Some(&live), false), Some(Code::Unauthenticated));
+		assert_eq!(gate(5, Some(&frozen), true), None, "a frozen caller in a paused system passes");
+		assert_eq!(gate(5, None, false), None, "the use case reads the standing itself");
+		let pause_only = MoneyGate { pause: true, freeze: false };
+		assert_eq!(
+			money_caller_gate(5, Some(&target(true, 5)), true, pause_only).err().map(|s| s.code()),
+			Some(Code::FailedPrecondition)
+		);
 	}
 
 	#[test]

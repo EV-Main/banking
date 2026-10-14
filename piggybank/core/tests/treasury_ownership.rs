@@ -202,11 +202,11 @@ async fn fund_party(h: &Harness, party: Party, amount: &str) {
 			balance_app::record_deposit(&h.deposits, &h.notify, tx_ref, user, Network::Bep20, usdt(amount)).await.unwrap();
 			common::drain_to_quiescence(&h.relay, &h.pool).await;
 		}
-		Party::Service(service) => {
+		allocation_or_treasury => {
 			let transfer = LedgerTransfer {
 				id: Uuid::new_v4().as_u128(),
 				debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
-				credit: LedgerAccountKey::ServiceClaim(service),
+				credit: allocation_or_treasury.claim_key(),
 				amount: usdt(amount).base_units(),
 				code: TransferCode::Deposit,
 				reference: 0,
@@ -396,6 +396,28 @@ async fn held_by_users_is_the_sum_of_user_claims_and_not_a_remainder() {
 	assert_eq!(fee_funded.held_by_users, Usdt::from_base_units(cash.user_claims));
 	assert_eq!(cash.custody, cash.claims, "conservation holds through all of it");
 	assert_eq!(cash.unclassified(), 0);
+}
+
+/// banking's own treasury (D17) is a line of its own: not an allocation, not people's — the
+/// withdrawal fees it keeps, with their own posted / reserved / available split.
+#[tokio::test]
+async fn the_treasury_shows_banking_s_own_account_on_a_line_of_its_own() {
+	let Some(h) = harness().await else { return };
+	let before = balance_app::treasury(&treasury_ports(&h)).await.unwrap();
+	fund_party(&h, Party::Treasury, "7").await;
+	let after = balance_app::treasury(&treasury_ports(&h)).await.unwrap();
+	assert_eq!(after.banking_treasury.posted, before.banking_treasury.posted.checked_add(usdt("7")).unwrap());
+	assert_eq!(after.banking_treasury.available, before.banking_treasury.available.checked_add(usdt("7")).unwrap());
+	assert_eq!(after.held_by_users, before.held_by_users, "banking's money is not people's");
+	assert_eq!(after.held_in_compartments, before.held_in_compartments);
+	assert_eq!(
+		balance_app::banking_treasury(h.ledger.as_ref()).await.unwrap(),
+		after.banking_treasury,
+		"GetFundRevenue reads the same line"
+	);
+	let cash = h.ledger.cash_invariant().await.unwrap();
+	assert_eq!(cash.custody, cash.claims);
+	assert_eq!(cash.unclassified(), 0, "the treasury is a named part of the claims");
 }
 
 /// Cash on an allocation nobody holds units of — the `fee` claim's state until the data

@@ -43,13 +43,14 @@ message GetWalletRequest {}
 
 // The user's single, network-agnostic balance, segmented by lifecycle. Every figure is
 // a TigerBeetle-authoritative decimal USDT string; total = available + in_orders +
-// invested + pending_withdrawal.
+// invested + pending_withdrawal + in_compartments.
 message Balance {
   string available = 1;           // free, spendable now
   string invested = 2;            // held in fund units at NAV, the units escrowed by resting sell orders included
   string pending_withdrawal = 3;  // locked by queued/in-flight withdrawals
-  string total = 4;               // available + in_orders + invested + pending_withdrawal
+  string total = 4;               // available + in_orders + invested + pending_withdrawal + in_compartments
   string in_orders = 5;           // cash escrowed by the caller's resting buy orders on the book (still theirs)
+  string in_compartments = 6;     // the caller's money in scope compartments (CompartmentService), still theirs
 }
 
 // Per-rail withdrawal options (the accept-and-queue UX). `withdrawable` is the whole
@@ -145,9 +146,11 @@ message DepositList {
 // by `postMessage` with the origin checked. The CSRF token is never in a body a
 // cross-origin read can see.
 //
-// FROZEN. A frozen user's new debits — MoveFunds out of any compartment, PayInvoice —
-// are FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in
-// (`scope_frozen`). Credits and reads go on.
+// FROZEN. A frozen user's new debits — MoveFunds into a scope, PayInvoice — are
+// FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in
+// (`scope_frozen`), a CLOSED one neither (`scope_closed`). Credits, reads and MoveFunds
+// back to `main` go on: that money never leaves the platform, so neither a freeze nor the
+// outflow pause stops it.
 service CompartmentService {
   // Every scope the caller could hold money in: `main` first, then each scope banking
   // knows, with the caller's balance there (zero if never entered) and its policy.
@@ -157,7 +160,11 @@ service CompartmentService {
   // Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the
   // failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when
   // it does not pass. Moving OUT is never limited by policy, only by what is available
-  // in the compartment.
+  // in the compartment. Either way `insufficient_funds` when the source, less the
+  // caller's moves still in flight, cannot cover it. The move is recorded at once and
+  // posted to the ledger by the hub: the result's `state` is `pending` until then,
+  // `posted` after, or `failed` (with `failure_reason`) if the ledger refused it — a
+  // failed move is final and is never carried out later.
   rpc MoveFunds(MoveFundsRequest) returns (CompartmentMove);
 
   // One scope's policy, read-only. The platform owners set it (an approval of kind
@@ -212,7 +219,9 @@ message CompartmentMove {
   string from_scope = 2;
   string to_scope = 3;
   string amount = 4;
-  int64 created_at = 5;  // unix seconds
+  int64 created_at = 5;     // unix seconds
+  string state = 6;         // pending | posted | failed
+  string failure_reason = 7;  // set only when `failed` (e.g. `insufficient_funds`)
 }
 
 message GetScopePolicyRequest {

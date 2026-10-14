@@ -238,6 +238,38 @@ pub struct ScopePolicy {
 	pub auto_transfer_24h: Usdt,
 }
 
+/// Where a recorded move stands. `Posted` and `Failed` are terminal: a failed move is
+/// never executed later — not by a redelivery, not by an operator's unpark — because the
+/// user's intent was refused, and acting on it later would be acting without it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MoveState {
+	/// Recorded; the relay has not posted it yet.
+	Pending,
+	/// On the ledger.
+	Posted,
+	/// The ledger refused it; nothing moved.
+	Failed,
+}
+
+impl MoveState {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Pending => "pending",
+			Self::Posted => "posted",
+			Self::Failed => "failed",
+		}
+	}
+
+	pub fn parse(raw: &str) -> Result<Self, DomainError> {
+		match raw {
+			"pending" => Ok(Self::Pending),
+			"posted" => Ok(Self::Posted),
+			"failed" => Ok(Self::Failed),
+			other => Err(DomainError::Validation(format!("unknown move state: {other}"))),
+		}
+	}
+}
+
 /// Why a compartment move was refused — each one the whole wire status message
 /// (`FAILED_PRECONDITION`), which clients branch on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -542,6 +574,14 @@ mod tests {
 			..policy()
 		};
 		assert_eq!(open.admit_move_in(facts(0, "1000000", "1000000", "1000000")), Ok(()), "no limit is no limit");
+	}
+
+	#[test]
+	fn move_states_round_trip() {
+		for state in [MoveState::Pending, MoveState::Posted, MoveState::Failed] {
+			assert_eq!(MoveState::parse(state.as_str()).unwrap(), state);
+		}
+		assert!(MoveState::parse("parked").is_err());
 	}
 
 	#[test]

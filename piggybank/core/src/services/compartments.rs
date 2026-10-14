@@ -21,7 +21,7 @@ use crate::{
 	AppState,
 	application::compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
 	ports::compartments::{RecordedMove, ScopeRecord},
-	services::support::{caller_id, map_err, unpaused_caller},
+	services::support::{MoneyGate, caller_id, gated_caller, map_err},
 };
 
 #[derive(Clone)]
@@ -58,10 +58,17 @@ impl CompartmentService for CompartmentSvc {
 	}
 
 	async fn move_funds(&self, request: Request<pb::MoveFundsRequest>) -> Result<Response<pb::CompartmentMove>, Status> {
-		let user = unpaused_caller(&self.state, &request).await?;
+		let from = Compartment::parse(&request.get_ref().from_scope).map_err(map_err)?;
+		let to = Compartment::parse(&request.get_ref().to_scope).map_err(map_err)?;
+		// Money going back to `main` never leaves the platform: neither the pause nor the
+		// freeze stops it (wallet.proto). A move in answers the freeze itself, as
+		// `user_frozen`, so only the pause is the gate's.
+		let gate = MoneyGate {
+			pause: from == Compartment::Main,
+			freeze: false,
+		};
+		let user = gated_caller(&self.state, &request, gate).await?;
 		let req = request.into_inner();
-		let from = Compartment::parse(&req.from_scope).map_err(map_err)?;
-		let to = Compartment::parse(&req.to_scope).map_err(map_err)?;
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
 		let recorded = compartments_app::move_funds(&self.ports(), user, from, to, amount, &req.idempotency_key)
 			.await
@@ -135,5 +142,7 @@ fn move_to_proto(recorded: &RecordedMove) -> pb::CompartmentMove {
 		to_scope: movement.to().as_str().to_owned(),
 		amount: movement.amount().to_decimal_string(),
 		created_at: recorded.created_at,
+		state: recorded.state.as_str().to_owned(),
+		failure_reason: recorded.failure_reason.clone().unwrap_or_default(),
 	}
 }

@@ -139,7 +139,9 @@ impl PaymentDestination {
 	pub fn tier(&self) -> PaymentTier {
 		match self {
 			Self::External { .. } => PaymentTier::External,
-			Self::Internal(Party::Service(_)) => PaymentTier::Service,
+			// The treasury is never a destination (`PaymentTerms::new` refuses it); were a
+			// stored row ever to carry one, it is platform money like a service's.
+			Self::Internal(Party::Service(_) | Party::Treasury) => PaymentTier::Service,
 			Self::Internal(Party::User(_)) => PaymentTier::Internal,
 		}
 	}
@@ -356,6 +358,11 @@ impl PaymentTerms {
 		if amount.is_zero() {
 			return Err(DomainError::Validation("a payment must move a non-zero amount".into()));
 		}
+		// The treasury fills from the fees banking charges, never from a payment: one
+		// paying into it would turn an allocation's or an investor's money into banking's.
+		if to.party() == Some(&Party::Treasury) {
+			return Err(DomainError::Validation("banking's treasury is not a payment destination".into()));
+		}
 		if let PaymentDestination::External { network, address } = &to
 			&& address.network() != *network
 		{
@@ -415,7 +422,8 @@ impl PaymentTerms {
 	pub fn requirement(&self) -> PaymentApproval {
 		match &self.from {
 			Party::User(user) => PaymentApproval::SubjectConsent(*user),
-			Party::Service(_) => PaymentApproval::OwnerConsilium,
+			// banking's own money: the same owners' quorum as an allocation's (D17, D18).
+			Party::Service(_) | Party::Treasury => PaymentApproval::OwnerConsilium,
 		}
 	}
 
@@ -464,6 +472,7 @@ fn party_label(party: &Party) -> String {
 		Party::Service(service) if *service == ServiceId::fund() => "the fund allocation".to_owned(),
 		Party::Service(service) => format!("the {service} product"),
 		Party::User(user) => format!("investor {user}"),
+		Party::Treasury => "banking's treasury".to_owned(),
 	}
 }
 
@@ -1031,7 +1040,7 @@ mod tests {
 				external(),
 			]
 		};
-		for source in [fund(), fee(), Party::Service(svc())] {
+		for source in [fund(), fee(), Party::Service(svc()), Party::Treasury] {
 			for to in destinations() {
 				// A claim paying itself is refused by the constructor, so it is not a cell.
 				if to.party() == Some(&source) {
@@ -1059,6 +1068,18 @@ mod tests {
 		// resolves to one of exactly two requirements, and neither is "the initiator".
 		assert_eq!(PaymentApproval::OwnerConsilium.subject(), None);
 		assert_eq!(PaymentApproval::SubjectConsent(user).subject(), Some(user));
+	}
+
+	#[test]
+	fn the_treasury_pays_out_like_an_allocation_but_is_never_paid_into() {
+		let treasury = terms(Party::Treasury, external());
+		assert_eq!(treasury.requirement(), PaymentApproval::OwnerConsilium);
+		assert_eq!(treasury.source_claim(), crate::balance::FeePayee::treasury().claim_key());
+		assert_eq!(treasury.source_label(), "banking's treasury");
+		assert!(PaymentTerms::new(Party::Treasury, PaymentDestination::Internal(fee()), usdt("5"), reason()).is_ok());
+		for from in [fee(), Party::User(UserId::new())] {
+			assert!(PaymentTerms::new(from, PaymentDestination::Internal(Party::Treasury), usdt("5"), reason()).is_err());
+		}
 	}
 
 	#[test]

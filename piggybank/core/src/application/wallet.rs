@@ -35,13 +35,14 @@ use domain::{
 };
 
 use crate::{
-	application::funds as funds_app,
+	application::{compartments as compartments_app, funds as funds_app},
 	config::KycGate,
-	ports::{DepositAddresses, Deposits, FundPositionReader, NavMarks, UserRepository, deposit_addresses::MigratedAddress, deposits::DepositRecord, ledger::Ledger},
+	ports::{CompartmentStore, DepositAddresses, Deposits, FundPositionReader, NavMarks, UserRepository, deposit_addresses::MigratedAddress, deposits::DepositRecord, ledger::Ledger},
 };
 
 /// A user's single, network-agnostic balance, segmented by lifecycle. Every figure is
-/// non-negative; `total = available + in_orders + invested + pending_withdrawal`.
+/// non-negative; `total = available + in_orders + invested + pending_withdrawal +
+/// in_compartments` — the `main` wallet's terms plus what sits in scope compartments.
 /// `available` and `pending_withdrawal` are two views of the same claim (`posted −
 /// reserved` and `reserved`), so their sum is the claim's `posted` by construction —
 /// never a moment where they diverge and `total` double-counts an in-flight withdrawal.
@@ -63,7 +64,11 @@ pub struct WalletBalance {
 	/// locked). Read from the ledger, not the `withdrawals` projection, so it stays in
 	/// lockstep with `available` off one balance read.
 	pub pending_withdrawal: Usdt,
-	/// `available + in_orders + invested + pending_withdrawal` — the user's whole position.
+	/// The user's money in their scope compartments (Σ `scope_claim` posted) — theirs, just
+	/// earmarked for a scope (D9).
+	pub in_compartments: Usdt,
+	/// `available + in_orders + invested + pending_withdrawal + in_compartments` — the
+	/// user's whole position.
 	pub total: Usdt,
 }
 
@@ -118,6 +123,8 @@ pub struct WalletPorts<'a> {
 	pub deposit_addresses: &'a dyn DepositAddresses,
 	/// The control-plane user row carrying the bridge-mirrored KYC tier.
 	pub users: &'a dyn UserRepository,
+	/// The scopes the user may hold compartments in — `in_compartments` sums them.
+	pub compartments: &'a dyn CompartmentStore,
 }
 
 /// The driven ports the single-rail deposit-address read borrows. Kept separate from
@@ -189,9 +196,11 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 	// plus invested — so `total == available + pending_withdrawal + in_orders + invested`
 	// by construction, and a buy order moves cash between two of its terms without
 	// moving the sum.
+	let in_compartments = compartments_app::in_compartments(ports.compartments, ledger, user).await?.posted;
 	let total = Usdt::from_base_units(claim.posted)
 		.checked_add(in_orders)
 		.and_then(|sum| sum.checked_add(invested))
+		.and_then(|sum| sum.checked_add(in_compartments))
 		.ok_or_else(|| DomainError::Repository("wallet total overflow".into()))?;
 
 	let balance = WalletBalance {
@@ -199,6 +208,7 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 		in_orders,
 		invested,
 		pending_withdrawal,
+		in_compartments,
 		total,
 	};
 

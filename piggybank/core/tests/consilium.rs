@@ -2049,3 +2049,113 @@ fn assert_mark_description(mail: &serde_json::Value, service: &ServiceId, reason
 	}
 	assert!(mail["current"].is_null() && mail["proposed"].is_null(), "a mark proposes no fee terms: {mail}");
 }
+
+/// banking's treasury (D17) is not a dead end: the withdrawal fees it collects leave it by a
+/// payment order the owners' consilium approves, exactly like an allocation's cash — into
+/// a claim on the platform, or out to an address through a treasury withdrawal that carries
+/// no fee and no owner to vet.
+#[tokio::test]
+async fn the_treasury_pays_out_under_the_owners_quorum_internally_and_on_a_rail() {
+	use domain::{
+		balance::Party,
+		money::WalletAddress,
+		payments::{PaymentDestination, PaymentReason, PaymentState, PaymentTerms},
+		withdrawals::{WithdrawalSource, WithdrawalState},
+	};
+
+	let _guard = exclusive_governance().await;
+	let Some(h) = harness().await else {
+		eprintln!("DATABASE_URL unset — skipping the consilium suite");
+		return;
+	};
+	reset_governance(&h).await;
+	let roster = owners(&h, 3).await;
+	let treasury = Party::Treasury.claim_key();
+	h.ledger
+		.post(&LedgerTransfer {
+			id: Uuid::new_v4().as_u128(),
+			debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
+			credit: treasury.clone(),
+			amount: usdt("300").base_units(),
+			code: TransferCode::WithdrawFee,
+			reference: 0,
+		})
+		.await
+		.unwrap();
+	h.relay.drain().await;
+	let carry = |terms: PaymentTerms| {
+		let h = &h;
+		let roster = &roster;
+		async move {
+			let order = payments_app::open(&ports(h).payment_ports(), roster[0], terms, now()).await.expect("open the payment");
+			let consilium = order.consilium_id.expect("the treasury is decided by the owners' quorum");
+			assert!(order.consent.is_none(), "nobody's consent stands in for the quorum");
+			assert!(!vote(h, consilium, roster[1], VoteDecision::Approve).await.unwrap());
+			assert!(vote(h, consilium, roster[2], VoteDecision::Approve).await.unwrap());
+			consilium_app::execute(&ports(h), consilium, now()).await.unwrap();
+			h.relay.drain().await;
+			// An internal order executes once the relay applied its reservation; an L1 one
+			// queues its withdrawal at once. Either way the sweep leaves it executed.
+			payments_app::sweep(&ports(h).payment_ports(), now()).await.unwrap();
+			h.relay.drain().await;
+			let id = order.order.id();
+			assert_eq!(h.payments.find(id).await.unwrap().unwrap().order.state(), PaymentState::Executed);
+			id
+		}
+	};
+
+	// Internal: into the `fee` allocation's claim.
+	let treasury_before = h.ledger.balance(&treasury).await.unwrap().posted;
+	let fee_before = h.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted;
+	let internal = PaymentTerms::new(
+		Party::Treasury,
+		PaymentDestination::Internal(Party::Service(ServiceId::fee())),
+		usdt("100"),
+		PaymentReason::new("fund the fee allocation").unwrap(),
+	)
+	.unwrap();
+	carry(internal).await;
+	assert_eq!(treasury_before - h.ledger.balance(&treasury).await.unwrap().posted, usdt("100").base_units());
+	assert_eq!(
+		h.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted - fee_before,
+		usdt("100").base_units()
+	);
+
+	// L1: out to an address, through a withdrawal whose source is the treasury.
+	let locked_before = h.ledger.balance(&treasury).await.unwrap().locked;
+	let address = WalletAddress::parse(Network::Bep20, "0x52908400098527886E0F7030069857D2E4169EE7").unwrap();
+	let external = PaymentTerms::new(
+		Party::Treasury,
+		PaymentDestination::External { network: Network::Bep20, address },
+		usdt("50"),
+		PaymentReason::new("pay the auditors").unwrap(),
+	)
+	.unwrap();
+	let paid = carry(external).await;
+	let withdrawal = h
+		.withdrawals
+		.find_by_id(payments_app::withdrawal_id(paid))
+		.await
+		.unwrap()
+		.expect("the order queued its withdrawal");
+	assert_eq!(withdrawal.source(), WithdrawalSource::Treasury);
+	assert_eq!(withdrawal.user(), None);
+	assert_eq!(withdrawal.state(), WithdrawalState::Queued, "always queued, so the dispatch re-reads the pause");
+	assert!(withdrawal.fee().is_zero(), "no fee paid by the treasury to itself");
+	assert_eq!(
+		h.ledger.balance(&treasury).await.unwrap().locked - locked_before,
+		usdt("50").base_units(),
+		"the gross is reserved out of the treasury"
+	);
+
+	// Nobody pays INTO the treasury.
+	assert!(
+		PaymentTerms::new(
+			Party::Service(ServiceId::fee()),
+			PaymentDestination::Internal(Party::Treasury),
+			usdt("1"),
+			PaymentReason::new("no").unwrap()
+		)
+		.is_err()
+	);
+}

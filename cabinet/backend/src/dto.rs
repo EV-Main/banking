@@ -2583,6 +2583,7 @@ mod tests {
 			invested: "50".into(),
 			pending_withdrawal: "0".into(),
 			total: "150".into(),
+			in_compartments: "0".into(),
 		});
 		assert_eq!(
 			(
@@ -2652,6 +2653,7 @@ mod tests {
 					nav: "1.25".into(),
 					nav_posted_at_unix: 0,
 					holders: vec![holding("user", "d4d6", "64"), holding("user", "e5e7", "16")],
+					banking_treasury: None,
 				},
 				bk::AllocationTreasury {
 					service: "quy-nhon".into(),
@@ -2662,8 +2664,11 @@ mod tests {
 					nav: "1.00".into(),
 					nav_posted_at_unix: 1_750_000_000,
 					holders: vec![holding("allocation", "fee", "20"), bk::UnitHolding { holder: None, units: "5".into() }],
+					banking_treasury: None,
 				},
 			],
+			banking_treasury: None,
+			held_in_compartments: "0".into(),
 		});
 		assert_eq!((treasury.held_by_users.as_str(), treasury.total_custody.as_str()), ("400", "1500"));
 		let [fee, product] = treasury.allocations.as_slice() else { panic!("two allocations") };

@@ -1365,7 +1365,7 @@
           "banking.v1.BalanceService"
         ],
         "summary": "GetFundRevenue",
-        "description": "What the platform has EARNED: the `fee` allocation, in the same shape the treasury\n lists every allocation in — its cash (settled / reserved / available), its supply,\n its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is\n paid by redeeming their units, and a payment out of its claim is an order the owners\n approve (`PaymentsService.OpenPayment` with source `{kind: \"service\", id: \"fee\"}`).",
+        "description": "What the platform has EARNED: the `fee` allocation, in the same shape the treasury\n lists every allocation in — its cash (settled / reserved / available), its supply,\n its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is\n paid by redeeming their units, and a payment out of its claim is an order the owners\n approve (`PaymentsService.OpenPayment` with source `{kind: \"service\", id: \"fee\"}`).\n `banking_treasury` is banking's own treasury beside it (D17); it pays out the same\n way, with source `{kind: \"treasury\", id: \"main:treasury\"}`.",
         "operationId": "banking.v1.BalanceService.GetFundRevenue",
         "parameters": [
           {
@@ -3195,7 +3195,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "MoveFunds",
-        "description": "Move money between `main` and one scope compartment — exactly one side is `main`.\n Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the\n failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when\n it does not pass. Moving OUT is never limited by policy, only by what is available\n in the compartment.",
+        "description": "Move money between `main` and one scope compartment — exactly one side is `main`.\n Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the\n failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when\n it does not pass. Moving OUT is never limited by policy, only by what is available\n in the compartment. Either way `insufficient_funds` when the source, less the\n caller's moves still in flight, cannot cover it. The move is recorded at once and\n posted to the ledger by the hub: the result's `state` is `pending` until then,\n `posted` after, or `failed` (with `failure_reason`) if the ledger refused it — a\n failed move is final and is never carried out later.",
         "operationId": "banking.v1.CompartmentService.MoveFunds",
         "parameters": [
           {
@@ -8999,6 +8999,11 @@
               "$ref": "#/components/schemas/banking.v1.UnitHolding"
             },
             "title": "holders"
+          },
+          "banking_treasury": {
+            "title": "banking_treasury",
+            "description": "Set by `GetFundRevenue` only: banking's own treasury beside the `fee` allocation, a\n separate line because it is not the allocation's (D17) — the withdrawal fees land\n there. Absent on every allocation line of `GetTreasury`, which carries it once.",
+            "$ref": "#/components/schemas/banking.v1.AllocationClaim"
           }
         },
         "title": "AllocationTreasury",
@@ -9026,17 +9031,22 @@
           "total": {
             "type": "string",
             "title": "total",
-            "description": "available + in_orders + invested + pending_withdrawal"
+            "description": "available + in_orders + invested + pending_withdrawal + in_compartments"
           },
           "in_orders": {
             "type": "string",
             "title": "in_orders",
             "description": "cash escrowed by the caller's resting buy orders on the book (still theirs)"
+          },
+          "in_compartments": {
+            "type": "string",
+            "title": "in_compartments",
+            "description": "the caller's money in scope compartments (CompartmentService), still theirs"
           }
         },
         "title": "Balance",
         "additionalProperties": false,
-        "description": "The user's single, network-agnostic balance, segmented by lifecycle. Every figure is\n a TigerBeetle-authoritative decimal USDT string; total = available + in_orders +\n invested + pending_withdrawal."
+        "description": "The user's single, network-agnostic balance, segmented by lifecycle. Every figure is\n a TigerBeetle-authoritative decimal USDT string; total = available + in_orders +\n invested + pending_withdrawal + in_compartments."
       },
       "banking.v1.BookEvent": {
         "type": "object",
@@ -9434,6 +9444,16 @@
             "title": "created_at",
             "format": "int64",
             "description": "unix seconds"
+          },
+          "state": {
+            "type": "string",
+            "title": "state",
+            "description": "pending | posted | failed"
+          },
+          "failure_reason": {
+            "type": "string",
+            "title": "failure_reason",
+            "description": "set only when `failed` (e.g. `insufficient_funds`)"
           }
         },
         "title": "CompartmentMove",
@@ -11791,7 +11811,7 @@
           "kind": {
             "type": "string",
             "title": "kind",
-            "description": "user | service. (`piggybank` and `revenue` are retired, #245 — the platform's money is\n the `fee` and `fund` allocations: `{kind: \"service\", id: \"fee\" | \"fund\"}`.)"
+            "description": "user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's\n money is the `fee` and `fund` allocations: `{kind: \"service\", id: \"fee\" | \"fund\"}`.)\n `treasury` is banking's own (D17), a SOURCE only, under the owners' consilium like an\n allocation; its id is empty or `main:treasury`."
           },
           "id": {
             "type": "string",
@@ -12146,7 +12166,7 @@
           "kind": {
             "type": "string",
             "title": "kind",
-            "description": "service | user, or `external` for an address."
+            "description": "service | user | treasury, or `external` for an address."
           },
           "id": {
             "type": "string",
@@ -13528,6 +13548,16 @@
               "$ref": "#/components/schemas/banking.v1.AllocationTreasury"
             },
             "title": "allocations"
+          },
+          "banking_treasury": {
+            "title": "banking_treasury",
+            "description": "banking's own treasury, `scope_account:main:treasury` (D17): the withdrawal fees it\n retained, less what the owners approved paying out of it.",
+            "$ref": "#/components/schemas/banking.v1.AllocationClaim"
+          },
+          "held_in_compartments": {
+            "type": "string",
+            "title": "held_in_compartments",
+            "description": "Σ users' scope compartments — still people's"
           }
         },
         "title": "Treasury",
@@ -13772,11 +13802,21 @@
             ],
             "title": "as_of",
             "format": "int64"
+          },
+          "main": {
+            "type": "string",
+            "title": "main",
+            "description": "posted on the `main` claim"
+          },
+          "in_compartments": {
+            "type": "string",
+            "title": "in_compartments",
+            "description": "posted across the user's scope compartments"
           }
         },
         "title": "UserBalanceResponse",
         "additionalProperties": false,
-        "description": "A live ledger balance for a user. `amount` and `pending` are u128 minor-unit\n decimal STRINGS (proto3 has no u128; a string is lossless and matches\n proto-loader's `longs: String`). An investor account is credit-normal, so\n `amount` = posted credits − posted debits is non-negative by invariant.\n `authoritative` is true when read directly from TigerBeetle; `as_of` is unix\n seconds. The `authoritative`/`as_of` pair is the forward-compat seam for a future\n read projection — a projection may later return `authoritative=false` rows with\n no breaking proto change. (Named for the users surface; the company-money\n `BalanceService` owns its own balance messages.)"
+        "description": "A live ledger balance for a user. `amount` and `pending` are u128 minor-unit\n decimal STRINGS (proto3 has no u128; a string is lossless and matches\n proto-loader's `longs: String`). An investor account is credit-normal, so\n `amount` = posted credits − posted debits is non-negative by invariant.\n `authoritative` is true when read directly from TigerBeetle; `as_of` is unix\n seconds. The `authoritative`/`as_of` pair is the forward-compat seam for a future\n read projection — a projection may later return `authoritative=false` rows with\n no breaking proto change. (Named for the users surface; the company-money\n `BalanceService` owns its own balance messages.)\n `amount` and `pending` cover the user's whole cash: `main` plus every scope\n compartment; `main` and `in_compartments` split `amount` (posted) between the two."
       },
       "banking.v1.UserProfile": {
         "type": "object",
@@ -16850,7 +16890,7 @@
     },
     {
       "name": "banking.v1.CompartmentService",
-      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly. A user is identified by their `auth_subject`.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it. Every RPC acts on the caller's own `sub`.\n\n FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,\n `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and\n `InvoicePaymentService.PayInvoice` — is accepted only from\n `Origin: https://evinvest.ltd`. A scope's host may read balances and history\n cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result\n by `postMessage` with the origin checked. The CSRF token is never in a body a\n cross-origin read can see.\n\n FROZEN. A frozen user's new debits — MoveFunds out of any compartment, PayInvoice —\n are FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in\n (`scope_frozen`). Credits and reads go on."
+      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly. A user is identified by their `auth_subject`.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it. Every RPC acts on the caller's own `sub`.\n\n FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,\n `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and\n `InvoicePaymentService.PayInvoice` — is accepted only from\n `Origin: https://evinvest.ltd`. A scope's host may read balances and history\n cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result\n by `postMessage` with the origin checked. The CSRF token is never in a body a\n cross-origin read can see.\n\n FROZEN. A frozen user's new debits — MoveFunds into a scope, PayInvoice — are\n FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in\n (`scope_frozen`), a CLOSED one neither (`scope_closed`). Credits, reads and MoveFunds\n back to `main` go on: that money never leaves the platform, so neither a freeze nor the\n outflow pause stops it."
     },
     {
       "name": "concierge.v1.UserDirectory",

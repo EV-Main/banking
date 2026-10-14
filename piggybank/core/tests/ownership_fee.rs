@@ -217,11 +217,11 @@ async fn fund_party(h: &Harness, party: Party, amount: &str) {
 			balance_app::record_deposit(&h.deposits, &h.notify, tx_ref, user, Network::Bep20, usdt(amount)).await.unwrap();
 			common::drain_to_quiescence(&h.relay, &h.pool).await;
 		}
-		Party::Service(service) => {
+		allocation_or_treasury => {
 			let transfer = LedgerTransfer {
 				id: Uuid::new_v4().as_u128(),
 				debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
-				credit: LedgerAccountKey::ServiceClaim(service),
+				credit: allocation_or_treasury.claim_key(),
 				amount: usdt(amount).base_units(),
 				code: TransferCode::Deposit,
 				reference: 0,

@@ -33,6 +33,17 @@ pub trait Ledger: Gateway {
 	/// Live balance for an account, normalized to its natural side (Read-First).
 	async fn balance(&self, key: &LedgerAccountKey) -> Result<LedgerBalance, LedgerError>;
 
+	/// [`Self::balance`] for several accounts, in the order asked. The adapter answers in
+	/// one id-map query and one ledger lookup per chunk; this default — one read per key —
+	/// is for wrappers that only intercept other calls.
+	async fn balances(&self, keys: &[LedgerAccountKey]) -> Result<Vec<LedgerBalance>, LedgerError> {
+		let mut out = Vec::with_capacity(keys.len());
+		for key in keys {
+			out.push(self.balance(key).await?);
+		}
+		Ok(out)
+	}
+
 	/// Whether a transfer with this (deterministic, caller-assigned) id has already
 	/// applied. The relay's settle pre-check uses it to stay idempotent under
 	/// at-least-once delivery: a redelivered event's already-applied leg re-submits as

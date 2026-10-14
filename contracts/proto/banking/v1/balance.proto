@@ -126,6 +126,8 @@ service BalanceService {
   // its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is
   // paid by redeeming their units, and a payment out of its claim is an order the owners
   // approve (`PaymentsService.OpenPayment` with source `{kind: "service", id: "fee"}`).
+  // `banking_treasury` is banking's own treasury beside it (D17); it pays out the same
+  // way, with source `{kind: "treasury", id: "main:treasury"}`.
   rpc GetFundRevenue(GetFundRevenueRequest) returns (AllocationTreasury);
 
   // The cancel and list RPCs of the revenue payout #245 retired lived here;
@@ -273,6 +275,10 @@ message AllocationTreasury {
   string nav = 6;                 // decimal USDT per unit
   int64 nav_posted_at_unix = 7;
   repeated UnitHolding holders = 8;
+  // Set by `GetFundRevenue` only: banking's own treasury beside the `fee` allocation, a
+  // separate line because it is not the allocation's (D17) — the withdrawal fees land
+  // there. Absent on every allocation line of `GetTreasury`, which carries it once.
+  AllocationClaim banking_treasury = 9;
 }
 
 // The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong to
@@ -294,6 +300,10 @@ message Treasury {
   string reserved_for_withdrawals = 7;  // locked by in-flight withdrawals and approved payments
   string held_by_users = 8;             // Σ user claims — what people hold directly
   repeated AllocationTreasury allocations = 9;
+  // banking's own treasury, `scope_account:main:treasury` (D17): the withdrawal fees it
+  // retained, less what the owners approved paying out of it.
+  AllocationClaim banking_treasury = 10;
+  string held_in_compartments = 11;     // Σ users' scope compartments — still people's
 }
 
 // Propose a seed: a transfer that reached a rail's treasury, PROVEN against the chain,

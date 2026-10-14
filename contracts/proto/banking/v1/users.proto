@@ -131,11 +131,15 @@ message GetUserBalanceRequest {}
 // read projection — a projection may later return `authoritative=false` rows with
 // no breaking proto change. (Named for the users surface; the company-money
 // `BalanceService` owns its own balance messages.)
+// `amount` and `pending` cover the user's whole cash: `main` plus every scope
+// compartment; `main` and `in_compartments` split `amount` (posted) between the two.
 message UserBalanceResponse {
   string amount = 1;
   string pending = 2;
   bool authoritative = 3;
   int64 as_of = 4;
+  string main = 5;             // posted on the `main` claim
+  string in_compartments = 6;  // posted across the user's scope compartments
 }
 
 message RevokeTokensRequest {

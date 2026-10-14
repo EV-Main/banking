@@ -10,19 +10,27 @@ use std::sync::Arc;
 
 use domain::{
 	auth::AuthSubject,
-	balance::LedgerAccountKey,
+	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
 	money::{Network, TxRef, Usdt},
-	scopes::{Compartment, MoveRefusal, ScopeId, ScopeState},
+	scopes::{Compartment, MoveRefusal, MoveState, ScopeId, ScopeState},
 	users::{Email, UserId},
 };
 use piggybank_core::{
 	application::{
 		balance as balance_app,
 		compartments::{self as compartments_app, CompartmentPorts, MoveError},
+		wallet as wallet_app,
 	},
-	infrastructure::{compartments::PgCompartments, deposits::PgDeposits, outflow::PgOutflowPolicy, relay::Relay, users::PgUsers},
-	ports::{UserRepository, compartments::CompartmentStore, ledger::Ledger},
+	infrastructure::{
+		compartments::PgCompartments, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, positions::PgFundPositions, reaper::Reaper, redemptions::PgRedemptions, relay::Relay,
+		users::PgUsers, withdrawals::PgWithdrawals,
+	},
+	ports::{
+		UserRepository,
+		compartments::{CompartmentStore, InFlight, MoveAdmission},
+		ledger::{Ledger, LedgerTransfer},
+	},
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -207,7 +215,7 @@ async fn a_repeated_key_returns_the_original_move_and_a_reused_one_conflicts() {
 	assert!(matches!(reused, Err(MoveError::Domain(DomainError::Conflict(_)))), "{reused:?}");
 	// The store answers a taken key with the original too, without recording a second move.
 	let mut racing = domain::scopes::CompartmentMove::request(domain::scopes::CompartmentMoveId::new(), user, side("main"), side("sa"), usdt("10")).unwrap();
-	match h.store.record_move(&mut racing, &k).await.unwrap() {
+	match h.store.record_move(&mut racing, &k, &Refuse).await.unwrap() {
 		piggybank_core::ports::compartments::MoveOutcome::Existing(original) => assert_eq!(original.movement.id(), first.movement.id()),
 		other => panic!("a taken key was recorded again: {other:?}"),
 	}
@@ -267,14 +275,17 @@ async fn a_frozen_or_closed_scope_takes_nothing_in_but_lets_money_out() {
 }
 
 #[tokio::test]
-async fn a_frozen_user_moves_nothing_either_way() {
+async fn a_frozen_user_moves_nothing_in_but_takes_their_money_back_to_main() {
 	let Some(h) = harness().await else { return };
 	let user = funded_user(&h, "20").await;
 	move_funds(&h, user, "main", "sa", "5", &key()).await.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	sqlx::query("UPDATE users SET frozen = true WHERE id = $1").bind(user.raw()).execute(&h.pool).await.unwrap();
 	assert_eq!(refusal(move_funds(&h, user, "main", "sa", "1", &key()).await), MoveRefusal::UserFrozen);
-	assert_eq!(refusal(move_funds(&h, user, "sa", "main", "1", &key()).await), MoveRefusal::UserFrozen);
+	// The money never leaves the platform: back to `main` goes on (wallet.proto).
+	move_funds(&h, user, "sa", "main", "5", &key()).await.expect("out of a compartment while frozen");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(posted(&h, &LedgerAccountKey::UserClaim(user)).await, usdt("20"));
 }
 
 #[tokio::test]
@@ -301,13 +312,13 @@ async fn the_scope_policy_gates_money_in_and_never_money_out() {
 
 	set_policy(&h, &scope, "max_moved_in_24h", &usdt("80").base_units().to_string()).await;
 	move_funds(&h, user, "main", s, "30", &key()).await.unwrap();
-	assert_eq!(h.store.moved_in_24h(user, &scope).await.unwrap(), usdt("80"), "the moves in are summed");
+	// 50 + 30, both still pending in the control plane: the 24 h figure counts them.
 	assert_eq!(refusal(move_funds(&h, user, "main", s, "0.01", &key()).await), MoveRefusal::MaxMovedIn24h);
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	// Moving out is never limited by policy, and does not reduce the 24 h figure.
 	move_funds(&h, user, s, "main", "70", &key()).await.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
-	assert_eq!(h.store.moved_in_24h(user, &scope).await.unwrap(), usdt("80"));
+	assert_eq!(refusal(move_funds(&h, user, "main", s, "0.01", &key()).await), MoveRefusal::MaxMovedIn24h);
 
 	sqlx::query("UPDATE scope_policies SET max_moved_in_24h = NULL, max_balance = $2 WHERE scope = $1")
 		.bind(s)
@@ -318,6 +329,8 @@ async fn the_scope_policy_gates_money_in_and_never_money_out() {
 	// 10 in the compartment now; 15 more reaches the cap, a cent past it does not.
 	assert_eq!(refusal(move_funds(&h, user, "main", s, "15.01", &key()).await), MoveRefusal::MaxBalance);
 	move_funds(&h, user, "main", s, "15", &key()).await.unwrap();
+	// Not on the ledger yet, but promised: the cap counts the pending move in.
+	assert_eq!(refusal(move_funds(&h, user, "main", s, "0.01", &key()).await), MoveRefusal::MaxBalance);
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(posted(&h, &LedgerAccountKey::ScopeClaim(user, scope.clone())).await, usdt("25"));
 }
@@ -330,4 +343,171 @@ async fn main_has_no_policy_and_an_unknown_scope_none_either() {
 		let err = compartments_app::get_scope_policy(&ports(&h), user, &scope).await.unwrap_err();
 		assert!(matches!(err, DomainError::NotFound { entity: "scope", .. }), "{scope}: {err:?}");
 	}
+}
+
+/// An admission that refuses everything — proves the store answers a taken key before it
+/// asks.
+struct Refuse;
+
+#[async_trait::async_trait]
+impl MoveAdmission for Refuse {
+	async fn admit(&self, _: &InFlight) -> Result<(), MoveError> {
+		Err(MoveError::Refused(MoveRefusal::InsufficientFunds))
+	}
+}
+
+async fn state_of(h: &Harness, id: Uuid) -> (String, Option<String>) {
+	sqlx::query_as("SELECT state, failure_reason FROM compartment_moves WHERE id = $1")
+		.bind(id)
+		.fetch_one(&h.pool)
+		.await
+		.unwrap()
+}
+
+#[tokio::test]
+async fn a_move_is_recorded_pending_and_stamped_posted_by_the_relay() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "10").await;
+	let moved = move_funds(&h, user, "main", "sa", "4", &key()).await.unwrap();
+	assert_eq!(moved.state, MoveState::Pending);
+	assert!(moved.created_at > 0);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(state_of(&h, moved.movement.id().raw()).await, ("posted".to_owned(), None));
+}
+
+/// Two moves racing for the same money: the second is refused at once, because the first
+/// is counted while it is still in flight — no parking, no relay failure.
+#[tokio::test]
+async fn the_loser_of_two_moves_is_refused_at_once_not_parked() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "100").await;
+	move_funds(&h, user, "main", "sa", "60", &key()).await.unwrap();
+	assert_eq!(refusal(move_funds(&h, user, "main", "invest", "60", &key()).await), MoveRefusal::InsufficientFunds);
+	move_funds(&h, user, "main", "invest", "40", &key())
+		.await
+		.expect("what is left after the first is still spendable");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(posted(&h, &LedgerAccountKey::UserClaim(user)).await, Usdt::ZERO);
+}
+
+/// The ledger refusing a move — another flow took the money between the check and the
+/// relay — fails it for good: nothing moves, nothing parks, and an operator replaying the
+/// event later does not carry it out.
+#[tokio::test]
+async fn a_move_the_ledger_refuses_fails_for_good() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "10").await;
+	let moved = move_funds(&h, user, "main", "sa", "10", &key()).await.unwrap();
+	// Spend the claim out from under the queued move, straight on the ledger.
+	h.ledger
+		.post(&LedgerTransfer {
+			id: Uuid::new_v4().as_u128(),
+			debit: LedgerAccountKey::UserClaim(user),
+			credit: LedgerAccountKey::CryptoWallet(Network::Bep20),
+			amount: usdt("5").base_units(),
+			code: TransferCode::Withdraw,
+			reference: 0,
+		})
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let id = moved.movement.id().raw();
+	assert_eq!(state_of(&h, id).await, ("failed".to_owned(), Some("insufficient_funds".to_owned())));
+	let parked: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox WHERE aggregate_id = $1 AND parked_at IS NOT NULL")
+		.bind(id)
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(parked, 0, "a refused move is an outcome, not an event for an operator");
+
+	// Top the claim back up and replay the event as an unpark would: still nothing moves.
+	balance_app::record_deposit(
+		&h.deposits,
+		&h.notify,
+		TxRef::parse(&format!("itest-{}", Uuid::new_v4())).unwrap(),
+		user,
+		Network::Bep20,
+		usdt("5"),
+	)
+	.await
+	.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	sqlx::query("UPDATE outbox SET dispatched_at = NULL WHERE aggregate_id = $1")
+		.bind(id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(posted(&h, &LedgerAccountKey::UserClaim(user)).await, usdt("10"), "the failed move stayed failed");
+	assert_eq!(posted(&h, &LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap())).await, Usdt::ZERO);
+}
+
+/// A move whose event a relay dispatched without posting (an older build that did not know
+/// the kind) is found by the reaper and replayed — once, whatever the number of sweeps.
+#[tokio::test]
+async fn the_reaper_replays_a_move_whose_event_was_lost() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "10").await;
+	let moved = move_funds(&h, user, "main", "sa", "3", &key()).await.unwrap();
+	let id = moved.movement.id().raw();
+	sqlx::query("UPDATE outbox SET dispatched_at = now() WHERE aggregate_id = $1")
+		.bind(id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	sqlx::query("UPDATE compartment_moves SET updated_at = now() - interval '1 hour' WHERE id = $1")
+		.bind(id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let reaper = Reaper::new(
+		h.pool.clone(),
+		Arc::new(PgWithdrawals::new(h.pool.clone())),
+		Arc::new(PgRedemptions::new(h.pool.clone())),
+		h.notify.clone(),
+	)
+	.with_move_redrive_after(std::time::Duration::from_secs(60));
+	assert!(reaper.sweep().await.unwrap().redriven_compartment_moves >= 1);
+	assert_eq!(reaper.sweep().await.unwrap().redriven_compartment_moves, 0, "a replay waits for its own event");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(state_of(&h, id).await.0, "posted");
+	assert_eq!(posted(&h, &LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap())).await, usdt("3"));
+	// Replaying a posted move again cannot post it twice: the transfer id is the move's.
+	sqlx::query("UPDATE compartment_moves SET state = 'pending', updated_at = now() - interval '1 hour' WHERE id = $1")
+		.bind(id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	reaper.sweep().await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(posted(&h, &LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap())).await, usdt("3"), "posted once");
+	assert_eq!(state_of(&h, id).await.0, "posted");
+}
+
+/// GetWallet and the balance RPCs add the compartments to `main`.
+#[tokio::test]
+async fn the_wallet_total_counts_the_compartments() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "30").await;
+	move_funds(&h, user, "main", "sa", "12", &key()).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let held = compartments_app::holdings(&h.store, h.ledger.as_ref(), user).await.unwrap();
+	assert_eq!((held.main.posted, held.compartments.posted), (usdt("18"), usdt("12")));
+	let wallet = wallet_app::get_wallet(
+		&wallet_app::WalletPorts {
+			ledger: h.ledger.as_ref(),
+			positions: &PgFundPositions::new(h.pool.clone()),
+			nav: &PgNav::new(h.pool.clone()),
+			deposit_addresses: &common::NoAddresses,
+			users: &h.users,
+			compartments: &h.store,
+		},
+		&[],
+		piggybank_core::config::KycGate::LIFTED,
+		user,
+	)
+	.await
+	.unwrap()
+	.balance;
+	assert_eq!((wallet.available, wallet.in_compartments, wallet.total), (usdt("18"), usdt("12"), usdt("30")));
 }

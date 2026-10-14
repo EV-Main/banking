@@ -182,6 +182,10 @@ async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Res
 		}
 		(PaymentDestination::External { network, address }, Party::User(user)) =>
 			withdrawal_app::check_user_withdrawal(ports.ledger, &ports.admission_gates(), *user, *network, address.clone(), terms.amount()).await,
+		// banking's treasury (D17) has a withdrawal source of its own; the consilium the
+		// order opens is its say-so.
+		(PaymentDestination::External { network, address }, Party::Treasury) =>
+			withdrawal_app::check_treasury_withdrawal(ports.ledger, &ports.admission_gates(), *network, address.clone(), terms.amount()).await,
 		// Read-First on the source's claim: the spendable balance (posted minus what other
 		// in-flight spends have already reserved) must cover the amount. TigerBeetle's
 		// non-negative flag is the backstop at settlement.
@@ -391,6 +395,8 @@ async fn create_withdrawal(ports: &PaymentPorts<'_>, order: &PaymentOrder) -> Re
 		// Refused at open; stated here too so the match is total and a row that somehow
 		// carries this shape fails visibly rather than paying from a source the saga does not
 		// open a withdrawal for.
+		Party::Treasury =>
+			withdrawal_app::queue_treasury_withdrawal(&ports.withdrawal_ports(), &ports.admission_gates(), withdrawal, *network, address.clone(), order.terms().amount()).await,
 		Party::Service(_) => return Ok(ExecutionOutcome::Failed("an external payment cannot leave from this source".to_owned())),
 	};
 	Ok(match requested {

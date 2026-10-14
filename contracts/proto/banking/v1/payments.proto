@@ -85,8 +85,10 @@ enum ConsentDecision {
 
 // One end of a payment, as a REQUEST names it.
 message Party {
-  // user | service. (`piggybank` and `revenue` are retired, #245 — the platform's money is
-  // the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
+  // user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's
+  // money is the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
+  // `treasury` is banking's own (D17), a SOURCE only, under the owners' consilium like an
+  // allocation; its id is empty or `main:treasury`.
   string kind = 1;
   // A service slug for `service` (`fee` and `fund` included). For `user`, the CONCIERGE
   // user id the console carries (resolved to the money-plane id here; a banking id is
@@ -116,7 +118,7 @@ message PaymentDestination {
 // fields let a screen link to the account.
 message PaymentEnd {
   string label = 1;
-  // service | user, or `external` for an address.
+  // service | user | treasury, or `external` for an address.
   string kind = 2;
   // The service slug, or the MONEY-PLANE user id (the request accepts a concierge id; the
   // response carries what the order stored). Empty for addresses.
