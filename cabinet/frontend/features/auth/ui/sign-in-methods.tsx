@@ -8,6 +8,7 @@ import { Button, Input, Skeleton } from "@evinvest/uikit";
 
 import { type AuthError, type SignInMethods, addPasskey, confirmVerification, readMethods, removePasskey, requestVerification, setPassword, setUsername } from "@/features/auth/api/auth-client";
 import { passkeysSupported } from "@/features/auth/lib/webauthn";
+import { Turnstile } from "@/features/auth/ui/turnstile";
 import { refreshSession } from "@/shared/lib/session";
 import { Hairline, Pill, Row, RowLabel } from "@/shared/ui/list-card";
 
@@ -35,8 +36,27 @@ function refusal(t: T, error: AuthError): string {
       return t("auth.err.passkeyCancelled", "Passkey sign in was cancelled.");
     case "passkey_registered":
       return t("auth.err.passkeyRegistered", "This passkey is registered already.");
+    case "captcha":
+      return t("auth.err.captcha", "Captcha verification failed. Please try again.");
+    case "captcha_unavailable":
+      return t("auth.err.captchaUnavailable", "We could not check the captcha just now. Please try again.");
     default:
       return t("auth.err.generic", "Sign-in failed. Please try again.");
+  }
+}
+
+/**
+ * Asking for a code spends the account's daily budget, not one code's: `refusal` would tell
+ * the reader to send a new code, which is exactly what the budget now refuses.
+ */
+function sendRefusal(t: T, error: AuthError): string {
+  switch (error) {
+    case "attempts_exceeded":
+      return t("auth.err.verifyAttemptsExceeded", "Too many wrong codes in the last 24 hours. Try again tomorrow.");
+    case "throttled":
+      return t("auth.err.verifyThrottled", "Too many codes went to this address. Try again later — the limit is 10 a day.");
+    default:
+      return refusal(t, error);
   }
 }
 
@@ -104,7 +124,7 @@ export function SignInMethodRows() {
   );
 }
 
-/** Mail a code to the account's address, then spend it on `submit`. */
+/** Mail a code to the account's address once the reader passes the challenge, then spend it on `submit`. */
 function CodeForm({
   t,
   action,
@@ -123,13 +143,22 @@ function CodeForm({
   const [password, setPasswordValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [tokenGeneration, setTokenGeneration] = useState(0);
+  const [captchaBroken, setCaptchaBroken] = useState(false);
 
   async function send() {
+    if (token === null) return;
     setBusy(true);
-    const answer = await requestVerification();
+    setError(null);
+    const answer = await requestVerification(token);
+    // Single-use, and whether the plane spent it before refusing is its business: re-arm on
+    // every answer so a retry never replays a token Cloudflare has already seen.
+    setToken(null);
+    setTokenGeneration((g) => g + 1);
     setBusy(false);
     if (answer.ok) setSent(true);
-    else setError(refusal(t, answer.error));
+    else setError(sendRefusal(t, answer.error));
   }
 
   async function confirm(event: FormEvent) {
@@ -144,9 +173,19 @@ function CodeForm({
   return (
     <div className="flex flex-col gap-2 pb-3.5">
       {!sent ? (
-        <Button size="sm" className="self-start" disabled={busy} onClick={send}>
-          {t("auth.code.mailMe", "Email me a code")}
-        </Button>
+        <>
+          <Turnstile
+            generation={tokenGeneration}
+            onToken={setToken}
+            onUnavailable={() => {
+              setCaptchaBroken(true);
+              setError(t("auth.err.captchaLoad", "Captcha failed to load. Please refresh the page."));
+            }}
+          />
+          <Button size="sm" className="self-start" disabled={busy || token === null || captchaBroken} onClick={send}>
+            {t("auth.code.mailMe", "Email me a code")}
+          </Button>
+        </>
       ) : (
         <form className="flex flex-col gap-2" onSubmit={confirm}>
           <Input inputMode="numeric" autoComplete="one-time-code" placeholder={t("auth.code.label", "Code")} value={code} onChange={(e) => setCode(e.target.value)} />

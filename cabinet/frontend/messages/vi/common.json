@@ -7303,6 +7303,14 @@
     "en": "That username is taken.",
     "t": "Tên người dùng này đã có người dùng."
   },
+  "auth.err.verifyAttemptsExceeded": {
+    "en": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
+    "t": "Quá nhiều mã sai trong 24 giờ qua. Hãy thử lại vào ngày mai."
+  },
+  "auth.err.verifyThrottled": {
+    "en": "Too many codes went to this address. Try again later — the limit is 10 a day.",
+    "t": "Đã gửi quá nhiều mã tới địa chỉ này. Hãy thử lại sau — tối đa 10 mã mỗi ngày."
+  },
   "auth.err.weakPassword": {
     "en": "Use at least 8 characters.",
     "t": "Dùng ít nhất 8 ký tự."

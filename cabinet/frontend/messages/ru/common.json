@@ -7303,6 +7303,14 @@
     "en": "That username is taken.",
     "t": "Это имя пользователя занято."
   },
+  "auth.err.verifyAttemptsExceeded": {
+    "en": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
+    "t": "Слишком много неверных кодов за последние 24 часа. Попробуйте завтра."
+  },
+  "auth.err.verifyThrottled": {
+    "en": "Too many codes went to this address. Try again later — the limit is 10 a day.",
+    "t": "На этот адрес отправлено слишком много кодов. Попробуйте позже — не больше 10 в сутки."
+  },
   "auth.err.weakPassword": {
     "en": "Use at least 8 characters.",
     "t": "Минимум 8 символов."
