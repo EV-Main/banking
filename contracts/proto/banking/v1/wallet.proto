@@ -126,3 +126,161 @@ message Deposit {
 message DepositList {
   repeated Deposit deposits = 1;
 }
+
+// CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),
+// as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive
+// there, withdrawals leave from there); every other scope the user has entered holds
+// a compartment, money earmarked for that scope's services. Only the user moves money
+// between `main` and a compartment — instantly and without a fee — and never between
+// two non-main scopes directly. A user is identified by their `auth_subject`.
+//
+// A separate service, not new fields on `Wallet`: WalletService keeps its shape while
+// the compartments are built behind it. Every RPC acts on the caller's own `sub`.
+//
+// FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,
+// `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and
+// `InvoicePaymentService.PayInvoice` — is accepted only from
+// `Origin: https://evinvest.ltd`. A scope's host may read balances and history
+// cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result
+// by `postMessage` with the origin checked. The CSRF token is never in a body a
+// cross-origin read can see.
+//
+// FROZEN. A frozen user's new debits — MoveFunds out of any compartment, PayInvoice —
+// are FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in
+// (`scope_frozen`). Credits and reads go on.
+service CompartmentService {
+  // Every scope the caller could hold money in: `main` first, then each scope banking
+  // knows, with the caller's balance there (zero if never entered) and its policy.
+  rpc ListCompartments(ListCompartmentsRequest) returns (CompartmentList);
+
+  // Move money between `main` and one scope compartment — exactly one side is `main`.
+  // Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the
+  // failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when
+  // it does not pass. Moving OUT is never limited by policy, only by what is available
+  // in the compartment.
+  rpc MoveFunds(MoveFundsRequest) returns (CompartmentMove);
+
+  // One scope's policy, read-only. The platform owners set it (an approval of kind
+  // `bank:compartment_policy`), never the user.
+  rpc GetScopePolicy(GetScopePolicyRequest) returns (ScopePolicy);
+
+  // Let a scope's service draw on the caller's compartment in that scope — hold it
+  // (a subscription, a buy order) or charge it — within caps the caller sets. This is
+  // the only consent a service's debit stands on; without it the service can only
+  // send an invoice. A client that banking's grants do not allow to touch users'
+  // compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,
+  // client): granting again replaces it — new holds and charges draw on the new one,
+  // while holds already standing stay under the mandate they were placed with (its
+  // BOOK_FILL still decides their captures) until they finish. Naturally confirmed on
+  // the caller's first move into the scope, on one screen.
+  rpc GrantMandate(GrantMandateRequest) returns (Mandate);
+
+  // End a mandate at once. Every hold the client still has on the caller's compartment
+  // under it is voided — the money is back with the caller, and the service learns it
+  // from the money events.
+  rpc RevokeMandate(RevokeMandateRequest) returns (Mandate);
+
+  // The caller's live mandates, newest first.
+  rpc ListMandates(ListMandatesRequest) returns (MandateList);
+}
+
+message ListCompartmentsRequest {}
+
+// One compartment of the caller. Decimal USDT strings; total = available + held.
+message Compartment {
+  string scope = 1;           // main | invest | sa | …
+  string display_name = 2;    // the scope's human name, as concierge announced it
+  string available = 3;       // free to spend in the scope or move back to main
+  string held = 4;            // held by the scope's services (resting orders, pending subscriptions)
+  string total = 5;
+  ScopePolicy policy = 6;     // absent for `main`
+}
+
+message CompartmentList {
+  repeated Compartment compartments = 1;
+}
+
+message MoveFundsRequest {
+  string from_scope = 1;       // `main` or a scope
+  string to_scope = 2;         // the other side; one of the two must be `main`
+  string amount = 3;           // decimal USDT, > 0
+  string idempotency_key = 4;  // client-minted (a UUID per click); a repeat returns the original move
+}
+
+message CompartmentMove {
+  string id = 1;
+  string from_scope = 2;
+  string to_scope = 3;
+  string amount = 4;
+  int64 created_at = 5;  // unix seconds
+}
+
+message GetScopePolicyRequest {
+  string scope = 1;
+}
+
+// What it takes to move money into a scope, and how far its services may move money
+// without an approval. Limits are decimal USDT strings; an empty limit means none.
+message ScopePolicy {
+  string scope = 1;
+  uint32 min_kyc_level = 2;     // the concierge KYC level a user needs to move money in or pay the scope's invoices
+  string max_per_move = 3;      // largest single move in
+  string max_moved_in_24h = 4;  // rolling 24 h total moved in, per user
+  // Ceiling on the compartment's total, applied ONLY to the user's own MoveFunds in —
+  // payouts, captures and refunds into the compartment are never refused for it.
+  string max_balance = 5;
+  // Whether the CALLER meets `min_kyc_level` right now — the UI's reason to offer the
+  // move or to point at verification instead.
+  bool caller_eligible = 6;
+  int64 updated_at = 7;         // unix seconds
+  // Automatic ceilings, per (service client, scope): past them a payout or transfer
+  // needs an approval. Defaults 1000 / 5000 / 5000.
+  string auto_payout_per_op = 8;
+  string auto_payout_24h = 9;     // rolling 24 h
+  string auto_transfer_24h = 10;  // rolling 24 h
+}
+
+// What a mandate lets the service do with the caller's compartment.
+enum MandateOperation {
+  MANDATE_OPERATION_UNSPECIFIED = 0;
+  // Place holds (subscriptions, buy orders), captured into the service's own accounts.
+  MANDATE_OPERATION_RESERVE = 1;
+  // Debit at once into the service's own accounts.
+  MANDATE_OPERATION_CHARGE = 2;
+  // Settle a held amount into ANOTHER user's compartment — the cash leg of a book trade.
+  MANDATE_OPERATION_BOOK_FILL = 3;
+}
+
+message GrantMandateRequest {
+  string scope = 1;
+  string client_id = 2;                     // the scope's service, as banking's grants name it
+  string cap_per_op = 3;                    // decimal USDT, > 0
+  string cap_24h = 4;                       // decimal USDT, rolling 24 h, >= cap_per_op
+  repeated MandateOperation operations = 5; // at least one
+  int64 expires_at = 6;                     // unix seconds; 0 = until revoked
+  string idempotency_key = 7;
+}
+
+message RevokeMandateRequest {
+  string mandate_id = 1;
+}
+
+message ListMandatesRequest {}
+
+message Mandate {
+  string mandate_id = 1;
+  string scope = 2;
+  string client_id = 3;
+  string client_display_name = 4;
+  string cap_per_op = 5;
+  string cap_24h = 6;
+  repeated MandateOperation operations = 7;
+  int64 expires_at = 8;
+  int64 created_at = 9;
+  int64 revoked_at = 10;   // 0 while live
+  string used_24h = 11;    // drawn in the rolling 24 h, decimal USDT
+}
+
+message MandateList {
+  repeated Mandate mandates = 1;
+}

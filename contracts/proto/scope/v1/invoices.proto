@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package scope.v1;
+
+// InvoiceService — a scope asks a user to pay into one of its scope accounts. The
+// user pays on evinvest.ltd (`banking.v1.InvoicePaymentService`) straight from `main`
+// or from their compartment in the scope, with no transfer between compartments
+// first; the receiving scope's `min_kyc_level` applies to the payer. Payment shows up
+// as `KIND_INVOICE_PAID` in `MoneyEvents`; this service has no callback. This is how a
+// service takes a one-off payment from a user who gave it no mandate.
+//
+// Grants, identifiers, amounts, `idempotency_key` and `subject_ref` follow
+// `ScopeLedgerService` (ledger.proto); `scope = main` is refused there and here.
+service InvoiceService {
+  // Issue an invoice payable into `(scope, to_label)`; the caller must own that
+  // account. A FROZEN scope issues none (`scope_frozen`).
+  rpc CreateInvoice(CreateInvoiceRequest) returns (Invoice);
+
+  // Withdraw an OPEN invoice the caller issued. Cancelling a cancelled one returns it
+  // unchanged; a paid or expired one is FAILED_PRECONDITION.
+  rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);
+
+  // One invoice the caller issued, as it stands now; anyone else's is NOT_FOUND.
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+}
+
+enum InvoiceState {
+  INVOICE_STATE_UNSPECIFIED = 0;
+  INVOICE_STATE_OPEN = 1;
+  INVOICE_STATE_PAID = 2;
+  INVOICE_STATE_CANCELLED = 3;
+  INVOICE_STATE_EXPIRED = 4;
+}
+
+message CreateInvoiceRequest {
+  string scope = 1;
+  string to_label = 2;
+  string amount = 3;
+  // Shown to the payer, at most 140 chars; plain text, no links.
+  string memo = 4;
+  // Unix seconds, in the future and at most 30 days ahead.
+  int64 expires_at = 5;
+  // Optional: only this user (`auth_subject`) may pay. Empty = anyone signed in.
+  string payer_auth_subject = 6;
+  string idempotency_key = 7;
+  string subject_ref = 8;
+}
+
+message CancelInvoiceRequest {
+  string scope = 1;
+  string invoice_id = 2;
+}
+
+message GetInvoiceRequest {
+  string scope = 1;
+  string invoice_id = 2;
+}
+
+message Invoice {
+  string invoice_id = 1;
+  string scope = 2;
+  string to_label = 3;
+  string amount = 4;
+  string memo = 5;
+  InvoiceState state = 6;
+  int64 created_at = 7;
+  int64 expires_at = 8;
+  // Set at creation; empty = anyone may pay.
+  string payer_auth_subject = 9;
+  // The page on https://evinvest.ltd where the user pays — the link to hand them.
+  // Always first-party: a scope's own host never takes the payment.
+  string pay_url = 10;
+  string subject_ref = 11;
+  // Once PAID: who paid, when, and from where — "main" or this scope (the payer's
+  // compartment).
+  string paid_by_auth_subject = 12;
+  int64 paid_at = 13;
+  string paid_from = 14;
+}
