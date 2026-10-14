@@ -77,7 +77,7 @@ dependency of `domain` — so `domain` stays wasm-safe for service frontends.
 
 | Context       | Owns                                                    | Authoritative store        |
 | ------------- | ------------------------------------------------------- | -------------------------- |
-| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. The allocations' money is the reserved `fee` / `fund` allocations, held by people through units (#245); banking's own is its treasury, `scope_account:main:treasury`, where the withdrawal fees land and which pays out only through the owners' consilium (D17) | TigerBeetle              |
+| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. The allocations' money is the reserved `fee` / `fund` allocations, held by people through units (#245); banking's own is its treasury, `scope_account:main:treasury`, where the withdrawal fees land and the fees of every scope but invest are swept; it pays nothing out until concierge's scope approvals decide its spending (`bank:treasury_surplus`, D24) | TigerBeetle              |
 | `scopes`        | a user's wallet split by scope: `main` (the user's claim) and a compartment per scope entered (`scope_claim`), moved between only by the user (`CompartmentService`); the scope registry and policies; scope accounts `(scope, label)` and who owns them | Postgres + TigerBeetle     |
 | `users`         | investor accounts and their investments                 | Postgres + TigerBeetle     |
 | `withdrawals`   | withdrawals to chain (accept-and-queue saga): a user's, or the treasury's for an approved payment | Postgres + TigerBeetle     |
@@ -208,7 +208,8 @@ login (best-effort) and re-minted/rotated on demand by `money_token` (`session.r
 the banking slot separate; `require_money_token` (`routes/mod.rs`) surfaces `NotConfigured` only
 when no banking token can be obtained (e.g. a brand-new user the bridge hasn't mirrored yet),
 never the wrong-plane token. Revocation is layered: a concierge SUSPENDED freezes money ops at
-once (per-op gate), and a SESSIONS_REVOKED (or a banking-side revoke) invalidates the money family
+once (per-op gate) — every one but a move of the user's own money from a scope compartment
+back to `main`, which never leaves the platform (moves into a compartment are refused), and a SESSIONS_REVOKED (or a banking-side revoke) invalidates the money family
 at its next refresh, within the access TTL.
 
 **Inter-service.** mTLS + short-lived service JWTs (same stateless verify path,

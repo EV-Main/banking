@@ -3184,8 +3184,9 @@ export type BankingV1Party = {
      *
      * user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's
      * money is the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
-     * `treasury` is banking's own (D17), a SOURCE only, under the owners' consilium like an
-     * allocation; its id is empty or `main:treasury`.
+     * `treasury` is banking's own (D17), never a destination, and closed as a source until
+     * concierge's scope approvals decide its spending (D24); its id is empty or
+     * `main:treasury`.
      */
     kind?: string;
     /**

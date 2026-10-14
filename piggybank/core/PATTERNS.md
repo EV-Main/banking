@@ -869,9 +869,14 @@ The allocations earn money in two places — the book's **taker fee** and the se
 2-and-20 (§Fees → *Settlement*) — and both land on one claim, the `fee` allocation's
 `service:fee`, held by people through `fee` units. The **retained fee** on every user
 withdrawal is banking's own and lands in banking's treasury, `scope_account:main:treasury`
-(D17); money leaves the treasury only by a payment order out of it (`Party::Treasury`) that
-the owners' consilium approved — internally, or on a rail through a treasury withdrawal
-(`WithdrawalSource::Treasury { payment }`, no fee, no owner standing to read). A treasury
+(D17), and so do the fees of every scope but invest, swept from their `(<scope>, fee)`
+collectors (`scope/v1/ledger.proto`, the fee route; invest's go to `(invest, alloc:fee)`).
+Nothing leaves the treasury until its spending is decided by concierge's scope approvals
+(`bank:treasury_surplus`, D24): `payments::open` refuses a payment order out of it
+(`Party::Treasury`) with `treasury spending waits for scope approvals`, and `execute` fails
+one approved before the close. The machinery it will use stays — a payment order, internal
+or on a rail through a treasury withdrawal (`WithdrawalSource::Treasury { payment }`, no
+fee, no owner standing to read). A treasury
 withdrawal names the order it executes — on the source, and in `withdrawals.payment_id`
 under a CHECK that only a treasury withdrawal has one — and reconciliation (5) holds every
 treasury debit to an approved order. There is no "pay the fund out" path any more. Cash leaves `service:fee` in exactly

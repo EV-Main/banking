@@ -126,6 +126,9 @@ pub struct SweepReport {
 /// still fall between here and execution, which is what `execution_failed` exists for.
 pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTerms, now: i64) -> Result<PaymentView, DomainError> {
 	require_governance_mail(ports.governance_mail_wired)?;
+	if spending_closed(terms.from()) {
+		return Err(DomainError::Precondition(TREASURY_SPENDING_CLOSED.into()));
+	}
 	check_executable(ports, &terms).await?;
 	let payload_hash = digest(&terms.canonical_bytes());
 	let mut order = PaymentOrder::open(PaymentId::new(), terms, payload_hash, initiator, now);
@@ -158,6 +161,19 @@ pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTer
 	find(ports.payments, order.id()).await
 }
 
+/// Why an order out of banking's treasury is refused, as the caller reads it.
+pub const TREASURY_SPENDING_CLOSED: &str = "treasury spending waits for scope approvals";
+
+/// The treasury pays nothing out until its spending is decided by the scope approvals of
+/// concierge (`bank:treasury_surplus`, D24): the owners' consilium of this plane is not the
+/// say-so the plan settled on. Money still flows IN — the withdrawal fees it collects.
+fn spending_closed(from: &Party) -> bool {
+	match from {
+		Party::Treasury => true,
+		Party::User(_) | Party::Service(_) => false,
+	}
+}
+
 /// Everything the order's eventual execution will check, checked now.
 async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Result<(), DomainError> {
 	// A product's pooled claim exists in the ledger the moment something is posted to it,
@@ -182,8 +198,9 @@ async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Res
 		}
 		(PaymentDestination::External { network, address }, Party::User(user)) =>
 			withdrawal_app::check_user_withdrawal(ports.ledger, &ports.admission_gates(), *user, *network, address.clone(), terms.amount()).await,
-		// banking's treasury (D17) has a withdrawal source of its own; the consilium the
-		// order opens is its say-so.
+		// banking's treasury (D17) has a withdrawal source of its own. `open` refuses the
+		// treasury before this runs (D24); the arm stays for when its spending reopens under
+		// concierge's scope approvals.
 		(PaymentDestination::External { network, address }, Party::Treasury) =>
 			withdrawal_app::check_treasury_withdrawal(ports.ledger, &ports.admission_gates(), *network, address.clone(), terms.amount()).await,
 		// Read-First on the source's claim: the spendable balance (posted minus what other
@@ -333,6 +350,11 @@ pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Resul
 	if digest(&order.terms().canonical_bytes()) != order.payload_hash() {
 		let reason = "the stored terms no longer match the payload hash that was approved".to_owned();
 		return ports.payments.record_execution(id, ExecutionOutcome::Failed(reason), now).await;
+	}
+	// An order approved before the treasury closed must not pay out either; the failure is
+	// terminal, mailed like any other.
+	if spending_closed(order.terms().from()) {
+		return ports.payments.record_execution(id, ExecutionOutcome::Failed(TREASURY_SPENDING_CLOSED.into()), now).await;
 	}
 	if let Some(cause) = view.consent.as_ref().and_then(|consent| consent.invalidated) {
 		let withdrawal = (order.tier() == PaymentTier::External).then(|| withdrawal_id(id));

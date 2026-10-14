@@ -2057,17 +2057,16 @@ fn assert_mark_description(mail: &serde_json::Value, service: &ServiceId, reason
 	assert!(mail["current"].is_null() && mail["proposed"].is_null(), "a mark proposes no fee terms: {mail}");
 }
 
-/// banking's treasury (D17) is not a dead end: the withdrawal fees it collects leave it by a
-/// payment order the owners' consilium approves, exactly like an allocation's cash — into
-/// a claim on the platform, or out to an address through a treasury withdrawal that carries
-/// no fee and no owner to vet.
+/// banking's treasury (D17) collects the withdrawal fees, and pays nothing out until its
+/// spending is decided by concierge's scope approvals (`bank:treasury_surplus`, D24): an
+/// order out of it — into a claim on the platform or out to an address — is refused at
+/// open, before any owner is asked.
 #[tokio::test]
-async fn the_treasury_pays_out_under_the_owners_quorum_internally_and_on_a_rail() {
+async fn the_treasury_takes_fees_in_and_pays_nothing_out() {
 	use domain::{
 		balance::Party,
 		money::WalletAddress,
-		payments::{PaymentDestination, PaymentReason, PaymentState, PaymentTerms},
-		withdrawals::{WithdrawalSource, WithdrawalState},
+		payments::{PaymentDestination, PaymentReason, PaymentTerms},
 	};
 
 	let _guard = exclusive_governance().await;
@@ -2090,76 +2089,24 @@ async fn the_treasury_pays_out_under_the_owners_quorum_internally_and_on_a_rail(
 		.await
 		.unwrap();
 	h.relay.drain().await;
-	let carry = |terms: PaymentTerms| {
-		let h = &h;
-		let roster = &roster;
-		async move {
-			let order = payments_app::open(&ports(h).payment_ports(), roster[0], terms, now()).await.expect("open the payment");
-			let consilium = order.consilium_id.expect("the treasury is decided by the owners' quorum");
-			assert!(order.consent.is_none(), "nobody's consent stands in for the quorum");
-			assert!(!vote(h, consilium, roster[1], VoteDecision::Approve).await.unwrap());
-			assert!(vote(h, consilium, roster[2], VoteDecision::Approve).await.unwrap());
-			consilium_app::execute(&ports(h), consilium, now()).await.unwrap();
-			h.relay.drain().await;
-			// An internal order executes once the relay applied its reservation; an L1 one
-			// queues its withdrawal at once. Either way the sweep leaves it executed.
-			payments_app::sweep(&ports(h).payment_ports(), now()).await.unwrap();
-			h.relay.drain().await;
-			let id = order.order.id();
-			assert_eq!(h.payments.find(id).await.unwrap().unwrap().order.state(), PaymentState::Executed);
-			id
-		}
-	};
-
-	// Internal: into the `fee` allocation's claim.
-	let treasury_before = h.ledger.balance(&treasury).await.unwrap().posted;
-	let fee_before = h.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted;
-	let internal = PaymentTerms::new(
-		Party::Treasury,
-		PaymentDestination::Internal(Party::Service(ServiceId::fee())),
-		usdt("100"),
-		PaymentReason::new("fund the fee allocation").unwrap(),
-	)
-	.unwrap();
-	carry(internal).await;
-	assert_eq!(treasury_before - h.ledger.balance(&treasury).await.unwrap().posted, usdt("100").base_units());
-	assert_eq!(
-		h.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted - fee_before,
-		usdt("100").base_units()
-	);
-
-	// L1: out to an address, through a withdrawal whose source is the treasury.
-	let locked_before = h.ledger.balance(&treasury).await.unwrap().locked;
+	let consilia_before: i64 = sqlx::query_scalar("SELECT count(*) FROM consilium").fetch_one(&h.pool).await.unwrap();
 	let address = WalletAddress::parse(Network::Bep20, "0x52908400098527886E0F7030069857D2E4169EE7").unwrap();
-	let external = PaymentTerms::new(
-		Party::Treasury,
+	for to in [
+		PaymentDestination::Internal(Party::Service(ServiceId::fee())),
 		PaymentDestination::External { network: Network::Bep20, address },
-		usdt("50"),
-		PaymentReason::new("pay the auditors").unwrap(),
-	)
-	.unwrap();
-	let paid = carry(external).await;
-	let withdrawal = h
-		.withdrawals
-		.find_by_id(payments_app::withdrawal_id(paid))
-		.await
-		.unwrap()
-		.expect("the order queued its withdrawal");
-	assert_eq!(withdrawal.source(), WithdrawalSource::Treasury { payment: paid }, "the withdrawal names the order it executes");
-	let stored: Option<Uuid> = sqlx::query_scalar("SELECT payment_id FROM withdrawals WHERE id = $1")
-		.bind(withdrawal.id().raw())
-		.fetch_one(&h.pool)
-		.await
-		.unwrap();
-	assert_eq!(stored, Some(paid.raw()));
-	assert_eq!(withdrawal.user(), None);
-	assert_eq!(withdrawal.state(), WithdrawalState::Queued, "always queued, so the dispatch re-reads the pause");
-	assert!(withdrawal.fee().is_zero(), "no fee paid by the treasury to itself");
-	assert_eq!(
-		h.ledger.balance(&treasury).await.unwrap().locked - locked_before,
-		usdt("50").base_units(),
-		"the gross is reserved out of the treasury"
-	);
+	] {
+		let terms = PaymentTerms::new(Party::Treasury, to, usdt("50"), PaymentReason::new("pay the auditors").unwrap()).unwrap();
+		let refused = payments_app::open(&ports(&h).payment_ports(), roster[0], terms, now()).await;
+		assert!(
+			matches!(&refused, Err(DomainError::Precondition(reason)) if reason == payments_app::TREASURY_SPENDING_CLOSED),
+			"{refused:?}"
+		);
+	}
+	let consilia_after: i64 = sqlx::query_scalar("SELECT count(*) FROM consilium").fetch_one(&h.pool).await.unwrap();
+	assert_eq!(consilia_after, consilia_before, "no owner was asked");
+	let orders: i64 = sqlx::query_scalar("SELECT count(*) FROM payments WHERE from_kind = 'treasury'").fetch_one(&h.pool).await.unwrap();
+	assert_eq!(orders, 0, "nothing recorded");
+	assert_eq!(h.ledger.balance(&treasury).await.unwrap().available(), usdt("300").base_units(), "the fees stay put");
 
 	// Nobody pays INTO the treasury.
 	assert!(

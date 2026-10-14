@@ -1365,7 +1365,7 @@
           "banking.v1.BalanceService"
         ],
         "summary": "GetFundRevenue",
-        "description": "What the platform has EARNED: the `fee` allocation, in the same shape the treasury\n lists every allocation in — its cash (settled / reserved / available), its supply,\n its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is\n paid by redeeming their units, and a payment out of its claim is an order the owners\n approve (`PaymentsService.OpenPayment` with source `{kind: \"service\", id: \"fee\"}`).\n `banking_treasury` is banking's own treasury beside it (D17); it pays out the same\n way, with source `{kind: \"treasury\", id: \"main:treasury\"}`.",
+        "description": "What the platform has EARNED: the `fee` allocation, in the same shape the treasury\n lists every allocation in — its cash (settled / reserved / available), its supply,\n its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is\n paid by redeeming their units, and a payment out of its claim is an order the owners\n approve (`PaymentsService.OpenPayment` with source `{kind: \"service\", id: \"fee\"}`).\n `banking_treasury` is banking's own treasury beside it (D17); nothing pays out of it\n until concierge's scope approvals decide its spending (D24).",
         "operationId": "banking.v1.BalanceService.GetFundRevenue",
         "parameters": [
           {
@@ -5435,7 +5435,7 @@
           "banking.v1.PaymentsService"
         ],
         "summary": "OpenPayment",
-        "description": "Open a payment order (Admin/Owner). Refused when the source cannot cover the amount\n right now, when the shape could never execute (an unconfigured rail, a sub-minimum\n external amount, an external destination out of a service claim, the treasury as a\n destination), or when another order is already open against the same service claim or\n the treasury.",
+        "description": "Open a payment order (Admin/Owner). Refused when the source cannot cover the amount\n right now, when the shape could never execute (an unconfigured rail, a sub-minimum\n external amount, an external destination out of a service claim, the treasury as a\n destination), when the source is the treasury (closed, D24), or when another order is\n already open against the same service claim.",
         "operationId": "banking.v1.PaymentsService.OpenPayment",
         "parameters": [
           {
@@ -11811,7 +11811,7 @@
           "kind": {
             "type": "string",
             "title": "kind",
-            "description": "user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's\n money is the `fee` and `fund` allocations: `{kind: \"service\", id: \"fee\" | \"fund\"}`.)\n `treasury` is banking's own (D17), a SOURCE only, under the owners' consilium like an\n allocation; its id is empty or `main:treasury`."
+            "description": "user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's\n money is the `fee` and `fund` allocations: `{kind: \"service\", id: \"fee\" | \"fund\"}`.)\n `treasury` is banking's own (D17), never a destination, and closed as a source until\n concierge's scope approvals decide its spending (D24); its id is empty or\n `main:treasury`."
           },
           "id": {
             "type": "string",
@@ -16842,7 +16842,7 @@
     },
     {
       "name": "banking.v1.BalanceService",
-      "description": "BalanceService — the bank's treasury and the platform's own allocations (operator\n surface).\n\n Reads authoritative balances from the TigerBeetle ledger; metadata and events from\n Postgres. Every amount is a decimal USDT STRING (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated\n (allowlist) at the boundary. See docs/ARCHITECTURE.md.\n\n The allocations hold no company money (#245): what they earn is the `fee` allocation's\n and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE\n through units — so the treasury lists every allocation with its holders, and nothing\n here pays \"the fund\" out. Cash leaves a reserved allocation by a holder's redemption\n or by a payment the owners' consilium approved (`PaymentsService`). banking's own money\n is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps,\n paid out only the same way, by a consilium-approved payment with source `treasury`."
+      "description": "BalanceService — the bank's treasury and the platform's own allocations (operator\n surface).\n\n Reads authoritative balances from the TigerBeetle ledger; metadata and events from\n Postgres. Every amount is a decimal USDT STRING (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated\n (allowlist) at the boundary. See docs/ARCHITECTURE.md.\n\n The allocations hold no company money (#245): what they earn is the `fee` allocation's\n and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE\n through units — so the treasury lists every allocation with its holders, and nothing\n here pays \"the fund\" out. Cash leaves a reserved allocation by a holder's redemption\n or by a payment the owners' consilium approved (`PaymentsService`). banking's own money\n is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which\n nothing pays out until concierge's scope approvals decide its spending\n (`bank:treasury_surplus`, D24)."
     },
     {
       "name": "banking.v1.BookService",
@@ -16874,7 +16874,7 @@
     },
     {
       "name": "banking.v1.PaymentsService",
-      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments\n for the policy.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e` — a product's, or the platform's own `fee` / `fund`) needs the\n owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is\n no separate RPC. A payment out of an investor's own claim (`user:\u003cid\u003e`) needs THAT\n investor's emailed consent at every tier. There is deliberately no cell in which one\n admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are\n retired (#245) and a request naming them is refused. banking's treasury (`treasury`,\n D17) is the one source beside them that is not an allocation: it needs the owners'\n consilium the same way, may pay out on a rail (a treasury withdrawal, no fee), and is\n never a destination.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown in the mail; changing anything means cancel and reopen."
+      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments\n for the policy.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e` — a product's, or the platform's own `fee` / `fund`) needs the\n owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is\n no separate RPC. A payment out of an investor's own claim (`user:\u003cid\u003e`) needs THAT\n investor's emailed consent at every tier. There is deliberately no cell in which one\n admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are\n retired (#245) and a request naming them is refused. banking's treasury (`treasury`,\n D17) is the one source beside them that is not an allocation. It collects the withdrawal\n fees and is never a destination; as a source it is CLOSED until its spending is decided\n by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is\n FAILED_PRECONDITION `treasury spending waits for scope approvals`.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown in the mail; changing anything means cancel and reopen."
     },
     {
       "name": "banking.v1.PaymentConsentService",

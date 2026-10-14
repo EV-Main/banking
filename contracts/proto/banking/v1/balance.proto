@@ -18,8 +18,9 @@ import "banking/v1/funds.proto";
 // through units — so the treasury lists every allocation with its holders, and nothing
 // here pays "the fund" out. Cash leaves a reserved allocation by a holder's redemption
 // or by a payment the owners' consilium approved (`PaymentsService`). banking's own money
-// is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps,
-// paid out only the same way, by a consilium-approved payment with source `treasury`.
+// is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which
+// nothing pays out until concierge's scope approvals decide its spending
+// (`bank:treasury_surplus`, D24).
 service BalanceService {
   // The treasury: per-rail on-chain liquidity (Layer 2) and the claims it backs
   // (Layer 1), read live from TigerBeetle (Read-First).
@@ -128,8 +129,8 @@ service BalanceService {
   // its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is
   // paid by redeeming their units, and a payment out of its claim is an order the owners
   // approve (`PaymentsService.OpenPayment` with source `{kind: "service", id: "fee"}`).
-  // `banking_treasury` is banking's own treasury beside it (D17); it pays out the same
-  // way, with source `{kind: "treasury", id: "main:treasury"}`.
+  // `banking_treasury` is banking's own treasury beside it (D17); nothing pays out of it
+  // until concierge's scope approvals decide its spending (D24).
   rpc GetFundRevenue(GetFundRevenueRequest) returns (AllocationTreasury);
 
   // The cancel and list RPCs of the revenue payout #245 retired lived here;
