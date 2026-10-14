@@ -172,10 +172,8 @@ where
 	};
 	let pulls = Arc::new(AtomicUsize::new(0));
 	let stop = CancellationToken::new();
-	// The binary's rustls carries both `ring` and `aws-lc-rs`; tonic's client picks ring on
-	// its own, but rustls's server builder refuses to guess. Installing is once per process,
-	// so every test after the first is told it is already done — that is not a failure.
-	let _ = rustls::crypto::ring::default_provider().install_default();
+	// The provider production installs, by the function production calls (`crypto.rs`).
+	piggybank_core::crypto::install_crypto_provider();
 
 	let serve = {
 		let stop = stop.clone();

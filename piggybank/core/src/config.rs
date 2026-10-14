@@ -873,6 +873,44 @@ struct GrantEntry {
 	compartments: bool,
 }
 
+/// Build the rustls server config the listener will run: the certificate chain, its private
+/// key (and that they belong together), and a client-certificate verifier over the CA.
+fn check_server_tls(cert_pem: &str, key_pem: &str, client_ca_pem: &str) -> color_eyre::Result<()> {
+	use std::sync::Arc;
+
+	use color_eyre::eyre::eyre;
+	use rustls::{
+		RootCertStore, ServerConfig,
+		pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
+		server::WebPkiClientVerifier,
+	};
+	let chain = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+		.collect::<Result<Vec<_>, _>>()
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE: {e}"))?;
+	if chain.is_empty() {
+		return Err(eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE holds no certificate"));
+	}
+	let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes()).map_err(|e| eyre!("SCOPE_LEDGER_TLS_KEY_PEM_FILE: {e}"))?;
+	let mut roots = RootCertStore::empty();
+	for ca in CertificateDer::pem_slice_iter(client_ca_pem.as_bytes()) {
+		let ca = ca.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+		roots.add(ca).map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+	}
+	// The provider is named rather than taken from the process default, so this check means
+	// the same thing whether or not `main` has installed one yet.
+	let provider = Arc::new(rustls::crypto::ring::default_provider());
+	let verifier = WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+		.build()
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+	ServerConfig::builder_with_provider(provider)
+		.with_safe_default_protocol_versions()
+		.map_err(|e| eyre!("scope ledger TLS: {e}"))?
+		.with_client_cert_verifier(verifier)
+		.with_single_cert(chain, key)
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE / SCOPE_LEDGER_TLS_KEY_PEM_FILE: {e}"))?;
+	Ok(())
+}
+
 impl ScopeLedgerSettings {
 	pub fn from_env() -> color_eyre::Result<Option<Self>> {
 		Self::read(|key| env::var(key).ok().filter(|value| !value.trim().is_empty()))
@@ -894,6 +932,11 @@ impl ScopeLedgerSettings {
 		// The CA is what every client identity hangs on; an unusable one would build an empty
 		// root store and refuse every client while the hub looks healthy.
 		check_pinned_ca_pem(&client_ca_pem).map_err(|problem| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE is not a trust anchor: {problem}"))?;
+		// tonic parses the PEMs only when it starts serving — after the hub said it is
+		// listening, and as a failure of one branch, not of the boot. Build the same rustls
+		// server config here so a broken key or a certificate that is not the key's stops the
+		// boot with the variable's name.
+		check_server_tls(&cert_pem, &key_pem, &client_ca_pem)?;
 		let (clients, grants) = Self::parse_grants(&file("SCOPE_LEDGER_GRANTS_FILE")?).wrap_err("SCOPE_LEDGER_GRANTS_FILE")?;
 		Ok(Some(Self {
 			bind,
@@ -1037,6 +1080,25 @@ mod tests {
 
 		let err = format!("{:#}", ScopeLedgerSettings::read(files("server.key")).err().expect("a key is not a CA"));
 		assert!(err.contains("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE"), "{err}");
+
+		let wrong_key = |key: &str| {
+			if key == "SCOPE_LEDGER_TLS_KEY_PEM_FILE" {
+				Some(scope_fixture("invest.key"))
+			} else {
+				files("ca.pem")(key)
+			}
+		};
+		let err = format!("{:#}", ScopeLedgerSettings::read(wrong_key).err().expect("a key that is not the certificate's"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_KEY_PEM_FILE"), "{err}");
+		let garbage_key = |key: &str| {
+			if key == "SCOPE_LEDGER_TLS_KEY_PEM_FILE" {
+				Some(scope_fixture("README.md"))
+			} else {
+				files("ca.pem")(key)
+			}
+		};
+		let err = format!("{:#}", ScopeLedgerSettings::read(garbage_key).err().expect("not a key at all"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_KEY_PEM_FILE"), "{err}");
 
 		let without_ca = |key: &str| (key != "SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE").then(|| files("ca.pem")(key)).flatten();
 		let err = format!("{:#}", ScopeLedgerSettings::read(without_ca).err().expect("mTLS needs the client CA"));

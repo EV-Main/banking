@@ -66,10 +66,11 @@ prost-build = "0.14"
 # feature gives a reconnecting multiplexed handle. No-op until REDIS_URL is set.
 redis = { version = "0.32", default-features = false, features = ["tokio-rustls-comp", "connection-manager", "script"] }
 reqwest = { version = "0.12", default-features = false }
-# Test-only, and only to name a process-level crypto provider: the hub's rustls carries
-# both `ring` (tonic) and `aws-lc-rs` (reqwest), and while tonic's client falls back to
-# ring on its own, rustls's server builder refuses to guess between the two — so a test
-# that stands up a TLS server must install one first. Already in the lockfile transitively.
+# Only to name a process-level crypto provider: the hub's rustls carries both `ring` (tonic)
+# and `aws-lc-rs` (reqwest), and while tonic's client falls back to ring on its own, rustls's
+# server builder refuses to guess between the two — so piggybank-core's `main` installs ring
+# before any TLS server starts (`piggybank/core/src/crypto.rs`), and tests call the same
+# function. Already in the lockfile transitively.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.150"

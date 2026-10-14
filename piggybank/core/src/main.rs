@@ -85,6 +85,8 @@ use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
 // Sentry must be initialised before the async runtime starts — no #[tokio::main].
 fn main() -> color_eyre::Result<()> {
 	color_eyre::install()?;
+	// Before any TLS server or client is built — see `crypto.rs`.
+	piggybank_core::crypto::install_crypto_provider();
 	dotenvy::dotenv().ok();
 
 	let command = Command::from_args(std::env::args().skip(1))?;
@@ -200,7 +202,16 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// relationship, one place it is configured.
 	// The scope ledger's listener, read and checked with the other boot guards: a grants file
 	// that grants something unsafe, or a CA that is not one, stops the boot here.
-	let scope_ledger_settings = config::ScopeLedgerSettings::from_env().context("failed to load the scope ledger listener configuration")?;
+	// EX_CONFIG (78), like every other configuration refusal: "the config is wrong" must not
+	// read as a crash a restart could fix.
+	let scope_ledger_settings = match config::ScopeLedgerSettings::from_env() {
+		Ok(settings) => settings,
+		Err(err) => {
+			tracing::error!("scope ledger listener configuration refused: {err:#}");
+			eprintln!("scope ledger listener configuration refused: {err:#}");
+			std::process::exit(78);
+		}
+	};
 	if scope_ledger_settings.is_none() {
 		tracing::info!("scope ledger listener off (SCOPE_LEDGER_BIND unset) — no service can move money in a scope");
 	}
