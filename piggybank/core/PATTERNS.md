@@ -1038,7 +1038,8 @@ owner debits an account; a debit of `fee`/`treasury`, of someone else's account 
 that does not exist is the same PERMISSION_DENIED `not_account_owner`. A debit also needs
 the label inside one of the client's grants as configured **now** — a prefix taken away
 takes away the debit of the accounts opened under it (`not_granted`), while the money stays
-readable. `GetBalances` answers only the caller's accounts (`fee` included in "not yours":
+readable; a repeat of a key used before the prefix went still gets its original result
+(only losing every grant in the scope refuses a repeat). `GetBalances` answers only the caller's accounts (`fee` included in "not yours":
 NOT_FOUND), at most 256 labels per call, repeats answered once.
 
 **Transfer** is a client's automatic fee sweep: from an account it owns into `(scope, fee)`,

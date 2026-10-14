@@ -48,7 +48,10 @@ syntax = "proto3";
 //     treasury)` are banking's own. A scope the caller is granted in but banking does not
 //     know is NOT_FOUND; any other scope the caller holds no grant in is PERMISSION_DENIED
 //     `not_granted`, so a client cannot probe which scopes exist.
-//   - DEBIT: a scope account is debited only by its owner (`not_account_owner`).
+//   - DEBIT: a scope account is debited only by its owner, and only while a current grant
+//     of the owner covers its label. A label outside the caller's grants (another
+//     client's prefix included) is `not_granted`; a label inside them that the caller
+//     does not own, or that does not exist, is `not_account_owner`.
 //   - CREDIT: scope accounts — only the caller's own, except `(<scope>, fee)` through
 //     `Transfer` with `reason = FEE_SWEEP`; users' compartments — only with the
 //     `compartments` flag.
@@ -108,8 +111,9 @@ syntax = "proto3";
 // IDEMPOTENCY. Every mutating request carries an `idempotency_key` (1..128 chars,
 // opaque to banking), REQUIRED — empty is INVALID_ARGUMENT. Keys are unique per
 // (calling client, scope, RPC). A repeat with the same key and the same terms returns
-// the ORIGINAL result, even if the world moved since; the same key with different
-// terms is ALREADY_EXISTS. A saga retries with the key it stored before the first try.
+// the ORIGINAL result, even if the world moved since (a frozen scope, a prefix taken
+// away); the same key with different terms is ALREADY_EXISTS. The one exception: a
+// caller that no longer holds ANY grant in the scope gets `not_granted`, repeat or not. A saga retries with the key it stored before the first try.
 package scope.v1;
 
 service ScopeLedgerService {
@@ -172,8 +176,10 @@ service ScopeLedgerService {
   rpc GetPendingOperation(GetPendingOperationRequest) returns (PendingOperation);
 
   // Balances of the CALLER's accounts in the scope, read live from the ledger (the NAV
-  // input). An empty `labels` returns every account the caller owns there; a label
-  // that is unknown or not the caller's (`fee` included) is the same NOT_FOUND.
+  // input). An empty `labels` returns every account the caller owns there; otherwise
+  // each label once, in first-asked order, at most 256. A label that is unknown or not
+  // the caller's (`fee` included) is the same NOT_FOUND. Reading an account the caller
+  // owns does not need a grant that still covers its label — only debiting it does.
   rpc GetBalances(GetBalancesRequest) returns (GetBalancesResponse);
 
   // One hold the caller placed, as it stands now — the saga's recovery read after a

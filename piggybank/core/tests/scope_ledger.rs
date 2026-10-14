@@ -597,8 +597,11 @@ async fn a_key_won_by_a_concurrent_transfer_is_answered_with_its_result() {
 #[tokio::test]
 async fn a_prefix_taken_away_takes_the_debit_with_it() {
 	let Some(h) = harness().await else { return };
-	let (client, scope, _) = client_with_account(&h, "alloc:", "alloc:one").await;
+	let (client, scope, before) = client_with_account(&h, "alloc:", "alloc:one").await;
 	fund(&h, &scope, "alloc:one", "10").await;
+	let earlier = sweep(&scope, "alloc:one", "2", &key());
+	let original = ledger_app::transfer(&ports(&h, &before), &client, earlier.clone()).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	// The configuration now grants the client another prefix in the scope, not `alloc:`.
 	let regranted = Grants::new(vec![grant(&client, &scope, "panel:")]).unwrap();
 	let p = ports(&h, &regranted);
@@ -606,7 +609,11 @@ async fn a_prefix_taken_away_takes_the_debit_with_it() {
 		refusal(ledger_app::transfer(&p, &client, sweep(&scope, "alloc:one", "1", &key())).await),
 		LedgerRefusal::NotGranted
 	);
-	assert_eq!(posted(&h, &scope, "alloc:one").await, usdt("10"), "the money stays where it is");
+	assert_eq!(posted(&h, &scope, "alloc:one").await, usdt("8"), "the money stays where it is");
+	let repeat = ledger_app::transfer(&p, &client, earlier).await.expect("a repeat gets its original result");
+	assert_eq!(repeat.transfer.id(), original.transfer.id());
+	let read = ledger_app::get_balances(&p, &client, &scope, &[label("alloc:one")]).await.expect("still readable");
+	assert_eq!(read[0].balance, usdt("8"));
 }
 
 #[tokio::test]

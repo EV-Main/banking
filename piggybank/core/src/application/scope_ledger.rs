@@ -139,8 +139,10 @@ async fn posted(ledger: &dyn Ledger, account: &OwnedAccount) -> Result<Usdt, Dom
 }
 
 /// Balances of the caller's accounts in `scope`: every one it owns when `labels` is empty,
-/// else exactly those asked, in that order. A label the caller does not own — someone else's,
-/// banking's `fee`, or none at all — is the same NOT_FOUND.
+/// else each label once, in first-asked order (the service deduplicates). A label the caller
+/// does not own — someone else's, banking's `fee`, or none at all — is the same NOT_FOUND.
+/// Reading needs only the scope grant: an account whose prefix was taken away stays readable,
+/// only its debit goes.
 pub async fn get_balances(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId, labels: &[ScopeAccountLabel]) -> Result<Vec<AccountView>, TransferError> {
 	granted_scope(ports, client, scope).await?;
 	let owned = ports.store.accounts_of(client, scope).await?;
@@ -184,12 +186,6 @@ pub async fn transfer(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: 
 	if request.from.is_reserved() {
 		return Err(TransferError::Refused(LedgerRefusal::NotAccountOwner));
 	}
-	// Owning the account is not enough: the label must still be inside one of the client's
-	// grants as configured NOW, so taking a prefix away also takes away the debit of every
-	// account opened under it (the money stays, readable, for an approved transfer).
-	if !ports.grants.may_open(client, &request.scope, &request.from) {
-		return Err(TransferError::Refused(LedgerRefusal::NotGranted));
-	}
 	// The one automatic destination (`ledger.proto`, the fee route).
 	if request.to != ScopeAccountLabel::fee() {
 		return Err(TransferError::Refused(LedgerRefusal::ApprovalRequired));
@@ -214,10 +210,16 @@ pub async fn transfer(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: 
 	};
 	// The store drains the transfer it records; the checks read an untouched copy.
 	let asked = transfer.clone();
+	// Owning the account is not enough: the label must still be inside one of the client's
+	// grants as configured NOW, so taking a prefix away also takes away the debit of every
+	// account opened under it (the money stays, readable, for an approved transfer). Checked
+	// for a NEW transfer only — in the admission — so a repeat of a key used before the
+	// prefix went still gets its original result, as the contract promises.
 	let admission = Admission {
 		ledger: ports.ledger,
 		client,
 		transfer: &asked,
+		label_granted: ports.grants.may_open(client, &request.scope, asked.from()),
 	};
 	match ports.store.record_transfer(&mut transfer, key, &canonical_terms, &admission).await? {
 		Recorded::New(recorded) => {
@@ -241,6 +243,8 @@ struct Admission<'a> {
 	ledger: &'a dyn Ledger,
 	client: &'a ClientId,
 	transfer: &'a ScopeTransfer,
+	/// Whether a current grant of the client covers the source's label.
+	label_granted: bool,
 }
 
 #[async_trait]
@@ -251,6 +255,9 @@ impl TransferAdmission for Admission<'_> {
 			entity: "scope",
 			id: transfer.scope().to_string(),
 		})?;
+		if !self.label_granted {
+			return Err(TransferError::Refused(LedgerRefusal::NotGranted));
+		}
 		if facts.source_owner.as_ref() != Some(self.client) {
 			return Err(TransferError::Refused(LedgerRefusal::NotAccountOwner));
 		}
