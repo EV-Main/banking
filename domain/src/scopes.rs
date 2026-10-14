@@ -101,6 +101,14 @@ impl ScopeAccountLabel {
 		Self("fee".to_owned())
 	}
 
+	/// Whether this is one of banking's own labels. Checked by the label itself, not by who
+	/// the registry says owns the row: no client may open, own or debit an account under one
+	/// of these in any scope, whatever a grant or a row says (`fee` is banking's in every
+	/// scope; `treasury` is banking's in `main` and must not be mistaken for it elsewhere).
+	pub fn is_reserved(&self) -> bool {
+		self.0 == "fee" || self.0 == "treasury"
+	}
+
 	pub fn as_str(&self) -> &str {
 		&self.0
 	}
@@ -235,6 +243,8 @@ pub struct ScopePolicy {
 	pub max_balance: Option<Usdt>,
 	pub auto_payout_per_op: Usdt,
 	pub auto_payout_24h: Usdt,
+	/// Largest single automatic `Transfer` a client makes in the scope.
+	pub auto_transfer_per_op: Usdt,
 	pub auto_transfer_24h: Usdt,
 }
 
@@ -514,6 +524,16 @@ mod tests {
 	}
 
 	#[test]
+	fn only_bankings_own_labels_are_reserved() {
+		for reserved in ["fee", "treasury"] {
+			assert!(ScopeAccountLabel::parse(reserved).unwrap().is_reserved(), "{reserved:?}");
+		}
+		for free in ["fees", "fee:x", "alloc:fee", "treasury2", "alloc:service_arb"] {
+			assert!(!ScopeAccountLabel::parse(free).unwrap().is_reserved(), "{free:?}");
+		}
+	}
+
+	#[test]
 	fn main_is_the_users_own_claim_and_a_scope_its_compartment() {
 		let user = UserId::new();
 		assert_eq!(scope("main"), Compartment::Main);
@@ -558,6 +578,7 @@ mod tests {
 			max_balance: Some(usdt("200")),
 			auto_payout_per_op: usdt("1000"),
 			auto_payout_24h: usdt("5000"),
+			auto_transfer_per_op: usdt("1000"),
 			auto_transfer_24h: usdt("5000"),
 		}
 	}

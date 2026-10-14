@@ -64,7 +64,7 @@ macro_rules! select_scopes {
 		"SELECT s.id, s.state, s.display_name, \
 		 COALESCE(p.min_kyc_level, 0), p.max_per_move, p.max_moved_in_24h, p.max_balance, \
 		 COALESCE(p.auto_payout_per_op, '1000000000000000000000'), COALESCE(p.auto_payout_24h, '5000000000000000000000'), \
-		 COALESCE(p.auto_transfer_24h, '5000000000000000000000'), \
+		 COALESCE(p.auto_transfer_per_op, '1000000000000000000000'), COALESCE(p.auto_transfer_24h, '5000000000000000000000'), \
 		 EXTRACT(EPOCH FROM COALESCE(p.updated_at, s.created_at))::BIGINT \
 		 FROM scopes s LEFT JOIN scope_policies p ON p.scope = s.id"
 	};
@@ -86,7 +86,7 @@ const SELECT_ONE_SCOPE: &str = concat!(select_scopes!(), " WHERE s.id = $1");
 /// already admitted.
 const SELECT_ONE_SCOPE_FOR_SHARE: &str = concat!(select_scopes!(), " WHERE s.id = $1 FOR SHARE OF s");
 
-type ScopeRow = (String, String, String, i32, Option<String>, Option<String>, Option<String>, String, String, String, i64);
+type ScopeRow = (String, String, String, i32, Option<String>, Option<String>, Option<String>, String, String, String, String, i64);
 
 fn amount(column: &str, raw: &str) -> Result<Usdt, DomainError> {
 	raw.parse::<u128>()
@@ -99,7 +99,7 @@ fn limit(column: &str, raw: Option<String>) -> Result<Option<Usdt>, DomainError>
 }
 
 fn scope_record(row: ScopeRow) -> Result<ScopeRecord, DomainError> {
-	let (id, state, display_name, min_kyc_level, max_per_move, max_moved_in_24h, max_balance, payout_per_op, payout_24h, transfer_24h, updated_at) = row;
+	let (id, state, display_name, min_kyc_level, max_per_move, max_moved_in_24h, max_balance, payout_per_op, payout_24h, transfer_per_op, transfer_24h, updated_at) = row;
 	let corrupt = |what: &str, e: DomainError| DomainError::Repository(format!("scope {id}: {what}: {e}"));
 	Ok(ScopeRecord {
 		id: ScopeId::parse(&id).map_err(|e| corrupt("id", e))?,
@@ -112,6 +112,7 @@ fn scope_record(row: ScopeRow) -> Result<ScopeRecord, DomainError> {
 			max_balance: limit("max_balance", max_balance)?,
 			auto_payout_per_op: amount("auto_payout_per_op", &payout_per_op)?,
 			auto_payout_24h: amount("auto_payout_24h", &payout_24h)?,
+			auto_transfer_per_op: amount("auto_transfer_per_op", &transfer_per_op)?,
 			auto_transfer_24h: amount("auto_transfer_24h", &transfer_24h)?,
 		},
 		policy_updated_at: updated_at,
@@ -168,6 +169,13 @@ async fn scope_on<'c>(conn: impl sqlx::PgExecutor<'c>, sql: &'static str, id: &S
 		.map_err(repo_err)?
 		.map(scope_record)
 		.transpose()
+}
+
+/// One scope, held `FOR SHARE` until the caller's transaction ends — what a debit out of the
+/// scope decides against, so a freeze cannot commit between the read and the debit it admits
+/// (see [`SELECT_ONE_SCOPE_FOR_SHARE`]).
+pub async fn scope_for_share(conn: &mut PgConnection, id: &ScopeId) -> Result<Option<ScopeRecord>, DomainError> {
+	scope_on(conn, SELECT_ONE_SCOPE_FOR_SHARE, id).await
 }
 
 const PENDING_OUT: &str = "SELECT amount FROM compartment_moves WHERE user_id = $1 AND from_scope = $2 AND state = 'pending'";
