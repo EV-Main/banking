@@ -9,8 +9,8 @@
 //!
 //!   1. **Global cash invariant** — `sum(custody) == sum(claims)` on the USDT ledger,
 //!      read straight from TigerBeetle ([`Ledger::cash_invariant`]), the claims broken
-//!      down by whose they are: `Σ user + Σ service + clearing + book cash + retired
-//!      == Σ custody`. The retired `fund`/`fee` accounts (codes 1/40) still exist in
+//!      down by whose they are: `Σ user + Σ scope compartment + Σ service + Σ scope
+//!      account + clearing + book cash + retired == Σ custody`. The retired `fund`/`fee` accounts (codes 1/40) still exist in
 //!      TigerBeetle and count as claims by code — zero since the ownership data migration
 //!      of 2026-09-27 — and value on an account of no known kind is its own finding.
 //!   2. **Clearing vs control-plane** — the `clearing` account's reserved (pending +
@@ -59,6 +59,10 @@ pub struct ReconReport {
 	/// Claims on accounts of a kind the breakdown does not name — value the chart of
 	/// accounts cannot attribute to anyone.
 	pub unclassified_claims: u128,
+	/// Σ users' scope compartments and Σ scopes' own accounts — named parts of `claims`,
+	/// reported so a reader sees how much of the custody sits in scopes.
+	pub scope_claims: u128,
+	pub scope_accounts: u128,
 	pub clearing_reserved: u128,
 	pub clearing_expected: u128,
 	/// Allocations whose supply is not what their holders add up to, even on a second
@@ -116,6 +120,8 @@ impl Reconciliation {
 				report.custody = inv.custody;
 				report.claims = inv.claims;
 				report.unclassified_claims = inv.unclassified();
+				report.scope_claims = inv.scope_claims;
+				report.scope_accounts = inv.scope_accounts;
 				if !inv.balanced() {
 					error!(
 						custody = %inv.custody,
@@ -124,6 +130,8 @@ impl Reconciliation {
 						service_claims = %inv.service_claims,
 						clearing = %inv.clearing,
 						book_cash = %inv.book_cash,
+						scope_claims = %inv.scope_claims,
+						scope_accounts = %inv.scope_accounts,
 						retired_claims = %inv.retired_claims,
 						"reconciliation: CASH INVARIANT BROKEN — sum(custody) != sum(claims)"
 					);

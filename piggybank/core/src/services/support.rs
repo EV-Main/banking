@@ -73,6 +73,29 @@ pub(super) async fn unfrozen_caller<T>(state: &AppState, request: &Request<T>) -
 	Ok(user)
 }
 
+/// [`unfrozen_caller`] without the freeze, for a handler whose wire names a frozen account
+/// in its own vocabulary (`CompartmentService.MoveFunds` answers `user_frozen`) and reads
+/// the freeze itself. Revocation and the pause are answered exactly as there, in the same
+/// order. A caller with no local row passes: the use case's own standing read refuses it.
+pub(super) async fn unpaused_caller<T>(state: &AppState, request: &Request<T>) -> Result<UserId, Status> {
+	let (is_access, sub, token_version) = {
+		let claims = claims_of(request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
+		(claims.is_access(), claims.sub.clone(), claims.token_version)
+	};
+	if !is_access {
+		return Err(Status::permission_denied("access token required"));
+	}
+	let user = parse_user_id(&sub)?;
+	let target = state.users.resolve_issuance_by_banking_id(user).await.map_err(|_| Status::unavailable("internal error"))?;
+	if target.is_some_and(|target| token_version < target.token_version) {
+		return Err(Status::unauthenticated("tokens revoked"));
+	}
+	if state.outflow.outflows_paused().await.map_err(|_| Status::unavailable("internal error"))? {
+		return Err(Status::failed_precondition(OUTFLOWS_PAUSED));
+	}
+	Ok(user)
+}
+
 /// The money-path decision over facts already read — pure, so the ordering is testable
 /// without an [`AppState`].
 ///
@@ -133,7 +156,9 @@ pub(super) async fn holds_permission<T>(state: &AppState, request: &Request<T>, 
 			if target.disabled {
 				return Err(Status::permission_denied("account is disabled"));
 			}
-			crate::infrastructure::bridge::permissions_of(&state.pool, id).await.map_err(|_| Status::unavailable("internal error"))?
+			crate::infrastructure::bridge::permissions_of(&state.pool, id)
+				.await
+				.map_err(|_| Status::unavailable("internal error"))?
 		}
 		None => std::iter::empty::<&str>().collect::<PermissionSet>(),
 	};

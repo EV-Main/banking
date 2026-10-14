@@ -43,6 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
+	scopes::CompartmentEvent,
 	subscriptions::SubscriptionEvent,
 	users::UserId,
 	withdrawals::{WithdrawalEvent, WithdrawalSource},
@@ -68,7 +69,7 @@ use crate::{
 /// Distinct salts deriving a withdrawal's deterministic TigerBeetle transfer ids from
 /// the (stable) withdrawal id. The reservation locks the gross against the user's claim
 /// into clearing; settle posts that pending and redistributes the net to the rail's
-/// custody and the fee to the fee allocation's claim; fail/cancel void the pending (refund). A
+/// custody and the fee to the event's payee (banking's treasury, D17); fail/cancel void the pending (refund). A
 /// completion references the reservation's id as its `pending_id`.
 const CLEARING_RESERVE: &[u8] = b"withdraw:clearing";
 const CLEARING_SETTLE: &[u8] = b"withdraw:clearing:settle";
@@ -135,6 +136,11 @@ const BOOK_RELEASE: &[u8] = b"book:release";
 const BOOK_FILL_UNITS: &[u8] = b"book:fill:units";
 const BOOK_FILL_CASH: &[u8] = b"book:fill:cash";
 const BOOK_FILL_FEE: &[u8] = b"book:fill:fee";
+
+/// Salt for a compartment move's one posted leg, derived from the MOVE id rather than the
+/// event id so an operator reconciling a `compartment_moves` row recomputes the transfer id
+/// from the row alone. FROZEN like every salt here.
+const COMPARTMENT_MOVE: &[u8] = b"compartment:move";
 
 /// Bound on consecutive `RetryBounded` attempts before a never-resolving retryable (a
 /// completion whose pending was itself parked, so it can never be found) is parked
@@ -848,8 +854,31 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: PaymentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(plan_payment(event, row.aggregate_id, reference))
 		}
+		"compartments" => {
+			let event: CompartmentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(vec![plan_compartment(event, row.aggregate_id, reference)])
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
+	}
+}
+
+/// A user's own move between `main` and a scope compartment: one posted claim-to-claim
+/// leg, net-zero on the cash invariant. A source that cannot cover it — the Read-First was
+/// optimistic — is refused by the claim's non-negative flag and parks, with nothing moved.
+fn plan_compartment(event: CompartmentEvent, aggregate_id: Uuid, reference: u128) -> PlannedOp {
+	let CompartmentEvent::Moved { user, from, to, amount, .. } = event;
+	PlannedOp {
+		role: "compartment_move",
+		transfer_id: tid(aggregate_id, COMPARTMENT_MOVE),
+		action: LedgerAction::Post(LedgerTransfer {
+			id: tid(aggregate_id, COMPARTMENT_MOVE),
+			debit: from.claim_key(user),
+			credit: to.claim_key(user),
+			amount: amount.base_units(),
+			code: TransferCode::CompartmentMove,
+			reference,
+		}),
 	}
 }
 
@@ -1820,10 +1849,12 @@ mod tests {
 		legacy
 	}
 
-	// The same contract for the other two fee legs: the retained withdrawal fee and the
-	// book's taker fee land on the fee allocation, and a payload without a payee does not read.
+	// The same contract for the other two fee legs: the retained withdrawal fee lands in
+	// banking's treasury (D17) — or on the fee allocation when the stored event, raised
+	// before D17, says so — and the book's taker fee on the fee allocation. A payload without
+	// a payee does not read.
 	#[test]
-	fn the_withdrawal_and_taker_fees_are_paid_to_the_fee_allocation() {
+	fn the_withdrawal_fee_goes_to_the_treasury_and_the_taker_fee_to_the_fee_allocation() {
 		let withdrawal_id = domain::withdrawals::WithdrawalId::new();
 		let settled = WithdrawalEvent::Settled {
 			withdrawal_id,
@@ -1832,7 +1863,7 @@ mod tests {
 			amount: Usdt::parse_decimal("100").unwrap(),
 			fee: Usdt::parse_decimal("1").unwrap(),
 			tx_ref: domain::money::TxRef::parse("0xabc").unwrap(),
-			payee: Party::fee_payee(),
+			payee: domain::balance::FeePayee::treasury(),
 		};
 		let fee_leg = |event: WithdrawalEvent| {
 			let ops = plan_withdrawal(event, withdrawal_id.raw(), withdrawal_id.raw().as_u128()).unwrap();
@@ -1841,9 +1872,19 @@ mod tests {
 			transfer
 		};
 		let json = serde_json::to_string(&settled).unwrap();
-		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
+		assert_eq!(
+			fee_leg(serde_json::from_str(&json).unwrap()).credit,
+			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury())
+		);
 		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).id, tid(withdrawal_id.raw(), FEE_REDISTRIBUTE));
 		assert!(serde_json::from_value::<WithdrawalEvent>(without_payee(&json)).is_err());
+		let mut before_d17 = serde_json::from_str::<serde_json::Value>(&json).unwrap();
+		before_d17["payee"] = serde_json::json!({"kind": "service", "id": "fee"});
+		assert_eq!(
+			fee_leg(serde_json::from_value(before_d17).unwrap()).credit,
+			LedgerAccountKey::ServiceClaim(ServiceId::fee()),
+			"an event raised before D17 pays where it said it would"
+		);
 
 		let trade_id = TradeId::new();
 		let trade = BookEvent::TradeExecuted {
@@ -1870,6 +1911,32 @@ mod tests {
 		let json = serde_json::to_string(&trade).unwrap();
 		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
 		assert!(serde_json::from_value::<BookEvent>(without_payee(&json)).is_err());
+	}
+
+	// A move is one claim-to-claim leg in the direction the event names, with an id the
+	// move's row alone recomputes.
+	#[test]
+	fn a_compartment_move_posts_one_leg_between_the_users_own_claims() {
+		use domain::{
+			architecture::EmitsEvents,
+			scopes::{Compartment, CompartmentMove, CompartmentMoveId, ScopeId},
+		};
+		let user = UserId::new();
+		let sa = Compartment::parse("sa").unwrap();
+		for (from, to) in [(Compartment::Main, sa.clone()), (sa.clone(), Compartment::Main)] {
+			let id = CompartmentMoveId::new();
+			let mut moved = CompartmentMove::request(id, user, from.clone(), to.clone(), Usdt::parse_decimal("7").unwrap()).unwrap();
+			let event = moved.drain_events().remove(0);
+			let json = serde_json::to_string(&event).unwrap();
+			let op = plan_compartment(serde_json::from_str(&json).unwrap(), id.raw(), id.raw().as_u128());
+			let LedgerAction::Post(leg) = op.action else { panic!("a move is a posted leg") };
+			assert_eq!(leg.debit, from.claim_key(user));
+			assert_eq!(leg.credit, to.claim_key(user));
+			assert_eq!(leg.amount, Usdt::parse_decimal("7").unwrap().base_units());
+			assert_eq!(leg.code, TransferCode::CompartmentMove);
+			assert_eq!(leg.id, tid(id.raw(), COMPARTMENT_MOVE));
+		}
+		assert_eq!(sa.claim_key(user), LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap()));
 	}
 
 	// Guards the redemption settle leg order documented on the aggregate and PATTERNS:

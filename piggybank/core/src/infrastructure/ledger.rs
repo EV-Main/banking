@@ -462,6 +462,8 @@ impl Ledger for TbLedger {
 					Some(CashSide::ServiceClaims) => &mut inv.service_claims,
 					Some(CashSide::Clearing) => &mut inv.clearing,
 					Some(CashSide::BookCash) => &mut inv.book_cash,
+					Some(CashSide::ScopeClaims) => &mut inv.scope_claims,
+					Some(CashSide::ScopeAccounts) => &mut inv.scope_accounts,
 					Some(CashSide::RetiredClaims) => &mut inv.retired_claims,
 					Some(CashSide::Custody) | None => continue,
 				};

@@ -30,6 +30,8 @@
 //! - [`book`] — Postgres adapter for the allocation book: the single-writer placement
 //!   transaction (advisory lock, the pure matcher, orders + trades + outbox facts), the
 //!   depth/tape/candle reads, and the per-product policy.
+//! - [`compartments`] — Postgres adapter for the scope registry, the scope policies and
+//!   users' compartment moves (the money itself is posted by the relay).
 //! - [`operation_feed`] — the read-side merge of the four money projections into one
 //!   time-ordered activity timeline (query side only; writes nothing).
 //! - [`outflow`] — the `OutflowPolicy` adapter: the read-only kill-switch plus the
@@ -43,6 +45,7 @@
 pub mod allocations;
 pub mod book;
 pub mod bridge;
+pub mod compartments;
 pub mod consilium;
 pub mod consilium_mailer;
 pub mod consilium_sweeper;

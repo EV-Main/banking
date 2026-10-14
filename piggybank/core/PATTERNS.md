@@ -40,7 +40,7 @@ ledger (`= 2`):
 | Layer | Accounts (`code`) | Normal | Non-negative flag | Network? |
 | --- | --- | --- | --- | --- |
 | **Treasury / custody** (assets) | `wallet:<net>` (10), `bank` (11) | debit (`debits − credits`) | `CreditsMustNotExceedDebits` | **per-rail** |
-| **Claims** (equity/liab) | `user:<uuid>` (20), `service:<id>` (30 — a product's, or the reserved `service:fee` / `service:fund`), `clearing` (50), `book_cash:<uuid>` (65) | credit (`credits − debits`) | `DebitsMustNotExceedCredits` | **network-agnostic** |
+| **Claims** (equity/liab) | `user:<uuid>` (20), `scope_claim:<scope>:<uuid>` (21 — a user's compartment in a scope), `service:<id>` (30 — a product's, or the reserved `service:fee` / `service:fund`), `scope_account:<scope>:<label>` (31 — a scope's own account, banking's treasury `scope_account:main:treasury` included), `clearing` (50), `book_cash:<uuid>` (65) | credit (`credits − debits`) | `DebitsMustNotExceedCredits` | **network-agnostic** |
 | **Retired claims** (#245) | `fund` (1), `fee` (40) | credit | as above | history: the rows stay in `tb_accounts` at zero, no live key names them (the cash scan still counts them by code); the codes are never reused |
 
 A deposit is one balanced transfer **`Dr wallet:<net> / Cr <claim>`** (textbook Dr Cash
@@ -799,7 +799,7 @@ acceptance and the clearing reserve must not depend on a flaky chain node.
 | --- | --- | --- |
 | `Requested` | `Queued` | reserve `Dr user:<uuid> / Cr clearing` (gross) — no rail touched |
 | `Dispatched` | `Processing` | `Custody::broadcast` the net on-chain |
-| `Settled` (N confs) | `Completed` | **post** the clearing pending, then `Dr clearing / Cr wallet:<net>` (net) + `Dr clearing / Cr service:fee` (the retained fee, to the event's `payee` — the `fee` allocation) |
+| `Settled` (N confs) | `Completed` | **post** the clearing pending, then `Dr clearing / Cr wallet:<net>` (net) + `Dr clearing / Cr scope_account:main:treasury` (the retained fee, to the event's `payee` — banking's treasury since D17; an event raised before names `service:fee` and still pays it) |
 | `Failed` (never landed) | `Failed` | **void** the clearing pending — refund in full |
 | `Cancelled` (still queued) | `Cancelled` | **void** the clearing pending — refund in full |
 
@@ -826,7 +826,7 @@ runbook for a stuck/parked withdrawal is
 [`docs/RUNBOOK-withdrawals.md`](../../docs/RUNBOOK-withdrawals.md). The fee leg is omitted when the fee is zero (TB rejects a
 zero-amount transfer); the policy enforces `min_withdrawal > fee` and the net must be
 representable at the chain's precision (no dust leaves). The global invariant holds at
-settle: `user` falls by `gross`, `wallet:<net>` by `net`, `service:fee` rises by `fee`,
+settle: `user` falls by `gross`, `wallet:<net>` by `net`, the treasury rises by `fee`,
 and `clearing` nets back to zero — so `sum(custody)` and `sum(claims)` both fall by
 exactly `net`.
 
@@ -889,6 +889,31 @@ withdrawal is always a person's: `WithdrawalSource::User` is the only variant
 reads the owner of every row. Old outbox payloads spell the field `user` and hold a bare
 UUID. `WithdrawalSource`'s string form and the `alias = "user"` on the events read those
 unchanged, so a row parked before the source existed still drains after it.
+
+## Compartments by scope (`domain::scopes`, `CompartmentService`)
+
+A user's wallet is split by **scope** (D9): `main` is their `user:<uuid>` claim — deposits
+land there and withdrawals leave from there — and every scope they enter holds a
+compartment, `scope_claim:<scope>:<uuid>`. Only the user moves money `main ⇄ scope`
+(`MoveFunds`), instantly and without a fee, never scope to scope. A move is the house write
+path: Read-First (scope known and not frozen/closed for a move in, the account not frozen,
+the scope's policy for a move in, the source's available balance), then one Postgres
+transaction under the source claim's write lock records the `compartment_moves` row
+(unique per `(user, idempotency_key)` — a repeat returns the original) and its event, and
+the relay posts `Dr <from> / Cr <to>` (`TransferCode::CompartmentMove`, id
+`uuid_v5(move_id, "compartment:move")`). A raced move that the source no longer covers is
+refused by the claim's flag and parks, with nothing moved.
+
+The registry is `scopes` (seeded `invest`, `sa`; concierge's scope stream will own it) and
+`scope_policies` (`min_kyc_level` against the bridge's mirrored tier; `max_per_move`,
+`max_moved_in_24h`, `max_balance` on moves IN only; the automatic ceilings
+`auto_payout_per_op` / `auto_payout_24h` / `auto_transfer_24h`, defaults 1000 / 5000 / 5000
+USDT, stored for the scope ledger). `scope_accounts` records who owns each scope account:
+banking owns `(main, treasury)` — where its own fees land (D17) — and `(<scope>, fee)`.
+Mandates are not served yet (`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates`
+empty): they need the per-client grants the scope ledger brings. The existing
+`service:fee` / `service:fund` / `service:<slug>` claims are untouched until the migration
+window moves them into scope accounts.
 
 ## Operations — the activity timeline (`OperationsService`)
 
@@ -1486,8 +1511,9 @@ return value while having already minted the key), tier 0 cannot withdraw *with 
 claim* (so the refusal is the gate, not insolvency), tier 1 does both, the unconfigured-rail
 `None` stays distinguishable from the unverified `Forbidden`, and a payment out of the
 `fee` allocation to a tier-0 investor is never gated. The ownership suites (#245) —
-`piggybank/core/tests/ownership_fee.rs` (settled fee cash and a retained withdrawal fee
-landing on `service:fee` and raising the `fee` holders' derived NAV, nothing new on the
+`piggybank/core/tests/ownership_fee.rs` (settled fee cash landing on `service:fee` and
+raising the `fee` holders' derived NAV, a retained withdrawal fee landing in banking's
+treasury instead and leaving that NAV alone, nothing new on the
 retired revenue claim, a hidden allocation's holder reading their position with its title
 and price, a reserved allocation taking no mark and no fee policy),
 `piggybank/core/tests/treasury_ownership.rs` (the treasury listing every allocation with

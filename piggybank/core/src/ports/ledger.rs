@@ -88,9 +88,10 @@ pub trait Ledger: Gateway {
 
 /// Which side of the cash invariant a USDT-ledger account counts on, by its kind — the
 /// domain's chart of accounts read as a conservation statement. The claims sides are
-/// the answer to "who is owed the custody": people directly, allocations (whose holders
-/// are people), the withdrawal transit, the book's cash escrow, and the retired singleton
-/// claims (#245), which the data migration emptied but which still exist.
+/// the answer to "who is owed the custody": people directly (their `main` claim and their
+/// scope compartments), allocations (whose holders are people), scopes' own accounts, the
+/// withdrawal transit, the book's cash escrow, and the retired singleton claims (#245),
+/// which the data migration emptied but which still exist.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CashSide {
 	/// `wallet:<net>` — the asset side.
@@ -103,6 +104,10 @@ pub enum CashSide {
 	Clearing,
 	/// `book_cash:<user>` — a person's cash resting in a buy order.
 	BookCash,
+	/// `scope_claim:<scope>:<user>` — a person's money in one scope's compartment.
+	ScopeClaims,
+	/// `scope_account:<scope>:<label>` — a scope's own money, banking's treasury included.
+	ScopeAccounts,
 	/// The retired `fund` (code 1) and `fee` (code 40) claims (#245). Zero since the
 	/// ownership data migration moved them onto the reserved allocations; still a side,
 	/// because TigerBeetle cannot delete an account and the conservation check must count
@@ -120,6 +125,8 @@ impl CashSide {
 			AccountCode::ServiceClaim => Some(Self::ServiceClaims),
 			AccountCode::WithdrawalClearing => Some(Self::Clearing),
 			AccountCode::BookCash => Some(Self::BookCash),
+			AccountCode::ScopeClaim => Some(Self::ScopeClaims),
+			AccountCode::ScopeAccount => Some(Self::ScopeAccounts),
 			AccountCode::RetiredFundClaim | AccountCode::RetiredFeeClaim => Some(Self::RetiredClaims),
 			AccountCode::BankCustody | AccountCode::UserShares | AccountCode::SharesOutstanding | AccountCode::FeeShares | AccountCode::RetiredCompanyStake | AccountCode::BookShares => None,
 		}
@@ -172,6 +179,10 @@ pub struct CashInvariant {
 	pub clearing: u128,
 	/// Σ `book_cash:<user>` — resting in buy orders.
 	pub book_cash: u128,
+	/// Σ `scope_claim:<scope>:<user>` — people's money in scope compartments.
+	pub scope_claims: u128,
+	/// Σ `scope_account:<scope>:<label>` — scopes' own money, banking's treasury included.
+	pub scope_accounts: u128,
 	/// The retired `fund` + `fee` singleton claims (#245).
 	pub retired_claims: u128,
 }
@@ -189,6 +200,8 @@ impl CashInvariant {
 			.saturating_sub(self.service_claims)
 			.saturating_sub(self.clearing)
 			.saturating_sub(self.book_cash)
+			.saturating_sub(self.scope_claims)
+			.saturating_sub(self.scope_accounts)
 			.saturating_sub(self.retired_claims)
 	}
 }
@@ -312,6 +325,8 @@ mod tests {
 			LedgerAccountKey::FeeShares(ServiceId::fee()),
 			LedgerAccountKey::BookShares(ServiceId::fee(), user),
 			LedgerAccountKey::BookCash(user),
+			LedgerAccountKey::ScopeClaim(user, domain::scopes::ScopeId::parse("sa").unwrap()),
+			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury()),
 		];
 		for key in keys {
 			let side = CashSide::of(key.account_code());
@@ -330,14 +345,26 @@ mod tests {
 		let inv = CashInvariant {
 			custody: 100,
 			claims: 100,
-			user_claims: 60,
-			service_claims: 25,
+			user_claims: 50,
+			service_claims: 20,
 			clearing: 5,
 			book_cash: 3,
+			scope_claims: 10,
+			scope_accounts: 5,
 			retired_claims: 7,
 		};
 		assert!(inv.balanced());
 		assert_eq!(inv.unclassified(), 0);
 		assert_eq!(CashInvariant { retired_claims: 0, ..inv }.unclassified(), 7, "7 on an account of no known kind");
+		assert_eq!(
+			CashInvariant {
+				scope_claims: 0,
+				scope_accounts: 0,
+				..inv
+			}
+			.unclassified(),
+			15,
+			"the scope sides are named parts"
+		);
 	}
 }

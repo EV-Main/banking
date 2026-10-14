@@ -28,6 +28,7 @@
 
 pub mod allocations;
 pub mod book;
+pub mod compartments;
 pub mod consilium;
 pub mod custody;
 pub mod deposit_addresses;
@@ -48,6 +49,7 @@ pub mod withdrawals;
 pub use allocations::{AllocationAccessGrant, AllocationRecord, AllocationRegistry};
 use async_trait::async_trait;
 pub use book::{BookDepth, BookLevel, BookPolicyRecord, BookStore, CancelOutcome, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade};
+pub use compartments::CompartmentStore;
 pub use consilium::ConsiliumRepository;
 pub use custody::{BroadcastRequest, Custody, CustodyError};
 pub use deposit_addresses::DepositAddresses;
