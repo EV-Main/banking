@@ -39,11 +39,15 @@ syntax = "proto3";
 // scope (invest@sa → `alloc:`, the panel@sa → its own labels) and, only with
 // `compartments`, touch users' compartments in the scope (Reserve, Charge, Capture into
 // a user, Payout) and hold users' mandates there. Anything outside the caller's grants
-// is PERMISSION_DENIED.
+// is PERMISSION_DENIED `not_granted` — a debit of an account whose label no current grant
+// of the caller covers included, so taking a prefix away also takes away the debit of the
+// accounts opened under it.
 //
 // BOUNDARY.
-//   - `scope = main` is refused (PERMISSION_DENIED): `main` and `(main, treasury)` are
-//     banking's own. An unknown scope is NOT_FOUND.
+//   - `scope = main` is refused (PERMISSION_DENIED `not_granted`): `main` and `(main,
+//     treasury)` are banking's own. A scope the caller is granted in but banking does not
+//     know is NOT_FOUND; any other scope the caller holds no grant in is PERMISSION_DENIED
+//     `not_granted`, so a client cannot probe which scopes exist.
 //   - DEBIT: a scope account is debited only by its owner (`not_account_owner`).
 //   - CREDIT: scope accounts — only the caller's own, except `(<scope>, fee)` through
 //     `Transfer` with `reason = FEE_SWEEP`; users' compartments — only with the
@@ -91,8 +95,8 @@ syntax = "proto3";
 //
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
-// `hold_not_active`, `scope_frozen`, `user_frozen`, `not_account_owner`); clients
-// branch on (code, message) and nothing else.
+// `hold_not_active`, `scope_frozen`, `user_frozen`, `not_account_owner`, `not_granted`);
+// clients branch on (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
 // positive, at most the ledger's precision. Banking reads any plain decimal and always

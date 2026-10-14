@@ -3,12 +3,15 @@
 //!
 //! WHO CALLS. Another backend, never a browser: the listener speaks only HTTP/2 over mTLS
 //! (no `accept_http1`, no gRPC-Web), every client certificate must chain to the configured
-//! CA, and two layers stand in front of the service:
-//!   - [`ClientIdentityLayer`] maps the certificate the client presented to a [`ClientId`]
-//!     by its fingerprint ([`ClientDirectory`]) — the ONLY source of the caller's identity.
-//!     Nothing in the request, the token's `sub` included, can name another client.
+//! CA, and two layers stand in front of the service, the certificate outside the token:
+//!   - [`ClientIdentityLayer`] refuses anything but `application/grpc` (a gRPC-Web request
+//!     would otherwise be decoded as gRPC: tonic does not look at the content type) and maps
+//!     the certificate the client presented to a [`ClientId`] by its fingerprint
+//!     ([`ClientDirectory`]) — the ONLY source of the caller's identity.
 //!   - the auth layer pinned to [`TokenClass::Service`] (`aud=banking-services`,
-//!     `typ=service`), so a user's access token is refused at the verifier.
+//!     `typ=service`), so a user's access token is refused at the verifier. The token is
+//!     then bound to the certificate: its `sub` must be that client's id, so a service token
+//!     stolen from one client is useless on another client's connection.
 //!
 //! Part 1 serves `OpenAccount`, `GetBalances` and `Transfer`; every other RPC is
 //! UNIMPLEMENTED with the reason, and a client must treat that as "not yet", not "never".
@@ -38,7 +41,7 @@ use evbanking_contracts::scope::v1::{
 use sha2::{Digest, Sha256};
 use tokio::sync::Notify;
 use tonic::{
-	Request, Response, Status,
+	Code, Request, Response, Status,
 	body::Body,
 	codegen::http,
 	transport::{
@@ -65,7 +68,8 @@ use crate::{
 #[derive(Clone, Debug)]
 struct CallerClient(ClientId);
 
-/// Maps the presented client certificate to a [`ClientId`], or answers UNAUTHENTICATED.
+/// Refuses anything but gRPC proper (INVALID_ARGUMENT), then maps the presented client
+/// certificate to a [`ClientId`], or answers UNAUTHENTICATED.
 #[derive(Clone)]
 pub struct ClientIdentityLayer {
 	clients: Arc<ClientDirectory>,
@@ -95,6 +99,19 @@ pub struct ClientIdentity<S> {
 	clients: Arc<ClientDirectory>,
 }
 
+/// Whether the request is gRPC over HTTP/2 proper: `application/grpc`, optionally with a
+/// `+<codec>` suffix. `application/grpc-web…` is refused here, before anything else reads it.
+fn is_grpc(content_type: Option<&http::HeaderValue>) -> bool {
+	content_type
+		.and_then(|value| value.to_str().ok())
+		.is_some_and(|value| value == "application/grpc" || value.starts_with("application/grpc+"))
+}
+
+fn status_response(status: Status) -> http::Response<Body> {
+	let (parts, ()) = status.into_http::<()>().into_parts();
+	http::Response::from_parts(parts, Body::empty())
+}
+
 /// The fingerprint a grants file pins: SHA-256 of the certificate's DER bytes, lowercase hex.
 fn fingerprint(der: &[u8]) -> String {
 	hex::encode(Sha256::digest(der))
@@ -118,6 +135,9 @@ where
 		// Ready-clone, as the auth layer does: call the instance that was polled ready.
 		let clone = self.inner.clone();
 		let mut inner = std::mem::replace(&mut self.inner, clone);
+		if !is_grpc(req.headers().get(http::header::CONTENT_TYPE)) {
+			return Box::pin(async { Ok(status_response(Status::invalid_argument("only application/grpc is served here"))) });
+		}
 		// The leaf is the first certificate the client sent; the CA check already happened in
 		// the handshake, so what is left is which of the trusted clients this one is.
 		let client = req
@@ -132,10 +152,7 @@ where
 					req.extensions_mut().insert(CallerClient(client));
 					inner.call(req).await
 				}
-				None => {
-					let (parts, ()) = Status::unauthenticated("client certificate is not a known client").into_http::<()>().into_parts();
-					Ok(http::Response::from_parts(parts, Body::empty()))
-				}
+				None => Ok(status_response(Status::unauthenticated("client certificate is not a known client"))),
 			}
 		})
 	}
@@ -167,6 +184,8 @@ pub struct ScopeLedgerListener {
 }
 
 impl ScopeLedgerListener {
+	/// The TLS material was parsed and matched when the settings were read
+	/// ([`ScopeLedgerSettings::from_env`]), so what is handed to tonic here is known good.
 	pub fn new(settings: ScopeLedgerSettings, deps: ScopeLedgerDeps) -> Self {
 		Self {
 			bind: settings.bind,
@@ -196,11 +215,17 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 	let auth = grpc_auth_layer(authenticator);
 	let identity = ClientIdentityLayer::new(listener.clients);
 	let service = listener.service;
-	// No `accept_http1` and no `GrpcWebLayer`: nothing a browser can speak reaches this port.
+	// No `accept_http1` (ALPN offers only h2, so an HTTP/1.1 client fails the handshake) and
+	// no `GrpcWebLayer`; a gRPC-Web request sent over h2 anyway is refused by the identity
+	// layer's content-type gate, since tonic itself would decode it as gRPC. The certificate
+	// layer is the outer one: a caller no certificate maps to learns nothing about its token.
+	// Refusals are the protocol working (a client's `approval_required` is not an incident),
+	// so the trace layer keeps them at DEBUG; the handlers log each one at INFO with the RPC
+	// and the client, and what is unexpected at WARN (`refused`).
 	Server::builder()
 		.tls_config(listener.tls)?
-		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::WARN)))
-		.add_service(auth.layer(identity.layer(ScopeLedgerServiceServer::new(service))))
+		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::DEBUG)))
+		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service))))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
 }
@@ -223,28 +248,44 @@ impl ScopeLedgerSvc {
 	}
 }
 
-/// The caller, as the two layers proved it: a service token, and the client its certificate
-/// names. Either missing means the service was reached without its layers — refused, never
-/// served as nobody.
+/// The caller, as the two layers proved it: a service token issued to the very client the
+/// certificate names. Either missing means the service was reached without its layers —
+/// refused, never served as nobody. A token whose `sub` is another client is refused: a
+/// service token copied off one client cannot ride another client's certificate.
 fn caller<T>(request: &Request<T>) -> Result<ClientId, Status> {
 	let claims = claims_of(request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
 	if claims.typ != TokenType::Service {
 		return Err(Status::permission_denied("service token required"));
 	}
-	request
+	let client = request
 		.extensions()
 		.get::<CallerClient>()
 		.map(|caller| caller.0.clone())
-		.ok_or_else(|| Status::unauthenticated("no client identity"))
+		.ok_or_else(|| Status::unauthenticated("no client identity"))?;
+	if claims.sub != client.as_str() {
+		return Err(Status::permission_denied("token is not this client's"));
+	}
+	Ok(client)
 }
 
-/// The refusal's reason is the whole message: clients branch on (code, message).
-fn refuse(err: TransferError) -> Status {
-	match err {
+/// The refusal's reason is the whole message: clients branch on (code, message). Logged
+/// here, once per refusal, with the RPC and the client: a refusal the protocol expects at
+/// INFO, anything the caller could not have caused at WARN.
+fn refused(rpc: &'static str, client: &ClientId, err: TransferError) -> Status {
+	let status = match err {
 		TransferError::Refused(refusal) if refusal.is_permission() => Status::permission_denied(refusal.reason()),
 		TransferError::Refused(refusal) => Status::failed_precondition(refusal.reason()),
+		TransferError::Internal(why) => {
+			tracing::error!(rpc, %client, "scope ledger: {why}");
+			return Status::internal("internal error");
+		}
 		TransferError::Domain(err) => map_err(err),
+	};
+	match status.code() {
+		Code::Unavailable | Code::Internal | Code::Unknown => tracing::warn!(rpc, %client, code = ?status.code(), "scope ledger: {}", status.message()),
+		_ => tracing::info!(rpc, %client, code = ?status.code(), reason = status.message(), "scope ledger: refused"),
 	}
+	status
 }
 
 fn scope_of(raw: &str) -> Result<ScopeId, Status> {
@@ -260,6 +301,9 @@ fn not_yet(rpc: &str, why: &str) -> Status {
 	Status::unimplemented(format!("{rpc} is not served yet: {why}"))
 }
 
+/// Most labels one `GetBalances` may name: one ledger read per label.
+const MAX_BALANCE_LABELS: usize = 256;
+
 const NEEDS_MANDATES: &str = "it draws on users' mandates, which are not granted yet";
 const NEEDS_APPROVALS: &str = "banking does not open approvals for scope operations yet";
 
@@ -270,7 +314,9 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 		let req = request.into_inner();
 		let scope = scope_of(&req.scope)?;
 		let label = label_of(&req.label)?;
-		let view = ledger_app::open_account(&self.ports(), &client, &scope, &label, &req.idempotency_key).await.map_err(refuse)?;
+		let view = ledger_app::open_account(&self.ports(), &client, &scope, &label, &req.idempotency_key)
+			.await
+			.map_err(|err| refused("OpenAccount", &client, err))?;
 		Ok(Response::new(account_to_proto(&view)))
 	}
 
@@ -316,7 +362,7 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 			memo: req.memo,
 			idempotency_key: req.idempotency_key,
 		};
-		let recorded = ledger_app::transfer(&self.ports(), &client, parsed).await.map_err(refuse)?;
+		let recorded = ledger_app::transfer(&self.ports(), &client, parsed).await.map_err(|err| refused("Transfer", &client, err))?;
 		Ok(Response::new(transfer_to_proto(&recorded)))
 	}
 
@@ -339,8 +385,20 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 		let client = caller(&request)?;
 		let req = request.into_inner();
 		let scope = scope_of(&req.scope)?;
-		let labels = req.labels.iter().map(|raw| label_of(raw)).collect::<Result<Vec<_>, _>>()?;
-		let views = ledger_app::get_balances(&self.ports(), &client, &scope, &labels).await.map_err(refuse)?;
+		if req.labels.len() > MAX_BALANCE_LABELS {
+			return Err(Status::invalid_argument(format!("at most {MAX_BALANCE_LABELS} labels")));
+		}
+		let mut labels: Vec<ScopeAccountLabel> = Vec::with_capacity(req.labels.len());
+		for raw in &req.labels {
+			let label = label_of(raw)?;
+			// A repeat asks nothing new; answering it once keeps the ledger read bounded.
+			if !labels.contains(&label) {
+				labels.push(label);
+			}
+		}
+		let views = ledger_app::get_balances(&self.ports(), &client, &scope, &labels)
+			.await
+			.map_err(|err| refused("GetBalances", &client, err))?;
 		Ok(Response::new(pb::GetBalancesResponse {
 			accounts: views.iter().map(account_to_proto).collect(),
 		}))

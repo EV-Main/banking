@@ -29,6 +29,7 @@ use tokio::{net::TcpListener, sync::Notify};
 use tokio_util::sync::CancellationToken;
 use tonic::{
 	Code, Request, Status,
+	codegen::http,
 	metadata::MetadataValue,
 	transport::{Certificate, ClientTlsConfig, Endpoint, Identity},
 };
@@ -41,9 +42,11 @@ fn fixture(name: &str) -> String {
 	std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("fixture {name} must be readable ({err}); regenerate with fixtures/scope_tls/regen.sh"))
 }
 
-/// The bearer a stub caller presents, by the class a real verifier would have found in it.
-const SERVICE_TOKEN: &str = "a-service-token";
-const ACCESS_TOKEN: &str = "a-users-access-token";
+/// The bearers a stub caller presents: `<class>:<sub>`, the class a real verifier would have
+/// found in the token and the subject it was issued to.
+const SERVICE_TOKEN: &str = "service:invest";
+const PANEL_TOKEN: &str = "service:panel";
+const ACCESS_TOKEN: &str = "access:invest";
 
 /// Stands in for the hub's authorizer: answers a service token and a user's access token
 /// with the claims the real one would, and refuses anything else as the real one does.
@@ -52,13 +55,13 @@ struct StubAuthenticator;
 
 impl Authenticate for StubAuthenticator {
 	async fn authenticate(&self, token: String) -> Result<Claims, AuthError> {
-		let typ = match token.as_str() {
-			SERVICE_TOKEN => TokenType::Service,
-			ACCESS_TOKEN => TokenType::Access,
+		let (typ, sub) = match token.split_once(':') {
+			Some(("service", sub)) => (TokenType::Service, sub),
+			Some(("access", sub)) => (TokenType::Access, sub),
 			_ => return Err(AuthError::InvalidToken),
 		};
 		Ok(Claims {
-			sub: "whatever-the-token-says".into(),
+			sub: sub.into(),
 			iss: "https://auth.test".into(),
 			aud: "banking-services".into(),
 			exp: u64::MAX,
@@ -138,9 +141,8 @@ where
 	S: Future<Output = Result<(), tonic::transport::Error>>,
 	F: FnOnce() -> Fut,
 	Fut: Future<Output = T>, {
-	// tonic's server builder refuses to guess between the two crypto providers the binary
-	// carries (see the workspace manifest); once per process, so later calls are told so.
-	let _ = rustls::crypto::ring::default_provider().install_default();
+	// The provider production installs, by the function production calls (`crypto.rs`).
+	piggybank_core::crypto::install_crypto_provider();
 	let stop = CancellationToken::new();
 	let serve = server(stop.clone());
 	let drive = async {
@@ -201,13 +203,19 @@ async fn the_client_id_is_the_certificates_whatever_the_token_says() {
 	let addr = ephemeral().await;
 	let server = serve_stub(&h, addr).await;
 	let scope = h.scope.clone();
-	// `panel` is a known client with no grant in the scope; its token's `sub` is irrelevant.
-	let outcome = with_server(addr.port(), server, || async {
-		get_balances(addr.port(), Some(("panel.pem", "panel.key")), Some(SERVICE_TOKEN), &scope).await
+	// `panel` is a known client with no grant in the scope: what it may do is decided by its
+	// certificate, and invest's token does not make it invest.
+	let (own, borrowed) = with_server(addr.port(), server, || async {
+		(
+			get_balances(addr.port(), Some(("panel.pem", "panel.key")), Some(PANEL_TOKEN), &scope).await,
+			get_balances(addr.port(), Some(("panel.pem", "panel.key")), Some(SERVICE_TOKEN), &scope).await,
+		)
 	})
 	.await;
-	let status = outcome.expect_err("panel holds no grant in the scope");
-	assert_eq!((status.code(), status.message()), (Code::PermissionDenied, "not_granted"));
+	let own = own.expect_err("panel holds no grant in the scope");
+	assert_eq!((own.code(), own.message()), (Code::PermissionDenied, "not_granted"));
+	let borrowed = borrowed.expect_err("invest's token on panel's connection");
+	assert_eq!((borrowed.code(), borrowed.message()), (Code::PermissionDenied, "token is not this client's"));
 }
 
 #[tokio::test]
@@ -237,12 +245,19 @@ async fn a_certificate_the_ca_signed_but_no_client_maps_to_is_unauthenticated() 
 	let addr = ephemeral().await;
 	let server = serve_stub(&h, addr).await;
 	let scope = h.scope.clone();
-	let outcome = with_server(addr.port(), server, || async {
-		get_balances(addr.port(), Some(("stranger.pem", "stranger.key")), Some(SERVICE_TOKEN), &scope).await
+	// The certificate is checked outside the token: with or without one, the answer is the
+	// same and says nothing about the token.
+	let (with_token, without) = with_server(addr.port(), server, || async {
+		(
+			get_balances(addr.port(), Some(("stranger.pem", "stranger.key")), Some(SERVICE_TOKEN), &scope).await,
+			get_balances(addr.port(), Some(("stranger.pem", "stranger.key")), None, &scope).await,
+		)
 	})
 	.await;
-	let status = outcome.expect_err("an unknown client");
-	assert_eq!((status.code(), status.message()), (Code::Unauthenticated, "client certificate is not a known client"));
+	for outcome in [with_token, without] {
+		let status = outcome.expect_err("an unknown client");
+		assert_eq!((status.code(), status.message()), (Code::Unauthenticated, "client certificate is not a known client"));
+	}
 }
 
 #[tokio::test]
@@ -343,4 +358,113 @@ async fn an_rpc_part_one_does_not_serve_says_so() {
 	let status = outcome.expect_err("Reserve is not served in part 1");
 	assert_eq!(status.code(), Code::Unimplemented);
 	assert!(status.message().starts_with("Reserve is not served yet"), "{}", status.message());
+}
+
+/// One GetBalances request as raw gRPC framing over the fixture `invest` identity, with the
+/// content type under test. The message is hand-encoded (`scope = 1`, a string): the bytes
+/// stay ASCII for a scope id this short, so a `String` carries them as the request body.
+async fn raw_get_balances(port: u16, content_type: &str, scope: &ScopeId) -> http::Response<tonic::body::Body> {
+	use tower::ServiceExt;
+	let tls = ClientTlsConfig::new()
+		.ca_certificate(Certificate::from_pem(fixture("ca.pem")))
+		.domain_name("localhost")
+		.identity(Identity::from_pem(fixture("invest.pem"), fixture("invest.key")));
+	let channel = Endpoint::from_shared(format!("https://localhost:{port}"))
+		.unwrap()
+		.tls_config(tls)
+		.unwrap()
+		.connect()
+		.await
+		.unwrap();
+	let id = scope.as_str().as_bytes();
+	assert!(id.len() < 120, "the hand framing assumes a one-byte length");
+	let mut message = vec![0x0a, id.len() as u8];
+	message.extend_from_slice(id);
+	let mut frame = vec![0u8];
+	frame.extend_from_slice(&(message.len() as u32).to_be_bytes());
+	frame.extend_from_slice(&message);
+	let request = http::Request::builder()
+		.method("POST")
+		.uri(format!("https://localhost:{port}/scope.v1.ScopeLedgerService/GetBalances"))
+		.header("content-type", content_type)
+		.header("te", "trailers")
+		.header("authorization", format!("Bearer {SERVICE_TOKEN}"))
+		.body(tonic::body::Body::new(String::from_utf8(frame).expect("ASCII framing")))
+		.unwrap();
+	channel.oneshot(request).await.expect("the request crossed the connection")
+}
+
+#[tokio::test]
+async fn grpc_web_never_reaches_the_service_even_over_http2() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let scope = h.scope.clone();
+	let (grpc, web) = with_server(addr.port(), server, || async {
+		(
+			raw_get_balances(addr.port(), "application/grpc", &scope).await,
+			raw_get_balances(addr.port(), "application/grpc-web+proto", &scope).await,
+		)
+	})
+	.await;
+	// The control: the same bytes as plain gRPC reach the handler (no status in the headers;
+	// the answer comes in the trailers).
+	assert!(grpc.headers().get("grpc-status").is_none(), "plain gRPC is served: {:?}", grpc.headers());
+	// tonic does not look at the content type, so without the gate this request would be
+	// decoded as gRPC and served; the gate answers in the headers instead.
+	assert_eq!(web.headers().get("grpc-status").and_then(|v| v.to_str().ok()), Some("3"), "{:?}", web.headers());
+	assert_eq!(
+		web.headers().get("grpc-message").and_then(|v| v.to_str().ok()),
+		Some("only%20application/grpc%20is%20served%20here")
+	);
+}
+
+/// An HTTP/1.1 request over the listener's TLS, offering only `http/1.1` in ALPN — what a
+/// gRPC-Web client in a browser sends. Synchronous rustls on a plain socket, run on the
+/// blocking pool. Returns what came back, or the error that ended it.
+fn http1_over_tls(port: u16) -> Result<Vec<u8>, String> {
+	use std::io::{Read, Write};
+
+	use rustls::{
+		ClientConfig, ClientConnection, RootCertStore,
+		pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
+	};
+	let mut roots = RootCertStore::empty();
+	roots.add(CertificateDer::from_pem_slice(fixture("ca.pem").as_bytes()).unwrap()).unwrap();
+	let chain = CertificateDer::pem_slice_iter(fixture("invest.pem").as_bytes()).collect::<Result<Vec<_>, _>>().unwrap();
+	let key = PrivateKeyDer::from_pem_slice(fixture("invest.key").as_bytes()).unwrap();
+	let mut config = ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+		.with_safe_default_protocol_versions()
+		.unwrap()
+		.with_root_certificates(roots)
+		.with_client_auth_cert(chain, key)
+		.unwrap();
+	config.alpn_protocols = vec![b"http/1.1".to_vec()];
+	let mut connection = ClientConnection::new(Arc::new(config), "localhost".try_into().unwrap()).map_err(|e| e.to_string())?;
+	let mut socket = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+	socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+	let mut tls = rustls::Stream::new(&mut connection, &mut socket);
+	let request = format!(
+		"POST /scope.v1.ScopeLedgerService/GetBalances HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/grpc-web+proto\r\nAuthorization: Bearer {SERVICE_TOKEN}\r\nContent-Length: 0\r\n\r\n"
+	);
+	tls.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+	let mut answer = Vec::new();
+	tls.read_to_end(&mut answer).map_err(|e| e.to_string())?;
+	Ok(answer)
+}
+
+#[tokio::test]
+async fn http1_never_reaches_the_service() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let outcome = with_server(addr.port(), server, || async {
+		let port = addr.port();
+		tokio::task::spawn_blocking(move || http1_over_tls(port)).await.expect("the blocking dial ran")
+	})
+	.await;
+	// The listener offers only h2 in ALPN, and rustls refuses a client that offers only
+	// http/1.1 in the handshake: no HTTP/1.1 response, of any status, ever comes back.
+	let refused = outcome.expect_err("an http/1.1-only client must not complete a request");
+	assert!(refused.to_lowercase().contains("application"), "refused for the protocol, not something else: {refused}");
 }
