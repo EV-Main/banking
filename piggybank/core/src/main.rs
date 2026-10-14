@@ -51,6 +51,7 @@ use piggybank_core::{
 		redemptions::PgRedemptions,
 		relay::Relay,
 		scope_events::ScopeEventsConsumer,
+		scope_ledger::PgScopeLedger,
 		signer_addresses::SignerDepositAddresses,
 		subscriptions::PgSubscriptions,
 		sweep::Sweep,
@@ -72,7 +73,10 @@ use piggybank_core::{
 		AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
 		PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
 	},
-	services,
+	services::{
+		self,
+		scope_ledger::{ScopeLedgerDeps, ScopeLedgerListener},
+	},
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -81,6 +85,8 @@ use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
 // Sentry must be initialised before the async runtime starts — no #[tokio::main].
 fn main() -> color_eyre::Result<()> {
 	color_eyre::install()?;
+	// Before any TLS server or client is built — see `crypto.rs`.
+	piggybank_core::crypto::install_crypto_provider();
 	dotenvy::dotenv().ok();
 
 	let command = Command::from_args(std::env::args().skip(1))?;
@@ -194,6 +200,21 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// transport error. The endpoint built next carries both cross-plane seams, the
 	// lifecycle consumer and the governance-mail relay: one address, one trust
 	// relationship, one place it is configured.
+	// The scope ledger's listener, read and checked with the other boot guards: a grants file
+	// that grants something unsafe, or a CA that is not one, stops the boot here.
+	// EX_CONFIG (78), like every other configuration refusal: "the config is wrong" must not
+	// read as a crash a restart could fix.
+	let scope_ledger_settings = match config::ScopeLedgerSettings::from_env() {
+		Ok(settings) => settings,
+		Err(err) => {
+			tracing::error!("scope ledger listener configuration refused: {err:#}");
+			eprintln!("scope ledger listener configuration refused: {err:#}");
+			std::process::exit(78);
+		}
+	};
+	if scope_ledger_settings.is_none() {
+		tracing::info!("scope ledger listener off (SCOPE_LEDGER_BIND unset) — no service can move money in a scope");
+	}
 	let bridge_tls = BridgeTlsFiles::from_env();
 	config::ensure_bridge_is_authenticated(&config.app_env, &config.concierge_bridge_addr, bridge_tls.ca.as_deref())?;
 	let concierge_endpoint = bridge_endpoint(&config.concierge_bridge_addr, &bridge_tls)?;
@@ -538,7 +559,24 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		compartments,
 	);
 
-	tracing::info!(core = %config.grpc_addr, auth = %config.auth_grpc_addr, "piggybank listening");
+	let scope_ledger = scope_ledger_settings.map(|settings| {
+		ScopeLedgerListener::new(
+			settings,
+			ScopeLedgerDeps {
+				store: Arc::new(PgScopeLedger::new(state.pool.clone())),
+				scopes: state.compartments.clone(),
+				ledger: state.ledger.clone(),
+				relay: state.relay_notify.clone(),
+			},
+		)
+	});
+	let scope_ledger_authorizer = state.authorizer.clone();
+	tracing::info!(
+		core = %config.grpc_addr,
+		auth = %config.auth_grpc_addr,
+		scope_ledger = ?scope_ledger.as_ref().map(|listener| listener.bind),
+		"piggybank listening"
+	);
 
 	// Graceful shutdown, structured (no detached spawns): the core server, the auth task,
 	// the provisioning loop, and the recovery jobs run as branches of one `join!` on this
@@ -552,6 +590,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let (
 		signal,
 		core,
+		scope_ledger_done,
 		auth,
 		provisioner,
 		relay_done,
@@ -581,6 +620,15 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	) = tokio::join!(
 		await_signal(shutdown.clone()),
 		branch(&shutdown, "core gRPC server", services::serve(config.grpc_addr, state, shutdown.clone().cancelled_owned())),
+		branch(&shutdown, "scope ledger gRPC server", async {
+			match scope_ledger {
+				Some(listener) => services::scope_ledger::serve(listener, &scope_ledger_authorizer, shutdown.clone().cancelled_owned()).await,
+				None => {
+					shutdown.cancelled().await;
+					Ok(())
+				}
+			}
+		}),
 		branch(&shutdown, "auth service", auth_service.run(config.auth_grpc_addr, shutdown.clone().cancelled_owned())),
 		branch(&shutdown, "provisioner", infallible(auth_sync::run_provisioner(provision_rx, users))),
 		branch(&shutdown, "relay", infallible(relay.run(shutdown.clone()))),
@@ -675,7 +723,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	);
 	let () = signal;
 	// The first error (if any) becomes the process result; a clean shutdown is `Ok`.
-	core.and(auth)
+	core.and(scope_ledger_done)
+		.and(auth)
 		.and(provisioner)
 		.and(relay_done)
 		.and(reconciliation_done)

@@ -25,6 +25,9 @@
 //!
 //! [`BookStore`] is the allocation book — orders, fills, the per-product terms — one port
 //! for the one transaction a placement is.
+//!
+//! [`ScopeLedgerStore`] is the scope ledger's control plane: the owners of scope accounts,
+//! the idempotency keys of service clients, and their transfers.
 
 pub mod allocations;
 pub mod book;
@@ -43,6 +46,7 @@ pub mod outflow;
 pub mod payments;
 pub mod positions;
 pub mod redemptions;
+pub mod scope_ledger;
 pub mod subscriptions;
 pub mod withdrawals;
 
@@ -73,6 +77,7 @@ pub use outflow::{OutflowPolicy, PayoutStanding};
 pub use payments::{PaymentFeed, PaymentRepository};
 pub use positions::{FundPosition, FundPositionReader, UnitFlow};
 pub use redemptions::{QueuedRedemption, RedemptionRepository};
+pub use scope_ledger::ScopeLedgerStore;
 pub use subscriptions::SubscriptionRepository;
 pub use withdrawals::WithdrawalRepository;
 

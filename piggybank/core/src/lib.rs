@@ -37,6 +37,7 @@ use tokio::sync::Notify;
 
 pub mod application;
 pub mod config;
+pub mod crypto;
 pub mod infrastructure;
 pub mod ports;
 pub mod services;

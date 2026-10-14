@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use domain::{
 	architecture::DomainEvent,
 	balance::LedgerAccountKey,
+	scope_ledger::ScopeLedgerEvent,
 	scopes::{Compartment, CompartmentEvent},
 	users::UserId,
 };
@@ -13,7 +14,7 @@ use sqlx::PgConnection;
 use tracing::warn;
 
 use crate::{
-	infrastructure::{compartments, ledger, outbox::OutboxRow, relay},
+	infrastructure::{compartments, ledger, outbox::OutboxRow, relay, scope_ledger},
 	ports::ledger::{LedgerError, LockedReads},
 };
 
@@ -58,30 +59,32 @@ fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 	}
 }
 
-/// Moves are counted from their own table, not the outbox: a `pending` move whose event a
-/// relay dispatched without posting (the reaper's case) is still promised away.
+/// Moves and scope transfers are counted from their own tables, not the outbox: a `pending`
+/// one whose event a relay dispatched without posting (the reaper's case) is still promised
+/// away.
 const UNAPPLIED_EVENTS: &str = "SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox \
-	 WHERE dispatched_at IS NULL AND parked_at IS NULL AND kind <> $1 AND ($2::text IS NULL OR strpos(payload::text, $2) > 0)";
+	 WHERE dispatched_at IS NULL AND parked_at IS NULL AND kind <> ALL($1) AND ($2::text IS NULL OR strpos(payload::text, $2) > 0)";
 
 /// See [`LockedReads::unapplied_debits`]. A parked event is left out: the relay will not
 /// apply it on its own, and counting it would hold the owner's money for an operator's
 /// decision; should it be unparked, the ledger's non-negative flag still refuses it.
 pub async fn unapplied_debits(conn: &mut PgConnection, key: &LedgerAccountKey) -> Result<u128, LedgerError> {
-	let moves = match key {
+	let recorded = match key {
 		LedgerAccountKey::UserClaim(user) => Some(compartments::pending_out(&mut *conn, *user, &Compartment::Main).await),
 		LedgerAccountKey::ScopeClaim(user, scope) => Some(compartments::pending_out(&mut *conn, *user, &Compartment::Scope(scope.clone())).await),
+		LedgerAccountKey::ScopeAccount(scope, label) => Some(scope_ledger::pending_out(&mut *conn, scope, label).await),
 		_ => None,
 	}
 	.transpose()
-	.map_err(|e| LedgerError::Unavailable(format!("pending compartment moves of {}: {e}", key.logical_key())))?
-	.map_or(0, |moves| moves.base_units());
+	.map_err(|e| LedgerError::Unavailable(format!("pending moves and transfers of {}: {e}", key.logical_key())))?
+	.map_or(0, |pending| pending.base_units());
 	let rows = sqlx::query_as::<_, OutboxRow>(UNAPPLIED_EVENTS)
-		.bind(CompartmentEvent::KIND)
+		.bind([CompartmentEvent::KIND, ScopeLedgerEvent::KIND].as_slice())
 		.bind(owner(key).map(|user| user.to_string()))
 		.fetch_all(&mut *conn)
 		.await
 		.map_err(|e| LedgerError::Unavailable(format!("undispatched outbox read for {}: {e}", key.logical_key())))?;
-	rows.iter().try_fold(moves, |total, row| {
+	rows.iter().try_fold(recorded, |total, row| {
 		let debit = match relay::planned_debit(row, key) {
 			Ok(debit) => debit,
 			// The relay parks an event it cannot plan, so it never reaches the ledger;

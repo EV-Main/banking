@@ -438,6 +438,9 @@ pub enum TransferCode {
 	/// A user moving their own money between `main` and a scope compartment, either way.
 	/// One code for both directions: the claim pair says which way it went.
 	CompartmentMove,
+	/// Money between two scope accounts — a client's automatic transfer into its scope's
+	/// `fee` collector (`scope.v1.ScopeLedgerService.Transfer`).
+	ScopeTransfer,
 }
 
 impl TransferCode {
@@ -473,6 +476,7 @@ impl TransferCode {
 			Self::BookFee => 51,
 			Self::UnitRetire => 53,
 			Self::CompartmentMove => 55,
+			Self::ScopeTransfer => 56,
 		}
 	}
 }
@@ -998,6 +1002,7 @@ mod tests {
 			TransferCode::BookFee,
 			TransferCode::UnitRetire,
 			TransferCode::CompartmentMove,
+			TransferCode::ScopeTransfer,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

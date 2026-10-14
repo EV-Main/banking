@@ -815,6 +815,238 @@ pub fn ensure_bridge_is_authenticated(app_env: &str, addr: &str, ca_file: Option
 	bridge_refusal(app_env, addr, ca_file).map_or(Ok(()), Err)
 }
 
+/// The scope ledger's own listener (`scope.v1.ScopeLedgerService`) — the service-facing money
+/// surface, kept off the core listener because what authenticates a caller here is different:
+/// mTLS, with the client's identity taken from its certificate and nothing it says.
+///
+/// | Variable | |
+/// | --- | --- |
+/// | `SCOPE_LEDGER_BIND` | listen address, e.g. `0.0.0.0:50054`; unset/empty ⇒ the listener is off |
+/// | `SCOPE_LEDGER_TLS_CERT_PEM_FILE` | the listener's certificate |
+/// | `SCOPE_LEDGER_TLS_KEY_PEM_FILE` | its private key |
+/// | `SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE` | the CA every client certificate must chain to |
+/// | `SCOPE_LEDGER_GRANTS_FILE` | JSON: clients by certificate fingerprint, and their grants |
+///
+/// With `SCOPE_LEDGER_BIND` set every file is required and checked at boot: a listener that
+/// cannot prove who calls it, or that grants something unsafe, never starts. The grants
+/// file:
+///
+/// ```json
+/// {
+///   "clients": [{ "client_id": "invest", "cert_sha256": ["<64 hex>"] }],
+///   "grants": [{ "client_id": "invest", "scope": "invest", "label_prefix": "alloc:", "compartments": false }]
+/// }
+/// ```
+///
+/// `cert_sha256` is the SHA-256 of the client certificate's DER bytes, lowercase hex
+/// (`openssl x509 -in client.pem -outform der | openssl dgst -sha256`); list two to rotate.
+pub struct ScopeLedgerSettings {
+	pub bind: SocketAddr,
+	pub cert_pem: String,
+	pub key_pem: String,
+	pub client_ca_pem: String,
+	pub clients: domain::scope_ledger::ClientDirectory,
+	pub grants: domain::scope_ledger::Grants,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GrantsFile {
+	clients: Vec<ClientEntry>,
+	grants: Vec<GrantEntry>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClientEntry {
+	client_id: String,
+	cert_sha256: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GrantEntry {
+	client_id: String,
+	scope: String,
+	label_prefix: String,
+	#[serde(default)]
+	compartments: bool,
+}
+
+/// Build the rustls server config the listener will run: the certificate chain, its private
+/// key (and that they belong together), and a client-certificate verifier over the CA.
+fn check_server_tls(cert_pem: &str, key_pem: &str, client_ca_pem: &str) -> color_eyre::Result<()> {
+	use std::sync::Arc;
+
+	use color_eyre::eyre::eyre;
+	use rustls::{
+		RootCertStore, ServerConfig,
+		pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
+		server::WebPkiClientVerifier,
+	};
+	let chain = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+		.collect::<Result<Vec<_>, _>>()
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE: {e}"))?;
+	if chain.is_empty() {
+		return Err(eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE holds no certificate"));
+	}
+	let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes()).map_err(|e| eyre!("SCOPE_LEDGER_TLS_KEY_PEM_FILE: {e}"))?;
+	let mut roots = RootCertStore::empty();
+	for ca in CertificateDer::pem_slice_iter(client_ca_pem.as_bytes()) {
+		let ca = ca.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+		// webpki takes any certificate as a trust anchor, a leaf included; with a leaf here the
+		// hub boots healthy and then refuses every client in the handshake. Only a CA may stand.
+		if !der_is_ca(ca.as_ref()) {
+			return Err(eyre!(
+				"SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE holds a certificate that is not a CA (basicConstraints CA:TRUE missing)"
+			));
+		}
+		roots.add(ca).map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+	}
+	// The provider is named rather than taken from the process default, so this check means
+	// the same thing whether or not `main` has installed one yet.
+	let provider = Arc::new(rustls::crypto::ring::default_provider());
+	let verifier = WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+		.build()
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE: {e}"))?;
+	ServerConfig::builder_with_provider(provider)
+		.with_safe_default_protocol_versions()
+		.map_err(|e| eyre!("scope ledger TLS: {e}"))?
+		.with_client_cert_verifier(verifier)
+		.with_single_cert(chain, key)
+		.map_err(|e| eyre!("SCOPE_LEDGER_TLS_CERT_PEM_FILE / SCOPE_LEDGER_TLS_KEY_PEM_FILE: {e}"))?;
+	Ok(())
+}
+
+/// One DER TLV at the head of `der`: `(tag, contents, rest)`. Definite lengths only, which is
+/// all DER allows; `None` on anything malformed.
+fn der_tlv(der: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+	let (&tag, rest) = der.split_first()?;
+	let (&first, rest) = rest.split_first()?;
+	let (len, rest) = if first < 0x80 {
+		(usize::from(first), rest)
+	} else {
+		let count = usize::from(first & 0x7f);
+		if count == 0 || count > 4 || rest.len() < count {
+			return None;
+		}
+		let (bytes, rest) = rest.split_at(count);
+		(bytes.iter().fold(0usize, |len, b| (len << 8) | usize::from(*b)), rest)
+	};
+	(rest.len() >= len).then(|| (tag, &rest[..len], &rest[len..]))
+}
+
+/// Whether an X.509 certificate's basicConstraints says `cA = TRUE`. Walks Certificate →
+/// tbsCertificate → extensions `[3]` → the extension with OID 2.5.29.19 → its value. No
+/// extension, or `cA` absent (DEFAULT FALSE), is not a CA. Hand-walked so the check needs no
+/// X.509 crate for one boolean.
+fn der_is_ca(certificate: &[u8]) -> bool {
+	const BASIC_CONSTRAINTS: &[u8] = &[0x55, 0x1d, 0x13];
+	let Some((0x30, cert, _)) = der_tlv(certificate) else { return false };
+	let Some((0x30, mut tbs, _)) = der_tlv(cert) else { return false };
+	while let Some((tag, contents, rest)) = der_tlv(tbs) {
+		tbs = rest;
+		if tag != 0xa3 {
+			continue;
+		}
+		let Some((0x30, mut extensions, _)) = der_tlv(contents) else { return false };
+		while let Some((0x30, extension, rest)) = der_tlv(extensions) {
+			extensions = rest;
+			let Some((0x06, oid, mut fields)) = der_tlv(extension) else { return false };
+			if oid != BASIC_CONSTRAINTS {
+				continue;
+			}
+			// `critical BOOLEAN DEFAULT FALSE` may precede the value.
+			if let Some((0x01, _, rest)) = der_tlv(fields) {
+				fields = rest;
+			}
+			let Some((0x04, value, _)) = der_tlv(fields) else { return false };
+			let Some((0x30, constraints, _)) = der_tlv(value) else { return false };
+			return matches!(der_tlv(constraints), Some((0x01, [flag], _)) if *flag != 0);
+		}
+		return false;
+	}
+	false
+}
+
+impl ScopeLedgerSettings {
+	pub fn from_env() -> color_eyre::Result<Option<Self>> {
+		Self::read(|key| env::var(key).ok().filter(|value| !value.trim().is_empty()))
+	}
+
+	fn read(var: impl Fn(&str) -> Option<String>) -> color_eyre::Result<Option<Self>> {
+		use color_eyre::eyre::{WrapErr, eyre};
+		let Some(bind) = var("SCOPE_LEDGER_BIND") else {
+			return Ok(None);
+		};
+		let bind: SocketAddr = bind.trim().parse().map_err(|e| eyre!("SCOPE_LEDGER_BIND must be a socket address such as 0.0.0.0:50054: {e}"))?;
+		let file = |key: &str| -> color_eyre::Result<String> {
+			let path = var(key).ok_or_else(|| eyre!("SCOPE_LEDGER_BIND is set, so {key} is required: the scope ledger serves only mTLS"))?;
+			std::fs::read_to_string(&path).wrap_err_with(|| format!("{key}: cannot read {path}"))
+		};
+		let cert_pem = file("SCOPE_LEDGER_TLS_CERT_PEM_FILE")?;
+		let key_pem = file("SCOPE_LEDGER_TLS_KEY_PEM_FILE")?;
+		let client_ca_pem = file("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE")?;
+		// The CA is what every client identity hangs on; an unusable one would build an empty
+		// root store and refuse every client while the hub looks healthy.
+		check_pinned_ca_pem(&client_ca_pem).map_err(|problem| eyre!("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE is not a trust anchor: {problem}"))?;
+		// tonic parses the PEMs only when it starts serving — after the hub said it is
+		// listening, and as a failure of one branch, not of the boot. Build the same rustls
+		// server config here so a broken key or a certificate that is not the key's stops the
+		// boot with the variable's name.
+		check_server_tls(&cert_pem, &key_pem, &client_ca_pem)?;
+		let (clients, grants) = Self::parse_grants(&file("SCOPE_LEDGER_GRANTS_FILE")?).wrap_err("SCOPE_LEDGER_GRANTS_FILE")?;
+		Ok(Some(Self {
+			bind,
+			cert_pem,
+			key_pem,
+			client_ca_pem,
+			clients,
+			grants,
+		}))
+	}
+
+	/// Parse and check the grants file: every rule of [`ClientDirectory::new`] and
+	/// [`Grants::new`], and every grant naming a client the file identifies — a grant to a
+	/// client no certificate maps to is a typo that would otherwise grant nothing, silently.
+	///
+	/// [`ClientDirectory::new`]: domain::scope_ledger::ClientDirectory::new
+	/// [`Grants::new`]: domain::scope_ledger::Grants::new
+	pub fn parse_grants(json: &str) -> color_eyre::Result<(domain::scope_ledger::ClientDirectory, domain::scope_ledger::Grants)> {
+		use color_eyre::eyre::eyre;
+		use domain::{
+			scope_ledger::{ClientDirectory, ClientId, Grant, Grants},
+			scopes::ScopeId,
+		};
+		let file: GrantsFile = serde_json::from_str(json).map_err(|e| eyre!("not the grants shape: {e}"))?;
+		let clients = file
+			.clients
+			.into_iter()
+			.map(|entry| Ok((ClientId::parse(&entry.client_id)?, entry.cert_sha256)))
+			.collect::<Result<Vec<_>, domain::error::DomainError>>()
+			.map_err(|e| eyre!("{e}"))?;
+		let directory = ClientDirectory::new(clients).map_err(|e| eyre!("{e}"))?;
+		let grants = file
+			.grants
+			.into_iter()
+			.map(|entry| {
+				Ok(Grant {
+					client: ClientId::parse(&entry.client_id)?,
+					scope: ScopeId::parse(&entry.scope)?,
+					label_prefix: entry.label_prefix,
+					compartments: entry.compartments,
+				})
+			})
+			.collect::<Result<Vec<_>, domain::error::DomainError>>()
+			.map_err(|e| eyre!("{e}"))?;
+		if let Some(orphan) = grants.iter().find(|grant| !grant.client.is_banking() && !directory.knows(&grant.client)) {
+			return Err(eyre!("grant to {} in {}: no client entry identifies {}", orphan.client, orphan.scope, orphan.client));
+		}
+		let grants = Grants::new(grants).map_err(|e| eyre!("{e}"))?;
+		Ok((directory, grants))
+	}
+}
+
 /// A boolean env var: `true`/`1` ⇒ true, anything else ⇒ false, unset/empty ⇒ `default`.
 fn bool_env(key: &str, default: bool) -> bool {
 	match env::var(key).ok().filter(|s| !s.is_empty()) {
@@ -836,6 +1068,117 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	const FINGERPRINT: &str = "32f91a20f9908f7c21a964ae0eb55394b90ecb7f9b92472d8349eb1f1e4ea675";
+
+	fn scope_fixture(name: &str) -> String {
+		format!("{}/tests/fixtures/scope_tls/{name}", env!("CARGO_MANIFEST_DIR"))
+	}
+
+	fn grants_json(clients: &str, grants: &str) -> String {
+		format!(r#"{{"clients":[{clients}],"grants":[{grants}]}}"#)
+	}
+
+	fn invest_client() -> String {
+		format!(r#"{{"client_id":"invest","cert_sha256":["{FINGERPRINT}"]}}"#)
+	}
+
+	#[test]
+	fn only_a_certificate_with_ca_true_counts_as_a_ca() {
+		use rustls::pki_types::{CertificateDer, pem::PemObject};
+		let der = |name: &str| CertificateDer::from_pem_file(scope_fixture(name)).unwrap();
+		assert!(der_is_ca(der("ca.pem").as_ref()));
+		assert!(der_is_ca(der("foreign-ca.pem").as_ref()));
+		for leaf in ["invest.pem", "server.pem", "stranger.pem"] {
+			assert!(!der_is_ca(der(leaf).as_ref()), "{leaf} is CA:FALSE");
+		}
+		assert!(!der_is_ca(b""));
+		assert!(!der_is_ca(&[0x30, 0x82, 0xff]), "a truncated certificate");
+	}
+
+	#[test]
+	fn the_grants_file_refuses_what_would_grant_too_much_or_nothing() {
+		let ok = grants_json(&invest_client(), r#"{"client_id":"invest","scope":"invest","label_prefix":"alloc:","compartments":true}"#);
+		let (clients, grants) = ScopeLedgerSettings::parse_grants(&ok).unwrap();
+		assert_eq!(clients.client_for(FINGERPRINT).map(|c| c.as_str()), Some("invest"));
+		assert!(!grants.is_empty());
+		for (json, needle) in [
+			(grants_json(&invest_client(), r#"{"client_id":"banking","scope":"invest","label_prefix":"alloc:"}"#), "banking"),
+			(grants_json(&format!(r#"{{"client_id":"banking","cert_sha256":["{FINGERPRINT}"]}}"#), ""), "banking"),
+			(grants_json(&invest_client(), r#"{"client_id":"invest","scope":"main","label_prefix":"alloc:"}"#), "scope main"),
+			(grants_json(&invest_client(), r#"{"client_id":"invest","scope":"invest","label_prefix":""}"#), "label_prefix"),
+			(
+				grants_json(
+					&format!(r#"{},{{"client_id":"panel","cert_sha256":["{}"]}}"#, invest_client(), "b".repeat(64)),
+					r#"{"client_id":"invest","scope":"sa","label_prefix":"alloc:"},{"client_id":"panel","scope":"sa","label_prefix":"alloc:panel"}"#,
+				),
+				"overlap",
+			),
+			(grants_json(&invest_client(), r#"{"client_id":"panel","scope":"sa","label_prefix":"panel:"}"#), "no client entry"),
+			(
+				grants_json(&invest_client(), r#"{"client_id":"invest","scope":"sa","label_prefix":"x:","admin":true}"#),
+				"unknown field",
+			),
+			(grants_json(r#"{"client_id":"invest","cert_sha256":["ABC"]}"#, ""), "cert_sha256"),
+		] {
+			let err = format!("{:#}", ScopeLedgerSettings::parse_grants(&json).expect_err(needle));
+			assert!(err.contains(needle), "expected {needle:?} in: {err}");
+		}
+	}
+
+	#[test]
+	fn the_scope_ledger_listener_is_off_until_bound_and_then_needs_every_file() {
+		let off = ScopeLedgerSettings::read(|_| None).unwrap();
+		assert!(off.is_none());
+
+		let grants = std::env::temp_dir().join(format!("scope-ledger-grants-{}.json", std::process::id()));
+		std::fs::write(&grants, grants_json(&invest_client(), r#"{"client_id":"invest","scope":"invest","label_prefix":"alloc:"}"#)).unwrap();
+		let files = |ca: &'static str| {
+			let grants = grants.to_string_lossy().into_owned();
+			move |key: &str| -> Option<String> {
+				Some(match key {
+					"SCOPE_LEDGER_BIND" => "127.0.0.1:50054".to_owned(),
+					"SCOPE_LEDGER_TLS_CERT_PEM_FILE" => scope_fixture("server.pem"),
+					"SCOPE_LEDGER_TLS_KEY_PEM_FILE" => scope_fixture("server.key"),
+					"SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE" => scope_fixture(ca),
+					"SCOPE_LEDGER_GRANTS_FILE" => grants.clone(),
+					_ => return None,
+				})
+			}
+		};
+		let on = ScopeLedgerSettings::read(files("ca.pem")).unwrap().expect("bound");
+		assert_eq!(on.bind, "127.0.0.1:50054".parse::<SocketAddr>().unwrap());
+
+		let err = format!("{:#}", ScopeLedgerSettings::read(files("server.key")).err().expect("a key is not a CA"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE"), "{err}");
+
+		let err = format!("{:#}", ScopeLedgerSettings::read(files("invest.pem")).err().expect("a leaf is not a CA"));
+		assert!(err.contains("not a CA"), "{err}");
+
+		let wrong_key = |key: &str| {
+			if key == "SCOPE_LEDGER_TLS_KEY_PEM_FILE" {
+				Some(scope_fixture("invest.key"))
+			} else {
+				files("ca.pem")(key)
+			}
+		};
+		let err = format!("{:#}", ScopeLedgerSettings::read(wrong_key).err().expect("a key that is not the certificate's"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_KEY_PEM_FILE"), "{err}");
+		let garbage_key = |key: &str| {
+			if key == "SCOPE_LEDGER_TLS_KEY_PEM_FILE" {
+				Some(scope_fixture("README.md"))
+			} else {
+				files("ca.pem")(key)
+			}
+		};
+		let err = format!("{:#}", ScopeLedgerSettings::read(garbage_key).err().expect("not a key at all"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_KEY_PEM_FILE"), "{err}");
+
+		let without_ca = |key: &str| (key != "SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE").then(|| files("ca.pem")(key)).flatten();
+		let err = format!("{:#}", ScopeLedgerSettings::read(without_ca).err().expect("mTLS needs the client CA"));
+		assert!(err.contains("SCOPE_LEDGER_TLS_CLIENT_CA_PEM_FILE is required"), "{err}");
+		std::fs::remove_file(&grants).unwrap();
+	}
 
 	/// The money-plane switch opens only on an explicit, unambiguous word. A typo, a
 	/// half-edited value, an empty string and an unset variable all leave the gate shut —
