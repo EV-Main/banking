@@ -1105,7 +1105,33 @@ owner; `Pull` returns only the receiving client's own. Appends serialize on one 
 lock held to commit, so a cursor never passes a position that commits later. `Pull` with a
 scope outside the caller's grants (`main` included) is `not_granted`; an empty scope means
 every scope it is granted in now. Kinds so far: ACCOUNT_OPENED, HOLD_PLACED / CAPTURED /
-VOIDED / EXPIRED, TRANSFERRED.
+VOIDED / EXPIRED, TRANSFERRED, INVOICE_CREATED / PAID / CANCELLED / EXPIRED.
+
+**Invoices** (`scope.v1.InvoiceService` on the scope listener, `banking.v1.InvoicePaymentService`
+on the client one; `domain::scope_invoices`, `scope_invoices`, migration 0056). A client issues
+an invoice into an account it owns under a current grant (`CreateInvoice` keys are the scope
+ledger's, rpc `create_invoice`; the canonical terms are every field); never into `fee` or
+`treasury`; a frozen scope issues none. A payment is ONE posted transfer `Dr <payer's main or
+scope_claim:<s>:<payer>> / Cr scope_account:<s>:<label>` (`TransferCode::InvoicePayment` = 58,
+id `uuid_v5(invoice_id, "scope:invoice:pay")`, FROZEN) — no move between compartments first.
+`PayInvoice` takes the payer's key lock (`invoice_pay_key:<user>:<key>`), then the invoice row
+`FOR UPDATE`, then the source's claim lock — nothing holding a claim lock ever waits on an
+invoice row — and checks, in order: open and not past `expires_at` (`invoice_not_open`), the
+scope's state (`scope_frozen` / `scope_closed`), `user_frozen`, the RECEIVING scope's
+`min_kyc_level` (`kyc_level`, from either source), and `spendable_locked` of the source (an
+undispatched payment counts through the outbox scan). The scope's limits on moves in do not
+apply (D24 (6)). The row is stamped `paid` in the same transaction, so a second payer waiting
+on the row finds it paid; the payer's key is unique per user on the row
+(`scope_invoices_pay_key_idx`). An invoice restricted to another payer is the same NOT_FOUND as
+an unknown id. Only the payment reaches the outbox; creation, cancellation and expiry write
+their money event in their own transaction. **Expiry** is both: every read shows an open
+invoice past `expires_at` as EXPIRED and a payment or cancel is refused under the row lock
+(so the sweep's cadence never decides a late payment), and the reaper records it
+(`scope_invoices::expire_due_invoices`), which is what puts INVOICE_EXPIRED in the issuer's
+stream whether or not anyone reads the invoice again. `CancelInvoice` carries no key: it asks
+for one end state, so a repeat returns the cancelled invoice unchanged. A payment the ledger
+refused parks (the row stays `paid`); with the spend check under the claim lock this takes a
+ledger the control plane disagrees with, i.e. an operator's case.
 
 **`ServiceClaim(svc)` is not migrated here.** The allocation claims stay on
 `service:<slug>` until the units migration window (§6.5 of the org plan): each one becomes

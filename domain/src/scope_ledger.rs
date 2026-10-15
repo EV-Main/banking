@@ -247,6 +247,8 @@ pub enum LedgerRefusal {
 	UserFrozen,
 	/// No live mandate of the user covers this for the caller (FAILED_PRECONDITION).
 	MandateRequired,
+	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
+	InvoiceNotOpen,
 }
 
 impl LedgerRefusal {
@@ -260,6 +262,7 @@ impl LedgerRefusal {
 			Self::HoldNotActive => "hold_not_active",
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
+			Self::InvoiceNotOpen => "invoice_not_open",
 		}
 	}
 
@@ -267,7 +270,7 @@ impl LedgerRefusal {
 	pub const fn is_permission(self) -> bool {
 		match self {
 			Self::NotGranted | Self::NotAccountOwner => true,
-			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired => false,
+			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired | Self::InvoiceNotOpen => false,
 		}
 	}
 }
@@ -898,6 +901,10 @@ pub enum MoneyEventKind {
 	HoldVoided,
 	HoldExpired,
 	Transferred,
+	InvoiceCreated,
+	InvoicePaid,
+	InvoiceCancelled,
+	InvoiceExpired,
 }
 
 impl MoneyEventKind {
@@ -909,6 +916,10 @@ impl MoneyEventKind {
 			Self::HoldVoided => "hold_voided",
 			Self::HoldExpired => "hold_expired",
 			Self::Transferred => "transferred",
+			Self::InvoiceCreated => "invoice_created",
+			Self::InvoicePaid => "invoice_paid",
+			Self::InvoiceCancelled => "invoice_cancelled",
+			Self::InvoiceExpired => "invoice_expired",
 		}
 	}
 
@@ -920,6 +931,10 @@ impl MoneyEventKind {
 			"hold_voided" => Ok(Self::HoldVoided),
 			"hold_expired" => Ok(Self::HoldExpired),
 			"transferred" => Ok(Self::Transferred),
+			"invoice_created" => Ok(Self::InvoiceCreated),
+			"invoice_paid" => Ok(Self::InvoicePaid),
+			"invoice_cancelled" => Ok(Self::InvoiceCancelled),
+			"invoice_expired" => Ok(Self::InvoiceExpired),
 			other => Err(DomainError::Validation(format!("unknown money event kind: {other}"))),
 		}
 	}

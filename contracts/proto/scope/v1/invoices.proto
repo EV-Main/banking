@@ -10,17 +10,24 @@ package scope.v1;
 // service takes a one-off payment from a user who gave it no mandate.
 //
 // Grants, identifiers, amounts, `idempotency_key` and `subject_ref` follow
-// `ScopeLedgerService` (ledger.proto); `scope = main` is refused there and here.
+// `ScopeLedgerService` (ledger.proto); `scope = main` is refused there and here. The
+// account an invoice pays into is one the caller owns under a current grant (else
+// `not_granted` / `not_account_owner`, as for a debit) — never `fee` or `treasury`.
 service InvoiceService {
   // Issue an invoice payable into `(scope, to_label)`; the caller must own that
   // account. A FROZEN scope issues none (`scope_frozen`).
   rpc CreateInvoice(CreateInvoiceRequest) returns (Invoice);
 
-  // Withdraw an OPEN invoice the caller issued. Cancelling a cancelled one returns it
-  // unchanged; a paid or expired one is FAILED_PRECONDITION.
+  // Withdraw an OPEN invoice the caller issued. The one mutating call here without an
+  // `idempotency_key`, by design: it names the invoice and asks for one end state, so a
+  // retry IS a repeat — cancelling a cancelled invoice returns it unchanged, whoever
+  // cancelled it and whenever. A paid or expired one (an open one past `expires_at`
+  // included) is FAILED_PRECONDITION `invoice_not_open`.
   rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);
 
-  // One invoice the caller issued, as it stands now; anyone else's is NOT_FOUND.
+  // One invoice the caller issued, as it stands now; anyone else's is NOT_FOUND. An open
+  // invoice past `expires_at` reads EXPIRED at once, before `KIND_INVOICE_EXPIRED` reaches
+  // the stream.
   rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
 }
 

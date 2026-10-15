@@ -43,6 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
+	scope_invoices::InvoiceEvent,
 	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
@@ -156,6 +157,10 @@ const SCOPE_TRANSFER: &[u8] = b"scope:transfer";
 const HOLD_PENDING: &str = "scope:hold:pending:";
 const HOLD_VOID: &str = "scope:hold:void:";
 const HOLD_CAPTURE: &str = "scope:hold:capture:";
+
+/// The salt of an invoice payment's one posted leg, over the invoice id: an invoice is paid at
+/// most once, so its id alone names the transfer. FROZEN.
+const INVOICE_PAY: &[u8] = b"scope:invoice:pay";
 
 /// An event whose one ledger leg is recorded on a control-plane row of its own — `pending`
 /// until the relay posts it, then `posted`, or `failed` for good when the ledger refuses it.
@@ -1070,6 +1075,10 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(vec![plan_hold(event, row.aggregate_id, reference)])
 		}
+		"scope_invoices" => {
+			let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(plan_invoice(event, row.aggregate_id, reference).into_iter().collect())
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
 	}
@@ -1228,6 +1237,36 @@ fn plan_hold(event: HoldEvent, hold_id: Uuid, reference: u128) -> PlannedOp {
 			}
 		}
 	}
+}
+
+/// An invoice payment: one posted transfer out of the payer's `main` or compartment straight into
+/// the scope account the invoice names. The other steps of an invoice move no money and never
+/// reach the outbox; should one, it plans nothing.
+fn plan_invoice(event: InvoiceEvent, invoice_id: Uuid, reference: u128) -> Option<PlannedOp> {
+	let InvoiceEvent::Paid {
+		scope,
+		to_label,
+		amount,
+		payer,
+		from,
+		..
+	} = event
+	else {
+		return None;
+	};
+	let id = tid(invoice_id, INVOICE_PAY);
+	Some(PlannedOp {
+		role: "invoice_pay",
+		transfer_id: id,
+		action: LedgerAction::Post(LedgerTransfer {
+			id,
+			debit: from.claim_key(payer),
+			credit: LedgerAccountKey::ScopeAccount(scope, to_label),
+			amount: amount.base_units(),
+			code: TransferCode::InvoicePayment,
+			reference,
+		}),
+	})
 }
 
 /// A deposit credits the party the chain named.
@@ -2311,6 +2350,52 @@ mod tests {
 		assert!(matches!(ops[0].action, LedgerAction::Complete(PendingCompletion { kind: CompletionKind::Post, .. })));
 		assert_eq!(ops[1].role, "redeem_payout");
 		assert!(matches!(ops[1].action, LedgerAction::Post(_)));
+	}
+
+	// A payment is one posted leg out of the source the payer chose, and an undispatched one
+	// counts against that source — and that source only — in every other spender's check.
+	#[test]
+	fn an_invoice_payment_posts_once_out_of_the_chosen_source() {
+		let (invoice, payer) = (Uuid::new_v4(), UserId::new());
+		let scope = domain::scopes::ScopeId::parse("sa").unwrap();
+		let paid = |from: domain::scopes::Compartment| InvoiceEvent::Paid {
+			invoice_id: domain::scope_invoices::InvoiceId::from_raw(invoice),
+			scope: scope.clone(),
+			to_label: domain::scopes::ScopeAccountLabel::parse("sales").unwrap(),
+			amount: Usdt::parse_decimal("25").unwrap(),
+			payer,
+			from,
+			version: 2,
+		};
+		let row = |event: InvoiceEvent| OutboxRow {
+			seq: 1,
+			event_id: Uuid::new_v4(),
+			aggregate: "scope_invoice".into(),
+			aggregate_id: invoice,
+			kind: "scope_invoices".into(),
+			payload: serde_json::to_string(&event).unwrap(),
+			attempts: 0,
+		};
+		let from_main = row(paid(domain::scopes::Compartment::Main));
+		let ops = plan(&from_main).unwrap();
+		let [op] = ops.as_slice() else { panic!("one leg") };
+		let LedgerAction::Post(leg) = &op.action else { panic!("a posted transfer") };
+		assert_eq!((leg.id, leg.code), (tid(invoice, INVOICE_PAY), TransferCode::InvoicePayment));
+		assert_eq!(
+			leg.credit,
+			LedgerAccountKey::ScopeAccount(scope.clone(), domain::scopes::ScopeAccountLabel::parse("sales").unwrap())
+		);
+		let amount = Usdt::parse_decimal("25").unwrap().base_units();
+		assert_eq!(planned_debit(&from_main, &LedgerAccountKey::UserClaim(payer)).unwrap(), amount);
+		assert_eq!(planned_debit(&from_main, &LedgerAccountKey::ScopeClaim(payer, scope.clone())).unwrap(), 0);
+		let from_compartment = row(paid(domain::scopes::Compartment::Scope(scope.clone())));
+		assert_eq!(planned_debit(&from_compartment, &LedgerAccountKey::ScopeClaim(payer, scope.clone())).unwrap(), amount);
+		let cancelled = row(InvoiceEvent::Cancelled {
+			invoice_id: domain::scope_invoices::InvoiceId::from_raw(invoice),
+			scope,
+			version: 2,
+		});
+		assert!(plan(&cancelled).unwrap().is_empty(), "only a payment moves money");
 	}
 
 	// A capture voids the standing reservation and takes the captured part and the rest out of
