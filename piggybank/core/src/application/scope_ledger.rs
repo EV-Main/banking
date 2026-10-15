@@ -93,10 +93,15 @@ pub(crate) fn check_key(key: &str) -> Result<(), DomainError> {
 /// is not its business — refused alike, so a client cannot probe which scopes exist — and a
 /// granted scope banking has not heard of from concierge is NOT_FOUND.
 pub(crate) async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
-	if scope.is_main() || ports.grants.in_scope(client, scope).next().is_none() {
+	granted_in(ports.grants, ports.scopes, client, scope).await
+}
+
+/// [`granted_scope`] over the two ports it reads, for the use cases that borrow other ports.
+pub(crate) async fn granted_in(grants: &Grants, scopes: &dyn CompartmentStore, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
+	if scope.is_main() || grants.in_scope(client, scope).next().is_none() {
 		return Err(TransferError::Refused(LedgerRefusal::NotGranted));
 	}
-	Ok(ports.scopes.scope(scope).await?.ok_or_else(|| DomainError::NotFound {
+	Ok(scopes.scope(scope).await?.ok_or_else(|| DomainError::NotFound {
 		entity: "scope",
 		id: scope.to_string(),
 	})?)

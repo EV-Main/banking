@@ -261,6 +261,7 @@ fn operation_event(recorded: &RecordedOperation, kind: MoneyEventKind, version: 
 		hold_remaining: None,
 		counterparty_scope,
 		failure_reason: failure_reason.to_owned(),
+		paid_from: String::new(),
 		audience: vec![terms.client.clone()],
 	}
 }

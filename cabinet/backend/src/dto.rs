@@ -318,6 +318,41 @@ impl From<bk::Deposit> for Deposit {
 
 list_dto! { DepositList from bk::DepositList { deposits: Vec<Deposit> } }
 
+/// A scope's invoice as its would-be payer sees it. The amount and the payee are the
+/// server's, never the page's: the browser only names the invoice.
+#[derive(Serialize)]
+pub struct PayableInvoice {
+	pub invoice_id: String,
+	pub scope: String,
+	pub display_name: String,
+	pub amount: String,
+	pub memo: String,
+	pub state: String,
+	pub expires_at: String,
+	pub paid_at: String,
+	pub paid_from: String,
+	pub available_main: String,
+	pub available_scope: String,
+}
+
+impl From<bk::PayableInvoice> for PayableInvoice {
+	fn from(i: bk::PayableInvoice) -> Self {
+		Self {
+			invoice_id: i.invoice_id,
+			scope: i.scope,
+			display_name: i.display_name,
+			amount: i.amount,
+			memo: i.memo,
+			state: i.state,
+			expires_at: i.expires_at.to_string(),
+			paid_at: i.paid_at.to_string(),
+			paid_from: i.paid_from,
+			available_main: i.available_main,
+			available_scope: i.available_scope,
+		}
+	}
+}
+
 // ── piggybank: operations (the unified activity timeline) ────────────────────
 
 /// One row of the caller's activity timeline. `kind` is the discriminator: it decides

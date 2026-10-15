@@ -16,6 +16,7 @@ import {
   isNonPagePath,
   localeRepairedPath,
   relocalise,
+  walletActionPage,
   zonePathname,
 } from "./base-path.ts";
 
@@ -202,4 +203,19 @@ test("repairing agrees with cabinetPath for every locale", () => {
       assert.equal(localeRepairedPath(bogus, locale), cabinetPath(locale, path), `${locale} ${path}`);
     }
   }
+});
+
+test("the four wallet action addresses map onto their action pages", () => {
+  assert.equal(walletActionPage("/wallet/pay"), "/wallet/action/pay");
+  assert.equal(walletActionPage("/wallet/withdraw"), "/wallet/action/withdraw");
+  assert.equal(walletActionPage("/wallet/move"), "/wallet/action/move");
+  assert.equal(walletActionPage("/wallet/mandate"), "/wallet/action/mandate");
+});
+
+test("a wallet action address with a trailing slash is not an action", () => {
+  assert.equal(walletActionPage("/wallet/withdraw/"), null);
+});
+
+test("the wallet element bundles are not pages", () => {
+  assert.equal(isNonPagePath("/wallet/mfe/x.js"), true);
 });

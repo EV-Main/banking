@@ -20,7 +20,8 @@ use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use domain::scopes::ScopeId;
 use evbanking_auth::{AuthConfig, AuthError, AuthService, Authenticate, Claims, TokenType, provisioner_channel};
 use evbanking_contracts::scope::v1::{
-	ChargeRequest, GetBalancesRequest, GetBalancesResponse, PullRequest, money_events_client::MoneyEventsClient, scope_ledger_service_client::ScopeLedgerServiceClient,
+	ChargeRequest, GetBalancesRequest, GetBalancesResponse, GetInvoiceRequest, PullRequest, invoice_service_client::InvoiceServiceClient, money_events_client::MoneyEventsClient,
+	scope_ledger_service_client::ScopeLedgerServiceClient,
 };
 use piggybank_core::{
 	application::scope_ledger::NoMandates,
@@ -98,6 +99,7 @@ async fn harness() -> Option<Harness> {
 			holds: store.clone(),
 			mandates: Arc::new(NoMandates),
 			events: store.clone(),
+			invoices: store.clone(),
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),
@@ -402,6 +404,41 @@ async fn money_events_are_served_behind_both_layers() {
 	let served = served.expect("a known client with its service token is served").into_inner();
 	assert!(served.events.is_empty(), "a fresh scope has no events");
 	assert_eq!(served.next_position, 0, "nothing scanned: the cursor stays put");
+}
+
+// InvoiceService is a third service on the listener: behind both layers like the others.
+#[tokio::test]
+async fn invoices_are_served_behind_both_layers() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let scope = h.scope.clone();
+	let (anonymous, served) = with_server(addr.port(), server, || async {
+		let tls = ClientTlsConfig::new()
+			.ca_certificate(Certificate::from_pem(fixture("ca.pem")))
+			.domain_name("localhost")
+			.identity(Identity::from_pem(fixture("invest.pem"), fixture("invest.key")));
+		let channel = Endpoint::from_shared(format!("https://localhost:{}", addr.port()))
+			.unwrap()
+			.tls_config(tls)
+			.unwrap()
+			.connect_lazy();
+		let get = || GetInvoiceRequest {
+			scope: scope.as_str().to_owned(),
+			invoice_id: Uuid::new_v4().to_string(),
+		};
+		let anonymous = InvoiceServiceClient::new(channel.clone()).get_invoice(Request::new(get())).await;
+		let mut request = Request::new(get());
+		request.metadata_mut().insert("authorization", format!("Bearer {SERVICE_TOKEN}").parse().unwrap());
+		(anonymous, InvoiceServiceClient::new(channel).get_invoice(request).await)
+	})
+	.await;
+	assert_eq!(anonymous.expect_err("no bearer, no invoice").code(), Code::Unauthenticated);
+	assert_eq!(
+		served.expect_err("an invoice nobody issued").code(),
+		Code::NotFound,
+		"a known client with its service token reaches the handler"
+	);
 }
 
 /// One GetBalances request as raw gRPC framing over the fixture `invest` identity, with the

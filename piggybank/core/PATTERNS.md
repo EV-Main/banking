@@ -1105,7 +1105,8 @@ owner; `Pull` returns only the receiving client's own. Appends serialize on one 
 lock held to commit, so a cursor never passes a position that commits later. `Pull` with a
 scope outside the caller's grants (`main` included) is `not_granted`; an empty scope means
 every scope it is granted in now. Kinds so far: ACCOUNT_OPENED, HOLD_PLACED / CAPTURED /
-VOIDED / EXPIRED, TRANSFERRED, PAID_OUT, OPERATION_REQUESTED / REJECTED / FAILED.
+VOIDED / EXPIRED, TRANSFERRED, PAID_OUT, OPERATION_REQUESTED / REJECTED / FAILED, INVOICE_CREATED /
+PAID / CANCELLED / EXPIRED.
 
 **Payouts** (`Payout`, `scope_payouts` + `scope_payout_lines`, part 2b). A payout is ONE
 linked TigerBeetle chain, one posted leg per line, `Dr scope_account:<s>:<from> / Cr
@@ -1156,6 +1157,43 @@ OPERATION_REQUESTED / _REJECTED / _FAILED, and PAID_OUT / TRANSFERRED under its
 
 **Reconciliation** (8) gauges scope transfers and payouts recorded and unposted for over 15
 min (`telemetry::note_stale_scope_postings`), outside `clean()`.
+
+
+**Invoices** (`scope.v1.InvoiceService` on the scope listener, `banking.v1.InvoicePaymentService`
+on the client one; `domain::scope_invoices`, `scope_invoices`, migration 0056). A client issues
+an invoice into an account it owns under a current grant (`CreateInvoice` keys are the scope
+ledger's, rpc `create_invoice`; the canonical terms are every field); never into `fee` or
+`treasury`; a frozen scope issues none. A payment is ONE posted transfer `Dr <payer's main or
+scope_claim:<s>:<payer>> / Cr scope_account:<s>:<label>` (`TransferCode::InvoicePayment` = 58,
+id `uuid_v5(invoice_id, "scope:invoice:pay:<version of the Paid event>")`, FROZEN) — no move
+between compartments first.
+`PayInvoice` takes the payer's key lock (`invoice_pay_key:<user>:<key>`), then the invoice row
+`FOR UPDATE`, then the source's claim lock — nothing holding a claim lock ever waits on an
+invoice row — and checks, in order: open and not past `expires_at` (`invoice_not_open`), the
+scope's state (`scope_frozen` / `scope_closed`), `user_frozen`, the RECEIVING scope's
+`min_kyc_level` (`kyc_level`, from either source), and `spendable_locked` of the source (an
+undispatched payment counts through the outbox scan). The scope's limits on moves in do not
+apply (D24 (6)). The row is stamped `paid` with `ledger_state = pending` in the same
+transaction, so a second payer waiting on the row finds it taken; the payer's key is unique per
+user on the row (`scope_invoices_pay_key_idx`). **Paid means posted**: the payment follows the
+relay's `Posting` discipline like a move — counted from the row in `unapplied_debits` (the
+`scope_invoices` kind is left out of the outbox scan), stamped `posted` by the relay, and only
+then shown as PAID (to the issuer and the payer alike) and sent as INVOICE_PAID. A refused or
+parked leg reopens the invoice (`scope_invoices::fail_payment`: `open`, payment columns and key
+cleared, version + 1, `pay_failure_reason`, a `PaymentFailed` fact in the event log) — the
+issuer, never told of the payment, hears nothing. The stamps match the attempt's version, so a
+replayed refused event never touches a later payment; the reaper replays a `pending` payment
+whose event a relay dispatched without posting (`redrive_stale_payments`). Who paid, when and
+from where is shown to the payer alone. An invoice restricted to another payer is the same NOT_FOUND as
+an unknown id. Only the payment reaches the outbox; creation, cancellation and expiry write
+their money event in their own transaction. **Expiry** is both: every read shows an open
+invoice past `expires_at` as EXPIRED and a payment or cancel is refused under the row lock
+(so the sweep's cadence never decides a late payment), and the reaper records it
+(`scope_invoices::expire_due_invoices`), which is what puts INVOICE_EXPIRED in the issuer's
+stream whether or not anyone reads the invoice again. `CancelInvoice` carries no key: it asks
+for one end state, so a repeat returns the cancelled invoice unchanged. `pay_url` is
+`@evinvest/wallet`'s pay page, `https://evinvest.ltd/wallet/pay?invoice=<id>`. The clock of
+every expiry decision is the statement's (`clock_timestamp()`), not the transaction's start.
 
 **`ServiceClaim(svc)` is not migrated here.** The allocation claims stay on
 `service:<slug>` until the units migration window (§6.5 of the org plan): each one becomes

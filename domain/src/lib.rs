@@ -14,7 +14,8 @@
 //! units — orders, the matching engine, the escrow facts), `scopes` (a user's wallet split
 //! by scope, and the scope's own accounts), `scope_ledger` (what a scope's own service may
 //! do with money there — its grants, its accounts, its transfers), `scope_operations` (its
-//! payouts, and the operations that wait on an approval), and
+//! payouts, and the operations that wait on an approval), `scope_invoices` (a scope asking a
+//! user to pay into one of its accounts), and
 //! the `users` / `subscriptions` / `redemptions` / `withdrawals` aggregates.
 
 pub mod error;
@@ -30,6 +31,7 @@ pub mod issuance;
 pub mod money;
 pub mod payments;
 pub mod redemptions;
+pub mod scope_invoices;
 pub mod scope_ledger;
 pub mod scope_operations;
 pub mod scopes;

@@ -14,6 +14,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::Usdt,
+	scope_invoices::{Invoice, InvoiceEvent, InvoiceState},
 	scope_ledger::{ClientId, HoldDestination, HoldEvent, MoneyEventKind, ScopeLedgerEvent},
 	scope_operations::ScopePayoutEvent,
 	scopes::{ScopeAccountLabel, ScopeId},
@@ -54,6 +55,8 @@ pub struct NewMoneyEvent {
 	/// The other scope of a movement between two scopes; empty otherwise.
 	pub counterparty_scope: String,
 	pub failure_reason: String,
+	/// An invoice payment's source: `main` or the scope; empty for every other kind.
+	pub paid_from: String,
 	/// Every client the event is delivered to; banking itself is never one.
 	pub audience: Vec<ClientId>,
 }
@@ -98,8 +101,8 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 	let (to_label, to_subject) = split(event.to.as_ref());
 	let position: Option<i64> = sqlx::query_scalar(
 		"INSERT INTO money_events (event_id, scope, kind, ref_id, aggregate_version, auth_subject, amount, from_label, from_subject, to_label, to_subject, \
-		 subject_ref, initiator_client, balances, hold_remaining, counterparty_scope, failure_reason) \
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17) \
+		 subject_ref, initiator_client, balances, hold_remaining, counterparty_scope, failure_reason, paid_from) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18) \
 		 ON CONFLICT (event_id) DO NOTHING RETURNING position",
 	)
 	.bind(event.event_id)
@@ -119,6 +122,7 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 	.bind(event.hold_remaining.map(|remaining| remaining.base_units().to_string()))
 	.bind(&event.counterparty_scope)
 	.bind(&event.failure_reason)
+	.bind(&event.paid_from)
 	.fetch_optional(&mut *conn)
 	.await
 	.map_err(repo_err)?;
@@ -158,6 +162,7 @@ pub fn account_opened(account: &OwnedAccount) -> NewMoneyEvent {
 		hold_remaining: None,
 		counterparty_scope: String::new(),
 		failure_reason: String::new(),
+		paid_from: String::new(),
 		audience: vec![account.owner.clone()],
 	}
 }
@@ -205,6 +210,12 @@ pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow)
 	} else if row.kind == ScopePayoutEvent::KIND {
 		let event: ScopePayoutEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 		paid_out(pool, ledger, event).await?
+	} else if row.kind == InvoiceEvent::KIND {
+		let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		match invoice_paid(pool, ledger, event).await? {
+			Some(event) => vec![event],
+			None => return Ok(()),
+		}
 	} else {
 		return Ok(());
 	};
@@ -255,6 +266,7 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 			hold_remaining: None,
 			counterparty_scope: counterparty,
 			failure_reason: String::new(),
+			paid_from: String::new(),
 			audience,
 		}
 	};
@@ -315,6 +327,7 @@ async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -
 				hold_remaining: None,
 				counterparty_scope: String::new(),
 				failure_reason: String::new(),
+				paid_from: String::new(),
 				audience: audience.clone(),
 			})
 		})
@@ -347,6 +360,7 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 		hold_remaining: None,
 		counterparty_scope: String::new(),
 		failure_reason: String::new(),
+		paid_from: String::new(),
 		audience: vec![placer.clone()],
 	};
 	Ok(match event {
@@ -403,6 +417,88 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 	})
 }
 
+/// The event of an invoice's control-plane step — its creation, cancellation or expiry, as it
+/// stands right after the step — for the client that issued it. Written in the step's own
+/// transaction: no money moves, so there is no ledger to wait for. The payment's event is the
+/// relay's ([`invoice_paid`]).
+pub fn invoice_step(invoice: &Invoice) -> Result<NewMoneyEvent, DomainError> {
+	let terms = invoice.terms();
+	let (kind, initiator) = match invoice.state() {
+		InvoiceState::Open => (MoneyEventKind::InvoiceCreated, terms.client.as_str()),
+		InvoiceState::Cancelled => (MoneyEventKind::InvoiceCancelled, terms.client.as_str()),
+		// Banking's own doing, by the clock the client set.
+		InvoiceState::Expired => (MoneyEventKind::InvoiceExpired, ""),
+		InvoiceState::Paid => return Err(DomainError::Repository(format!("invoice {}: a payment's event is the relay's", invoice.id()))),
+	};
+	Ok(NewMoneyEvent {
+		event_id: event_id(&format!("invoice:{}:{}", invoice.id(), invoice.version())),
+		scope: terms.scope.clone(),
+		kind,
+		ref_id: invoice.id().to_string(),
+		aggregate_version: invoice.version(),
+		auth_subject: String::new(),
+		amount: Some(terms.amount),
+		from: None,
+		to: Some(EventAccount::Account(terms.to.clone())),
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		initiator_client: initiator.to_owned(),
+		balances: Vec::new(),
+		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
+		paid_from: String::new(),
+		audience: vec![terms.client.clone()],
+	})
+}
+
+/// A payment the ledger just took, for the issuing client and the owner of the account it paid
+/// into (the same client: an invoice only pays into an account its issuer owns). The payer
+/// caused it, so no client is its initiator; the payer is named by `auth_subject`.
+async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -> Result<Option<NewMoneyEvent>, String> {
+	let InvoiceEvent::Paid {
+		invoice_id,
+		scope,
+		to_label,
+		amount,
+		from,
+		version,
+		..
+	} = event
+	else {
+		// Only a payment is relayed; the other steps wrote their events themselves.
+		return Ok(None);
+	};
+	let (client, subject_ref, payer): (String, String, Option<String>) = sqlx::query_as("SELECT client_id, subject_ref, paid_by_auth_subject FROM scope_invoices WHERE id = $1")
+		.bind(invoice_id.raw())
+		.fetch_one(pool)
+		.await
+		.map_err(|e| format!("scope invoice {invoice_id}: {e}"))?;
+	let issuer = ClientId::parse(&client).map_err(|e| format!("scope invoice {invoice_id}: {e}"))?;
+	let payer = payer.ok_or_else(|| format!("scope invoice {invoice_id}: relayed a payment of an unpaid invoice"))?;
+	let balances: Vec<EventBalance> = balance_of(pool, ledger, &scope, &to_label).await?.into_iter().collect();
+	let mut audience = vec![issuer];
+	audience.extend(balances.iter().map(|entry| entry.owner.clone()));
+	Ok(Some(NewMoneyEvent {
+		event_id: event_id(&format!("invoice:{invoice_id}:{version}")),
+		scope,
+		kind: MoneyEventKind::InvoicePaid,
+		ref_id: invoice_id.to_string(),
+		aggregate_version: version,
+		auth_subject: payer,
+		amount: Some(amount),
+		from: None,
+		to: Some(EventAccount::Account(to_label)),
+		subject_ref,
+		initiator_client: String::new(),
+		balances,
+		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
+		paid_from: from.as_str().to_owned(),
+		audience,
+	}))
+}
+
 fn amount_column(raw: &str, what: &str) -> Result<Option<Usdt>, DomainError> {
 	if raw.is_empty() {
 		return Ok(None);
@@ -454,6 +550,7 @@ fn money_event(row: PgRow) -> Result<MoneyEventRecord, DomainError> {
 		hold_remaining: amount_column(&row.try_get::<Option<String>, _>("hold_remaining").map_err(repo_err)?.unwrap_or_default(), "hold_remaining")?,
 		counterparty_scope: get_text("counterparty_scope")?,
 		failure_reason: get_text("failure_reason")?,
+		paid_from: get_text("paid_from")?,
 		occurred_at: row.try_get("occurred_at").map_err(repo_err)?,
 	})
 }
@@ -464,7 +561,7 @@ impl MoneyEventStore for PgScopeLedger {
 		let scopes: Vec<&str> = scopes.iter().map(ScopeId::as_str).collect();
 		sqlx::query(
 			"SELECT e.position, e.event_id, e.scope, e.kind, e.ref_id, e.aggregate_version, e.auth_subject, e.amount, e.from_label, e.from_subject, e.to_label, \
-			 e.to_subject, e.subject_ref, e.initiator_client, e.balances::text AS balances, e.hold_remaining, e.counterparty_scope, e.failure_reason, \
+			 e.to_subject, e.subject_ref, e.initiator_client, e.balances::text AS balances, e.hold_remaining, e.counterparty_scope, e.failure_reason, e.paid_from, \
 			 EXTRACT(EPOCH FROM e.occurred_at)::BIGINT AS occurred_at \
 			 FROM money_event_deliveries d JOIN money_events e ON e.position = d.position \
 			 WHERE d.client_id = $1 AND d.position > $2 AND d.scope = ANY($3) ORDER BY d.position LIMIT $4",

@@ -71,6 +71,7 @@ async fn the_listener_handshakes_with_the_provider_main_installs() {
 			holds: Arc::new(PgScopeLedger::new(pool.clone())),
 			mandates: Arc::new(NoMandates),
 			events: Arc::new(PgScopeLedger::new(pool.clone())),
+			invoices: Arc::new(PgScopeLedger::new(pool.clone())),
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),

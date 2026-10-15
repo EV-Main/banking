@@ -531,6 +531,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let (auth_service, authorizer) = AuthService::try_new(auth_config, provisioner).await.context("failed to build the auth service")?;
 
 	let compartments: Arc<dyn CompartmentStore> = Arc::new(PgCompartments::new(pool.clone()));
+	let scope_ledger_store = Arc::new(PgScopeLedger::new(pool.clone()));
 	let state = AppState::new(
 		pool,
 		ledger,
@@ -563,6 +564,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		rails.ton.as_ref().is_some_and(|ton| ton.is_testnet),
 		outflow,
 		compartments,
+		scope_ledger_store.clone(),
 	);
 
 	// Operations are only ever requested over the scope ledger's listener, so their executor
@@ -571,7 +573,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let executor_wake = Arc::new(Notify::new());
 	let (scope_ledger, approval_executor) = match scope_ledger_settings {
 		Some(settings) => {
-			let store = Arc::new(PgScopeLedger::new(state.pool.clone()));
+			let store = scope_ledger_store;
 			let executor = ApprovalExecutor {
 				grants: Arc::new(settings.grants.clone()),
 				operations: store.clone(),
@@ -590,6 +592,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 					// Users cannot grant mandates yet; every hold is refused until they can.
 					mandates: Arc::new(NoMandates),
 					events: store.clone(),
+					invoices: store.clone(),
 					scopes: state.compartments.clone(),
 					ledger: state.ledger.clone(),
 					relay: state.relay_notify.clone(),

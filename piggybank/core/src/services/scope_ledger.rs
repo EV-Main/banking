@@ -16,8 +16,9 @@
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
 //! `Void`, `GetHold` — every `Reserve` is `mandate_required` until users can grant mandates),
 //! `Payout`, the requested operations (`RequestPayout`, `RequestTransfer`,
-//! `GetPendingOperation`) and `MoneyEvents.Pull`, behind the same two layers. `Charge` is
-//! UNIMPLEMENTED with the reason, and a client must treat that as "not yet", not "never".
+//! `GetPendingOperation`), `InvoiceService` and `MoneyEvents.Pull`, behind the same two
+//! layers. `Charge` is UNIMPLEMENTED with the reason, and a client must treat that as "not
+//! yet", not "never".
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -33,6 +34,7 @@ use std::{
 
 use domain::{
 	money::Usdt,
+	scope_invoices::InvoiceState,
 	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, MoneyEventKind, SubjectRef, TransferReason},
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
@@ -40,6 +42,7 @@ use domain::{
 use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of, grpc_auth_layer};
 use evbanking_contracts::scope::v1::{
 	self as pb,
+	invoice_service_server::{InvoiceService, InvoiceServiceServer},
 	money_events_server::{MoneyEvents, MoneyEventsServer},
 	scope_ledger_service_server::{ScopeLedgerService, ScopeLedgerServiceServer},
 };
@@ -60,6 +63,7 @@ use uuid::Uuid;
 
 use crate::{
 	application::{
+		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts},
 		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
@@ -67,6 +71,7 @@ use crate::{
 	ports::{
 		compartments::CompartmentStore,
 		ledger::Ledger,
+		scope_invoices::{InvoiceStore, RecordedInvoice},
 		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MandateBook, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
 		scope_operations::{OperationStore, PayoutStore, RecordedOperation, RecordedPayout},
 	},
@@ -181,6 +186,7 @@ pub struct ScopeLedgerDeps {
 	/// Users' consent to holds; `NoMandates` until users can grant them.
 	pub mandates: Arc<dyn MandateBook>,
 	pub events: Arc<dyn MoneyEventStore>,
+	pub invoices: Arc<dyn InvoiceStore>,
 	/// The scope registry (which scopes exist, their state and policy).
 	pub scopes: Arc<dyn CompartmentStore>,
 	pub ledger: Arc<dyn Ledger>,
@@ -244,6 +250,7 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 		.tls_config(listener.tls)?
 		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::DEBUG)))
 		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service.clone()))))
+		.add_service(identity.layer(auth.layer(InvoiceServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MoneyEventsServer::new(service))))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
@@ -275,6 +282,14 @@ impl ScopeLedgerSvc {
 			payouts: self.deps.payouts.as_ref(),
 			operations: self.deps.operations.as_ref(),
 			executor: &self.deps.executor,
+		}
+	}
+
+	fn invoice_ports(&self) -> InvoicePorts<'_> {
+		InvoicePorts {
+			grants: &self.grants,
+			invoices: self.deps.invoices.as_ref(),
+			scopes: self.deps.scopes.as_ref(),
 		}
 	}
 }
@@ -589,6 +604,84 @@ impl MoneyEvents for ScopeLedgerSvc {
 	}
 }
 
+fn invoice_id_of(raw: &str) -> Result<Uuid, Status> {
+	// Lowercase only, as banking writes it: one invoice, one spelling.
+	Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::invalid_argument("invoice_id must be a lowercase uuid"))
+}
+
+#[tonic::async_trait]
+impl InvoiceService for ScopeLedgerSvc {
+	async fn create_invoice(&self, request: Request<pb::CreateInvoiceRequest>) -> Result<Response<pb::Invoice>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = CreateInvoiceRequest {
+			scope: scope_of(&req.scope)?,
+			to: label_of(&req.to_label)?,
+			amount: Usdt::parse_decimal(&req.amount).map_err(map_err)?,
+			memo: req.memo,
+			expires_at: req.expires_at,
+			payer_auth_subject: Some(req.payer_auth_subject).filter(|subject| !subject.is_empty()),
+			subject_ref: subject_of(&req.subject_ref)?,
+			idempotency_key: req.idempotency_key,
+		};
+		let recorded = invoices_app::create_invoice(&self.invoice_ports(), &client, parsed)
+			.await
+			.map_err(|err| refused("CreateInvoice", &client, err))?;
+		Ok(Response::new(invoice_to_proto(&recorded)))
+	}
+
+	async fn cancel_invoice(&self, request: Request<pb::CancelInvoiceRequest>) -> Result<Response<pb::Invoice>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let recorded = invoices_app::cancel_invoice(&self.invoice_ports(), &client, &scope_of(&req.scope)?, invoice_id_of(&req.invoice_id)?)
+			.await
+			.map_err(|err| refused("CancelInvoice", &client, err))?;
+		Ok(Response::new(invoice_to_proto(&recorded)))
+	}
+
+	async fn get_invoice(&self, request: Request<pb::GetInvoiceRequest>) -> Result<Response<pb::Invoice>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let recorded = invoices_app::get_invoice(&self.invoice_ports(), &client, &scope_of(&req.scope)?, invoice_id_of(&req.invoice_id)?)
+			.await
+			.map_err(|err| refused("GetInvoice", &client, err))?;
+		Ok(Response::new(invoice_to_proto(&recorded)))
+	}
+}
+
+fn invoice_to_proto(recorded: &RecordedInvoice) -> pb::Invoice {
+	let invoice = &recorded.invoice;
+	let terms = invoice.terms();
+	// A payment the ledger has not taken is nobody's news yet: the invoice reads open
+	// (`state_at`) and names no payer until it posts.
+	let payment = invoice.posted_payment();
+	pb::Invoice {
+		invoice_id: invoice.id().to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		to_label: terms.to.as_str().to_owned(),
+		amount: terms.amount.to_decimal_string(),
+		memo: terms.memo.clone(),
+		// An open invoice past its expiry reads expired before the reaper records it.
+		state: match invoice.state_at(recorded.read_at) {
+			InvoiceState::Open => pb::InvoiceState::Open,
+			InvoiceState::Paid => pb::InvoiceState::Paid,
+			InvoiceState::Cancelled => pb::InvoiceState::Cancelled,
+			InvoiceState::Expired => pb::InvoiceState::Expired,
+		} as i32,
+		created_at: recorded.created_at,
+		expires_at: terms.expires_at,
+		payer_auth_subject: terms.payer_auth_subject.clone().unwrap_or_default(),
+		pay_url: invoices_app::pay_url(invoice.id()),
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		paid_by_auth_subject: payment.map(|paid| paid.payer_auth_subject.clone()).unwrap_or_default(),
+		paid_at: payment.map_or(0, |paid| paid.paid_at),
+		paid_from: payment.map(|paid| paid.from.as_str().to_owned()).unwrap_or_default(),
+	}
+}
+
 fn hold_to_proto(recorded: &RecordedHold) -> pb::Hold {
 	let hold = &recorded.hold;
 	let terms = hold.terms();
@@ -640,6 +733,10 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 			MoneyEventKind::OperationRequested => Kind::OperationRequested,
 			MoneyEventKind::OperationRejected => Kind::OperationRejected,
 			MoneyEventKind::OperationFailed => Kind::OperationFailed,
+			MoneyEventKind::InvoiceCreated => Kind::InvoiceCreated,
+			MoneyEventKind::InvoicePaid => Kind::InvoicePaid,
+			MoneyEventKind::InvoiceCancelled => Kind::InvoiceCancelled,
+			MoneyEventKind::InvoiceExpired => Kind::InvoiceExpired,
 		} as i32,
 		ref_id: event.ref_id.clone(),
 		aggregate_version: event.aggregate_version,
@@ -658,7 +755,7 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 			})
 			.collect(),
 		hold_remaining: event.hold_remaining.map(|remaining| remaining.to_decimal_string()).unwrap_or_default(),
-		paid_from: String::new(),
+		paid_from: event.paid_from.clone(),
 		counterparty_scope: event.counterparty_scope.clone(),
 		failure_reason: event.failure_reason.clone(),
 	}

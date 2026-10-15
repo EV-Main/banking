@@ -453,6 +453,10 @@ pub enum TransferCode {
 	/// (`ScopeLedgerService.Payout`, or an approved `RequestPayout`): one leg per line, posted
 	/// as one linked chain.
 	ScopePayout,
+	/// A user paying a scope's invoice (`banking.v1.InvoicePaymentService.PayInvoice`):
+	/// `Dr <main or the compartment in the scope> / Cr scope_account:<scope>:<label>`, posted
+	/// at once.
+	InvoicePayment,
 }
 
 impl TransferCode {
@@ -491,6 +495,7 @@ impl TransferCode {
 			Self::ScopeTransfer => 56,
 			Self::ScopeHold => 57,
 			Self::ScopePayout => 59,
+			Self::InvoicePayment => 58,
 		}
 	}
 }
@@ -1035,6 +1040,7 @@ mod tests {
 			TransferCode::ScopeTransfer,
 			TransferCode::ScopeHold,
 			TransferCode::ScopePayout,
+			TransferCode::InvoicePayment,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

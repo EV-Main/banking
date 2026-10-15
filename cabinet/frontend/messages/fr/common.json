@@ -7538,5 +7538,141 @@
   "wallet.chip.inCompartments": {
     "en": "IN COMPARTMENTS",
     "t": "EN COMPARTIMENTS"
+  },
+  "walletAction.back": {
+    "en": "Go back",
+    "t": "Revenir"
+  },
+  "walletAction.cancel": {
+    "en": "Cancel",
+    "t": "Annuler"
+  },
+  "walletAction.cancelled": {
+    "en": "Cancelled",
+    "t": "Annulé"
+  },
+  "walletAction.close": {
+    "en": "Close window",
+    "t": "Fermer la fenêtre"
+  },
+  "walletAction.closeHint": {
+    "en": "You can close this window — the page that opened it has been told.",
+    "t": "Vous pouvez fermer cette fenêtre — la page qui l’a ouverte a été informée."
+  },
+  "walletAction.closeHintLocal": {
+    "en": "You can close this window now.",
+    "t": "Vous pouvez maintenant fermer cette fenêtre."
+  },
+  "walletAction.done": {
+    "en": "Done",
+    "t": "Terminé"
+  },
+  "walletAction.failed": {
+    "en": "That did not go through",
+    "t": "L’opération n’a pas abouti"
+  },
+  "walletAction.mandateTitle": {
+    "en": "Allow a service to charge you",
+    "t": "Autoriser un service à vous débiter"
+  },
+  "walletAction.moveTitle": {
+    "en": "Move funds",
+    "t": "Transférer des fonds"
+  },
+  "walletAction.payTitle": {
+    "en": "Pay invoice",
+    "t": "Payer la facture"
+  },
+  "walletAction.unavailable": {
+    "en": "This is not available yet. Nothing has been charged or moved.",
+    "t": "Ce n’est pas encore disponible. Rien n’a été débité ni déplacé."
+  },
+  "walletMfe.available": {
+    "en": "Available",
+    "t": "Disponible"
+  },
+  "walletMfe.compartments": {
+    "en": "In compartments",
+    "t": "Dans les compartiments"
+  },
+  "walletMfe.compartmentsDesc": {
+    "en": "Across all services; moves to and from main are instant",
+    "t": "Tous services confondus ; les transferts avec le compte principal sont instantanés"
+  },
+  "walletMfe.history": {
+    "en": "Recent activity",
+    "t": "Activité récente"
+  },
+  "walletMfe.historyEmpty": {
+    "en": "No activity yet",
+    "t": "Aucune activité pour l’instant"
+  },
+  "walletMfe.historyEmptyDesc": {
+    "en": "Deposits, withdrawals and moves between compartments will show up here.",
+    "t": "Les dépôts, retraits et transferts entre compartiments apparaîtront ici."
+  },
+  "walletMfe.inOrders": {
+    "en": "In orders",
+    "t": "En ordres"
+  },
+  "walletMfe.invested": {
+    "en": "Invested",
+    "t": "Investi"
+  },
+  "walletMfe.main": {
+    "en": "Main account",
+    "t": "Compte principal"
+  },
+  "walletMfe.mainDesc": {
+    "en": "Deposits and withdrawals go through here",
+    "t": "Les dépôts et retraits passent par ce compte"
+  },
+  "walletMfe.move": {
+    "en": "Move funds",
+    "t": "Transférer"
+  },
+  "walletMfe.payInvoice": {
+    "en": "Pay invoice",
+    "t": "Payer la facture"
+  },
+  "walletMfe.pendingWithdrawal": {
+    "en": "Pending withdrawal",
+    "t": "Retrait en attente"
+  },
+  "walletMfe.signedOut": {
+    "en": "Sign in to see your wallet",
+    "t": "Connectez-vous pour voir votre portefeuille"
+  },
+  "walletMfe.signedOutDesc": {
+    "en": "Your balance and activity appear here once you are signed in to EV Invest.",
+    "t": "Votre solde et votre activité s’affichent ici une fois connecté à EV Invest."
+  },
+  "walletMfe.stale": {
+    "en": "Some figures may be out of date.",
+    "t": "Certains chiffres peuvent ne pas être à jour."
+  },
+  "walletMfe.unavailable": {
+    "en": "Your wallet could not be loaded.",
+    "t": "Impossible de charger votre portefeuille."
+  },
+  "walletMfe.signIn": {
+    "en": "Sign in to EV Invest",
+    "t": "Se connecter à EV Invest"
+  },
+  "walletMfe.noInvoice": {
+    "en": "There is no invoice to pay here.",
+    "t": "Il n’y a aucune facture à payer ici."
+  },
+  "walletMfe.balanceUnavailable": {
+    "en": "Your balance could not be loaded.",
+    "t": "Impossible de charger votre solde."
+  },
+  "walletMfe.historyUnavailable": {
+    "en": "Your activity could not be loaded.",
+    "t": "Impossible de charger votre activité."
+  },
+  "walletMfe.allActivity": {
+    "en": "See all activity",
+    "t": "Voir toute l’activité"
   }
 }

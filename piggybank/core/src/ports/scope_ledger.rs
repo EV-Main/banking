@@ -262,6 +262,8 @@ pub struct MoneyEventRecord {
 	pub hold_remaining: Option<Usdt>,
 	pub counterparty_scope: String,
 	pub failure_reason: String,
+	/// Where an invoice was paid from: `main` or the scope; empty for every other kind.
+	pub paid_from: String,
 	/// Unix seconds.
 	pub occurred_at: i64,
 }
