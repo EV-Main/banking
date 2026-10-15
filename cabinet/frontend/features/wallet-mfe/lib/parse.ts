@@ -32,6 +32,9 @@ export interface WalletHistory {
 
 // A wire decimal: optional sign, digits, optional fraction. Anything else is not shown as money.
 const DECIMAL = /^-?\d+(?:\.\d+)?$/;
+// An operation amount is a magnitude — the kind carries the sign — so a minus means the body
+// is not what the contract says, and the row shows no figure rather than a double sign.
+const MAGNITUDE = /^\d+(?:\.\d+)?$/;
 
 function field(source: unknown, key: string): unknown {
   return typeof source === "object" && source !== null ? Reflect.get(source, key) : undefined;
@@ -82,7 +85,7 @@ export function parseWalletHistory(body: unknown): WalletHistory {
       kind: text(field(row, "kind")),
       state: text(field(row, "state")),
       createdAt: unixSeconds(field(row, "created_at")),
-      amount: typeof amount === "string" && DECIMAL.test(amount) ? amount : "",
+      amount: typeof amount === "string" && MAGNITUDE.test(amount) ? amount : "",
     });
   }
   return { operations, truncated: field(body, "truncated") === true };

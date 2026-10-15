@@ -11,6 +11,10 @@
    to the repo-root node_modules (npm workspaces). */
 @source "../../features/wallet-mfe/ui";
 @source "../../../../node_modules/@evinvest/uikit/dist/components/{alert,badge,button,card,empty,list-rows,resource-error,shell-icons,skeleton}.js";
+/* The components keep their class strings in sibling `generated/` modules (button variants,
+   focus rings, accent tints, card and empty layout); scanning `components/` alone compiles
+   the markup without them — no focus ring on any button. */
+@source "../../../../node_modules/@evinvest/uikit/dist/generated/{accent,alert,badge,button,card,empty,skeleton}.js";
 
 @theme inline {
   --font-serif: var(--font-inter, "Inter"), ui-sans-serif, system-ui, sans-serif;

@@ -7654,5 +7654,25 @@
   "walletMfe.unavailable": {
     "en": "Your wallet could not be loaded.",
     "t": "Ihre Wallet konnte nicht geladen werden."
+  },
+  "walletMfe.signIn": {
+    "en": "Sign in to EV Invest",
+    "t": "Bei EV Invest anmelden"
+  },
+  "walletMfe.noInvoice": {
+    "en": "There is no invoice to pay here.",
+    "t": "Hier gibt es keine Rechnung zu bezahlen."
+  },
+  "walletMfe.balanceUnavailable": {
+    "en": "Your balance could not be loaded.",
+    "t": "Ihr Guthaben konnte nicht geladen werden."
+  },
+  "walletMfe.historyUnavailable": {
+    "en": "Your activity could not be loaded.",
+    "t": "Ihre Aktivitäten konnten nicht geladen werden."
+  },
+  "walletMfe.allActivity": {
+    "en": "See all activity",
+    "t": "Alle Aktivitäten ansehen"
   }
 }

@@ -1,6 +1,6 @@
 import { useLocale, useT } from "@evinvest/i18n/react";
 
-import { Badge, Empty, EmptyDescription, EmptyHeader, EmptyTitle, ListRow, ListRows } from "@evinvest/uikit";
+import { Badge, Button, Empty, EmptyDescription, EmptyHeader, EmptyTitle, ListRow, ListRows } from "@evinvest/uikit";
 
 import { intlLocale } from "@/shared/lib/intl-locale";
 import { formatUsdt } from "@/shared/lib/money";
@@ -32,7 +32,8 @@ function OperationRow({ operation }: { operation: WalletOperation }) {
   );
 }
 
-export function HistoryList({ history }: { history: WalletHistory }) {
+/** `allHref`: the full timeline on the wallet origin, offered when this is only its newest page. */
+export function HistoryList({ history, allHref }: { history: WalletHistory; allHref: string }) {
   const t = useT();
   if (history.operations.length === 0) {
     return (
@@ -45,10 +46,17 @@ export function HistoryList({ history }: { history: WalletHistory }) {
     );
   }
   return (
-    <ListRows className={UNPADDED}>
-      {history.operations.map((operation) => (
-        <OperationRow key={operation.id} operation={operation} />
-      ))}
-    </ListRows>
+    <>
+      <ListRows className={UNPADDED}>
+        {history.operations.map((operation) => (
+          <OperationRow key={operation.id} operation={operation} />
+        ))}
+      </ListRows>
+      {history.truncated && (
+        <Button asChild variant="link" size="sm" className="self-start px-0">
+          <a href={allHref}>{t("walletMfe.allActivity", "See all activity")}</a>
+        </Button>
+      )}
+    </>
   );
 }

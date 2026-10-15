@@ -7654,5 +7654,25 @@
   "walletMfe.unavailable": {
     "en": "Your wallet could not be loaded.",
     "t": "Не удалось загрузить кошелёк."
+  },
+  "walletMfe.signIn": {
+    "en": "Sign in to EV Invest",
+    "t": "Войти в EV Invest"
+  },
+  "walletMfe.noInvoice": {
+    "en": "There is no invoice to pay here.",
+    "t": "Здесь нет счёта к оплате."
+  },
+  "walletMfe.balanceUnavailable": {
+    "en": "Your balance could not be loaded.",
+    "t": "Не удалось загрузить баланс."
+  },
+  "walletMfe.historyUnavailable": {
+    "en": "Your activity could not be loaded.",
+    "t": "Не удалось загрузить операции."
+  },
+  "walletMfe.allActivity": {
+    "en": "See all activity",
+    "t": "Все операции"
   }
 }

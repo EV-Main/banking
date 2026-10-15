@@ -2,14 +2,16 @@ import { useLocale, useT } from "@evinvest/i18n/react";
 
 import { useId } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle, Empty, EmptyDescription, EmptyHeader, EmptyTitle, ResourceError, Skeleton } from "@evinvest/uikit";
+import { Card, CardContent, CardHeader, CardTitle, ResourceError, Skeleton } from "@evinvest/uikit";
 
+import { cabinetPath } from "@/shared/config/base-path";
 import { formatUsdt } from "@/shared/lib/money";
 
 import type { WalletAction } from "../lib/wallet-action";
 import { useWalletData } from "../model/use-wallet-data";
 import { BalanceRows } from "./balance-rows";
 import { HistoryList } from "./history-list";
+import { SignedOutCard } from "./signed-out-card";
 import { WalletActions } from "./wallet-actions";
 
 export interface WalletPanelProps {
@@ -27,18 +29,7 @@ export function WalletPanel({ origin, scope, onAction }: WalletPanelProps) {
   const historyId = useId();
   const { data, reload } = useWalletData(origin);
 
-  if (data.status === "signed_out") {
-    return (
-      <Card>
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>{t("walletMfe.signedOut", "Sign in to see your wallet")}</EmptyTitle>
-            <EmptyDescription>{t("walletMfe.signedOutDesc", "Your balance and activity appear here once you are signed in to EV Invest.")}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      </Card>
-    );
-  }
+  if (data.status === "signed_out") return <SignedOutCard origin={origin} />;
 
   const ready = data.status === "ready" ? data : null;
   return (
@@ -53,16 +44,25 @@ export function WalletPanel({ origin, scope, onAction }: WalletPanelProps) {
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         {data.status === "error" && <ResourceError message={t("walletMfe.unavailable", "Your wallet could not be loaded.")} onRetry={reload} />}
-        {ready?.refreshFailed && <ResourceError message={t("walletMfe.stale", "Some figures may be out of date.")} onRetry={reload} />}
+        {/* Stale figures are flagged above them; a read that never arrived is reported in
+            its own place below. */}
+        {ready?.refreshFailed && ready.balance && ready.history && (
+          <ResourceError message={t("walletMfe.stale", "Some figures may be out of date.")} onRetry={reload} />
+        )}
         {data.status === "loading" && <Skeleton className="h-24 w-full" />}
+        {ready && !ready.balance && <ResourceError message={t("walletMfe.balanceUnavailable", "Your balance could not be loaded.")} onRetry={reload} />}
         {ready?.balance && <BalanceRows balance={ready.balance} scope={scope} />}
         <WalletActions origin={origin} scope={scope} onAction={onAction} />
-        {ready?.history && (
+        {ready && (
           <section className="flex flex-col gap-2" aria-labelledby={historyId}>
             <h3 id={historyId} className="m-0 text-sm font-medium text-ink-soft">
               {t("walletMfe.history", "Recent activity")}
             </h3>
-            <HistoryList history={ready.history} />
+            {ready.history ? (
+              <HistoryList history={ready.history} allHref={new URL(cabinetPath(locale, "/wallet/activity"), origin).href} />
+            ) : (
+              <ResourceError message={t("walletMfe.historyUnavailable", "Your activity could not be loaded.")} onRetry={reload} />
+            )}
           </section>
         )}
       </CardContent>

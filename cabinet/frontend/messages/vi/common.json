@@ -7654,5 +7654,25 @@
   "walletMfe.unavailable": {
     "en": "Your wallet could not be loaded.",
     "t": "Không thể tải ví của bạn."
+  },
+  "walletMfe.signIn": {
+    "en": "Sign in to EV Invest",
+    "t": "Đăng nhập EV Invest"
+  },
+  "walletMfe.noInvoice": {
+    "en": "There is no invoice to pay here.",
+    "t": "Không có hóa đơn nào cần thanh toán ở đây."
+  },
+  "walletMfe.balanceUnavailable": {
+    "en": "Your balance could not be loaded.",
+    "t": "Không thể tải số dư của bạn."
+  },
+  "walletMfe.historyUnavailable": {
+    "en": "Your activity could not be loaded.",
+    "t": "Không thể tải hoạt động của bạn."
+  },
+  "walletMfe.allActivity": {
+    "en": "See all activity",
+    "t": "Xem tất cả hoạt động"
   }
 }
