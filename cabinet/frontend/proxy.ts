@@ -5,7 +5,7 @@ import { isLocale, negotiate, type Locale } from "@evinvest/i18n";
 
 import { experiments } from "@/application/experiments";
 import { config as appConfig } from "@/config";
-import { isNonPagePath, localeRepairedPath } from "@/shared/config/base-path";
+import { cabinetPath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
 import { COOKIES } from "@/shared/config/cookies";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
 import { contentSecurityPolicy, websocketOrigin } from "@/shared/config/security";
@@ -64,6 +64,19 @@ export async function proxy(req: NextRequest) {
     ),
   );
   req.headers.set(CSP_HEADER, csp);
+
+  // A scope host's money action (`https://evinvest.ltd/wallet/withdraw?opener=…&state=…`)
+  // lands on its cabinet page in the reader's language, query intact — the page reads its
+  // opener and nonce from it. Same locale choice as the repair below; no guess mark, since
+  // the popup is not where a reader settles their language.
+  const actionPage = walletActionPage(pathname);
+  if (actionPage) {
+    const remembered = req.cookies.get(COOKIES.locale)?.value;
+    const chosen = isLocale(remembered) ? remembered : negotiate(req.headers.get("accept-language"));
+    const url = req.nextUrl.clone();
+    url.pathname = cabinetPath(chosen, actionPage);
+    return withCsp(NextResponse.redirect(url), csp);
+  }
 
   // No usable locale in the path: an old link, a bookmark, the conductor's
   // unprefixed /cabinet mount, or a first segment that looks like a locale and is
@@ -243,6 +256,6 @@ export const config = {
   // code and is what the tests pin; keep the two in step.
   matcher: [
     "/",
-    "/((?!(?:cabinet/)?(?:api|_next/static|_next/image|favicon.ico|mfe/)).*)",
+    "/((?!(?:cabinet/)?(?:api|_next/static|_next/image|favicon.ico|mfe/|wallet/mfe/)).*)",
   ],
 };

@@ -79,6 +79,10 @@ const nextConfig: NextConfig = {
       // prefix for free; without it the account chip 404s on every page of the
       // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
       { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
+      // The wallet bundles' public directory — `https://evinvest.ltd/wallet/mfe/`, the
+      // prefix `@evinvest/wallet` holds every registry entry to and hosts name in their
+      // CSP. Built to `public/mfe/wallet/` beside the chip.
+      { source: "/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
     ];
   },
   // Request-invariant hardening on every response, mirroring
@@ -120,9 +124,15 @@ const nextConfig: NextConfig = {
     // on every navigation. A day of SWR kept a revoked bundle alive far too long. Both
     // spellings: the conductor asks for `/cabinet/mfe/*`, a direct run of the zone for `/mfe/*`.
     const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=600" }];
+    const walletCors = [{ key: "Access-Control-Allow-Origin", value: "*" }];
     return [
       { source: "/mfe/:path*", headers: mfeHeaders },
       { source: "/cabinet/mfe/:path*", headers: mfeHeaders },
+      // The wallet elements are loaded by OTHER origins (the scope hosts): a module script
+      // and the sheet's fetch are CORS requests, refused without this. Public, cookie-less
+      // files, so `*` grants nothing a direct download would not.
+      { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
+      { source: "/mfe/wallet/:path*", headers: walletCors },
       { source: "/:locale/cabinet/approve/:token", headers: tokenPageHeaders },
       { source: "/:locale/cabinet/owner-removal/:token", headers: tokenPageHeaders },
       { source: "/:path*", headers },

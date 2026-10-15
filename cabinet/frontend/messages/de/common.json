@@ -7538,5 +7538,141 @@
   "wallet.chip.inCompartments": {
     "en": "IN COMPARTMENTS",
     "t": "IN FÄCHERN"
+  },
+  "walletAction.back": {
+    "en": "Go back",
+    "t": "Zurück"
+  },
+  "walletAction.cancel": {
+    "en": "Cancel",
+    "t": "Abbrechen"
+  },
+  "walletAction.cancelled": {
+    "en": "Cancelled",
+    "t": "Abgebrochen"
+  },
+  "walletAction.close": {
+    "en": "Close window",
+    "t": "Fenster schließen"
+  },
+  "walletAction.closeHint": {
+    "en": "You can close this window — the page that opened it has been told.",
+    "t": "Sie können dieses Fenster schließen – die Seite, die es geöffnet hat, wurde informiert."
+  },
+  "walletAction.closeHintLocal": {
+    "en": "You can close this window now.",
+    "t": "Sie können dieses Fenster jetzt schließen."
+  },
+  "walletAction.done": {
+    "en": "Done",
+    "t": "Erledigt"
+  },
+  "walletAction.failed": {
+    "en": "That did not go through",
+    "t": "Das hat nicht geklappt"
+  },
+  "walletAction.mandateTitle": {
+    "en": "Allow a service to charge you",
+    "t": "Einem Dienst Abbuchungen erlauben"
+  },
+  "walletAction.moveTitle": {
+    "en": "Move funds",
+    "t": "Guthaben verschieben"
+  },
+  "walletAction.payTitle": {
+    "en": "Pay invoice",
+    "t": "Rechnung bezahlen"
+  },
+  "walletAction.unavailable": {
+    "en": "This is not available yet. Nothing has been charged or moved.",
+    "t": "Das ist noch nicht verfügbar. Es wurde nichts abgebucht oder verschoben."
+  },
+  "walletMfe.available": {
+    "en": "Available",
+    "t": "Verfügbar"
+  },
+  "walletMfe.compartments": {
+    "en": "In compartments",
+    "t": "In Unterkonten"
+  },
+  "walletMfe.compartmentsDesc": {
+    "en": "Across all services; moves to and from main are instant",
+    "t": "Über alle Dienste; Verschiebungen zum und vom Hauptkonto erfolgen sofort"
+  },
+  "walletMfe.history": {
+    "en": "Recent activity",
+    "t": "Letzte Aktivitäten"
+  },
+  "walletMfe.historyEmpty": {
+    "en": "No activity yet",
+    "t": "Noch keine Aktivitäten"
+  },
+  "walletMfe.historyEmptyDesc": {
+    "en": "Deposits, withdrawals and moves between compartments will show up here.",
+    "t": "Einzahlungen, Auszahlungen und Verschiebungen zwischen Unterkonten erscheinen hier."
+  },
+  "walletMfe.inOrders": {
+    "en": "In orders",
+    "t": "In Orders"
+  },
+  "walletMfe.invested": {
+    "en": "Invested",
+    "t": "Investiert"
+  },
+  "walletMfe.main": {
+    "en": "Main account",
+    "t": "Hauptkonto"
+  },
+  "walletMfe.mainDesc": {
+    "en": "Deposits and withdrawals go through here",
+    "t": "Ein- und Auszahlungen laufen über dieses Konto"
+  },
+  "walletMfe.move": {
+    "en": "Move funds",
+    "t": "Verschieben"
+  },
+  "walletMfe.payInvoice": {
+    "en": "Pay invoice",
+    "t": "Rechnung bezahlen"
+  },
+  "walletMfe.pendingWithdrawal": {
+    "en": "Pending withdrawal",
+    "t": "Auszahlung ausstehend"
+  },
+  "walletMfe.signedOut": {
+    "en": "Sign in to see your wallet",
+    "t": "Melden Sie sich an, um Ihre Wallet zu sehen"
+  },
+  "walletMfe.signedOutDesc": {
+    "en": "Your balance and activity appear here once you are signed in to EV Invest.",
+    "t": "Guthaben und Aktivitäten erscheinen hier, sobald Sie bei EV Invest angemeldet sind."
+  },
+  "walletMfe.stale": {
+    "en": "Some figures may be out of date.",
+    "t": "Einige Zahlen sind möglicherweise nicht aktuell."
+  },
+  "walletMfe.unavailable": {
+    "en": "Your wallet could not be loaded.",
+    "t": "Ihre Wallet konnte nicht geladen werden."
+  },
+  "walletMfe.signIn": {
+    "en": "Sign in to EV Invest",
+    "t": "Bei EV Invest anmelden"
+  },
+  "walletMfe.noInvoice": {
+    "en": "There is no invoice to pay here.",
+    "t": "Hier gibt es keine Rechnung zu bezahlen."
+  },
+  "walletMfe.balanceUnavailable": {
+    "en": "Your balance could not be loaded.",
+    "t": "Ihr Guthaben konnte nicht geladen werden."
+  },
+  "walletMfe.historyUnavailable": {
+    "en": "Your activity could not be loaded.",
+    "t": "Ihre Aktivitäten konnten nicht geladen werden."
+  },
+  "walletMfe.allActivity": {
+    "en": "See all activity",
+    "t": "Alle Aktivitäten ansehen"
   }
 }

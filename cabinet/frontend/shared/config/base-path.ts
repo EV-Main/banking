@@ -112,10 +112,12 @@ export const zonePathname = (pathname: string): `/${string}` => {
  * never exposed.
  */
 const NON_PAGE = new RegExp(
-  `^(?:${BASE_PATH})?/(?:_next/static/|_next/image|api/|mfe/|favicon\\.ico$)`
+  `^(?:${BASE_PATH})?/(?:_next/static/|_next/image|api/|mfe/|wallet/mfe/|favicon\\.ico$)`
 );
 
-/** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle. */
+/** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle.
+ *  `/wallet/mfe/*` is the wallet bundles' public directory (`@evinvest/wallet`), served
+ *  from `public/mfe/wallet/` by the next.config rewrite. */
 export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathname);
 
 /**
@@ -148,3 +150,18 @@ export const relocalise = (
   locale: Locale,
   url: { pathname: string; search: string; hash: string },
 ): string => cabinetPath(locale, zonePathname(url.pathname)) + url.search + url.hash;
+
+// The four money actions scope hosts open on evinvest.ltd, by the exact paths the host SDK
+// (`@evinvest/wallet` `WALLET_ACTION_PATHS`) builds: no locale, no zone prefix, because
+// they are the wallet's public addresses rather than cabinet pages.
+const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate)$/;
+
+/**
+ * The zone-relative page behind a wallet action address — `/wallet/withdraw` →
+ * `/wallet/action/withdraw` — or `null` for any other path. The proxy redirects there
+ * under the reader's locale with the query intact (opener, state, scope, invoice).
+ */
+export const walletActionPage = (pathname: string): `/${string}` | null => {
+  const match = WALLET_ACTION.exec(pathname);
+  return match ? `/wallet/action/${match[1]}` : null;
+};
