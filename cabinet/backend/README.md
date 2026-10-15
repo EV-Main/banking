@@ -89,6 +89,25 @@ and closes itself when the token expires. It is mounted **outside** the router's
 request-deadline layer, which exists to kill a wedged request and would otherwise kill this
 every 15 seconds.
 
+## The wallet surface and the scope hosts
+
+A scope's own host (`sa.evinvest.ltd`, `invest.evinvest.ltd`) shows the user's balances
+and history but never acts on them (`wallet.proto`, CompartmentService header). Two rules
+make that hold at the BFF:
+
+- **Reads are cross-origin on three routes only.** `GET /api/wallet`,
+  `/api/wallet/compartments` and `/api/operations` answer a request whose `Origin` is in
+  `WALLET_CORS_ORIGINS` with that origin echoed and `Access-Control-Allow-Credentials:
+  true` (`routes/cors.rs`). Nothing else carries CORS headers, no preflight is answered, and
+  an empty list switches it off. The list is opted into per route rather than as a layer,
+  so a new mutating route cannot inherit it.
+- **Money mutations are first-party, CSRF-checked and rate-limited per user.** Move,
+  withdraw, pay an invoice, grant or revoke a mandate pass `routes::money_mutation`:
+  `Origin` must equal `CABINET_WS_ORIGIN` — and, unlike the websocket guard, an unset value
+  refuses everything — then the CSRF pair, then a per-user window of 20 per minute keyed by
+  the verified subject (in-process, per replica; the hub's limits and idempotency are the
+  real bound). Locally, set `CABINET_WS_ORIGIN` to the browser origin to move money.
+
 ## The book surface
 
 The secondary market in an allocation's units — holders trading with each other on the

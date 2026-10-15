@@ -446,6 +446,11 @@
               # without it refuses to boot rather than failing open: public topology, no
               # secret, which is why it belongs here and not in the cluster Secret.
               CABINET_WS_ORIGIN = "https://evinvest.ltd";
+              # The scope hosts that may READ the wallet cross-origin with cookies (three GET
+              # routes, nothing else). Public topology like the line above; mirrors
+              # cabinet/frontend/shared/config/wallet-scopes.ts. Empty would only hide the
+              # balance on those hosts, so it is not required at boot.
+              WALLET_CORS_ORIGINS = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
               APP_ENV = "production";
             };
           };

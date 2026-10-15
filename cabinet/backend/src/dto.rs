@@ -411,6 +411,93 @@ impl From<bk::Mandate> for Mandate {
 
 list_dto! { MandateList from bk::MandateList { mandates: Vec<Mandate> } }
 
+/// What it takes to move money into a scope. Limits are decimal USDT strings, `""` = none.
+#[derive(Serialize)]
+pub struct ScopePolicy {
+	pub scope: String,
+	pub min_kyc_level: u32,
+	pub max_per_move: String,
+	pub max_moved_in_24h: String,
+	pub max_balance: String,
+	pub caller_eligible: bool,
+	/// Unix seconds as a string.
+	pub updated_at: String,
+	pub auto_payout_per_op: String,
+	pub auto_payout_24h: String,
+	pub auto_transfer_24h: String,
+}
+
+impl From<bk::ScopePolicy> for ScopePolicy {
+	fn from(p: bk::ScopePolicy) -> Self {
+		Self {
+			scope: p.scope,
+			min_kyc_level: p.min_kyc_level,
+			max_per_move: p.max_per_move,
+			max_moved_in_24h: p.max_moved_in_24h,
+			max_balance: p.max_balance,
+			caller_eligible: p.caller_eligible,
+			updated_at: p.updated_at.to_string(),
+			auto_payout_per_op: p.auto_payout_per_op,
+			auto_payout_24h: p.auto_payout_24h,
+			auto_transfer_24h: p.auto_transfer_24h,
+		}
+	}
+}
+
+/// One compartment of the caller: `main` or a scope. `policy` is `null` for `main`.
+#[derive(Serialize)]
+pub struct Compartment {
+	pub scope: String,
+	pub display_name: String,
+	pub available: String,
+	pub held: String,
+	pub total: String,
+	pub policy: Option<ScopePolicy>,
+}
+
+impl From<bk::Compartment> for Compartment {
+	fn from(c: bk::Compartment) -> Self {
+		Self {
+			scope: c.scope,
+			display_name: c.display_name,
+			available: c.available,
+			held: c.held,
+			total: c.total,
+			policy: c.policy.map(ScopePolicy::from),
+		}
+	}
+}
+
+list_dto! { CompartmentList from bk::CompartmentList { compartments: Vec<Compartment> } }
+
+/// A move between `main` and one scope. `state` is `pending`, `posted` or `failed`;
+/// `failure_reason` is set only when `failed`.
+#[derive(Serialize)]
+pub struct CompartmentMove {
+	pub id: String,
+	pub from_scope: String,
+	pub to_scope: String,
+	pub amount: String,
+	/// Unix seconds as a string.
+	pub created_at: String,
+	pub state: String,
+	pub failure_reason: String,
+}
+
+impl From<bk::CompartmentMove> for CompartmentMove {
+	fn from(m: bk::CompartmentMove) -> Self {
+		Self {
+			id: m.id,
+			from_scope: m.from_scope,
+			to_scope: m.to_scope,
+			amount: m.amount,
+			created_at: m.created_at.to_string(),
+			state: m.state,
+			failure_reason: m.failure_reason,
+		}
+	}
+}
+
 // ── piggybank: operations (the unified activity timeline) ────────────────────
 
 /// One row of the caller's activity timeline. `kind` is the discriminator: it decides

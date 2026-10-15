@@ -41,6 +41,11 @@ pub fn origin_allowed(st: &AppState, headers: &HeaderMap) -> bool {
 	let Some(expected) = st.config.cabinet_ws_origin.as_deref() else {
 		return true;
 	};
+	origin_is(headers, expected)
+}
+
+/// Whether the request's `Origin` is exactly `expected`; a missing one is not.
+pub fn origin_is(headers: &HeaderMap, expected: &str) -> bool {
 	headers.get(header::ORIGIN).and_then(|value| value.to_str().ok()).is_some_and(|origin| origin == expected)
 }
 
