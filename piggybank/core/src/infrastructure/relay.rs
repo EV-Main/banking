@@ -44,6 +44,7 @@ use domain::{
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
 	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
+	scope_operations::ScopePayoutEvent,
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
 	users::UserId,
@@ -60,7 +61,7 @@ use crate::{
 		book, compartments, fee_accrual, issuance, money_events,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
-		scope_ledger,
+		scope_ledger, scope_payouts,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
@@ -157,14 +158,21 @@ const HOLD_PENDING: &str = "scope:hold:pending:";
 const HOLD_VOID: &str = "scope:hold:void:";
 const HOLD_CAPTURE: &str = "scope:hold:capture:";
 
+/// Salt of a payout's legs, followed by the line's place in the chain: derived from the PAYOUT
+/// id, so an operator reconciling a `scope_payout_lines` row recomputes its transfer id from
+/// the row alone. FROZEN.
+const SCOPE_PAYOUT: &str = "scope:payout:";
+
 /// An event whose one ledger leg is recorded on a control-plane row of its own — `pending`
 /// until the relay posts it, then `posted`, or `failed` for good when the ledger refuses it.
-/// A compartment move and a client's scope transfer are the two; both follow one discipline
-/// (see `dispatch`), so it is spelled once.
+/// A compartment move, a scope transfer and a payout are the three; all follow one
+/// discipline (see `dispatch`), so it is spelled once. A payout's legs are one linked chain,
+/// which applies whole or not at all, so for this discipline it is one posting too.
 #[derive(Clone, Copy)]
 enum Posting {
 	Move,
 	ScopeTransfer,
+	ScopePayout,
 }
 
 impl Posting {
@@ -173,6 +181,8 @@ impl Posting {
 			Some(Self::Move)
 		} else if kind == ScopeLedgerEvent::KIND {
 			Some(Self::ScopeTransfer)
+		} else if kind == ScopePayoutEvent::KIND {
+			Some(Self::ScopePayout)
 		} else {
 			None
 		}
@@ -182,6 +192,7 @@ impl Posting {
 		match self {
 			Self::Move => "compartment move",
 			Self::ScopeTransfer => "scope transfer",
+			Self::ScopePayout => "scope payout",
 		}
 	}
 
@@ -189,7 +200,7 @@ impl Posting {
 	const fn insufficient_funds(self) -> &'static str {
 		match self {
 			Self::Move => MoveRefusal::InsufficientFunds.reason(),
-			Self::ScopeTransfer => LedgerRefusal::InsufficientFunds.reason(),
+			Self::ScopeTransfer | Self::ScopePayout => LedgerRefusal::InsufficientFunds.reason(),
 		}
 	}
 
@@ -197,6 +208,7 @@ impl Posting {
 		match self {
 			Self::Move => compartments::move_state(pool, id).await,
 			Self::ScopeTransfer => scope_ledger::transfer_state(pool, id).await,
+			Self::ScopePayout => scope_payouts::payout_state(pool, id).await,
 		}
 	}
 
@@ -204,6 +216,7 @@ impl Posting {
 		match self {
 			Self::Move => compartments::mark_posted(pool, id).await,
 			Self::ScopeTransfer => scope_ledger::mark_posted(pool, id).await,
+			Self::ScopePayout => scope_payouts::mark_posted(pool, id).await,
 		}
 	}
 
@@ -211,6 +224,7 @@ impl Posting {
 		match self {
 			Self::Move => compartments::mark_failed(pool, id, reason).await,
 			Self::ScopeTransfer => scope_ledger::mark_failed(pool, id, reason).await,
+			Self::ScopePayout => scope_payouts::mark_failed(pool, id, reason).await,
 		}
 	}
 }
@@ -1070,6 +1084,10 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(vec![plan_hold(event, row.aggregate_id, reference)])
 		}
+		"scope_payouts" => {
+			let event: ScopePayoutEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			plan_payout(event, row.aggregate_id, reference).map(|op| vec![op])
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
 	}
@@ -1080,7 +1098,7 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 fn park_kind(reason: &str) -> &'static str {
 	if reason.starts_with("ledger conflict") {
 		"conflict"
-	} else if reason.starts_with("compartment move applied check") || reason.starts_with("scope transfer applied check") {
+	} else if reason.starts_with("compartment move applied check") || reason.starts_with("scope transfer applied check") || reason.starts_with("scope payout applied check") {
 		"applied_check"
 	} else if reason.starts_with("unplannable") {
 		"unplannable"
@@ -1135,6 +1153,38 @@ fn plan_scope_ledger(event: ScopeLedgerEvent, aggregate_id: Uuid, reference: u12
 			reference,
 		}),
 	}
+}
+
+/// A payout out of a scope account: one posted leg per line, `Dr scope_account:<s>:<from> / Cr
+/// scope_claim:<s>:<user>`, in ONE linked chain — every line lands or none does, and the
+/// source's non-negative flag refuses the whole chain when it cannot cover it, so the payout
+/// is stamped `failed` with nothing moved (see `dispatch`). Net-zero on the cash invariant.
+fn plan_payout(event: ScopePayoutEvent, payout_id: Uuid, reference: u128) -> Result<PlannedOp, String> {
+	let ScopePayoutEvent::PaidOut { scope, from_label, lines, .. } = event;
+	let source = LedgerAccountKey::ScopeAccount(scope.clone(), from_label);
+	let legs: Vec<LedgerTransfer> = lines
+		.iter()
+		.enumerate()
+		.map(|(line_no, line)| LedgerTransfer {
+			id: payout_tid(payout_id, line_no),
+			debit: source.clone(),
+			credit: LedgerAccountKey::ScopeClaim(line.user, scope.clone()),
+			amount: line.amount.base_units(),
+			code: TransferCode::ScopePayout,
+			reference,
+		})
+		.collect();
+	let first = legs.first().map(|leg| leg.id).ok_or("a payout without lines")?;
+	Ok(PlannedOp {
+		role: "scope_payout",
+		transfer_id: first,
+		action: LedgerAction::PostLinked(legs),
+	})
+}
+
+/// The ledger id of a payout's leg `line_no`.
+pub fn payout_tid(payout_id: Uuid, line_no: usize) -> u128 {
+	tid(payout_id, format!("{SCOPE_PAYOUT}{line_no}").as_bytes())
 }
 
 fn hold_tid(hold_id: Uuid, salt: &str, version: u64) -> u128 {

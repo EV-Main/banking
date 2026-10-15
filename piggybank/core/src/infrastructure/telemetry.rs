@@ -128,3 +128,27 @@ pub fn note_unheld_allocation_value(service: &str, claim: &str, product_units: u
 pub fn unheld_allocation_value() -> u64 {
 	UNHELD_ALLOCATION_VALUE.load(Ordering::Relaxed)
 }
+
+/// Scope transfers and payouts recorded and still not on the ledger past reconciliation's
+/// stall threshold, as of its last pass — a gauge, not a counter: it falls back to zero once
+/// the relay catches up.
+static STALE_SCOPE_POSTINGS: AtomicU64 = AtomicU64::new(0);
+
+/// Record reconciliation's latest count of stuck scope postings. `warn!` when nonzero: the
+/// money is still promised away from its source (it counts against the spendable), so a client
+/// sees its account short of what it paid out until the posting lands or fails.
+pub fn note_stale_scope_postings(count: i64) {
+	let count = u64::try_from(count).unwrap_or(0);
+	STALE_SCOPE_POSTINGS.store(count, Ordering::Relaxed);
+	if count > 0 {
+		tracing::warn!(
+			count,
+			"reconciliation: scope transfers or payouts recorded and not on the ledger for over 15 minutes — is the relay draining?"
+		);
+	}
+}
+
+/// The latest count of stuck scope postings — a number for a dashboard.
+pub fn stale_scope_postings() -> u64 {
+	STALE_SCOPE_POSTINGS.load(Ordering::Relaxed)
+}

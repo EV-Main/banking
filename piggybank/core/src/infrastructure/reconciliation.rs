@@ -47,6 +47,13 @@
 //!      cash invariant counts them by code — so this is not about the sum but about the
 //!      attribution: a scope account no client and not banking owns is money nobody may
 //!      debit and nobody answers for. An alert, and part of [`ReconReport::clean`].
+//!   8. **Scope money stuck in flight** — `pending` scope transfers and payouts older than
+//!      [`SCOPE_POSTING_STALL`] ([`scope_payouts::stale_postings`]): recorded, counted
+//!      against their source, and not on the ledger although the relay posts one within
+//!      seconds. A gauge ([`telemetry::note_stale_scope_postings`]) and a `warn!`, not part of
+//!      [`ReconReport::clean`]: the reaper replays a lost one after five minutes, so a
+//!      nonzero reading is a backlog or a relay that is down — the parked-row scan (4) and
+//!      the relay's own alerts say which.
 //!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
@@ -63,7 +70,7 @@ use crate::{
 	infrastructure::{
 		outbox,
 		scope_events::{self, StreamFreshness},
-		scope_ledger, telemetry,
+		scope_ledger, scope_payouts, telemetry,
 	},
 	ports::{AllocationRegistry, ledger::Ledger},
 };
@@ -76,6 +83,11 @@ const SCAN_INTERVAL: Duration = Duration::from_secs(60);
 /// Several of the consumer's backed-off retries (at most a minute apart) fit inside it, so a
 /// blip does not page anyone.
 pub const SCOPE_STREAM_STALL: Duration = Duration::from_secs(5 * 60);
+
+/// How long a scope transfer or payout may stay recorded and unposted before reconciliation
+/// counts it as stuck: past the reaper's five-minute replay, so a reading means the replay did
+/// not help either.
+pub const SCOPE_POSTING_STALL: Duration = Duration::from_secs(15 * 60);
 
 /// One reconciliation pass over the cash plane. The fields are raw 18-dp USDT base units
 /// and the parked-row count, so a caller (a test, the run loop) can assert on the outcome
@@ -110,6 +122,9 @@ pub struct ReconReport {
 	pub scope_stream: Option<StreamFreshness>,
 	/// Scope accounts holding value with no owner on record, by logical key (module header, 7).
 	pub unowned_scope_accounts: Vec<String>,
+	/// Scope transfers and payouts stuck unposted (module header, 8); `None` when unread.
+	/// Outside [`Self::clean`].
+	pub stale_scope_postings: Option<i64>,
 }
 
 impl ReconReport {
@@ -296,6 +311,15 @@ impl Reconciliation {
 					self.check_unowned(logical_key, &mut report).await;
 				},
 			Err(err) => warn!("reconciliation: scope account owners read failed, attribution not verified this pass: {err}"),
+		}
+
+		// (8) Scope money stuck in flight. A read failure skips it this pass.
+		match scope_payouts::stale_postings(&self.pool, SCOPE_POSTING_STALL).await {
+			Ok(stale) => {
+				report.stale_scope_postings = Some(stale);
+				telemetry::note_stale_scope_postings(stale);
+			}
+			Err(err) => warn!("reconciliation: scope postings in flight not read this pass: {err}"),
 		}
 
 		if report.clean() {
