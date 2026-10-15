@@ -490,7 +490,7 @@ impl TransferCode {
 			Self::CompartmentMove => 55,
 			Self::ScopeTransfer => 56,
 			Self::ScopeHold => 57,
-			Self::ScopePayout => 58,
+			Self::ScopePayout => 59,
 		}
 	}
 }
