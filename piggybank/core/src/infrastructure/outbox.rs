@@ -162,9 +162,6 @@ pub struct OutboxRow {
 	pub kind: String,
 	pub payload: String,
 	pub attempts: i32,
-	/// Tries at the money event of a row the ledger already applied, counted apart from
-	/// `attempts` so an outage waited out before does not spend its bound.
-	pub money_event_attempts: i32,
 }
 /// The next drainable events in strict `seq` order: neither dispatched nor parked. No
 /// `SKIP LOCKED`: the relay is a lock-enforced singleton (`pg_advisory_lock`, re-probed
@@ -175,7 +172,7 @@ pub struct OutboxRow {
 /// the reaper) but is excluded here so one non-retryable event can't wedge the queue.
 pub async fn next_batch(pool: &PgPool, limit: i64) -> Result<Vec<OutboxRow>, sqlx::Error> {
 	sqlx::query_as::<_, OutboxRow>(
-		"SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts, money_event_attempts FROM outbox WHERE dispatched_at IS NULL AND parked_at IS NULL ORDER BY seq LIMIT $1",
+		"SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox WHERE dispatched_at IS NULL AND parked_at IS NULL ORDER BY seq LIMIT $1",
 	)
 	.bind(limit)
 	.fetch_all(pool)
@@ -212,14 +209,16 @@ pub async fn mark_compensated(pool: &PgPool, seq: i64) -> Result<(), sqlx::Error
 	sqlx::query("UPDATE outbox SET compensated_at = now() WHERE seq = $1").bind(seq).execute(pool).await?;
 	Ok(())
 }
-/// One more failed try at an applied row's money event.
-pub async fn record_money_event_failure(pool: &PgPool, seq: i64, error: &str) -> Result<(), sqlx::Error> {
-	sqlx::query("UPDATE outbox SET money_event_attempts = money_event_attempts + 1, last_error = $2 WHERE seq = $1")
+/// One more failed try at an applied row's money event; returns how many there have been.
+/// Counted apart from `attempts`, so an outage waited out before does not spend the bound, and
+/// read only here — the drain's own read never names the column, so a relay over a database
+/// migrated short of 0058 (a test replaying production's history) still drains.
+pub async fn record_money_event_failure(pool: &PgPool, seq: i64, error: &str) -> Result<i32, sqlx::Error> {
+	sqlx::query_scalar("UPDATE outbox SET money_event_attempts = money_event_attempts + 1, last_error = $2 WHERE seq = $1 RETURNING money_event_attempts")
 		.bind(seq)
 		.bind(error)
-		.execute(pool)
-		.await?;
-	Ok(())
+		.fetch_one(pool)
+		.await
 }
 /// Record a transient (retryable) failure for forensics without advancing or parking —
 /// bumps the attempt counter and stores the last error.

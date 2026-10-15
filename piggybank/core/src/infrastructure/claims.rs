@@ -65,7 +65,7 @@ fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 /// Moves, scope transfers, payouts and invoice payments are counted from their own tables,
 /// not the outbox: a `pending` one whose event a relay dispatched without posting (the
 /// reaper's case) is still promised away.
-const UNAPPLIED_EVENTS: &str = "SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts, money_event_attempts FROM outbox \
+const UNAPPLIED_EVENTS: &str = "SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox \
 	 WHERE dispatched_at IS NULL AND parked_at IS NULL AND kind <> ALL($1) AND ($2::text IS NULL OR strpos(payload::text, $2) > 0)";
 
 /// What the user's own rows promise out of `compartment` and the ledger has not taken yet: their

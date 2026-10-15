@@ -464,19 +464,21 @@ impl Relay {
 					// The ledger took the event; only its money event is missing. Bounded, so one
 					// row that can never be recorded stops itself and not every deposit and
 					// withdrawal behind it (banking#514).
-					if row.money_event_attempts + 1 >= MAX_RETRYABLE_ATTEMPTS {
-						self.park_unrecorded(row, &format!("money event: {reason}")).await;
-						advanced = true;
-					} else {
-						if let Err(err) = outbox::record_money_event_failure(&self.pool, row.seq, &reason).await {
-							warn!(seq = row.seq, "relay: failed to record the money event attempt: {err}");
+					match outbox::record_money_event_failure(&self.pool, row.seq, &reason).await {
+						Ok(tries) if tries >= MAX_RETRYABLE_ATTEMPTS => {
+							self.park_unrecorded(row, &format!("money event: {reason}")).await;
+							advanced = true;
 						}
-						warn!(
-							seq = row.seq,
-							attempts = row.money_event_attempts + 1,
-							"relay: money event not recorded, retrying from here: {reason}"
-						);
-						return DrainStep::Throttle;
+						Ok(tries) => {
+							warn!(seq = row.seq, attempts = tries, "relay: money event not recorded, retrying from here: {reason}");
+							return DrainStep::Throttle;
+						}
+						// Uncounted, so not parked on this try: the database that refused the count
+						// is the likelier fault, and the next pass asks again.
+						Err(err) => {
+							warn!(seq = row.seq, "relay: money event not recorded ({reason}), nor its attempt: {err}");
+							return DrainStep::Throttle;
+						}
 					}
 				}
 				Outcome::RetryBounded(reason) => {
@@ -2516,7 +2518,6 @@ mod tests {
 			kind: "scope_invoices".into(),
 			payload: serde_json::to_string(&event).unwrap(),
 			attempts: 0,
-			money_event_attempts: 0,
 		};
 		let from_main = row(paid(domain::scopes::Compartment::Main));
 		let ops = plan(&from_main).unwrap();
