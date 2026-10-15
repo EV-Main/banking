@@ -112,6 +112,13 @@ pub trait Ledger: Gateway {
 	/// (idempotent); pending-not-found ⇒ [`LedgerError::Retryable`].
 	async fn complete(&self, completion: &PendingCompletion) -> Result<(), LedgerError>;
 
+	/// Apply posted, pending and completing legs as ONE TigerBeetle linked chain — every
+	/// leg lands or none does, each leg seeing the ones before it. What a hold's partial
+	/// capture needs: void the reservation, post the capture, reserve the rest, with the
+	/// user's money never free in between. Idempotent on the FIRST leg's id, like
+	/// [`Self::post_linked`]. Empty is a no-op.
+	async fn apply_linked(&self, legs: &[LinkedLeg]) -> Result<(), LedgerError>;
+
 	/// Every unit holding on the Share ledger inside `scope`, with its **posted** balance
 	/// in raw base units — the accounts a product's supply is held on, or the accounts
 	/// one holder's units sit in across every product. Read straight from TigerBeetle
@@ -240,7 +247,9 @@ impl CashSide {
 			AccountCode::CryptoWallet => Some(Self::Custody),
 			AccountCode::UserClaim => Some(Self::UserClaims),
 			AccountCode::ServiceClaim => Some(Self::ServiceClaims),
-			AccountCode::WithdrawalClearing => Some(Self::Clearing),
+			// Holds are pending only, so nothing posted ever sits on it; should something
+			// ever, it is in-flight value like the withdrawal transit, not anybody's claim.
+			AccountCode::WithdrawalClearing | AccountCode::HoldClearing => Some(Self::Clearing),
 			AccountCode::BookCash => Some(Self::BookCash),
 			AccountCode::ScopeClaim => Some(Self::ScopeClaims),
 			AccountCode::ScopeAccount => Some(Self::ScopeAccounts),
@@ -395,6 +404,24 @@ pub struct LedgerTransfer {
 	pub amount: u128,
 	pub code: TransferCode,
 	pub reference: u128,
+}
+
+/// One leg of an [`Ledger::apply_linked`] chain.
+#[derive(Clone, Debug)]
+pub enum LinkedLeg {
+	Post(LedgerTransfer),
+	Reserve(LedgerTransfer),
+	Complete(PendingCompletion),
+}
+
+impl LinkedLeg {
+	/// The leg's own transfer id.
+	pub fn id(&self) -> u128 {
+		match self {
+			Self::Post(transfer) | Self::Reserve(transfer) => transfer.id,
+			Self::Complete(completion) => completion.id,
+		}
+	}
 }
 
 /// Whether a [`PendingCompletion`] posts (commits) or voids (releases) the pending.

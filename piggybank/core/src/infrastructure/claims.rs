@@ -55,7 +55,8 @@ fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 		| LedgerAccountKey::BankCustody
 		| LedgerAccountKey::SharesOutstanding(_)
 		| LedgerAccountKey::FeeShares(_)
-		| LedgerAccountKey::ScopeAccount(..) => None,
+		| LedgerAccountKey::ScopeAccount(..)
+		| LedgerAccountKey::HoldClearing => None,
 	}
 }
 
