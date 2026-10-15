@@ -19,8 +19,11 @@ use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use domain::scopes::ScopeId;
 use evbanking_auth::{AuthConfig, AuthError, AuthService, Authenticate, Claims, TokenType, provisioner_channel};
-use evbanking_contracts::scope::v1::{GetBalancesRequest, GetBalancesResponse, ReserveRequest, scope_ledger_service_client::ScopeLedgerServiceClient};
+use evbanking_contracts::scope::v1::{
+	ChargeRequest, GetBalancesRequest, GetBalancesResponse, PullRequest, money_events_client::MoneyEventsClient, scope_ledger_service_client::ScopeLedgerServiceClient,
+};
 use piggybank_core::{
+	application::scope_ledger::NoMandates,
 	config::ScopeLedgerSettings,
 	infrastructure::{compartments::PgCompartments, scope_ledger::PgScopeLedger},
 	services::scope_ledger::{self, ScopeLedgerDeps, ScopeLedgerListener},
@@ -88,9 +91,13 @@ async fn harness() -> Option<Harness> {
 		.execute(&pool)
 		.await
 		.unwrap();
+	let store = Arc::new(PgScopeLedger::new(pool.clone()));
 	Some(Harness {
 		deps: ScopeLedgerDeps {
-			store: Arc::new(PgScopeLedger::new(pool.clone())),
+			store: store.clone(),
+			holds: store.clone(),
+			mandates: Arc::new(NoMandates),
+			events: store,
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),
@@ -332,7 +339,7 @@ async fn production_serve_mounts_the_hubs_authorizer() {
 }
 
 #[tokio::test]
-async fn an_rpc_part_one_does_not_serve_says_so() {
+async fn an_rpc_not_served_yet_says_so() {
 	let Some(h) = harness().await else { return };
 	let addr = ephemeral().await;
 	let server = serve_stub(&h, addr).await;
@@ -347,17 +354,51 @@ async fn an_rpc_part_one_does_not_serve_says_so() {
 			.tls_config(tls)
 			.unwrap()
 			.connect_lazy();
-		let mut request = Request::new(ReserveRequest {
+		let mut request = Request::new(ChargeRequest {
 			scope: scope.as_str().to_owned(),
-			..ReserveRequest::default()
+			..ChargeRequest::default()
 		});
 		request.metadata_mut().insert("authorization", format!("Bearer {SERVICE_TOKEN}").parse().unwrap());
-		ScopeLedgerServiceClient::new(channel).reserve(request).await
+		ScopeLedgerServiceClient::new(channel).charge(request).await
 	})
 	.await;
-	let status = outcome.expect_err("Reserve is not served in part 1");
+	let status = outcome.expect_err("Charge is not served yet");
 	assert_eq!(status.code(), Code::Unimplemented);
-	assert!(status.message().starts_with("Reserve is not served yet"), "{}", status.message());
+	assert!(status.message().starts_with("Charge is not served yet"), "{}", status.message());
+}
+
+// MoneyEvents is a second service on the listener: it must sit behind both layers too.
+#[tokio::test]
+async fn money_events_are_served_behind_both_layers() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let scope = h.scope.clone();
+	let (anonymous, served) = with_server(addr.port(), server, || async {
+		let tls = ClientTlsConfig::new()
+			.ca_certificate(Certificate::from_pem(fixture("ca.pem")))
+			.domain_name("localhost")
+			.identity(Identity::from_pem(fixture("invest.pem"), fixture("invest.key")));
+		let channel = Endpoint::from_shared(format!("https://localhost:{}", addr.port()))
+			.unwrap()
+			.tls_config(tls)
+			.unwrap()
+			.connect_lazy();
+		let pull = || PullRequest {
+			scope: scope.as_str().to_owned(),
+			after_position: 0,
+			limit: 10,
+		};
+		let anonymous = MoneyEventsClient::new(channel.clone()).pull(Request::new(pull())).await;
+		let mut request = Request::new(pull());
+		request.metadata_mut().insert("authorization", format!("Bearer {SERVICE_TOKEN}").parse().unwrap());
+		(anonymous, MoneyEventsClient::new(channel).pull(request).await)
+	})
+	.await;
+	assert_eq!(anonymous.expect_err("no bearer, no events").code(), Code::Unauthenticated);
+	let served = served.expect("a known client with its service token is served").into_inner();
+	assert!(served.events.is_empty(), "a fresh scope has no events");
+	assert_eq!(served.next_position, 0, "nothing scanned: the cursor stays put");
 }
 
 /// One GetBalances request as raw gRPC framing over the fixture `invest` identity, with the
