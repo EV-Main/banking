@@ -61,6 +61,7 @@ pub mod ownership;
 pub mod payments;
 pub mod scope_invoices;
 pub mod scope_ledger;
+pub mod scope_mandates;
 pub mod users;
 pub mod wallet;
 pub mod withdrawals;

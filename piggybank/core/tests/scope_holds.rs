@@ -4,13 +4,11 @@
 //! compartment's lock, capturing and voiding it under its row lock, answering its keys, the
 //! relay's linked chains, the reaper's release of an expired hold, and a client's pull by cursor.
 //!
-//! Mandates are not granted by users yet, so the tests consent with [`Consent`]; production
-//! wires `NoMandates` and the first test shows what that means. Each test works in scopes,
-//! clients and users of its own.
+//! Users consent through real mandates ([`consent`]); the caps themselves are
+//! `scope_mandates.rs`'s. Each test works in scopes, clients and users of its own.
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use domain::{
 	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
@@ -20,11 +18,15 @@ use domain::{
 	users::UserId,
 };
 use piggybank_core::{
-	application::scope_ledger::{self as ledger_app, CaptureRequest, NoMandates, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+	application::{
+		scope_ledger::{self as ledger_app, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_mandates::{self as mandates_app, GrantRequest, MandatePorts},
+	},
 	infrastructure::{compartments::PgCompartments, relay::Relay, scope_holds, scope_ledger::PgScopeLedger},
 	ports::{
 		ledger::{Ledger, LedgerBalance, LedgerTransfer},
-		scope_ledger::{CaptureTarget, EventAccount, MandateBook, RecordedHold},
+		scope_ledger::{CaptureTarget, EventAccount, RecordedHold},
+		scope_mandates::RecordedMandate,
 	},
 };
 use sqlx::PgPool;
@@ -32,24 +34,6 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 mod common;
-
-/// A user's consent as a test grants it: every hold is under one mandate, which lists
-/// BOOK_FILL only when the test says so.
-struct Consent {
-	mandate: Uuid,
-	book_fill: bool,
-}
-
-#[async_trait]
-impl MandateBook for Consent {
-	async fn authorize(&self, _: &ClientId, _: &ScopeId, _: UserId, operation: MandateOperation, _: Usdt) -> Result<Option<Uuid>, DomainError> {
-		Ok((operation == MandateOperation::Reserve).then_some(self.mandate))
-	}
-
-	async fn lists(&self, mandate: Uuid, operation: MandateOperation) -> Result<bool, DomainError> {
-		Ok(mandate == self.mandate && (operation != MandateOperation::BookFill || self.book_fill))
-	}
-}
 
 struct Harness {
 	pool: PgPool,
@@ -77,12 +61,11 @@ async fn harness() -> Option<Harness> {
 	})
 }
 
-fn ports<'a>(h: &'a Harness, grants: &'a Grants, mandates: &'a dyn MandateBook) -> ScopeLedgerPorts<'a> {
+fn ports<'a>(h: &'a Harness, grants: &'a Grants) -> ScopeLedgerPorts<'a> {
 	ScopeLedgerPorts {
 		grants,
 		store: &h.store,
 		holds: &h.store,
-		mandates,
 		events: &h.store,
 		scopes: &h.scopes,
 		ledger: h.ledger.as_ref(),
@@ -110,11 +93,39 @@ fn subject() -> SubjectRef {
 	SubjectRef::parse(&format!("subscription:{}", Uuid::new_v4())).unwrap()
 }
 
-fn consent() -> Consent {
-	Consent {
-		mandate: Uuid::new_v4(),
-		book_fill: false,
+fn mandate_ports<'a>(h: &'a Harness, grants: &'a Grants) -> MandatePorts<'a> {
+	MandatePorts {
+		grants,
+		store: &h.store,
+		scopes: &h.scopes,
+		relay: &h.notify,
 	}
+}
+
+/// `user`'s mandate for `client` in `scope`, its caps out of the way: RESERVE, and BOOK_FILL
+/// when `book_fill`.
+async fn consent(h: &Harness, grants: &Grants, client: &ClientId, scope: &ScopeId, user: UserId, book_fill: bool) -> RecordedMandate {
+	let mut operations = vec![MandateOperation::Reserve];
+	if book_fill {
+		operations.push(MandateOperation::BookFill);
+	}
+	mandates_app::grant(
+		&mandate_ports(h, grants),
+		user,
+		GrantRequest {
+			scope: scope.clone(),
+			client: client.clone(),
+			cap_per_op: usdt("1000"),
+			cap_24h: usdt("1000"),
+			cap_outstanding: None,
+			cap_book_fill_24h: book_fill.then(|| usdt("1000")),
+			operations,
+			expires_at: None,
+			idempotency_key: key(),
+		},
+	)
+	.await
+	.unwrap()
 }
 
 /// A scope of this test's own, active, default policy, banking's fee collector open.
@@ -179,9 +190,7 @@ async fn holder(h: &Harness) -> (ClientId, ScopeId, Grants) {
 		compartments: true,
 	}])
 	.unwrap();
-	ledger_app::open_account(&ports(h, &grants, &NoMandates), &client, &scope, &label("alloc:x"), &key())
-		.await
-		.unwrap();
+	ledger_app::open_account(&ports(h, &grants), &client, &scope, &label("alloc:x"), &key()).await.unwrap();
 	(client, scope, grants)
 }
 
@@ -234,17 +243,15 @@ fn domain_err<T: std::fmt::Debug>(result: Result<T, TransferError>) -> DomainErr
 async fn a_hold_needs_the_compartments_grant_a_known_scope_and_a_mandate() {
 	let Some(h) = harness().await else { return };
 	let (client, scope, grants) = holder(&h).await;
-	let (_, user) = user_with(&h, &scope, "10").await;
-	let mandates = consent();
+	let (user_id, user) = user_with(&h, &scope, "10").await;
+	let p = ports(&h, &grants);
 
-	// Production's book: nobody has consented to anything yet.
-	let none = ports(&h, &grants, &NoMandates);
+	// The user has consented to nothing yet.
 	assert_eq!(
-		refusal(ledger_app::reserve(&none, &client, reserve_request(&scope, &user, "1", &key())).await),
+		refusal(ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "1", &key())).await),
 		LedgerRefusal::MandateRequired
 	);
-
-	let p = ports(&h, &grants, &mandates);
+	consent(&h, &grants, &client, &scope, user_id, false).await;
 	// An unknown user reads like one who never consented, so subjects cannot be probed.
 	let stranger = format!("itest-{}", Uuid::new_v4());
 	assert_eq!(
@@ -265,7 +272,7 @@ async fn a_hold_needs_the_compartments_grant_a_known_scope_and_a_mandate() {
 	}])
 	.unwrap();
 	assert_eq!(
-		refusal(ledger_app::reserve(&ports(&h, &accounts_only, &mandates), &client, reserve_request(&scope, &user, "1", &key())).await),
+		refusal(ledger_app::reserve(&ports(&h, &accounts_only), &client, reserve_request(&scope, &user, "1", &key())).await),
 		LedgerRefusal::NotGranted,
 		"accounts without the compartments flag never reach a user"
 	);
@@ -287,13 +294,13 @@ async fn a_hold_locks_the_compartment_captures_in_parts_and_releases_the_rest() 
 	let Some(h) = harness().await else { return };
 	let (client, scope, grants) = holder(&h).await;
 	let (user_id, user) = user_with(&h, &scope, "10").await;
-	let mandates = consent();
-	let p = ports(&h, &grants, &mandates);
+	let mandate = consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
 
 	let k = key();
 	let hold = ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "6", &k)).await.unwrap();
 	assert_eq!((hold.hold.state(), hold.hold.remaining()), (HoldState::Active, usdt("6")));
-	assert_eq!(hold.hold.terms().mandate_id, mandates.mandate);
+	assert_eq!(hold.hold.terms().mandate_id, mandate.mandate.id);
 	// Before the relay applied it, the hold is already spoken for.
 	assert_eq!(
 		refusal(ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "4.5", &key())).await),
@@ -363,9 +370,9 @@ async fn a_hold_is_its_placers_alone() {
 		compartments: true,
 	});
 	let grants = Grants::new(grants_list).unwrap();
-	let (_, user) = user_with(&h, &scope, "5").await;
-	let mandates = consent();
-	let p = ports(&h, &grants, &mandates);
+	let (user_id, user) = user_with(&h, &scope, "5").await;
+	consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
 	let hold = ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "1", &key())).await.unwrap();
 
 	let not_found = |err: DomainError| assert!(matches!(err, DomainError::NotFound { entity: "hold", .. }), "{err:?}");
@@ -385,26 +392,18 @@ async fn a_capture_into_another_user_needs_book_fill_and_a_holder_not_frozen() {
 	let (client, scope, grants) = holder(&h).await;
 	let (buyer_id, buyer) = user_with(&h, &scope, "10").await;
 	let (seller_id, seller) = user_with(&h, &scope, "0.000000000000000001").await;
-	let mandates = Consent {
-		mandate: Uuid::new_v4(),
-		book_fill: true,
-	};
-	let p = ports(&h, &grants, &mandates);
+	let p = ports(&h, &grants);
+	consent(&h, &grants, &client, &scope, buyer_id, false).await;
+	let plain = ledger_app::reserve(&p, &client, reserve_request(&scope, &buyer, "1", &key())).await.unwrap();
+	// Granting again replaces the mandate for new holds; the standing one keeps its own.
+	consent(&h, &grants, &client, &scope, buyer_id, true).await;
 	let hold = ledger_app::reserve(&p, &client, reserve_request(&scope, &buyer, "3", &key())).await.unwrap();
-
-	let without = consent();
 	assert_eq!(
-		refusal(
-			ledger_app::capture(
-				&ports(&h, &grants, &without),
-				&client,
-				capture_request(&scope, &hold, CaptureTarget::User(seller.clone()), Some("1"))
-			)
-			.await
-		),
+		refusal(ledger_app::capture(&p, &client, capture_request(&scope, &plain, CaptureTarget::User(seller.clone()), Some("1"))).await),
 		LedgerRefusal::MandateRequired,
-		"the hold's own mandate decides, and this book does not know it"
+		"the hold's own mandate decides, and it never listed BOOK_FILL"
 	);
+	ledger_app::void(&p, &client, void_request(&scope, &plain)).await.unwrap();
 	assert!(matches!(
 		domain_err(ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(buyer.clone()), Some("1"))).await),
 		DomainError::Validation(_)
@@ -434,8 +433,8 @@ async fn a_frozen_scope_or_user_takes_no_new_hold() {
 	let Some(h) = harness().await else { return };
 	let (client, scope, grants) = holder(&h).await;
 	let (user_id, user) = user_with(&h, &scope, "5").await;
-	let mandates = consent();
-	let p = ports(&h, &grants, &mandates);
+	consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
 	sqlx::query("UPDATE users SET frozen = TRUE WHERE id = $1").bind(user_id.raw()).execute(&h.pool).await.unwrap();
 	assert_eq!(
 		refusal(ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "1", &key())).await),
@@ -464,8 +463,8 @@ async fn a_hold_past_its_ttl_is_released_by_the_reaper() {
 	let Some(h) = harness().await else { return };
 	let (client, scope, grants) = holder(&h).await;
 	let (user_id, user) = user_with(&h, &scope, "5").await;
-	let mandates = consent();
-	let p = ports(&h, &grants, &mandates);
+	consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
 	let hold = ledger_app::reserve(
 		&p,
 		&client,
@@ -499,9 +498,9 @@ async fn a_hold_past_its_ttl_is_released_by_the_reaper() {
 async fn money_events_show_each_client_its_own_by_cursor() {
 	let Some(h) = harness().await else { return };
 	let (client, scope, grants) = holder(&h).await;
-	let (_, user) = user_with(&h, &scope, "10").await;
-	let mandates = consent();
-	let p = ports(&h, &grants, &mandates);
+	let (user_id, user) = user_with(&h, &scope, "10").await;
+	let mandate = consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
 	let hold = ledger_app::reserve(&p, &client, reserve_request(&scope, &user, "4", &key())).await.unwrap();
 	ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::Account(label("alloc:x")), Some("3")))
 		.await
@@ -530,29 +529,36 @@ async fn money_events_show_each_client_its_own_by_cursor() {
 		kinds,
 		[
 			MoneyEventKind::AccountOpened,
+			MoneyEventKind::MandateGranted,
 			MoneyEventKind::HoldPlaced,
 			MoneyEventKind::HoldCaptured,
 			MoneyEventKind::Transferred
 		]
 	);
 	assert!(all.events.windows(2).all(|pair| pair[0].position < pair[1].position));
-	assert_eq!(all.next_position, all.events[3].position);
-	let captured = &all.events[2];
+	assert_eq!(all.next_position, all.events[4].position);
+	let granted = &all.events[1];
+	assert_eq!(
+		(granted.ref_id.as_str(), granted.auth_subject.as_str(), granted.initiator_client.as_str()),
+		(mandate.mandate.id.to_string().as_str(), user.as_str(), ""),
+		"the user granted it; no client is its initiator"
+	);
+	let captured = &all.events[3];
 	assert_eq!((captured.ref_id.as_str(), captured.aggregate_version), (hold.hold.id().to_string().as_str(), 2));
 	assert_eq!((captured.amount, captured.hold_remaining), (Some(usdt("3")), Some(usdt("1"))));
 	assert_eq!(captured.to, Some(EventAccount::Account(label("alloc:x"))));
 	assert_eq!(captured.auth_subject, user);
-	let transferred = &all.events[3];
+	let transferred = &all.events[4];
 	let shown: Vec<&str> = transferred.balances.iter().map(|entry| entry.label.as_str()).collect();
 	assert_eq!(shown, ["alloc:x"], "banking's fee collector never shows in a client's balances");
 	assert_eq!(transferred.balances[0].balance, usdt("2"));
 
-	let page = ledger_app::pull(&p, &client, None, all.events[0].position, 2).await.unwrap();
+	let page = ledger_app::pull(&p, &client, None, all.events[1].position, 2).await.unwrap();
 	assert_eq!(
 		page.events.iter().map(|event| event.kind).collect::<Vec<_>>(),
 		[MoneyEventKind::HoldPlaced, MoneyEventKind::HoldCaptured]
 	);
-	assert_eq!(page.next_position, all.events[2].position);
+	assert_eq!(page.next_position, all.events[3].position);
 	let rest = ledger_app::pull(&p, &client, None, page.next_position, 10).await.unwrap();
 	assert_eq!(rest.events.len(), 1);
 	let past_end = ledger_app::pull(&p, &client, None, rest.next_position, 10).await.unwrap();
@@ -560,7 +566,7 @@ async fn money_events_show_each_client_its_own_by_cursor() {
 	assert_eq!(past_end.next_position, rest.next_position, "nothing scanned: the cursor stays");
 
 	let (stranger, stranger_scope, stranger_grants) = holder(&h).await;
-	let theirs = ports(&h, &stranger_grants, &mandates);
+	let theirs = ports(&h, &stranger_grants);
 	assert_eq!(refusal(ledger_app::pull(&theirs, &stranger, Some(&scope), 0, 10).await), LedgerRefusal::NotGranted);
 	assert_eq!(refusal(ledger_app::pull(&theirs, &stranger, Some(&ScopeId::main()), 0, 10).await), LedgerRefusal::NotGranted);
 	let own = ledger_app::pull(&theirs, &stranger, None, 0, 10).await.unwrap();

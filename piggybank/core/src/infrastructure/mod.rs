@@ -86,6 +86,7 @@ pub mod scope_events;
 pub mod scope_holds;
 pub mod scope_invoices;
 pub mod scope_ledger;
+pub mod scope_mandates;
 pub mod signer_addresses;
 pub mod singleton;
 pub mod subscriptions;

@@ -1,10 +1,10 @@
 //! `CompartmentService` — the caller's wallet split by scope (`wallet.proto`). Every RPC
 //! acts on the caller's own access-token `sub`.
 //!
-//! Mandates are not served yet: granting one needs banking's per-client grants, which
-//! arrive with `ScopeLedgerService`, and nothing may draw on a mandate before then. So
-//! `GrantMandate` / `RevokeMandate` are UNIMPLEMENTED and `ListMandates` is the truthful
-//! empty list.
+//! A mandate is granted only to a client banking's own scope-ledger grants let touch users'
+//! compartments in the scope; with the scope ledger unconfigured there is none, and every grant
+//! is INVALID_ARGUMENT. A grant is consent to future debits, so a frozen caller cannot give it;
+//! a revoke takes money out of a service's reach and is never gated beyond the token.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large
 //! type we don't control, so the large-err lint does not apply in this module.
@@ -12,6 +12,7 @@
 
 use domain::{
 	money::Usdt,
+	scope_ledger::{ClientId, MandateOperation},
 	scopes::{Compartment, MoveRefusal, ScopeId},
 };
 use evbanking_contracts::banking::v1::{self as pb, compartment_service_server::CompartmentService};
@@ -19,8 +20,14 @@ use tonic::{Request, Response, Status};
 
 use crate::{
 	AppState,
-	application::compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
-	ports::compartments::{RecordedMove, ScopeRecord},
+	application::{
+		compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
+		scope_mandates::{self as mandates_app, GrantRequest, MandatePorts},
+	},
+	ports::{
+		compartments::{RecordedMove, ScopeRecord},
+		scope_mandates::RecordedMandate,
+	},
 	services::support::{MoneyGate, caller_id, gated_caller, map_err},
 };
 
@@ -42,10 +49,16 @@ impl CompartmentSvc {
 			relay: &self.state.relay_notify,
 		}
 	}
-}
 
-/// Mandates wait for the scope ledger's client grants (module header).
-const MANDATES_NOT_YET: &str = "mandates are not available yet";
+	fn mandate_ports(&self) -> MandatePorts<'_> {
+		MandatePorts {
+			grants: &self.state.scope_grants,
+			store: self.state.mandates.as_ref(),
+			scopes: self.state.compartments.as_ref(),
+			relay: &self.state.relay_notify,
+		}
+	}
+}
 
 #[tonic::async_trait]
 impl CompartmentService for CompartmentSvc {
@@ -89,18 +102,92 @@ impl CompartmentService for CompartmentSvc {
 	}
 
 	async fn grant_mandate(&self, request: Request<pb::GrantMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
-		caller_id(&request)?;
-		Err(Status::unimplemented(MANDATES_NOT_YET))
+		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: true }).await?;
+		let req = request.into_inner();
+		let parsed = GrantRequest {
+			scope: ScopeId::parse(&req.scope).map_err(map_err)?,
+			client: ClientId::parse(&req.client_id).map_err(map_err)?,
+			cap_per_op: Usdt::parse_decimal(&req.cap_per_op).map_err(map_err)?,
+			cap_24h: Usdt::parse_decimal(&req.cap_24h).map_err(map_err)?,
+			cap_outstanding: optional_cap(&req.cap_outstanding)?,
+			cap_book_fill_24h: optional_cap(&req.cap_book_fill_24h)?,
+			operations: req.operations.iter().map(|raw| operation_of(*raw)).collect::<Result<_, _>>()?,
+			expires_at: match req.expires_at {
+				0 => None,
+				at if at < 0 => return Err(Status::invalid_argument("expires_at must be unix seconds, or 0")),
+				at => Some(at),
+			},
+			idempotency_key: req.idempotency_key,
+		};
+		let granted = mandates_app::grant(&self.mandate_ports(), user, parsed).await.map_err(map_err)?;
+		Ok(Response::new(mandate_to_proto(&granted)))
 	}
 
 	async fn revoke_mandate(&self, request: Request<pb::RevokeMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
-		caller_id(&request)?;
-		Err(Status::unimplemented(MANDATES_NOT_YET))
+		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: false }).await?;
+		let raw = &request.get_ref().mandate_id;
+		// Lowercase only, as banking writes it: one mandate, one spelling.
+		let id = uuid::Uuid::parse_str(raw)
+			.ok()
+			.filter(|id| id.to_string() == *raw)
+			.ok_or_else(|| Status::invalid_argument("mandate_id must be a lowercase uuid"))?;
+		let revoked = mandates_app::revoke(&self.mandate_ports(), user, id).await.map_err(map_err)?;
+		Ok(Response::new(mandate_to_proto(&revoked)))
 	}
 
 	async fn list_mandates(&self, request: Request<pb::ListMandatesRequest>) -> Result<Response<pb::MandateList>, Status> {
-		caller_id(&request)?;
-		Ok(Response::new(pb::MandateList { mandates: Vec::new() }))
+		let user = caller_id(&request)?;
+		let live = mandates_app::list(&self.mandate_ports(), user).await.map_err(map_err)?;
+		Ok(Response::new(pb::MandateList {
+			mandates: live.iter().map(mandate_to_proto).collect(),
+		}))
+	}
+}
+
+fn optional_cap(raw: &str) -> Result<Option<Usdt>, Status> {
+	if raw.is_empty() {
+		return Ok(None);
+	}
+	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
+}
+
+fn operation_of(raw: i32) -> Result<MandateOperation, Status> {
+	match pb::MandateOperation::try_from(raw) {
+		Ok(pb::MandateOperation::Reserve) => Ok(MandateOperation::Reserve),
+		Ok(pb::MandateOperation::Charge) => Ok(MandateOperation::Charge),
+		Ok(pb::MandateOperation::BookFill) => Ok(MandateOperation::BookFill),
+		Ok(pb::MandateOperation::Unspecified) | Err(_) => Err(Status::invalid_argument("operations must name RESERVE, CHARGE or BOOK_FILL")),
+	}
+}
+
+fn operation_to_proto(operation: MandateOperation) -> pb::MandateOperation {
+	match operation {
+		MandateOperation::Reserve => pb::MandateOperation::Reserve,
+		MandateOperation::Charge => pb::MandateOperation::Charge,
+		MandateOperation::BookFill => pb::MandateOperation::BookFill,
+	}
+}
+
+fn mandate_to_proto(recorded: &RecordedMandate) -> pb::Mandate {
+	let mandate = &recorded.mandate;
+	let terms = &mandate.terms;
+	pb::Mandate {
+		mandate_id: mandate.id.to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		client_id: terms.client.as_str().to_owned(),
+		// Banking's grants carry no human name for a client yet; its id is what the user sees.
+		client_display_name: terms.client.as_str().to_owned(),
+		cap_per_op: terms.caps.per_op.to_decimal_string(),
+		cap_24h: terms.caps.per_24h.to_decimal_string(),
+		operations: terms.operations.iter().map(|operation| operation_to_proto(*operation) as i32).collect(),
+		expires_at: terms.expires_at.unwrap_or(0),
+		created_at: mandate.created_at,
+		revoked_at: mandate.revoked_at.unwrap_or(0),
+		used_24h: recorded.usage.drawn_24h.to_decimal_string(),
+		cap_outstanding: terms.caps.outstanding.to_decimal_string(),
+		cap_book_fill_24h: optional_amount(terms.caps.book_fill_24h),
+		outstanding: recorded.usage.outstanding.to_decimal_string(),
+		book_filled_24h: recorded.usage.book_filled_24h.to_decimal_string(),
 	}
 }
 

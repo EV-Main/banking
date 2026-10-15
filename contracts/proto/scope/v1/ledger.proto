@@ -132,7 +132,14 @@ service ScopeLedgerService {
   // available to the user but stays theirs until captured. FAILED_PRECONDITION
   // `insufficient_funds` when the compartment cannot cover it right now. An
   // `auth_subject` banking has no wallet for is `mandate_required`, like a user who never
-  // granted one, so a client cannot probe which subjects exist.
+  // granted one, so a client cannot probe which subjects exist. A hold never outlives its
+  // mandate: with the mandate's `expires_at` set, the hold's `expires_at` is the earlier of
+  // the two (`ttl_seconds = 0` included).
+  //
+  // The answer means the hold is RECORDED; HOLD_PLACED in `MoneyEvents` means the ledger
+  // placed it. Should the ledger refuse it, the hold turns VOIDED with nothing captured,
+  // a capture after that is `hold_not_active`, and no HOLD_PLACED is ever delivered — so a
+  // service ships what it sold on the money event, not on this answer or Capture's.
   rpc Reserve(ReserveRequest) returns (Hold);
 
   // Move (part of) a held amount to a scope account the caller owns (a subscription's

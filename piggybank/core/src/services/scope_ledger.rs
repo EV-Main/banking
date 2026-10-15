@@ -14,7 +14,7 @@
 //!     stolen from one client is useless on another client's connection.
 //!
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
-//! `Void`, `GetHold` — every `Reserve` is `mandate_required` until users can grant mandates),
+//! `Void`, `GetHold` — a `Reserve` stands on the user's mandate for the client),
 //! `InvoiceService` and `MoneyEvents.Pull`, behind the same two layers. Every other RPC is UNIMPLEMENTED with
 //! the reason, and a client must treat that as "not yet", not "never".
 //!
@@ -68,7 +68,7 @@ use crate::{
 		compartments::CompartmentStore,
 		ledger::Ledger,
 		scope_invoices::{InvoiceStore, RecordedInvoice},
-		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MandateBook, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
+		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
 	},
 	services::support::map_err,
 };
@@ -178,8 +178,6 @@ impl<S: tonic::server::NamedService> tonic::server::NamedService for ClientIdent
 pub struct ScopeLedgerDeps {
 	pub store: Arc<dyn ScopeLedgerStore>,
 	pub holds: Arc<dyn HoldStore>,
-	/// Users' consent to holds; `NoMandates` until users can grant them.
-	pub mandates: Arc<dyn MandateBook>,
 	pub events: Arc<dyn MoneyEventStore>,
 	pub invoices: Arc<dyn InvoiceStore>,
 	/// The scope registry (which scopes exist, their state and policy).
@@ -259,7 +257,6 @@ impl ScopeLedgerSvc {
 			grants: &self.grants,
 			store: self.deps.store.as_ref(),
 			holds: self.deps.holds.as_ref(),
-			mandates: self.deps.mandates.as_ref(),
 			events: self.deps.events.as_ref(),
 			scopes: self.deps.scopes.as_ref(),
 			ledger: self.deps.ledger.as_ref(),
@@ -332,7 +329,7 @@ fn not_yet(rpc: &str, why: &str) -> Status {
 /// Most labels one `GetBalances` may name: one ledger read per label.
 const MAX_BALANCE_LABELS: usize = 256;
 
-const NEEDS_MANDATES: &str = "it draws on users' mandates, which are not granted yet";
+const NEEDS_CHARGES: &str = "a one-shot debit has no ledger posting yet; place a hold under the mandate and capture it";
 
 fn subject_of(raw: &str) -> Result<SubjectRef, Status> {
 	SubjectRef::parse(raw).map_err(map_err)
@@ -418,7 +415,7 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 
 	async fn charge(&self, request: Request<pb::ChargeRequest>) -> Result<Response<pb::ScopeCharge>, Status> {
 		caller(&request)?;
-		Err(not_yet("Charge", NEEDS_MANDATES))
+		Err(not_yet("Charge", NEEDS_CHARGES))
 	}
 
 	async fn payout(&self, request: Request<pb::PayoutRequest>) -> Result<Response<pb::ScopePayout>, Status> {
@@ -641,6 +638,8 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 			MoneyEventKind::InvoicePaid => Kind::InvoicePaid,
 			MoneyEventKind::InvoiceCancelled => Kind::InvoiceCancelled,
 			MoneyEventKind::InvoiceExpired => Kind::InvoiceExpired,
+			MoneyEventKind::MandateGranted => Kind::MandateGranted,
+			MoneyEventKind::MandateRevoked => Kind::MandateRevoked,
 		} as i32,
 		ref_id: event.ref_id.clone(),
 		aggregate_version: event.aggregate_version,

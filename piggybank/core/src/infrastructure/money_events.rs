@@ -65,7 +65,7 @@ struct StoredBalance {
 	balance: String,
 }
 
-fn event_id(name: &str) -> Uuid {
+pub(crate) fn event_id(name: &str) -> Uuid {
 	Uuid::new_v5(&Uuid::NAMESPACE_OID, format!("money_event:{name}").as_bytes())
 }
 

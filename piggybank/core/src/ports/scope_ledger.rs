@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use domain::{
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, Hold, LedgerRefusal, MandateOperation, MoneyEventKind, ScopeTransfer},
+	scope_ledger::{ClientId, Hold, LedgerRefusal, MoneyEventKind, ScopeTransfer},
+	scope_mandates::{Mandate, MandateUsage},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
@@ -158,6 +159,16 @@ pub struct HoldFacts {
 	pub user: Option<HoldUser>,
 	/// The database's clock, unix seconds: what the TTL counts from.
 	pub now: i64,
+	/// The user's current mandate for the client in the scope, its row locked, with what the
+	/// client has drawn under the compartment's lock; `None` when there is none.
+	pub mandate: Option<MandateDraw>,
+}
+
+/// A mandate with what is drawn against it, read under the locks the draw is decided under.
+#[derive(Clone, Debug)]
+pub struct MandateDraw {
+	pub mandate: Mandate,
+	pub usage: MandateUsage,
 }
 
 /// Decides a new hold under the store's locks and returns it placed — or refuses. The
@@ -186,6 +197,9 @@ pub struct HoldChangeFacts {
 	pub destination_owner: Option<ClientId>,
 	/// A capture into a user: who that is (`None` when banking has no such user).
 	pub destination_user: Option<HoldUser>,
+	/// A capture into a user: the mandate the hold was placed under, with its book fills of the
+	/// rolling 24 h counted under that mandate's book-fill lock (`None` when it is gone).
+	pub book_fill: Option<MandateDraw>,
 }
 
 /// Applies a capture or a void to the locked hold, or refuses. A hold left unchanged (a void
@@ -211,18 +225,6 @@ pub trait HoldStore: Send + Sync {
 	/// it answers a key already used; otherwise it locks the hold's row — NOT_FOUND when the
 	/// caller did not place it in this scope — and lets `change` apply to it.
 	async fn change_hold(&self, key: RequestKey<'_>, terms: &str, hold_id: Uuid, target: Option<&CaptureTarget>, change: &dyn HoldChange) -> Result<Recorded<RecordedHold>, TransferError>;
-}
-
-/// The user-consent side of a hold (`ledger.proto`, USER CONSENT): whether a live mandate
-/// lets a client act on a user's compartment.
-#[async_trait]
-pub trait MandateBook: Send + Sync {
-	/// The live mandate of `user` for `client` in `scope` that lists `operation` and allows
-	/// `amount`; `None` when there is none.
-	async fn authorize(&self, client: &ClientId, scope: &ScopeId, user: UserId, operation: MandateOperation, amount: Usdt) -> Result<Option<Uuid>, DomainError>;
-
-	/// Whether the mandate a hold was placed under lists `operation`.
-	async fn lists(&self, mandate: Uuid, operation: MandateOperation) -> Result<bool, DomainError>;
 }
 
 /// One end of a money movement in an event.

@@ -18,7 +18,7 @@ use domain::{
 use piggybank_core::{
 	application::{
 		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts, PayableView, PayerPorts},
-		scope_ledger::{self as ledger_app, NoMandates, ScopeLedgerPorts, TransferError},
+		scope_ledger::{self as ledger_app, ScopeLedgerPorts, TransferError},
 	},
 	infrastructure::{compartments::PgCompartments, relay::Relay, scope_invoices, scope_ledger::PgScopeLedger},
 	ports::{
@@ -81,7 +81,6 @@ fn ledger_ports<'a>(h: &'a Harness, grants: &'a Grants) -> ScopeLedgerPorts<'a> 
 		grants,
 		store: &h.store,
 		holds: &h.store,
-		mandates: &NoMandates,
 		events: &h.store,
 		scopes: &h.scopes,
 		ledger: h.ledger.as_ref(),

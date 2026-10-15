@@ -1,15 +1,17 @@
 //! Postgres adapter for [`HoldStore`] — clients' holds on users' compartments (`scope_holds`,
 //! migration 0055) under the same idempotency keys as the rest of the scope ledger — plus the
-//! reaper's release of holds past their TTL. The ledger side of every step is the relay's,
-//! from the `scope_holds` outbox events written in the same transaction as the row.
+//! reaper's release of holds past their TTL, a revoked mandate's release of its client's
+//! holds, the relay's voiding of a hold whose reservation the ledger refused (banking#514), and
+//! the reconciliation's expectation of `hold_clearing`. The ledger side of every step is the
+//! relay's, from the `scope_holds` outbox events written in the same transaction as the row.
 
 use async_trait::async_trait;
 use domain::{
-	architecture::Id,
+	architecture::{DomainEvent as _, Id},
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, Hold, HoldProgress, HoldState, HoldTerms, SubjectRef},
+	scope_ledger::{ClientId, Hold, HoldEvent, HoldProgress, HoldState, HoldTerms, SubjectRef},
 	scopes::ScopeId,
 	users::UserId,
 };
@@ -21,8 +23,9 @@ use crate::{
 		claims::TxReads,
 		compartments, outbox,
 		scope_ledger::{PgScopeLedger, find_request, insert_request, key_lock, owner_on, raced_request},
+		scope_mandates,
 	},
-	ports::scope_ledger::{CaptureTarget, HoldAdmission, HoldChange, HoldChangeFacts, HoldFacts, HoldStore, HoldUser, Recorded, RecordedHold, RequestKey, TransferError},
+	ports::scope_ledger::{CaptureTarget, HoldAdmission, HoldChange, HoldChangeFacts, HoldFacts, HoldStore, HoldUser, MandateDraw, Recorded, RecordedHold, RequestKey, TransferError},
 };
 
 fn repo_err(err: sqlx::Error) -> DomainError {
@@ -74,7 +77,7 @@ fn recorded_hold(row: HoldRow) -> Result<RecordedHold, DomainError> {
 }
 
 /// The database's clock: one clock for every TTL, whichever replica asks.
-async fn db_now(conn: &mut PgConnection) -> Result<i64, DomainError> {
+pub(crate) async fn db_now(conn: &mut PgConnection) -> Result<i64, DomainError> {
 	sqlx::query_scalar("SELECT EXTRACT(EPOCH FROM now())::BIGINT").fetch_one(conn).await.map_err(repo_err)
 }
 
@@ -139,11 +142,18 @@ impl HoldStore for PgScopeLedger {
 		let user = user_by_subject(&mut tx, auth_subject).await?;
 		// The lock every spender of the compartment takes (a move out, another hold), so the
 		// spendable the admission reads cannot be spent twice.
+		let mut mandate = None;
 		if let Some(user) = user {
 			outbox::lock_claim(&mut tx, &LedgerAccountKey::ScopeClaim(user.id, key.scope.clone())).await?;
+			// Under the claim lock, so the usage below counts every hold this client placed on
+			// the compartment, and the mandate row's lock holds a revoke off until this commits.
+			if let Some(current) = scope_mandates::current_for_update(&mut tx, user.id, key.scope, key.client).await? {
+				let usage = scope_mandates::usage(&mut tx, user.id, key.scope, key.client, current.id).await?;
+				mandate = Some(MandateDraw { mandate: current, usage });
+			}
 		}
 		let now = db_now(&mut tx).await?;
-		let facts = HoldFacts { scope, user, now };
+		let facts = HoldFacts { scope, user, now, mandate };
 		// The refusal rolls the transaction back with nothing written.
 		let mut hold = admission.admit(&facts, &mut TxReads::new(&mut tx)).await?;
 		let held = hold.terms().clone();
@@ -198,10 +208,14 @@ impl HoldStore for PgScopeLedger {
 			})?;
 		let RecordedHold { mut hold, auth_subject, created_at } = recorded_hold(row)?;
 		let held_user = user_by_id(&mut tx, hold.terms().user).await?;
-		let (destination_owner, destination_user) = match target {
-			Some(CaptureTarget::Account(label)) => (owner_on(&mut tx, key.scope, label).await?, None),
-			Some(CaptureTarget::User(subject)) => (None, user_by_subject(&mut tx, subject).await?),
-			None => (None, None),
+		let (destination_owner, destination_user, book_fill) = match target {
+			Some(CaptureTarget::Account(label)) => (owner_on(&mut tx, key.scope, label).await?, None, None),
+			Some(CaptureTarget::User(subject)) => (
+				None,
+				user_by_subject(&mut tx, subject).await?,
+				scope_mandates::book_fill_draw(&mut tx, hold.terms().mandate_id).await?,
+			),
+			None => (None, None, None),
 		};
 		let facts = HoldChangeFacts {
 			scope: compartments::scope_for_share(&mut tx, key.scope).await?,
@@ -209,11 +223,18 @@ impl HoldStore for PgScopeLedger {
 			held_user,
 			destination_owner,
 			destination_user,
+			book_fill,
 		};
-		let version = hold.progress().version;
+		let before = hold.progress();
 		change.apply(&mut hold, &facts).await?;
-		if hold.progress().version != version {
+		let after = hold.progress();
+		if after.version != before.version {
 			update_progress(&mut tx, &hold).await?;
+		}
+		if matches!(target, Some(CaptureTarget::User(_)))
+			&& let Some(filled) = after.captured.checked_sub(before.captured).filter(|filled| !filled.is_zero())
+		{
+			scope_mandates::record_book_fill(&mut tx, hold_id, after.version, hold.terms().mandate_id, filled).await?;
 		}
 		if !insert_request(&mut tx, &key, terms, &hold_id.to_string()).await? {
 			drop(tx);
@@ -262,4 +283,71 @@ pub async fn expire_due_holds(pool: &PgPool) -> Result<usize, sqlx::Error> {
 		}
 	}
 	Ok(expired)
+}
+
+/// Release, in the caller's transaction, every active hold `client` has on `user`'s compartment
+/// in `scope` — the user revoked the client's mandate. Each release drains its event for the
+/// relay. Returns how many it released.
+pub(crate) async fn void_for_revoke(conn: &mut PgConnection, client: &ClientId, scope: &ScopeId, user: UserId) -> Result<usize, DomainError> {
+	let rows = sqlx::query_as::<_, HoldRow>(select_hold!("WHERE client_id = $1 AND scope = $2 AND user_id = $3 AND state = 'active' ORDER BY id FOR UPDATE"))
+		.bind(client.as_str())
+		.bind(scope.as_str())
+		.bind(user.raw())
+		.fetch_all(&mut *conn)
+		.await
+		.map_err(repo_err)?;
+	let now = db_now(conn).await?;
+	let mut released = 0;
+	for row in rows {
+		let mut hold = recorded_hold(row)?.hold;
+		if hold.void_by_user(now) {
+			update_progress(conn, &hold).await?;
+			outbox::drain_to_outbox(conn, &mut hold, true).await?;
+			released += 1;
+		}
+	}
+	Ok(released)
+}
+
+/// Whether the ledger refused this hold's reservation and the relay voided the hold for it
+/// ([`park_refused_reserve`]).
+pub async fn reserve_refused(pool: &PgPool, hold_id: Uuid) -> Result<bool, sqlx::Error> {
+	Ok(sqlx::query_scalar::<_, Option<bool>>("SELECT ledger_refused_at IS NOT NULL FROM scope_holds WHERE id = $1")
+		.bind(hold_id)
+		.fetch_optional(pool)
+		.await?
+		.flatten()
+		.unwrap_or(false))
+}
+
+/// Park the outbox row `seq` — a hold's reservation the ledger did not place — and, in the
+/// same transaction, turn the hold VOIDED with nothing captured, so no Capture answers
+/// CAPTURED for money the ledger never held (banking#514). Captures recorded before the park
+/// park after it in the relay (their reservation is missing), so `captured` goes back to zero.
+pub async fn park_refused_reserve(pool: &PgPool, seq: i64, reason: &str, hold_id: Uuid) -> Result<(), sqlx::Error> {
+	let mut tx = pool.begin().await?;
+	outbox::mark_parked_on(&mut tx, seq, reason).await?;
+	sqlx::query("UPDATE scope_holds SET state = 'voided', captured = '0', ledger_refused_at = now(), updated_at = now() WHERE id = $1 AND ledger_refused_at IS NULL")
+		.bind(hold_id)
+		.execute(&mut *tx)
+		.await?;
+	tx.commit().await
+}
+
+/// What `hold_clearing` must hold on the ledger: Σ what every active hold still holds. `None`
+/// while any hold event is still on its way to the ledger — the two sides then legitimately
+/// differ by it, and the next quiet pass compares them.
+pub async fn hold_clearing_expected(pool: &PgPool) -> Result<Option<Usdt>, DomainError> {
+	let (in_flight, expected): (bool, String) = sqlx::query_as(
+		"SELECT EXISTS (SELECT 1 FROM outbox WHERE kind = $1 AND dispatched_at IS NULL AND parked_at IS NULL), \
+		 (SELECT COALESCE(sum(amount::numeric - captured::numeric), 0)::text FROM scope_holds WHERE state = 'active')",
+	)
+	.bind(HoldEvent::KIND)
+	.fetch_one(pool)
+	.await
+	.map_err(repo_err)?;
+	if in_flight {
+		return Ok(None);
+	}
+	amount("Σ active holds", &expected).map(Some)
 }
