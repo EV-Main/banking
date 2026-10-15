@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "test": "CABINET_BACKEND_URL=http://localhost:50062 node --test --experimental-strip-types 'shared/**/*.test.ts' 'features/**/*.test.ts' 'views/**/*.test.ts' 'entities/**/*.test.ts' 'mfe/**/*.test.ts' 'application/**/*.test.ts'",
     "gen:api": "openapi-ts",
-    "build:mfe": "node mfe/build.mjs && tailwindcss -i mfe/account-chip/mfe.css -o public/mfe/account-chip.css --minify",
+    "build:mfe": "node mfe/build.mjs && tailwindcss -i mfe/account-chip/mfe.css -o public/mfe/account-chip.css --minify && tailwindcss -i mfe/wallet/mfe.css -o public/mfe/wallet/wallet.css --minify",
     "mfe:pins": "node mfe/pins.mjs",
     "predev": "npm run build:mfe",
     "prebuild": "npm run build:mfe",
