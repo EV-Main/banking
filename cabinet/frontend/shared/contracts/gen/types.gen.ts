@@ -2029,7 +2029,8 @@ export type BankingV1GrantAllocationAccessRequest = {
  * The caps are decimal USDT. What counts against them is the client's draws on the caller's
  * compartment in the scope — under this mandate and any it replaced, so granting again
  * never resets a cap: a hold counts at its full amount from when it is placed, until it is
- * voided or expires, when only what was captured of it still counts.
+ * voided or expires, when only what was captured of it still counts; a capture of a hold
+ * placed more than 24 h ago counts from when it is made.
  */
 export type BankingV1GrantMandateRequest = {
     /**
@@ -2063,7 +2064,7 @@ export type BankingV1GrantMandateRequest = {
     /**
      * expires_at
      *
-     * unix seconds, in the future; 0 = until revoked
+     * unix seconds, in the future and within 5 years; 0 = until revoked
      */
     expires_at?: number | string;
     /**
@@ -2084,7 +2085,8 @@ export type BankingV1GrantMandateRequest = {
      * cap_book_fill_24h
      *
      * Required exactly when `operations` lists BOOK_FILL, > 0: the most a rolling 24 h of
-     * captures may send from holds under this mandate into OTHER users' compartments.
+     * captures may send from the client's holds into OTHER users' compartments. A hold
+     * placed under an earlier mandate is bound by the lower of its cap and this one.
      */
     cap_book_fill_24h?: string;
 };
@@ -2664,6 +2666,12 @@ export type BankingV1Mandate = {
      * sent to other users in the rolling 24 h
      */
     book_filled_24h?: string;
+    /**
+     * replaced_at
+     *
+     * 0 unless a later grant replaced it; then `outstanding` is its own holds'
+     */
+    replaced_at?: number | string;
 };
 
 /**

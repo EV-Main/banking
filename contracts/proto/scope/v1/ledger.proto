@@ -71,8 +71,9 @@ syntax = "proto3";
 //   - A frozen user takes no new debit of their compartment (Reserve, Charge), and a
 //     hold already standing on it is not captured into ANOTHER user's compartment:
 //     FAILED_PRECONDITION `user_frozen`. Capturing such a hold into the caller's own
-//     account (the purchase the user consented to), voiding it, and a Capture into them
-//     are allowed. A payout naming a frozen or disabled user is `user_frozen` too (D24(7):
+//     account (the purchase the user consented to) and voiding it are allowed. Nothing
+//     new goes into a frozen user's compartment either: a Capture into them (BOOK_FILL)
+//     is `user_frozen`. A payout naming a frozen or disabled user is `user_frozen` too (D24(7):
 //     they may take their money back to `main`, nothing new goes into a compartment) —
 //     at the request, and again when an approved payout executes.
 //
@@ -145,8 +146,9 @@ service ScopeLedgerService {
 
   // Move (part of) a held amount to a scope account the caller owns (a subscription's
   // cash into `alloc:<slug>`), or to another user's compartment — the cash leg of a
-  // book fill, allowed only when the mandate the hold was placed under lists
-  // BOOK_FILL. May be called repeatedly with partial amounts until the hold is
+  // book fill, allowed only when both the mandate the hold was placed under and the
+  // user's current mandate for the client list BOOK_FILL, within the lower of their two
+  // BOOK_FILL caps. May be called repeatedly with partial amounts until the hold is
   // exhausted — a resting order fills in pieces. Cannot fail on balance: the money is
   // already held. A hold that is no longer ACTIVE is FAILED_PRECONDITION
   // `hold_not_active`.
@@ -287,9 +289,9 @@ message Hold {
   int64 expires_at = 8;
   int64 created_at = 9;
   string subject_ref = 10;
-  // The mandate the hold was placed under — what decides whether a capture into
-  // another user's compartment (BOOK_FILL) is allowed, for the hold's whole life,
-  // even after the user replaces that mandate.
+  // The mandate the hold was placed under. A capture into another user's compartment
+  // (BOOK_FILL) needs it and the user's current mandate to allow it, so replacing the
+  // mandate can narrow or end BOOK_FILL for holds already standing, never widen it.
   string mandate_id = 11;
   // The client that placed the hold — the only one that may capture, void or read it.
   string placed_by_client = 12;

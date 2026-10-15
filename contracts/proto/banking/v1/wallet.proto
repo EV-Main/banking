@@ -179,8 +179,9 @@ service CompartmentService {
   // send an invoice. A client that banking's grants do not allow to touch users'
   // compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,
   // client): granting again replaces it — new holds and charges draw on the new one,
-  // while holds already standing stay under the mandate they were placed with (its
-  // BOOK_FILL still decides their captures) until they finish. Naturally confirmed on
+  // while holds already standing stay under the mandate they were placed with until they
+  // finish. The new mandate still binds them: none outlives its `expires_at`, and a
+  // capture of one into another user needs BOOK_FILL from both. Naturally confirmed on
   // the caller's first move into the scope, on one screen.
   rpc GrantMandate(GrantMandateRequest) returns (Mandate);
 
@@ -191,7 +192,8 @@ service CompartmentService {
   // unknown id, is NOT_FOUND.
   rpc RevokeMandate(RevokeMandateRequest) returns (Mandate);
 
-  // The caller's live mandates, newest first.
+  // The caller's live mandates, and replaced ones whose holds still hold money, newest
+  // first.
   rpc ListMandates(ListMandatesRequest) returns (MandateList);
 }
 
@@ -267,21 +269,23 @@ enum MandateOperation {
 // The caps are decimal USDT. What counts against them is the client's draws on the caller's
 // compartment in the scope — under this mandate and any it replaced, so granting again
 // never resets a cap: a hold counts at its full amount from when it is placed, until it is
-// voided or expires, when only what was captured of it still counts.
+// voided or expires, when only what was captured of it still counts; a capture of a hold
+// placed more than 24 h ago counts from when it is made.
 message GrantMandateRequest {
   string scope = 1;
   string client_id = 2;                     // the scope's service, as banking's grants name it
   string cap_per_op = 3;                    // > 0: the most one hold or charge may draw
   string cap_24h = 4;                       // >= cap_per_op: drawn over a rolling 24 h
   repeated MandateOperation operations = 5; // at least one, each once
-  int64 expires_at = 6;                     // unix seconds, in the future; 0 = until revoked
+  int64 expires_at = 6;                     // unix seconds, in the future and within 5 years; 0 = until revoked
   string idempotency_key = 7;               // 1..128 chars; a repeat returns the original mandate
   // >= cap_per_op; empty = cap_24h. The most the client's ACTIVE holds may hold at once,
   // whenever they were placed — a hold without a TTL stays out of a rolling 24 h window
   // while it still holds the money.
   string cap_outstanding = 8;
   // Required exactly when `operations` lists BOOK_FILL, > 0: the most a rolling 24 h of
-  // captures may send from holds under this mandate into OTHER users' compartments.
+  // captures may send from the client's holds into OTHER users' compartments. A hold
+  // placed under an earlier mandate is bound by the lower of its cap and this one.
   string cap_book_fill_24h = 9;
 }
 
@@ -307,6 +311,7 @@ message Mandate {
   string cap_book_fill_24h = 13;  // empty unless `operations` lists BOOK_FILL
   string outstanding = 14;        // held by the client's active holds now
   string book_filled_24h = 15;    // sent to other users in the rolling 24 h
+  int64 replaced_at = 16;         // 0 unless a later grant replaced it; then `outstanding` is its own holds'
 }
 
 message MandateList {

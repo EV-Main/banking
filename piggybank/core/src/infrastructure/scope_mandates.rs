@@ -3,16 +3,17 @@
 //! what the client has drawn on the compartment, and a mandate's book fills.
 //!
 //! Lock order, so that no two of these writers wait on each other in a circle: a Reserve takes
-//! the compartment's claim lock, then the mandate row; a revoke takes the mandate row, then the
-//! client's hold rows; a capture into another user takes its hold row, then the mandate's
-//! book-fill lock (never the mandate row). A revoke that locks the row first sees every hold a
-//! Reserve committed under it, and a Reserve after it re-reads the row as revoked.
+//! the compartment's claim lock, then the mandate row; a grant and a revoke take the mandate
+//! row, then the client's hold rows; a capture into another user takes its hold row, then the
+//! client's book-fill lock on the compartment, and reads the mandates without locking them. A
+//! revoke that locks the row first sees every hold a Reserve committed under it, and a Reserve
+//! after it re-reads the row as revoked.
 
 use async_trait::async_trait;
 use domain::{
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, MandateOperation, MoneyEventKind},
+	scope_ledger::{ClientId, HoldTerms, MandateOperation, MoneyEventKind},
 	scope_mandates::{Mandate, MandateCaps, MandateTerms, MandateUsage},
 	scopes::ScopeId,
 	users::UserId,
@@ -114,23 +115,43 @@ pub(crate) async fn current_for_update(conn: &mut PgConnection, user: UserId, sc
 	.transpose()
 }
 
-/// What `client` has drawn on `user`'s compartment in `scope`, and — for `mandate` — its book
-/// fills; all three on the database's clock. Exact sums in `numeric`: the amounts are 18-dp
-/// base units, past what a float holds.
-pub(crate) async fn usage(conn: &mut PgConnection, user: UserId, scope: &ScopeId, client: &ClientId, mandate: Uuid) -> Result<MandateUsage, DomainError> {
+/// [`current_for_update`] without the row lock, for a capture: it already holds a hold row,
+/// which a grant or a revoke takes after the mandate row.
+async fn current(conn: &mut PgConnection, user: UserId, scope: &ScopeId, client: &ClientId) -> Result<Option<Mandate>, DomainError> {
+	sqlx::query_as::<_, MandateRow>(select_mandate!(
+		"WHERE user_id = $1 AND scope = $2 AND client_id = $3 AND revoked_at IS NULL AND replaced_at IS NULL"
+	))
+	.bind(user.raw())
+	.bind(scope.as_str())
+	.bind(client.as_str())
+	.fetch_optional(conn)
+	.await
+	.map_err(repo_err)?
+	.map(mandate_from)
+	.transpose()
+}
+
+/// What `client` has drawn on `user`'s compartment in `scope`, under any of the user's mandates,
+/// on the database's clock (one `now()` for the whole statement). Exact sums in `numeric`: the
+/// amounts are 18-dp base units, past what a float holds. Only active holds and those placed in
+/// the window are read, so a long-lived client's history costs nothing.
+pub(crate) async fn usage(conn: &mut PgConnection, user: UserId, scope: &ScopeId, client: &ClientId) -> Result<MandateUsage, DomainError> {
 	let (drawn, outstanding, filled): (String, String, String) = sqlx::query_as(
 		"SELECT \
-		   COALESCE(sum(CASE WHEN state IN ('voided', 'expired') THEN captured ELSE amount END::numeric) \
-		     FILTER (WHERE created_at > now() - interval '24 hours'), 0)::text, \
+		   (COALESCE(sum(CASE WHEN state IN ('voided', 'expired') THEN captured ELSE amount END::numeric) \
+		      FILTER (WHERE created_at > now() - interval '24 hours'), 0) \
+		    + (SELECT COALESCE(sum(c.amount::numeric), 0) FROM scope_hold_captures c JOIN scope_holds old ON old.id = c.hold_id \
+		       WHERE c.user_id = $1 AND c.scope = $2 AND c.client_id = $3 AND c.created_at > now() - interval '24 hours' \
+		         AND old.created_at <= now() - interval '24 hours'))::text, \
 		   COALESCE(sum(amount::numeric - captured::numeric) FILTER (WHERE state = 'active'), 0)::text, \
 		   (SELECT COALESCE(sum(amount::numeric), 0)::text FROM scope_book_fills \
-		     WHERE mandate_id = $4 AND created_at > now() - interval '24 hours') \
-		 FROM scope_holds WHERE user_id = $1 AND scope = $2 AND client_id = $3",
+		     WHERE user_id = $1 AND scope = $2 AND client_id = $3 AND created_at > now() - interval '24 hours') \
+		 FROM scope_holds WHERE user_id = $1 AND scope = $2 AND client_id = $3 \
+		   AND (state = 'active' OR created_at > now() - interval '24 hours')",
 	)
 	.bind(user.raw())
 	.bind(scope.as_str())
 	.bind(client.as_str())
-	.bind(mandate)
 	.fetch_one(conn)
 	.await
 	.map_err(repo_err)?;
@@ -141,31 +162,53 @@ pub(crate) async fn usage(conn: &mut PgConnection, user: UserId, scope: &ScopeId
 	})
 }
 
-/// The mandate a hold was placed under, for a capture into another user: book fills under one
-/// mandate serialize on a lock of their own — not the mandate's row, which a revoke takes
-/// before the hold rows a capture already holds.
-pub(crate) async fn book_fill_draw(conn: &mut PgConnection, mandate: Uuid) -> Result<Option<MandateDraw>, DomainError> {
-	outbox::lock_named(conn, &format!("scope_book_fill:{mandate}")).await?;
-	let found = sqlx::query_as::<_, MandateRow>(select_mandate!("WHERE id = $1"))
-		.bind(mandate)
+/// For a capture of `hold` into another user: the mandate the hold was placed under with the
+/// client's usage of the compartment, and the user's current mandate for the client. The
+/// client's fills on one compartment serialize on a lock of their own — not a mandate row,
+/// which a grant or a revoke takes before the hold rows a capture already holds.
+pub(crate) async fn book_fill_draw(conn: &mut PgConnection, hold: &HoldTerms) -> Result<(Option<MandateDraw>, Option<Mandate>), DomainError> {
+	outbox::lock_named(conn, &format!("scope_book_fill:{}:{}:{}", hold.user, hold.scope, hold.client)).await?;
+	let placed = sqlx::query_as::<_, MandateRow>(select_mandate!("WHERE id = $1"))
+		.bind(hold.mandate_id)
 		.fetch_optional(&mut *conn)
 		.await
 		.map_err(repo_err)?
 		.map(mandate_from)
 		.transpose()?;
-	let Some(mandate) = found else { return Ok(None) };
-	let terms = &mandate.terms;
-	let usage = usage(conn, terms.user, &terms.scope, &terms.client, mandate.id).await?;
-	Ok(Some(MandateDraw { mandate, usage }))
+	let current = current(conn, hold.user, &hold.scope, &hold.client).await?;
+	let Some(mandate) = placed else { return Ok((None, current)) };
+	let usage = usage(conn, hold.user, &hold.scope, &hold.client).await?;
+	Ok((Some(MandateDraw { mandate, usage }), current))
 }
 
-/// Count `amount` of hold `hold_id`'s capture `version` against `mandate`'s BOOK_FILL cap.
-pub(crate) async fn record_book_fill(conn: &mut PgConnection, hold_id: Uuid, version: u64, mandate: Uuid, amount: Usdt) -> Result<(), DomainError> {
-	let version = i64::try_from(version).map_err(|_| DomainError::Repository(format!("scope hold {hold_id}: version {version} overflows")))?;
-	sqlx::query("INSERT INTO scope_book_fills (hold_id, version, mandate_id, amount) VALUES ($1, $2, $3, $4)")
+fn stored_version(hold_id: Uuid, version: u64) -> Result<i64, DomainError> {
+	i64::try_from(version).map_err(|_| DomainError::Repository(format!("scope hold {hold_id}: version {version} overflows")))
+}
+
+/// Count `amount` of hold `hold_id`'s capture `version` against `cap_24h`.
+pub(crate) async fn record_capture(conn: &mut PgConnection, hold_id: Uuid, version: u64, hold: &HoldTerms, amount: Usdt) -> Result<(), DomainError> {
+	sqlx::query("INSERT INTO scope_hold_captures (hold_id, version, user_id, scope, client_id, amount) VALUES ($1, $2, $3, $4, $5, $6)")
 		.bind(hold_id)
-		.bind(version)
-		.bind(mandate)
+		.bind(stored_version(hold_id, version)?)
+		.bind(hold.user.raw())
+		.bind(hold.scope.as_str())
+		.bind(hold.client.as_str())
+		.bind(amount.base_units().to_string())
+		.execute(conn)
+		.await
+		.map_err(repo_err)?;
+	Ok(())
+}
+
+/// Count `amount` of hold `hold_id`'s capture `version` against the BOOK_FILL cap.
+pub(crate) async fn record_book_fill(conn: &mut PgConnection, hold_id: Uuid, version: u64, hold: &HoldTerms, amount: Usdt) -> Result<(), DomainError> {
+	sqlx::query("INSERT INTO scope_book_fills (hold_id, version, mandate_id, user_id, scope, client_id, amount) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+		.bind(hold_id)
+		.bind(stored_version(hold_id, version)?)
+		.bind(hold.mandate_id)
+		.bind(hold.user.raw())
+		.bind(hold.scope.as_str())
+		.bind(hold.client.as_str())
 		.bind(amount.base_units().to_string())
 		.execute(conn)
 		.await
@@ -216,9 +259,20 @@ async fn append_event(conn: &mut PgConnection, mandate: &Mandate, kind: MoneyEve
 	money_events::append(conn, &event).await
 }
 
+/// A mandate with what the client has drawn. A replaced one shows its own holds as
+/// `outstanding`, so the user sees which money still stands on it; the 24 h figures are the
+/// client's on the compartment either way, as the caps count them.
 async fn recorded(conn: &mut PgConnection, mandate: Mandate) -> Result<RecordedMandate, DomainError> {
 	let terms = &mandate.terms;
-	let usage = usage(conn, terms.user, &terms.scope, &terms.client, mandate.id).await?;
+	let mut usage = usage(conn, terms.user, &terms.scope, &terms.client).await?;
+	if mandate.replaced_at.is_some() {
+		let own: String = sqlx::query_scalar("SELECT COALESCE(sum(amount::numeric - captured::numeric), 0)::text FROM scope_holds WHERE mandate_id = $1 AND state = 'active'")
+			.bind(mandate.id)
+			.fetch_one(&mut *conn)
+			.await
+			.map_err(repo_err)?;
+		usage.outstanding = base_units("outstanding", &own)?;
+	}
 	Ok(RecordedMandate { mandate, usage })
 }
 
@@ -254,6 +308,21 @@ impl MandateStore for PgScopeLedger {
 			.execute(&mut *tx)
 			.await
 			.map_err(repo_err)?;
+		// Holds placed under an earlier mandate stay with it, but none outlives the consent the
+		// user gives now.
+		if let Some(expires_at) = terms.expires_at {
+			sqlx::query(
+				"UPDATE scope_holds SET expires_at = LEAST(COALESCE(expires_at, to_timestamp($4)), to_timestamp($4)), updated_at = now() \
+				 WHERE user_id = $1 AND scope = $2 AND client_id = $3 AND state = 'active'",
+			)
+			.bind(terms.user.raw())
+			.bind(terms.scope.as_str())
+			.bind(terms.client.as_str())
+			.bind(expires_at as f64)
+			.execute(&mut *tx)
+			.await
+			.map_err(repo_err)?;
+		}
 		let operations: Vec<&str> = terms.operations.iter().map(|operation| operation.as_str()).collect();
 		let row = sqlx::query_as::<_, MandateRow>(concat!(
 			"INSERT INTO scope_mandates (id, user_id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
@@ -314,15 +383,18 @@ impl MandateStore for PgScopeLedger {
 	async fn live(&self, user: UserId) -> Result<Vec<RecordedMandate>, DomainError> {
 		let mut conn = self.pool().acquire().await.map_err(repo_err)?;
 		let rows = sqlx::query_as::<_, MandateRow>(select_mandate!(
-			"WHERE user_id = $1 AND revoked_at IS NULL AND replaced_at IS NULL AND (expires_at IS NULL OR expires_at > now()) ORDER BY created_at DESC, id"
+			"WHERE user_id = $1 AND revoked_at IS NULL AND ( \
+			   (replaced_at IS NULL AND (expires_at IS NULL OR expires_at > now())) \
+			   OR (replaced_at IS NOT NULL AND EXISTS (SELECT 1 FROM scope_holds h WHERE h.mandate_id = scope_mandates.id AND h.state = 'active')) \
+			 ) ORDER BY created_at DESC, id"
 		))
 		.bind(user.raw())
 		.fetch_all(&mut *conn)
 		.await
 		.map_err(repo_err)?;
 		let mut out = Vec::with_capacity(rows.len());
-		// One row per (scope, client) the user granted: a handful, read one after another on
-		// the one connection.
+		// The current mandate per (scope, client) the user granted, and the few replaced ones
+		// still holding money: a handful, read one after another on the one connection.
 		for row in rows {
 			out.push(recorded(&mut conn, mandate_from(row)?).await?);
 		}

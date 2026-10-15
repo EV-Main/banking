@@ -27,7 +27,7 @@ use uuid::Uuid;
 use crate::{
 	infrastructure::{outbox, outbox::OutboxRow, scope_ledger::PgScopeLedger},
 	ports::{
-		ledger::Ledger,
+		ledger::{Ledger, LedgerError},
 		scope_ledger::{EventAccount, EventBalance, MoneyEventRecord, MoneyEventStore, OwnedAccount},
 	},
 };
@@ -81,11 +81,68 @@ fn split(account: Option<&EventAccount>) -> (Option<&str>, Option<&str>) {
 	}
 }
 
+/// Why the money event of an applied outbox row was not written.
+#[derive(Debug)]
+pub enum MoneyEventError {
+	/// Postgres or the ledger could not be reached, or gave up under load or a lock: waited
+	/// out like any outage.
+	Unavailable(String),
+	/// The rows cannot make an event — undecodable, missing, inconsistent — or the database
+	/// refused it for a reason a retry does not change: tried a bounded number of times, then
+	/// parked alone.
+	Unrecordable(String),
+}
+
+impl std::fmt::Display for MoneyEventError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Unavailable(reason) => write!(f, "unavailable: {reason}"),
+			Self::Unrecordable(reason) => f.write_str(reason),
+		}
+	}
+}
+
+impl MoneyEventError {
+	fn corrupt(reason: String) -> Self {
+		Self::Unrecordable(reason)
+	}
+
+	/// Classes 08 (connection), 40 (rollback: serialization, deadlock), 53 (resources), 57
+	/// (operator intervention: cancel, shutdown) and `55P03` (lock not available) pass with
+	/// time; so do a pool that timed out or closed and a broken socket.
+	fn db(context: impl std::fmt::Display, err: sqlx::Error) -> Self {
+		let transient = match &err {
+			sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_) | sqlx::Error::Tls(_) | sqlx::Error::WorkerCrashed => true,
+			sqlx::Error::Database(db) => db
+				.code()
+				.is_some_and(|code| ["08", "40", "53", "57"].iter().any(|class| code.starts_with(class)) || code == "55P03"),
+			_ => false,
+		};
+		let reason = format!("{context}: {err}");
+		if transient { Self::Unavailable(reason) } else { Self::Unrecordable(reason) }
+	}
+
+	fn ledger(context: impl std::fmt::Display, err: LedgerError) -> Self {
+		let reason = format!("{context}: {err}");
+		match err {
+			LedgerError::Unavailable(_) | LedgerError::Retryable(_) => Self::Unavailable(reason),
+			LedgerError::InsufficientFunds | LedgerError::Conflict(_) => Self::Unrecordable(reason),
+		}
+	}
+}
+
 /// Write `event` and its deliveries. A repeat of an event already written is a no-op. Appends
 /// serialize on one lock held to commit, so positions become visible in the order they were
 /// taken and a cursor never passes a position that commits later.
 pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<(), DomainError> {
-	outbox::lock_named(conn, "money_events_append").await?;
+	append_checked(conn, event).await.map_err(|err| DomainError::Repository(err.to_string()))
+}
+
+/// [`append`], telling an outage from an event that cannot be written.
+async fn append_checked(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<(), MoneyEventError> {
+	outbox::lock_named_on(conn, "money_events_append")
+		.await
+		.map_err(|e| MoneyEventError::db("money_events_append lock", e))?;
 	let balances: Vec<StoredBalance> = event
 		.balances
 		.iter()
@@ -95,8 +152,8 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 			balance: entry.balance.base_units().to_string(),
 		})
 		.collect();
-	let balances = serde_json::to_string(&balances).map_err(|e| DomainError::Repository(e.to_string()))?;
-	let version = i64::try_from(event.aggregate_version).map_err(|_| DomainError::Repository(format!("money event version {} overflows", event.aggregate_version)))?;
+	let balances = serde_json::to_string(&balances).map_err(|e| MoneyEventError::corrupt(format!("money event balances: {e}")))?;
+	let version = i64::try_from(event.aggregate_version).map_err(|_| MoneyEventError::corrupt(format!("money event version {} overflows", event.aggregate_version)))?;
 	let (from_label, from_subject) = split(event.from.as_ref());
 	let (to_label, to_subject) = split(event.to.as_ref());
 	let position: Option<i64> = sqlx::query_scalar(
@@ -125,7 +182,7 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 	.bind(&event.paid_from)
 	.fetch_optional(&mut *conn)
 	.await
-	.map_err(repo_err)?;
+	.map_err(|e| MoneyEventError::db(format!("money event {}", event.event_id), e))?;
 	let Some(position) = position else { return Ok(()) };
 	let mut audience: Vec<&str> = event.audience.iter().filter(|client| !client.is_banking()).map(ClientId::as_str).collect();
 	audience.sort_unstable();
@@ -136,7 +193,7 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 		.bind(event.scope.as_str())
 		.execute(&mut *conn)
 		.await
-		.map_err(repo_err)?;
+		.map_err(|e| MoneyEventError::db(format!("money event {} deliveries", event.event_id), e))?;
 	Ok(())
 }
 
@@ -169,19 +226,19 @@ pub fn account_opened(account: &OwnedAccount) -> NewMoneyEvent {
 
 /// What the relay's money event needs about a scope account: who owns it, and its posted
 /// balance now.
-async fn balance_of(pool: &PgPool, ledger: &dyn Ledger, scope: &ScopeId, label: &ScopeAccountLabel) -> Result<Option<EventBalance>, String> {
+async fn balance_of(pool: &PgPool, ledger: &dyn Ledger, scope: &ScopeId, label: &ScopeAccountLabel) -> Result<Option<EventBalance>, MoneyEventError> {
 	let owner: Option<String> = sqlx::query_scalar("SELECT owner_client FROM scope_accounts WHERE scope = $1 AND label = $2")
 		.bind(scope.as_str())
 		.bind(label.as_str())
 		.fetch_optional(pool)
 		.await
-		.map_err(|e| format!("owner of {scope}:{label}: {e}"))?;
+		.map_err(|e| MoneyEventError::db(format!("owner of {scope}:{label}"), e))?;
 	let Some(owner) = owner else { return Ok(None) };
-	let owner = ClientId::parse(&owner).map_err(|e| format!("owner of {scope}:{label}: {e}"))?;
+	let owner = ClientId::parse(&owner).map_err(|e| MoneyEventError::corrupt(format!("owner of {scope}:{label}: {e}")))?;
 	let balance = ledger
 		.balance(&LedgerAccountKey::ScopeAccount(scope.clone(), label.clone()))
 		.await
-		.map_err(|e| format!("balance of {scope}:{label}: {e}"))?;
+		.map_err(|e| MoneyEventError::ledger(format!("balance of {scope}:{label}"), e))?;
 	Ok(Some(EventBalance {
 		label: label.clone(),
 		owner,
@@ -189,29 +246,29 @@ async fn balance_of(pool: &PgPool, ledger: &dyn Ledger, scope: &ScopeId, label: 
 	}))
 }
 
-async fn auth_subject_of(pool: &PgPool, user: UserId) -> Result<String, String> {
+async fn auth_subject_of(pool: &PgPool, user: UserId) -> Result<String, MoneyEventError> {
 	sqlx::query_scalar("SELECT auth_subject FROM users WHERE id = $1")
 		.bind(user.raw())
 		.fetch_one(pool)
 		.await
-		.map_err(|e| format!("auth_subject of user {user}: {e}"))
+		.map_err(|e| MoneyEventError::db(format!("auth_subject of user {user}"), e))
 }
 
 /// Record the money event of an outbox row the relay just applied to the ledger; a kind with
 /// no money event is a no-op. Called after the ledger took the row and before it is marked
 /// dispatched, so a failure here is retried with the row.
-pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow) -> Result<(), String> {
+pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow) -> Result<(), MoneyEventError> {
 	let events = if row.kind == ScopeLedgerEvent::KIND {
-		let event: ScopeLedgerEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		let event: ScopeLedgerEvent = serde_json::from_str(&row.payload).map_err(|e| MoneyEventError::corrupt(format!("{} payload: {e}", row.kind)))?;
 		transferred(pool, ledger, event).await?
 	} else if row.kind == HoldEvent::KIND {
-		let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| MoneyEventError::corrupt(format!("{} payload: {e}", row.kind)))?;
 		vec![hold_event(pool, ledger, event).await?]
 	} else if row.kind == ScopePayoutEvent::KIND {
-		let event: ScopePayoutEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		let event: ScopePayoutEvent = serde_json::from_str(&row.payload).map_err(|e| MoneyEventError::corrupt(format!("{} payload: {e}", row.kind)))?;
 		paid_out(pool, ledger, event).await?
 	} else if row.kind == InvoiceEvent::KIND {
-		let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| MoneyEventError::corrupt(format!("{} payload: {e}", row.kind)))?;
 		match invoice_paid(pool, ledger, event).await? {
 			Some(event) => vec![event],
 			None => return Ok(()),
@@ -219,18 +276,18 @@ pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow)
 	} else {
 		return Ok(());
 	};
-	let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+	let mut tx = pool.begin().await.map_err(|e| MoneyEventError::db("begin", e))?;
 	for event in &events {
-		append(&mut tx, event).await.map_err(|e| e.to_string())?;
+		append_checked(&mut tx, event).await?;
 	}
-	tx.commit().await.map_err(|e| e.to_string())
+	tx.commit().await.map_err(|e| MoneyEventError::db("commit", e))
 }
 
 /// A transfer inside one scope is one event naming both accounts. One between two scopes is
 /// one event per side (`events.proto`), each in its own scope, naming the other as the
 /// counterparty and showing only its own side's balance — so each side's owner learns of its
 /// own account and nothing of the other scope's.
-async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent) -> Result<Vec<NewMoneyEvent>, String> {
+async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent) -> Result<Vec<NewMoneyEvent>, MoneyEventError> {
 	let ScopeLedgerEvent::Transferred {
 		transfer_id,
 		scope,
@@ -243,8 +300,8 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 		.bind(transfer_id.raw())
 		.fetch_one(pool)
 		.await
-		.map_err(|e| format!("scope transfer {transfer_id}: {e}"))?;
-	let initiator = ClientId::parse(&client).map_err(|e| format!("scope transfer {transfer_id}: {e}"))?;
+		.map_err(|e| MoneyEventError::db(format!("scope transfer {transfer_id}"), e))?;
+	let initiator = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope transfer {transfer_id}: {e}")))?;
 	let from_balance = balance_of(pool, ledger, &scope, &from_label).await?;
 	let to_balance = balance_of(pool, ledger, &to_scope, &to_label).await?;
 	let side = |event_name: String, side_scope: ScopeId, counterparty: String, balances: Vec<EventBalance>| {
@@ -288,19 +345,19 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 /// One PAID_OUT per line (`events.proto`), sharing the payout id, each showing the source's
 /// balance after the whole chain — the chain is applied at once, so there is no balance between
 /// its lines.
-async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -> Result<Vec<NewMoneyEvent>, String> {
+async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -> Result<Vec<NewMoneyEvent>, MoneyEventError> {
 	let ScopePayoutEvent::PaidOut { payout_id, scope, from_label, .. } = event;
 	let (client, subject_ref): (String, String) = sqlx::query_as("SELECT client_id, subject_ref FROM scope_payouts WHERE id = $1")
 		.bind(payout_id.raw())
 		.fetch_one(pool)
 		.await
-		.map_err(|e| format!("scope payout {payout_id}: {e}"))?;
-	let initiator = ClientId::parse(&client).map_err(|e| format!("scope payout {payout_id}: {e}"))?;
+		.map_err(|e| MoneyEventError::db(format!("scope payout {payout_id}"), e))?;
+	let initiator = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope payout {payout_id}: {e}")))?;
 	let lines: Vec<(i32, String, String)> = sqlx::query_as("SELECT line_no, auth_subject, amount FROM scope_payout_lines WHERE payout_id = $1 ORDER BY line_no")
 		.bind(payout_id.raw())
 		.fetch_all(pool)
 		.await
-		.map_err(|e| format!("scope payout {payout_id} lines: {e}"))?;
+		.map_err(|e| MoneyEventError::db(format!("scope payout {payout_id} lines"), e))?;
 	let balances: Vec<EventBalance> = balance_of(pool, ledger, &scope, &from_label).await?.into_iter().collect();
 	let mut audience = vec![initiator.clone()];
 	audience.extend(balances.iter().map(|entry| entry.owner.clone()));
@@ -310,7 +367,7 @@ async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -
 			let amount = raw
 				.parse::<u128>()
 				.map(Usdt::from_base_units)
-				.map_err(|_| format!("scope payout {payout_id}: line {line_no} amount {raw:?}"))?;
+				.map_err(|_| MoneyEventError::corrupt(format!("scope payout {payout_id}: line {line_no} amount {raw:?}")))?;
 			Ok(NewMoneyEvent {
 				event_id: event_id(&format!("paid_out:{payout_id}:{line_no}")),
 				scope: scope.clone(),
@@ -334,7 +391,7 @@ async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -
 		.collect()
 }
 
-async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Result<NewMoneyEvent, String> {
+async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Result<NewMoneyEvent, MoneyEventError> {
 	let hold_id = match &event {
 		HoldEvent::Placed { hold_id, .. } | HoldEvent::Captured { hold_id, .. } | HoldEvent::Released { hold_id, .. } => *hold_id,
 	};
@@ -342,8 +399,8 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 		.bind(hold_id.raw())
 		.fetch_one(pool)
 		.await
-		.map_err(|e| format!("scope hold {hold_id}: {e}"))?;
-	let placer = ClientId::parse(&client).map_err(|e| format!("scope hold {hold_id}: {e}"))?;
+		.map_err(|e| MoneyEventError::db(format!("scope hold {hold_id}"), e))?;
+	let placer = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope hold {hold_id}: {e}")))?;
 	let base = |scope: ScopeId, kind: MoneyEventKind, version: u64| NewMoneyEvent {
 		event_id: event_id(&format!("hold:{hold_id}:{version}")),
 		scope,
@@ -391,7 +448,10 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 			NewMoneyEvent {
 				amount: Some(amount),
 				subject_ref: subject_ref.as_str().to_owned(),
-				hold_remaining: Some(held.checked_sub(amount).ok_or_else(|| format!("scope hold {hold_id}: captured more than held"))?),
+				hold_remaining: Some(
+					held.checked_sub(amount)
+						.ok_or_else(|| MoneyEventError::corrupt(format!("scope hold {hold_id}: captured more than held")))?,
+				),
 				..captured
 			}
 		}
@@ -415,6 +475,31 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 			}
 		}
 	})
+}
+
+/// HOLD_VOIDED for a hold whose reservation the ledger refused, written as the relay parks
+/// it: the money was never held, so the client must not ship on the Reserve's answer.
+/// Banking's own doing, so no client is its initiator; only the hold's client receives it.
+pub fn hold_refused(hold_id: Uuid, scope: ScopeId, client: ClientId, auth_subject: String, held: Usdt, version: u64) -> NewMoneyEvent {
+	NewMoneyEvent {
+		event_id: event_id(&format!("hold:{hold_id}:{version}")),
+		scope,
+		kind: MoneyEventKind::HoldVoided,
+		ref_id: hold_id.to_string(),
+		aggregate_version: version,
+		auth_subject,
+		amount: Some(held),
+		from: None,
+		to: None,
+		subject_ref: String::new(),
+		initiator_client: String::new(),
+		balances: Vec::new(),
+		hold_remaining: Some(Usdt::ZERO),
+		counterparty_scope: String::new(),
+		failure_reason: "ledger_refused".to_owned(),
+		paid_from: String::new(),
+		audience: vec![client],
+	}
 }
 
 /// The event of an invoice's control-plane step — its creation, cancellation or expiry, as it
@@ -454,7 +539,7 @@ pub fn invoice_step(invoice: &Invoice) -> Result<NewMoneyEvent, DomainError> {
 /// A payment the ledger just took, for the issuing client and the owner of the account it paid
 /// into (the same client: an invoice only pays into an account its issuer owns). The payer
 /// caused it, so no client is its initiator; the payer is named by `auth_subject`.
-async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -> Result<Option<NewMoneyEvent>, String> {
+async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -> Result<Option<NewMoneyEvent>, MoneyEventError> {
 	let InvoiceEvent::Paid {
 		invoice_id,
 		scope,
@@ -472,9 +557,9 @@ async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -
 		.bind(invoice_id.raw())
 		.fetch_one(pool)
 		.await
-		.map_err(|e| format!("scope invoice {invoice_id}: {e}"))?;
-	let issuer = ClientId::parse(&client).map_err(|e| format!("scope invoice {invoice_id}: {e}"))?;
-	let payer = payer.ok_or_else(|| format!("scope invoice {invoice_id}: relayed a payment of an unpaid invoice"))?;
+		.map_err(|e| MoneyEventError::db(format!("scope invoice {invoice_id}"), e))?;
+	let issuer = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope invoice {invoice_id}: {e}")))?;
+	let payer = payer.ok_or_else(|| MoneyEventError::corrupt(format!("scope invoice {invoice_id}: relayed a payment of an unpaid invoice")))?;
 	let balances: Vec<EventBalance> = balance_of(pool, ledger, &scope, &to_label).await?.into_iter().collect();
 	let mut audience = vec![issuer];
 	audience.extend(balances.iter().map(|entry| entry.owner.clone()));

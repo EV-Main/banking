@@ -51,11 +51,15 @@ pub async fn lock_claim(conn: &mut PgConnection, claim: &LedgerAccountKey) -> Re
 /// same key space as [`lock_claim`]; a name is never a ledger logical key, so the two cannot
 /// meet by accident — prefix it with what it locks.
 pub async fn lock_named(conn: &mut PgConnection, name: &str) -> Result<(), DomainError> {
+	lock_named_on(conn, name).await.map_err(repo_err)
+}
+
+/// [`lock_named`] with the driver's error, for a caller that tells an outage from the rest.
+pub async fn lock_named_on(conn: &mut PgConnection, name: &str) -> Result<(), sqlx::Error> {
 	sqlx::query("SELECT pg_advisory_xact_lock($1)")
 		.bind(advisory_key(Uuid::new_v5(&Uuid::NAMESPACE_OID, name.as_bytes())))
 		.execute(&mut *conn)
-		.await
-		.map_err(repo_err)?;
+		.await?;
 	Ok(())
 }
 
@@ -158,6 +162,9 @@ pub struct OutboxRow {
 	pub kind: String,
 	pub payload: String,
 	pub attempts: i32,
+	/// Tries at the money event of a row the ledger already applied, counted apart from
+	/// `attempts` so an outage waited out before does not spend its bound.
+	pub money_event_attempts: i32,
 }
 /// The next drainable events in strict `seq` order: neither dispatched nor parked. No
 /// `SKIP LOCKED`: the relay is a lock-enforced singleton (`pg_advisory_lock`, re-probed
@@ -168,7 +175,7 @@ pub struct OutboxRow {
 /// the reaper) but is excluded here so one non-retryable event can't wedge the queue.
 pub async fn next_batch(pool: &PgPool, limit: i64) -> Result<Vec<OutboxRow>, sqlx::Error> {
 	sqlx::query_as::<_, OutboxRow>(
-		"SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox WHERE dispatched_at IS NULL AND parked_at IS NULL ORDER BY seq LIMIT $1",
+		"SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts, money_event_attempts FROM outbox WHERE dispatched_at IS NULL AND parked_at IS NULL ORDER BY seq LIMIT $1",
 	)
 	.bind(limit)
 	.fetch_all(pool)
@@ -203,6 +210,15 @@ pub async fn mark_parked_on(conn: &mut PgConnection, seq: i64, reason: &str) -> 
 /// routed to its recovery path.
 pub async fn mark_compensated(pool: &PgPool, seq: i64) -> Result<(), sqlx::Error> {
 	sqlx::query("UPDATE outbox SET compensated_at = now() WHERE seq = $1").bind(seq).execute(pool).await?;
+	Ok(())
+}
+/// One more failed try at an applied row's money event.
+pub async fn record_money_event_failure(pool: &PgPool, seq: i64, error: &str) -> Result<(), sqlx::Error> {
+	sqlx::query("UPDATE outbox SET money_event_attempts = money_event_attempts + 1, last_error = $2 WHERE seq = $1")
+		.bind(seq)
+		.bind(error)
+		.execute(pool)
+		.await?;
 	Ok(())
 }
 /// Record a transient (retryable) failure for forensics without advancing or parking —
@@ -247,10 +263,12 @@ pub async fn parked_rows(pool: &PgPool) -> Result<Vec<ParkedRow>, sqlx::Error> {
 /// (nothing to re-drive) and a **compensated** one — its recovery event already applied,
 /// so re-driving would double-apply. Returns whether a row was unparked.
 pub async fn unpark(pool: &PgPool, seq: i64) -> Result<bool, sqlx::Error> {
-	let result = sqlx::query("UPDATE outbox SET parked_at = NULL, attempts = 0 WHERE seq = $1 AND parked_at IS NOT NULL AND dispatched_at IS NULL AND compensated_at IS NULL")
-		.bind(seq)
-		.execute(pool)
-		.await?;
+	let result = sqlx::query(
+		"UPDATE outbox SET parked_at = NULL, attempts = 0, money_event_attempts = 0 WHERE seq = $1 AND parked_at IS NOT NULL AND dispatched_at IS NULL AND compensated_at IS NULL",
+	)
+	.bind(seq)
+	.execute(pool)
+	.await?;
 	Ok(result.rows_affected() > 0)
 }
 /// One row's terminal stamps — `(dispatched, compensated)` — read after a refused

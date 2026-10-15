@@ -183,6 +183,7 @@ fn mandate_to_proto(recorded: &RecordedMandate) -> pb::Mandate {
 		expires_at: terms.expires_at.unwrap_or(0),
 		created_at: mandate.created_at,
 		revoked_at: mandate.revoked_at.unwrap_or(0),
+		replaced_at: mandate.replaced_at.unwrap_or(0),
 		used_24h: recorded.usage.drawn_24h.to_decimal_string(),
 		cap_outstanding: terms.caps.outstanding.to_decimal_string(),
 		cap_book_fill_24h: optional_amount(terms.caps.book_fill_24h),

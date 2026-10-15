@@ -2,9 +2,10 @@
 //! query of the mandate store runs here: granting (with its key, its replacement of the current
 //! mandate and its money event), revoking (voiding the client's holds in the same
 //! transaction), listing with usage; and the hold store's reads under its locks — the current
-//! mandate `FOR UPDATE`, the client's usage, a mandate's book fills. Also banking#514: a
-//! reservation the ledger refused voids its hold, a money event that cannot be written parks
-//! its row alone, Capture against Capture on one hold, and `hold_clearing` against the holds.
+//! mandate `FOR UPDATE`, the client's usage, its captures and book fills. Also banking#514: a
+//! reservation the ledger refused voids its hold and says so, a money event that cannot be
+//! written parks its row alone, Capture against Capture on one hold, and `hold_clearing`
+//! against the holds.
 //!
 //! Each test works in scopes, clients and users of its own.
 
@@ -545,9 +546,152 @@ async fn a_book_fill_is_capped_by_the_holds_mandate_over_a_day() {
 		.execute(&h.pool)
 		.await
 		.unwrap();
-	ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller), Some("2")))
+	ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller.clone()), Some("0.5")))
 		.await
 		.expect("a day later the cap has room again");
+
+	// The user's current mandate binds the standing hold too: a lower cap narrows it, a
+	// re-grant without BOOK_FILL ends it.
+	grant_mandate(
+		&h,
+		&grants,
+		buyer,
+		GrantRequest {
+			cap_book_fill_24h: Some(usdt("0.6")),
+			operations: vec![MandateOperation::Reserve, MandateOperation::BookFill],
+			..grant_request(&client, &scope, "5", "10", "10")
+		},
+	)
+	.await;
+	assert_eq!(
+		refusal(ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller.clone()), Some("0.2"))).await),
+		LedgerRefusal::MandateRequired,
+		"0.5 + 0.2 is past the new cap of 0.6, though the hold's own allows 2"
+	);
+	ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller.clone()), Some("0.1")))
+		.await
+		.unwrap();
+	grant_mandate(&h, &grants, buyer, grant_request(&client, &scope, "5", "10", "10")).await;
+	assert_eq!(
+		refusal(ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller), Some("0.1"))).await),
+		LedgerRefusal::MandateRequired,
+		"the user took BOOK_FILL away"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+#[tokio::test]
+async fn a_book_fill_never_pays_into_a_frozen_user() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = holder(&h).await;
+	let (buyer, buyer_subject) = user_with(&h, &scope, "10").await;
+	let (seller, seller_subject) = user_with(&h, &scope, "0.000000000000000001").await;
+	grant_mandate(
+		&h,
+		&grants,
+		buyer,
+		GrantRequest {
+			cap_book_fill_24h: Some(usdt("5")),
+			operations: vec![MandateOperation::Reserve, MandateOperation::BookFill],
+			..grant_request(&client, &scope, "5", "10", "10")
+		},
+	)
+	.await;
+	let p = ports(&h, &grants);
+	let hold = ledger_app::reserve(&p, &client, reserve_request(&scope, &buyer_subject, "2")).await.unwrap();
+	sqlx::query("UPDATE users SET frozen = TRUE WHERE id = $1").bind(seller.raw()).execute(&h.pool).await.unwrap();
+	assert_eq!(
+		refusal(ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller_subject.clone()), Some("1"))).await),
+		LedgerRefusal::UserFrozen
+	);
+	sqlx::query("UPDATE users SET frozen = FALSE WHERE id = $1").bind(seller.raw()).execute(&h.pool).await.unwrap();
+	ledger_app::capture(&p, &client, capture_request(&scope, &hold, CaptureTarget::User(seller_subject), Some("1")))
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+#[tokio::test]
+async fn a_replacement_bounds_standing_holds_and_they_stay_listed() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = holder(&h).await;
+	let (user, subject) = user_with(&h, &scope, "10").await;
+	let p = ports(&h, &grants);
+	let mp = mandate_ports(&h, &grants);
+	let old = grant_mandate(&h, &grants, user, grant_request(&client, &scope, "5", "10", "10")).await;
+	let standing = ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "2")).await.unwrap();
+	assert_eq!(standing.hold.terms().expires_at, None);
+	let until = now(&h).await + 600;
+	let current = grant_mandate(
+		&h,
+		&grants,
+		user,
+		GrantRequest {
+			expires_at: Some(until),
+			..grant_request(&client, &scope, "5", "10", "10")
+		},
+	)
+	.await;
+	let read = ledger_app::get_hold(&p, &client, &scope, standing.hold.id().raw()).await.unwrap();
+	assert_eq!(read.hold.terms().expires_at, Some(until), "no hold outlives the consent given now");
+
+	let listed = mandates_app::list(&mp, user).await.unwrap();
+	let ids: Vec<Uuid> = listed.iter().map(|m| m.mandate.id).collect();
+	assert_eq!(ids, [current.mandate.id, old.mandate.id], "the replaced one still holds money");
+	let replaced = &listed[1];
+	assert!(replaced.mandate.replaced_at.is_some());
+	assert_eq!(replaced.usage.outstanding, usdt("2"), "its own holds");
+	assert_eq!(listed[0].usage.outstanding, usdt("2"), "the client's, as the cap counts it");
+
+	ledger_app::void(
+		&p,
+		&client,
+		VoidRequest {
+			scope: scope.clone(),
+			hold_id: standing.hold.id().raw(),
+			subject_ref: subject_ref(),
+			idempotency_key: key(),
+		},
+	)
+	.await
+	.unwrap();
+	let ids: Vec<Uuid> = mandates_app::list(&mp, user).await.unwrap().iter().map(|m| m.mandate.id).collect();
+	assert_eq!(ids, [current.mandate.id], "nothing stands on the replaced one any more");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+/// `cap_24h` caps what leaves the compartment in a day: a hold placed before the window still
+/// counts what is captured of it inside the window.
+#[tokio::test]
+async fn the_day_counts_captures_of_older_holds() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = holder(&h).await;
+	let (user, subject) = user_with(&h, &scope, "20").await;
+	grant_mandate(&h, &grants, user, grant_request(&client, &scope, "5", "6", "15")).await;
+	let p = ports(&h, &grants);
+	let old = ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "5")).await.unwrap();
+	sqlx::query("UPDATE scope_holds SET created_at = created_at - interval '25 hours' WHERE id = $1")
+		.bind(old.hold.id().raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	ledger_app::capture(&p, &client, capture_request(&scope, &old, CaptureTarget::Account(label("alloc:x")), Some("4")))
+		.await
+		.unwrap();
+	ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "2")).await.unwrap();
+	assert_eq!(
+		refusal(ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "1")).await),
+		LedgerRefusal::MandateRequired,
+		"4 captured today + 2 held today fill the day's 6"
+	);
+	sqlx::query("UPDATE scope_hold_captures SET created_at = created_at - interval '25 hours' WHERE hold_id = $1")
+		.bind(old.hold.id().raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "1"))
+		.await
+		.expect("the capture left the window");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
@@ -611,14 +755,19 @@ async fn a_reservation_the_ledger_refused_voids_its_hold() {
 	h.relay.drain().await;
 	assert!(hold_rows(&h, &hold).await[0].2, "dispatched as a no-op");
 	assert_eq!(compartment(&h, user, &scope).await.locked, 0);
-	let placed = ledger_app::pull(&p, &client, Some(&scope), 0, 100)
+	let told: Vec<(MoneyEventKind, String, Option<Usdt>)> = ledger_app::pull(&p, &client, Some(&scope), 0, 100)
 		.await
 		.unwrap()
 		.events
 		.into_iter()
 		.filter(|event| event.ref_id == hold.hold.id().to_string())
-		.count();
-	assert_eq!(placed, 0, "the service never hears of a hold the ledger never placed");
+		.map(|event| (event.kind, event.failure_reason, event.hold_remaining))
+		.collect();
+	assert_eq!(
+		told,
+		[(MoneyEventKind::HoldVoided, "ledger_refused".to_owned(), Some(Usdt::ZERO))],
+		"the service hears only that the hold is void, never that it was placed"
+	);
 }
 
 /// banking#514, 2: a money event that can never be written parks its own row after bounded
@@ -634,7 +783,8 @@ async fn a_money_event_that_cannot_be_written_parks_alone() {
 	let broken = ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "1")).await.unwrap();
 	let behind = ledger_app::reserve(&p, &client, reserve_request(&scope, &subject, "2")).await.unwrap();
 	// The hold's row is what its money event is written from; out of the way, the event cannot
-	// be. One attempt short of the bound, so this drain is the last try.
+	// be. Two money-event tries short of the bound, after an outage that spent the row's
+	// general retries: those do not count against the money event.
 	let hidden = Uuid::new_v4();
 	sqlx::query("UPDATE scope_holds SET id = $2 WHERE id = $1")
 		.bind(broken.hold.id().raw())
@@ -643,7 +793,13 @@ async fn a_money_event_that_cannot_be_written_parks_alone() {
 		.await
 		.unwrap();
 	let seq = hold_rows(&h, &broken).await[0].0;
-	sqlx::query("UPDATE outbox SET attempts = 24 WHERE seq = $1").bind(seq).execute(&h.pool).await.unwrap();
+	sqlx::query("UPDATE outbox SET attempts = 24, money_event_attempts = 23 WHERE seq = $1")
+		.bind(seq)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	h.relay.drain().await;
+	assert!(!hold_rows(&h, &broken).await[0].1, "one money-event try left, whatever `attempts` says");
 	for _ in 0..3 {
 		h.relay.drain().await;
 	}
