@@ -9,6 +9,7 @@ use domain::{
 	scope_ledger::{ClientId, ScopeTransfer},
 	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
+	users::UserId,
 };
 use uuid::Uuid;
 
@@ -60,6 +61,11 @@ pub struct OutflowFacts {
 	pub scope_out_24h: Usdt,
 	/// A requested transfer: who owns the destination (`None` when it does not exist).
 	pub destination_owner: Option<ClientId>,
+	/// A requested transfer into another scope: that scope as it stands now, held `FOR
+	/// SHARE`; `None` within one scope or when banking does not know it.
+	pub destination_scope: Option<ScopeRecord>,
+	/// The caller's operations in the scope still awaiting their approval.
+	pub live_operations: u32,
 }
 
 /// Decides a payout under the store's locks and returns it, or refuses.
@@ -80,7 +86,8 @@ pub struct AdmittedOperation {
 /// Decides a requested operation under the store's locks and returns it, or refuses.
 #[async_trait]
 pub trait OperationAdmission: Send + Sync {
-	async fn admit(&self, facts: &OutflowFacts) -> Result<AdmittedOperation, TransferError>;
+	/// The source's spendable is read inside, through `reads`, under its claim lock.
+	async fn admit(&self, facts: &OutflowFacts, reads: &mut dyn LockedReads) -> Result<AdmittedOperation, TransferError>;
 }
 
 /// The level concierge resolved an approval to.
@@ -140,6 +147,10 @@ pub struct ExecutionFacts {
 	pub source_owner: Option<ClientId>,
 	/// A transfer's destination owner, in its own scope.
 	pub destination_owner: Option<ClientId>,
+	/// A transfer into another scope: that scope as it stands now, held `FOR SHARE`.
+	pub destination_scope: Option<ScopeRecord>,
+	/// A payout's users who are frozen or disabled now, their rows held `FOR SHARE`.
+	pub blocked_users: Vec<UserId>,
 }
 
 /// Turns a locked, still-awaiting operation into its execution.
@@ -212,6 +223,10 @@ pub trait OperationStore: Send + Sync {
 
 	/// Try again no sooner than `delay_secs` from now; counts one more attempt.
 	async fn postpone(&self, id: Uuid, delay_secs: u32) -> Result<(), DomainError>;
+
+	/// End, REJECTED with `reason`, every operation whose approval was never opened and that
+	/// was asked for more than `max_age_secs` ago, telling each client. Returns how many.
+	async fn expire_unopened(&self, max_age_secs: u32, reason: &str) -> Result<usize, DomainError>;
 
 	/// End an awaiting operation unexecuted, with `reason`, and tell its client. `false` when
 	/// it had already left `awaiting_approval`.
@@ -298,6 +313,10 @@ pub enum ApprovalsError {
 	/// Concierge could not be reached or answered with a transient failure; retry later.
 	#[error("unavailable: {0}")]
 	Unavailable(String),
+	/// Concierge is reachable but holds too many of banking's live proposals in that scope
+	/// (RESOURCE_EXHAUSTED): only this proposal waits, the others go on.
+	#[error("throttled: {0}")]
+	Throttled(String),
 }
 
 /// concierge's `ApprovalExecutionService`, as banking — the only proposer and executor of

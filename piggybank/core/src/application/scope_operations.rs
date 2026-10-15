@@ -22,7 +22,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, LedgerRefusal, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, canonical},
+	scope_ledger::{ClientId, Grants, LedgerRefusal, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, canonical},
 	scope_operations::{
 		AutoPayoutFacts, BANK_CATALOG, BANK_CATALOG_VERSION, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms,
 		PendingOperation, RequestedLine, ScopePayout, ScopePayoutId, canonical_lines, check_lines,
@@ -67,7 +67,9 @@ fn subjects(lines: &[RequestedLine]) -> Vec<String> {
 
 /// The lines with their users resolved, in the order asked. A name banking has no user for is
 /// NOT_FOUND: a payout is a credit, so learning that a subject has no wallet here tells the
-/// scope's own service nothing it cannot already see in its holders' list.
+/// scope's own service nothing it cannot already see in its holders' list. A frozen or
+/// disabled user takes no money into a compartment (D24(7): they may only take theirs back
+/// to `main`), so a payout naming one is `user_frozen`.
 fn resolve(lines: &[RequestedLine], facts: &OutflowFacts) -> Result<Vec<PayoutLine>, TransferError> {
 	lines
 		.iter()
@@ -76,6 +78,9 @@ fn resolve(lines: &[RequestedLine], facts: &OutflowFacts) -> Result<Vec<PayoutLi
 				entity: "user",
 				id: line.auth_subject.clone(),
 			})?;
+			if known.user.blocked {
+				return Err(TransferError::Refused(LedgerRefusal::UserFrozen));
+			}
 			Ok(PayoutLine {
 				user: known.user.id,
 				auth_subject: line.auth_subject.clone(),
@@ -90,6 +95,15 @@ fn known_scope<'f>(facts: &'f OutflowFacts, scope: &ScopeId) -> Result<&'f crate
 		entity: "scope",
 		id: scope.to_string(),
 	})?)
+}
+
+/// Whether a scope may take money in from another scope: neither a frozen nor a closed one.
+fn receiving(state: ScopeState) -> Result<(), LedgerRefusal> {
+	match state {
+		ScopeState::Active => Ok(()),
+		ScopeState::Frozen => Err(LedgerRefusal::ScopeFrozen),
+		ScopeState::Closed => Err(LedgerRefusal::ScopeClosed),
+	}
 }
 
 /// A frozen scope takes no new debit; a closed one may still pay out what it holds.
@@ -299,6 +313,28 @@ async fn answer_operation(
 	}
 }
 
+/// The request limit and the source's cover, checked for every requested operation. The
+/// cover binds nothing — the money is not reserved, and the execution checks it again — but a
+/// source that cannot pay now is no request to put in front of the approvers.
+async fn may_ask(base: &ScopeLedgerPorts<'_>, facts: &OutflowFacts, scope: &ScopeId, from: &ScopeAccountLabel, total: Usdt, reads: &mut dyn LockedReads) -> Result<(), TransferError> {
+	if facts.live_operations >= MAX_LIVE_OPERATIONS {
+		return Err(TransferError::Exhausted(format!(
+			"at most {MAX_LIVE_OPERATIONS} operations may await an approval in one scope at once"
+		)));
+	}
+	let source = LedgerAccountKey::ScopeAccount(scope.clone(), from.clone());
+	let spendable = base.ledger.spendable_locked(&source, reads).await.map_err(DomainError::from)?;
+	if Usdt::from_base_units(spendable) < total {
+		return Err(TransferError::Refused(LedgerRefusal::InsufficientFunds));
+	}
+	Ok(())
+}
+
+/// How many operations one client may have awaiting an approval in one scope: each is a
+/// proposal concierge holds open and mails voters about, so an unbounded number floods both
+/// (concierge itself stops a namespace at 200 per scope).
+pub const MAX_LIVE_OPERATIONS: u32 = 20;
+
 /// The digests an operation's approval carries, taken over the operation as it will be stored.
 fn admitted(operation: PendingOperation) -> Result<AdmittedOperation, TransferError> {
 	let lines_digest = operation.lines_digest_input().map(|input| sha256_hex(&input));
@@ -318,7 +354,7 @@ struct PayoutRequestChecks<'a> {
 
 #[async_trait]
 impl OperationAdmission for PayoutRequestChecks<'_> {
-	async fn admit(&self, facts: &OutflowFacts) -> Result<AdmittedOperation, TransferError> {
+	async fn admit(&self, facts: &OutflowFacts, reads: &mut dyn LockedReads) -> Result<AdmittedOperation, TransferError> {
 		let request = self.request;
 		let scope = known_scope(facts, &request.scope)?;
 		if !self.base.grants.compartments(self.client, &request.scope) {
@@ -330,6 +366,7 @@ impl OperationAdmission for PayoutRequestChecks<'_> {
 		not_frozen(scope.state)?;
 		let lines = resolve(&request.lines, facts)?;
 		let total = check_lines(&request.lines)?;
+		may_ask(self.base, facts, &request.scope, &request.from, total, reads).await?;
 		let over_scope_budget = scope.policy.over_scope_budget(facts.scope_out_24h, total);
 		admitted(PendingOperation::request(
 			OperationId::new(),
@@ -381,6 +418,7 @@ pub async fn request_transfer(ports: &OperationPorts<'_>, client: &ClientId, req
 		key: &request.idempotency_key,
 	};
 	let admission = TransferRequestChecks {
+		base: ports.base,
 		client,
 		request: &request,
 		to_scope: &to_scope,
@@ -393,6 +431,7 @@ pub async fn request_transfer(ports: &OperationPorts<'_>, client: &ClientId, req
 }
 
 struct TransferRequestChecks<'a> {
+	base: &'a ScopeLedgerPorts<'a>,
 	client: &'a ClientId,
 	request: &'a RequestTransferRequest,
 	to_scope: &'a ScopeId,
@@ -400,7 +439,7 @@ struct TransferRequestChecks<'a> {
 
 #[async_trait]
 impl OperationAdmission for TransferRequestChecks<'_> {
-	async fn admit(&self, facts: &OutflowFacts) -> Result<AdmittedOperation, TransferError> {
+	async fn admit(&self, facts: &OutflowFacts, reads: &mut dyn LockedReads) -> Result<AdmittedOperation, TransferError> {
 		let request = self.request;
 		let scope = known_scope(facts, &request.scope)?;
 		// A destination that does not exist reads like someone else's, as a source does.
@@ -408,6 +447,14 @@ impl OperationAdmission for TransferRequestChecks<'_> {
 			return Err(TransferError::Refused(LedgerRefusal::NotAccountOwner));
 		}
 		not_frozen(scope.state)?;
+		if self.to_scope != &request.scope {
+			let destination = facts.destination_scope.as_ref().ok_or_else(|| DomainError::NotFound {
+				entity: "scope",
+				id: self.to_scope.to_string(),
+			})?;
+			receiving(destination.state).map_err(TransferError::Refused)?;
+		}
+		may_ask(self.base, facts, &request.scope, &request.from, request.amount, reads).await?;
 		admitted(PendingOperation::request(
 			OperationId::new(),
 			OperationTerms {
@@ -455,6 +502,7 @@ fn backoff(attempts: u32) -> u32 {
 #[derive(Default)]
 pub struct CatalogGate {
 	state: Mutex<GateState>,
+	refusals: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Default)]
@@ -469,11 +517,16 @@ impl CatalogGate {
 		Self::default()
 	}
 
+	/// How many times concierge refused this process's catalog — the number to alert on.
+	pub fn refusals(&self) -> u64 {
+		self.refusals.load(std::sync::atomic::Ordering::Relaxed)
+	}
+
 	/// Publish the catalog unless this process already did; `true` once proposing may go on.
-	/// A transient failure is retried with a doubling backoff and keeps proposals waiting;
-	/// a refusal (an older version than concierge stores — a newer banking published — or a
-	/// catalog concierge's floor rejects) is logged and settles the gate: proposals then meet
-	/// whatever catalog concierge holds.
+	/// A transient failure is retried with a doubling backoff. A refusal — an older version
+	/// than concierge stores, the same version with other kinds, a catalog concierge's floor
+	/// rejects — holds proposals too, retried hourly: proposing against a catalog this build
+	/// did not publish would put kinds in front of the voters that this build does not mean.
 	async fn ensure(&self, approvals: &dyn Approvals) -> bool {
 		{
 			let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -492,13 +545,14 @@ impl CatalogGate {
 				state.settled = true;
 			}
 			Err(ApprovalsError::Refused(why)) => {
+				let total = self.refusals.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+				state.retry_at = Some(Instant::now() + Duration::from_secs(u64::from(ANOMALY_RETRY_SECS)));
 				error!(
 					version = BANK_CATALOG_VERSION,
-					"scope operations: concierge refused the bank:* approval catalog; proposals meet the catalog it holds: {why}"
+					total, "scope operations: concierge refused the bank:* approval catalog; no proposal is opened until it takes one: {why}"
 				);
-				state.settled = true;
 			}
-			Err(ApprovalsError::Unavailable(why)) => {
+			Err(ApprovalsError::Unavailable(why) | ApprovalsError::Throttled(why)) => {
 				let wait = backoff(state.failures);
 				state.failures = state.failures.saturating_add(1);
 				state.retry_at = Some(Instant::now() + Duration::from_secs(u64::from(wait)));
@@ -511,6 +565,8 @@ impl CatalogGate {
 
 /// The driven ports the executor runs on.
 pub struct ExecutorPorts<'a> {
+	/// banking's grants as configured now — what an execution re-reads.
+	pub grants: &'a Grants,
 	pub operations: &'a dyn OperationStore,
 	pub approvals: &'a dyn Approvals,
 	pub catalog: &'a CatalogGate,
@@ -548,14 +604,16 @@ fn proposal(recorded: &RecordedOperation) -> Result<Proposal, DomainError> {
 	let operation = &recorded.operation;
 	let fields = operation.approval_fields(recorded.lines_digest.as_deref())?;
 	let terms = operation.terms();
-	let reason = if terms.memo.is_empty() {
+	// The service is named before its own words, so a memo cannot pass for someone else's.
+	let what = if terms.memo.is_empty() {
 		match operation.kind() {
-			OperationKind::ScopePayout => format!("Payout requested by service {}", terms.client),
-			OperationKind::AccountTransfer | OperationKind::ScopeTransfer => format!("Transfer requested by service {}", terms.client),
+			OperationKind::ScopePayout => "payout request",
+			OperationKind::AccountTransfer | OperationKind::ScopeTransfer => "transfer request",
 		}
 	} else {
-		terms.memo.clone()
+		terms.memo.as_str()
 	};
+	let reason = format!("Service {}: {what}", terms.client);
 	Ok(Proposal {
 		kind: operation.kind().as_str().to_owned(),
 		scope: terms.scope.as_str().to_owned(),
@@ -566,39 +624,75 @@ fn proposal(recorded: &RecordedOperation) -> Result<Proposal, DomainError> {
 	})
 }
 
+/// How long an operation may wait for its approval to be opened before it is ended: past the
+/// 72 h concierge would have kept the decision open anyway, and it no longer draws on the
+/// scope's budget once ended.
+const UNOPENED_MAX_AGE_SECS: u32 = 72 * 3600;
+
+/// One operation's step failed for a reason of its own (a row this build cannot use, a write
+/// that failed): set it aside for an hour, loudly, and let the round go on with the others.
+async fn set_aside(ports: &ExecutorPorts<'_>, id: Uuid, step: &str, err: &DomainError) {
+	error!(operation_id = %id, step, "scope operations: an operation failed its step, set aside for an hour: {err}");
+	if let Err(err) = ports.operations.postpone(id, ANOMALY_RETRY_SECS).await {
+		error!(operation_id = %id, "scope operations: could not set the operation aside: {err}");
+	}
+}
+
 async fn propose_due(ports: &ExecutorPorts<'_>, round: &mut ExecutorRound) -> Result<(), DomainError> {
+	round.rejected += ports.operations.expire_unopened(UNOPENED_MAX_AGE_SECS, "proposal_not_opened").await?;
 	for recorded in ports.operations.due_to_propose(BATCH).await? {
 		let id = recorded.operation.id().raw();
-		let proposal = proposal(&recorded)?;
-		match ports.approvals.propose(&proposal).await {
-			Ok(view) if view.payload_hash != recorded.payload_hash => {
-				// The two planes disagree on what is being approved: nothing approved under
-				// this proposal could ever be executed, so the client is told now rather than
-				// after the owners spent a vote on it.
-				error!(operation_id = %id, approval_id = %view.id, ours = %recorded.payload_hash, theirs = %view.payload_hash, "scope operations: the opened approval's payload_hash is not the stored operation's");
-				if ports.operations.close(id, OperationEnd::Rejected, "approval_mismatch").await? {
-					round.rejected += 1;
-				}
-			}
-			Ok(view) => {
-				ports.operations.opened(id, &view.id, view.level).await?;
-				round.proposed += 1;
-			}
-			Err(ApprovalsError::Refused(why)) => {
-				warn!(operation_id = %id, "scope operations: concierge refused to open the approval: {why}");
-				if ports.operations.close(id, OperationEnd::Rejected, "proposal_refused").await? {
-					round.rejected += 1;
-				}
-			}
-			Err(ApprovalsError::Unavailable(why)) => {
-				warn!(operation_id = %id, "scope operations: could not open the approval, will retry: {why}");
-				ports.operations.postpone(id, backoff(recorded.attempts)).await?;
-				// Concierge is down for all of them; the rest wait for the next round.
-				break;
-			}
+		match propose_one(ports, &recorded, round).await {
+			Ok(Flow::Next) => {}
+			Ok(Flow::Stop) => break,
+			Err(err) => set_aside(ports, id, "propose", &err).await,
 		}
 	}
 	Ok(())
+}
+
+/// Whether the round's step goes on to the next operation.
+enum Flow {
+	Next,
+	/// Concierge cannot be reached: the others would fail the same way.
+	Stop,
+}
+
+async fn propose_one(ports: &ExecutorPorts<'_>, recorded: &RecordedOperation, round: &mut ExecutorRound) -> Result<Flow, DomainError> {
+	let id = recorded.operation.id().raw();
+	let proposal = proposal(recorded)?;
+	match ports.approvals.propose(&proposal).await {
+		Ok(view) if view.payload_hash != recorded.payload_hash => {
+			// The two planes disagree on what is being approved: nothing approved under this
+			// proposal could ever be executed, so the client is told now rather than after the
+			// owners spent a vote on it.
+			error!(operation_id = %id, approval_id = %view.id, ours = %recorded.payload_hash, theirs = %view.payload_hash, "scope operations: the opened approval's payload_hash is not the stored operation's");
+			if ports.operations.close(id, OperationEnd::Rejected, "approval_mismatch").await? {
+				round.rejected += 1;
+			}
+		}
+		Ok(view) => {
+			ports.operations.opened(id, &view.id, view.level).await?;
+			round.proposed += 1;
+		}
+		Err(ApprovalsError::Refused(why)) => {
+			warn!(operation_id = %id, "scope operations: concierge refused to open the approval: {why}");
+			if ports.operations.close(id, OperationEnd::Rejected, "proposal_refused").await? {
+				round.rejected += 1;
+			}
+		}
+		// Concierge's cap on live proposals in that scope: this one waits, the others may fit.
+		Err(ApprovalsError::Throttled(why)) => {
+			warn!(operation_id = %id, "scope operations: concierge holds too many live proposals, this one waits: {why}");
+			ports.operations.postpone(id, backoff(recorded.attempts)).await?;
+		}
+		Err(ApprovalsError::Unavailable(why)) => {
+			warn!(operation_id = %id, "scope operations: could not open the approval, will retry: {why}");
+			ports.operations.postpone(id, backoff(recorded.attempts)).await?;
+			return Ok(Flow::Stop);
+		}
+	}
+	Ok(Flow::Next)
 }
 
 async fn execute_approved(ports: &ExecutorPorts<'_>, round: &mut ExecutorRound) -> Result<(), DomainError> {
@@ -618,13 +712,23 @@ async fn execute_approved(ports: &ExecutorPorts<'_>, round: &mut ExecutorRound) 
 			error!(approval_id = %view.id, subject_ref = %view.subject_ref, "scope operations: a passed operation approval names no operation");
 			continue;
 		};
-		let Some(recorded) = ports.operations.operation_by_id(id).await? else {
-			error!(approval_id = %view.id, operation_id = %id, "scope operations: a passed approval names an operation banking does not have");
-			report(ports, &view.id, ApprovalOutcome::Void, "no such operation").await;
-			round.voided += 1;
-			continue;
+		let recorded = match ports.operations.operation_by_id(id).await {
+			Ok(Some(recorded)) => recorded,
+			Ok(None) => {
+				error!(approval_id = %view.id, operation_id = %id, "scope operations: a passed approval names an operation banking does not have");
+				report(ports, &view.id, ApprovalOutcome::Void, "no such operation").await;
+				round.voided += 1;
+				continue;
+			}
+			// Concierge serves it again on the next pull; the other decisions go on.
+			Err(err) => {
+				error!(approval_id = %view.id, operation_id = %id, "scope operations: a passed operation cannot be read: {err}");
+				continue;
+			}
 		};
-		carry_out(ports, &view, recorded, round).await?;
+		if let Err(err) = carry_out(ports, &view, recorded, round).await {
+			error!(approval_id = %view.id, operation_id = %id, "scope operations: executing a passed operation failed, the next pull retries: {err}");
+		}
 	}
 	Ok(())
 }
@@ -670,6 +774,14 @@ fn mismatch(recorded: &RecordedOperation, approval: &ApprovalView) -> Option<&'s
 async fn carry_out(ports: &ExecutorPorts<'_>, pulled: &ApprovalView, recorded: RecordedOperation, round: &mut ExecutorRound) -> Result<(), DomainError> {
 	let operation = &recorded.operation;
 	let id = operation.id().raw();
+	// Before anything else, whatever state the operation is in: a decision that is not the one
+	// recorded for it is never reported as its outcome.
+	if operation.progress().approval_id.as_deref().is_some_and(|known| known != pulled.id) {
+		error!(operation_id = %id, approval_id = %pulled.id, "scope operations: a second approval passed for one operation; only the first one opened may execute it");
+		report(ports, &pulled.id, ApprovalOutcome::Void, "another approval decides this operation").await;
+		round.voided += 1;
+		return Ok(());
+	}
 	match operation.state() {
 		OperationState::AwaitingApproval => {}
 		// Reported before and not recorded by concierge (or this is the first report): say it
@@ -687,12 +799,6 @@ async fn carry_out(ports: &ExecutorPorts<'_>, pulled: &ApprovalView, recorded: R
 			round.voided += 1;
 			return Ok(());
 		}
-	}
-	if operation.progress().approval_id.as_deref().is_some_and(|known| known != pulled.id) {
-		error!(operation_id = %id, approval_id = %pulled.id, "scope operations: a second approval passed for one operation; only the first one opened may execute it");
-		report(ports, &pulled.id, ApprovalOutcome::Void, "another approval decides this operation").await;
-		round.voided += 1;
-		return Ok(());
 	}
 	// A pulled decision can still go VOID before it is acted on (the owners changed): re-read
 	// it by its id right before moving money, and act only on PASSED.
@@ -718,16 +824,24 @@ async fn carry_out(ports: &ExecutorPorts<'_>, pulled: &ApprovalView, recorded: R
 	if operation.progress().approval_id.is_none() {
 		ports.operations.opened(id, &approval.id, approval.level).await?;
 	}
-	let done = match ports.operations.execute(id, &Carry { ledger: ports.ledger }).await {
+	let carry = Carry {
+		ledger: ports.ledger,
+		grants: ports.grants,
+	};
+	let done = match ports.operations.execute(id, &carry).await {
 		Ok(done) => done,
 		Err(TransferError::Domain(err)) => return Err(err),
 		Err(TransferError::Internal(why)) => {
 			error!(operation_id = %id, "scope operations: executing an approved operation hit banking's own invariant: {why}");
 			return Ok(());
 		}
+		// `Carry` answers refusals as a failed execution; one reaching here is a store bug.
 		Err(TransferError::Refused(refusal)) => {
-			// `Carry` answers refusals as a failed execution; one reaching here is a store bug.
 			error!(operation_id = %id, reason = refusal.reason(), "scope operations: the store refused an execution outright");
+			return Ok(());
+		}
+		Err(TransferError::Exhausted(why)) => {
+			error!(operation_id = %id, "scope operations: the store refused an execution as exhausted: {why}");
 			return Ok(());
 		}
 	};
@@ -754,42 +868,55 @@ fn failure(operation: &PendingOperation) -> &str {
 async fn settle_decided(ports: &ExecutorPorts<'_>, round: &mut ExecutorRound) -> Result<(), DomainError> {
 	for recorded in ports.operations.due_to_check(BATCH).await? {
 		let id = recorded.operation.id().raw();
-		let Some(approval_id) = recorded.operation.progress().approval_id.clone() else { continue };
-		let approval = match ports.approvals.get(&approval_id).await {
-			Ok(approval) => approval,
-			Err(ApprovalsError::Unavailable(why)) => {
-				warn!(operation_id = %id, %approval_id, "scope operations: could not ask where the approval stands, will retry: {why}");
-				ports.operations.postpone(id, backoff(recorded.attempts)).await?;
-				break;
-			}
-			Err(ApprovalsError::Refused(why)) => {
-				error!(operation_id = %id, %approval_id, "scope operations: concierge refused to say where banking's own approval stands: {why}");
-				ports.operations.postpone(id, ANOMALY_RETRY_SECS).await?;
-				continue;
-			}
-		};
-		match approval.state {
-			ApprovalState::Open | ApprovalState::Passed => ports.operations.postpone(id, CHECK_EVERY_SECS).await?,
-			ApprovalState::Rejected | ApprovalState::Vetoed | ApprovalState::Expired | ApprovalState::Cancelled | ApprovalState::Void => {
-				if ports.operations.close(id, OperationEnd::Rejected, &format!("approval_{}", approval.state.as_str())).await? {
-					round.rejected += 1;
-				}
-			}
-			// Only banking reports these, and it records its own execution first; an outcome
-			// on an operation still awaiting means the two planes diverged.
-			ApprovalState::Executed | ApprovalState::ExecutionFailed => {
-				error!(operation_id = %id, %approval_id, state = approval.state.as_str(), "scope operations: concierge holds an outcome for an operation banking did not execute");
-				ports.operations.postpone(id, ANOMALY_RETRY_SECS).await?;
-			}
+		match settle_one(ports, &recorded, round).await {
+			Ok(Flow::Next) => {}
+			Ok(Flow::Stop) => break,
+			Err(err) => set_aside(ports, id, "check", &err).await,
 		}
 	}
 	Ok(())
+}
+
+async fn settle_one(ports: &ExecutorPorts<'_>, recorded: &RecordedOperation, round: &mut ExecutorRound) -> Result<Flow, DomainError> {
+	let id = recorded.operation.id().raw();
+	let Some(approval_id) = recorded.operation.progress().approval_id.clone() else {
+		return Ok(Flow::Next);
+	};
+	let approval = match ports.approvals.get(&approval_id).await {
+		Ok(approval) => approval,
+		Err(ApprovalsError::Unavailable(why) | ApprovalsError::Throttled(why)) => {
+			warn!(operation_id = %id, %approval_id, "scope operations: could not ask where the approval stands, will retry: {why}");
+			ports.operations.postpone(id, backoff(recorded.attempts)).await?;
+			return Ok(Flow::Stop);
+		}
+		Err(ApprovalsError::Refused(why)) => {
+			error!(operation_id = %id, %approval_id, "scope operations: concierge refused to say where banking's own approval stands: {why}");
+			ports.operations.postpone(id, ANOMALY_RETRY_SECS).await?;
+			return Ok(Flow::Next);
+		}
+	};
+	match approval.state {
+		ApprovalState::Open | ApprovalState::Passed => ports.operations.postpone(id, CHECK_EVERY_SECS).await?,
+		ApprovalState::Rejected | ApprovalState::Vetoed | ApprovalState::Expired | ApprovalState::Cancelled | ApprovalState::Void => {
+			if ports.operations.close(id, OperationEnd::Rejected, &format!("approval_{}", approval.state.as_str())).await? {
+				round.rejected += 1;
+			}
+		}
+		// Only banking reports these, and it records its own execution first; an outcome on an
+		// operation still awaiting means the two planes diverged.
+		ApprovalState::Executed | ApprovalState::ExecutionFailed => {
+			error!(operation_id = %id, %approval_id, state = approval.state.as_str(), "scope operations: concierge holds an outcome for an operation banking did not execute");
+			ports.operations.postpone(id, ANOMALY_RETRY_SECS).await?;
+		}
+	}
+	Ok(Flow::Next)
 }
 
 /// Turns a locked, still-awaiting operation into its payout or transfer — or into a failure,
 /// recorded for good, when the world moved since it was asked.
 struct Carry<'a> {
 	ledger: &'a dyn Ledger,
+	grants: &'a Grants,
 }
 
 #[async_trait]
@@ -812,6 +939,30 @@ impl OperationExecution for Carry<'_> {
 		};
 		if facts.source_owner.as_ref() != Some(&terms.client) || !destination_owned {
 			return Ok(Execution::Fail(LedgerRefusal::NotAccountOwner.reason().to_owned()));
+		}
+		match &terms.body {
+			OperationBody::Payout { .. } => {
+				// The approval decided the money; whether the client may still reach users'
+				// compartments is banking's configuration as it stands now.
+				if !self.grants.compartments(&terms.client, &terms.scope) {
+					return Ok(Execution::Fail(LedgerRefusal::NotGranted.reason().to_owned()));
+				}
+				if !facts.blocked_users.is_empty() {
+					return Ok(Execution::Fail(LedgerRefusal::UserFrozen.reason().to_owned()));
+				}
+			}
+			OperationBody::Transfer { to_scope, .. } if to_scope != &terms.scope => {
+				let Some(destination) = facts.destination_scope.as_ref() else {
+					return Err(TransferError::Internal(format!(
+						"operation {} names scope {to_scope}, which banking does not know",
+						operation.id()
+					)));
+				};
+				if let Err(refusal) = receiving(destination.state) {
+					return Ok(Execution::Fail(refusal.reason().to_owned()));
+				}
+			}
+			OperationBody::Transfer { .. } => {}
 		}
 		let source = LedgerAccountKey::ScopeAccount(terms.scope.clone(), terms.from.clone());
 		let spendable = self.ledger.spendable_locked(&source, reads).await.map_err(DomainError::from)?;
@@ -856,6 +1007,8 @@ impl OperationExecution for Carry<'_> {
 /// operation is stored. Safe beside another replica's: an operation leaves `awaiting_approval`
 /// once under its row lock, and opening an approval is idempotent by its `dedupe_key`.
 pub struct ApprovalExecutor {
+	/// The same grants the listener serves under.
+	pub grants: Arc<Grants>,
 	pub operations: Arc<dyn OperationStore>,
 	pub approvals: Arc<dyn Approvals>,
 	pub ledger: Arc<dyn Ledger>,
@@ -872,6 +1025,7 @@ impl ApprovalExecutor {
 		info!("scope operations: approval executor every {:?}", Self::INTERVAL);
 		loop {
 			let ports = ExecutorPorts {
+				grants: &self.grants,
 				operations: self.operations.as_ref(),
 				approvals: self.approvals.as_ref(),
 				catalog: &self.catalog,
@@ -895,6 +1049,20 @@ impl ApprovalExecutor {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	/// The catalog banking publishes, pinned to its version: change a kind, a field or an
+	/// escalation and this fails until BANK_CATALOG_VERSION moves with it — concierge refuses
+	/// the same version with other content, which would hold every proposal back in prod.
+	#[test]
+	fn the_published_catalog_is_pinned_to_its_version() {
+		const PINNED: (u64, &str) = (1_792_051_200, "ed3486ae9fd6971c9e4cdc733a39638bbf07349ce0aaffee926417c49c623b6e");
+		let digest = sha256_hex(&domain::scope_operations::bank_catalog_canonical());
+		assert_eq!(
+			(BANK_CATALOG_VERSION, digest.as_str()),
+			PINNED,
+			"BANK_CATALOG changed: bump BANK_CATALOG_VERSION (unix seconds of the change) and pin the new digest here"
+		);
+	}
 
 	#[test]
 	fn the_backoff_doubles_to_a_ceiling() {

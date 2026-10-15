@@ -234,6 +234,9 @@ pub enum LedgerRefusal {
 	NotAccountOwner,
 	/// The scope is frozen: no new debit (FAILED_PRECONDITION).
 	ScopeFrozen,
+	/// The destination scope of a transfer between scopes is closed: it takes nothing new
+	/// (FAILED_PRECONDITION).
+	ScopeClosed,
 	/// The source cannot cover it right now (FAILED_PRECONDITION).
 	InsufficientFunds,
 	/// Past an automatic ceiling, or not an automatic move at all: ask with `RequestTransfer`
@@ -255,6 +258,7 @@ impl LedgerRefusal {
 			Self::NotGranted => "not_granted",
 			Self::NotAccountOwner => "not_account_owner",
 			Self::ScopeFrozen => "scope_frozen",
+			Self::ScopeClosed => "scope_closed",
 			Self::InsufficientFunds => "insufficient_funds",
 			Self::ApprovalRequired => "approval_required",
 			Self::HoldNotActive => "hold_not_active",
@@ -267,7 +271,7 @@ impl LedgerRefusal {
 	pub const fn is_permission(self) -> bool {
 		match self {
 			Self::NotGranted | Self::NotAccountOwner => true,
-			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired => false,
+			Self::ScopeFrozen | Self::ScopeClosed | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired => false,
 		}
 	}
 }

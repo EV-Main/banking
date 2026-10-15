@@ -555,13 +555,33 @@ pub struct KindSpec {
 /// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
 /// every change to the catalog — concierge refuses a catalog of the version it stores with
 /// other content, and one more than a day ahead of its clock.
-pub const BANK_CATALOG_VERSION: u64 = 1_792_022_400;
+pub const BANK_CATALOG_VERSION: u64 = 1_792_051_200;
+
+/// [`BANK_CATALOG`] rendered field by field, one line per item — what a test pins, beside
+/// [`BANK_CATALOG_VERSION`], so the catalog cannot change without the version moving.
+pub fn bank_catalog_canonical() -> String {
+	let mut out = String::new();
+	for spec in BANK_CATALOG {
+		out.push_str(&format!("kind\t{}\t{}\t{}\t{:?}\n", spec.kind.as_str(), spec.label, spec.description, spec.level));
+		for field in spec.fields {
+			out.push_str(&format!("field\t{}\t{}\t{:?}\t{}\n", field.key, field.label, field.field_type, field.required));
+		}
+		for escalation in spec.escalations {
+			out.push_str(&format!(
+				"escalation\t{}\t{}\t{:?}\t{}\t{}\n",
+				escalation.parameter, escalation.field_key, escalation.test, escalation.default_threshold, escalation.currency
+			));
+		}
+	}
+	out
+}
 
 const fn field(key: &'static str, label: &'static str, field_type: FieldType, required: bool) -> FieldSpec {
 	FieldSpec { key, label, field_type, required }
 }
 
 const TRANSFER_FIELDS: &[FieldSpec] = &[
+	field("service", "Requesting service", FieldType::Text, true),
 	field("from_account", "From account", FieldType::Text, true),
 	field("to_account", "To account", FieldType::Text, true),
 	field("amount", "Amount", FieldType::Amount, true),
@@ -578,6 +598,7 @@ pub const BANK_CATALOG: &[KindSpec] = &[
 		description: "A payout from a scope account to users' compartments in the scope, requested by the scope's service.",
 		level: KindLevel::Scope,
 		fields: &[
+			field("service", "Requesting service", FieldType::Text, true),
 			field("from_account", "From account", FieldType::Text, true),
 			field("total", "Total", FieldType::Amount, true),
 			field("recipients", "Recipients", FieldType::Count, true),
@@ -777,6 +798,12 @@ impl PendingOperation {
 	pub fn approval_fields(&self, lines_digest: Option<&str>) -> Result<Vec<ApprovalField>, DomainError> {
 		let account = |scope: &ScopeId, label: &ScopeAccountLabel| ApprovalValue::Text(format!("{scope}:{label}"));
 		let from = account(&self.terms.scope, &self.terms.from);
+		// Who asks is part of what is approved: a decision for one client's request is never
+		// one another client's request can match.
+		let service = ApprovalField {
+			key: "service",
+			value: ApprovalValue::Text(self.terms.client.as_str().to_owned()),
+		};
 		Ok(match &self.terms.body {
 			OperationBody::Payout {
 				lines,
@@ -786,6 +813,7 @@ impl PendingOperation {
 				let digest = lines_digest.ok_or_else(|| DomainError::Validation("a payout's approval carries its lines_digest".into()))?;
 				let requested = requested_lines(lines);
 				let mut fields = vec![
+					service,
 					ApprovalField { key: "from_account", value: from },
 					ApprovalField {
 						key: "total",
@@ -823,6 +851,7 @@ impl PendingOperation {
 				fields
 			}
 			OperationBody::Transfer { to_scope, to, amount } => vec![
+				service,
 				ApprovalField { key: "from_account", value: from },
 				ApprovalField {
 					key: "to_account",
@@ -1079,7 +1108,9 @@ mod tests {
 		let subject = format!("pending_operation:{}", op.id());
 		assert_eq!(
 			payload,
-			format!("ev-approval-v1\nbank:scope_transfer\ninvest\n{subject}\namount\tAMOUNT\t1200 USDT\nfrom_account\tTEXT\tinvest:alloc:x\nto_account\tTEXT\tsa:alloc:y\n")
+			format!(
+				"ev-approval-v1\nbank:scope_transfer\ninvest\n{subject}\namount\tAMOUNT\t1200 USDT\nfrom_account\tTEXT\tinvest:alloc:x\nservice\tTEXT\tinvest\nto_account\tTEXT\tsa:alloc:y\n"
+			)
 		);
 		assert!(!payload.contains("dividend:"), "the caller's own ref never reaches the approval");
 	}

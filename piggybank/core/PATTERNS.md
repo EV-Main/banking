@@ -1122,7 +1122,12 @@ every client's automatic payouts plus the scope-level payout decisions still liv
 in 24 h. Under the budget lock concurrent payouts cannot both count the same room.
 
 **Requested operations** (`RequestPayout` / `RequestTransfer` / `GetPendingOperation`,
-`scope_operations` + `scope_operation_lines`). The request is stored whole with its
+`scope_operations` + `scope_operation_lines`). A client may have at most 20 operations
+awaiting approval per scope (RESOURCE_EXHAUSTED, counted under a per-(client, scope) lock),
+the source must cover the request now (checked under its claim lock, not reserved), a payout
+never names a frozen or disabled user (`user_frozen`, D24(7)), and a transfer into another
+scope needs that scope active. The approval names the requesting `service` (in its
+`payload_hash`); its reason reads `Service <client>: <memo>`. The request is stored whole with its
 `lines_digest` and `payload_hash` (concierge's encoding, `scope_operations::approval_payload`),
 its source owned by the caller (a label grant is not needed — the approvers decide), a
 transfer's destination the caller's own too. A requested payout carries `over_scope_budget`,
@@ -1131,7 +1136,8 @@ executor** (`application::scope_operations::ApprovalExecutor`, every 30 s and on
 when the listener is on) first publishes banking's `bank:*` catalog
 (`scope_operations::BANK_CATALOG`, versioned by `BANK_CATALOG_VERSION` — bump it with every
 change; the same version again is a no-op in concierge, a transient failure is retried with
-backoff and holds proposals back), then proposes over the bridge (`infrastructure::approvals`, the bridge
+backoff and holds proposals back; a refusal holds them too, retried hourly, counted and
+alerted; a test pins the catalog's digest to its version), then proposes over the bridge (`infrastructure::approvals`, the bridge
 token = namespace `bank`, `dedupe_key = subject_ref = pending_operation:<id>`), pulls passed
 decisions, RE-READS each by id right before moving money, checks kind, scope, subject_ref,
 `lines_digest` and `payload_hash` against the stored row, and executes in one transaction under
@@ -1140,7 +1146,11 @@ operation) or FAILED with the reason; then reports the outcome (a lost report is
 the next pull, never the execution). A decision that does not match is FAILED
 `approval_mismatch` and reported VOID; a rejected / vetoed / expired / cancelled / void one
 ends REJECTED `approval_<state>`; a proposal concierge refuses ends REJECTED
-`proposal_refused`; concierge away only puts it off (backoff to 15 min). The client sees
+`proposal_refused`, one not opened in 72 h `proposal_not_opened`; concierge away only puts it
+off (backoff to 15 min), and its RESOURCE_EXHAUSTED puts off only that one. The execution
+re-reads the `compartments` grant, the users' freeze (rows `FOR SHARE`) and the destination
+scope's state. An operation the executor cannot read or step is set aside for an hour and
+the round goes on. The client sees
 OPERATION_REQUESTED / _REJECTED / _FAILED, and PAID_OUT / TRANSFERRED under its
 `subject_ref` when executed; an approved transfer between scopes shows once per side.
 

@@ -143,10 +143,28 @@ async fn fetch_due(conn: &mut PgConnection, opened: bool, limit: u32) -> Result<
 	let rows = sqlx::query(DUE).bind(opened).bind(i64::from(limit)).fetch_all(&mut *conn).await.map_err(repo_err)?;
 	let mut out = Vec::with_capacity(rows.len());
 	for row in rows {
-		out.push(recorded_operation(conn, row).await?);
+		let id: Uuid = row.try_get("id").map_err(repo_err)?;
+		match recorded_operation(conn, row).await {
+			Ok(recorded) => out.push(recorded),
+			// One row this build cannot read must not stop every other operation: it is set
+			// aside for an hour, loudly, and the rest are served.
+			Err(err) => {
+				tracing::error!(operation_id = %id, "scope operations: an operation cannot be read, set aside for an hour: {err}");
+				sqlx::query("UPDATE scope_operations SET next_attempt_at = now() + interval '1 hour', updated_at = now() WHERE id = $1")
+					.bind(id)
+					.execute(&mut *conn)
+					.await
+					.map_err(repo_err)?;
+			}
+		}
 	}
 	Ok(out)
 }
+
+/// How many operations one client may have awaiting an approval in one scope at once: each
+/// is a proposal concierge holds open and voters are mailed about, so an unbounded number
+/// is a way to flood both (concierge itself stops at 200 per namespace and scope).
+pub const MAX_LIVE_OPERATIONS: u32 = 20;
 
 /// Write a newly admitted operation and its lines.
 async fn insert_operation(conn: &mut PgConnection, admitted: &AdmittedOperation) -> Result<i64, DomainError> {
@@ -289,6 +307,15 @@ impl OperationStore for PgScopeLedger {
 			tx.commit().await.map_err(repo_err)?;
 			return Ok(Recorded::Existing(existing));
 		}
+		// Serializes one client's requests in one scope, so the live count below cannot be
+		// passed by two requests that both read room for one more.
+		outbox::lock_named(&mut tx, &format!("scope_ledger_operations:{}:{}", key.client, key.scope)).await?;
+		let live: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_operations WHERE client_id = $1 AND scope = $2 AND state = 'awaiting_approval'")
+			.bind(key.client.as_str())
+			.bind(key.scope.as_str())
+			.fetch_one(&mut *tx)
+			.await
+			.map_err(repo_err)?;
 		// A requested payout draws on the scope's budget the moment it is stored (its flag is
 		// decided here), so it serializes with every other outflow of the scope; a transfer
 		// does not leave the scope's users' hands and has no budget to read.
@@ -302,6 +329,10 @@ impl OperationStore for PgScopeLedger {
 			Some((to_scope, to_label)) => owner_on(&mut tx, to_scope, to_label).await?,
 			None => None,
 		};
+		let destination_scope = match to {
+			Some((to_scope, _)) if to_scope != key.scope => compartments::scope_for_share(&mut tx, to_scope).await?,
+			Some(_) | None => None,
+		};
 		let facts = OutflowFacts {
 			scope: compartments::scope_for_share(&mut tx, key.scope).await?,
 			source_owner: owner_on(&mut tx, key.scope, from).await?,
@@ -309,9 +340,14 @@ impl OperationStore for PgScopeLedger {
 			paid_24h: Usdt::ZERO,
 			scope_out_24h: scope_out,
 			destination_owner,
+			destination_scope,
+			live_operations: u32::try_from(live).unwrap_or(u32::MAX),
 		};
+		// Held so the spendable the admission reads is not being spent under it; the request
+		// reserves nothing, so a request is only refused for a shortfall it has right now.
+		outbox::lock_claim(&mut tx, &LedgerAccountKey::ScopeAccount(key.scope.clone(), from.clone())).await?;
 		// The refusal rolls the transaction back with nothing written.
-		let admitted = admission.admit(&facts).await?;
+		let admitted = admission.admit(&facts, &mut TxReads::new(&mut tx)).await?;
 		let created_at = insert_operation(&mut tx, &admitted).await?;
 		if !insert_request(&mut tx, &key, terms, &admitted.operation.id().to_string()).await? {
 			drop(tx);
@@ -377,6 +413,24 @@ impl OperationStore for PgScopeLedger {
 		Ok(())
 	}
 
+	async fn expire_unopened(&self, max_age_secs: u32, reason: &str) -> Result<usize, DomainError> {
+		let stale: Vec<Uuid> = sqlx::query_scalar(
+			"SELECT id FROM scope_operations WHERE state = 'awaiting_approval' AND approval_id IS NULL AND created_at < now() - make_interval(secs => $1) \
+			 ORDER BY created_at LIMIT 100",
+		)
+		.bind(f64::from(max_age_secs))
+		.fetch_all(self.pool())
+		.await
+		.map_err(repo_err)?;
+		let mut ended = 0;
+		for id in stale {
+			if self.close(id, OperationEnd::Rejected, reason).await? {
+				ended += 1;
+			}
+		}
+		Ok(ended)
+	}
+
 	async fn close(&self, id: Uuid, end: OperationEnd, reason: &str) -> Result<bool, DomainError> {
 		let mut tx = self.pool().begin().await.map_err(repo_err)?;
 		let Some(mut recorded) = fetch_one(&mut tx, BY_ID_LOCKED, id).await? else {
@@ -414,9 +468,27 @@ impl OperationStore for PgScopeLedger {
 			return Ok(recorded);
 		}
 		let terms = recorded.operation.terms().clone();
-		let destination_owner = match &terms.body {
-			OperationBody::Transfer { to_scope, to, .. } => owner_on(&mut tx, to_scope, to).await?,
-			OperationBody::Payout { .. } => None,
+		let (destination_owner, destination_scope, blocked_users) = match &terms.body {
+			OperationBody::Transfer { to_scope, to, .. } => (
+				owner_on(&mut tx, to_scope, to).await?,
+				if to_scope == &terms.scope {
+					None
+				} else {
+					compartments::scope_for_share(&mut tx, to_scope).await?
+				},
+				Vec::new(),
+			),
+			OperationBody::Payout { lines, .. } => {
+				let ids: Vec<Uuid> = lines.iter().map(|line| line.user.raw()).collect();
+				// `FOR SHARE`: a freeze landing on one of them waits for this execution to commit,
+				// and one that landed first is read here.
+				let blocked: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id = ANY($1) AND (frozen OR status = 'disabled') FOR SHARE")
+					.bind(&ids)
+					.fetch_all(&mut *tx)
+					.await
+					.map_err(repo_err)?;
+				(None, None, blocked.into_iter().map(UserId::from_raw).collect())
+			}
 		};
 		let facts = ExecutionFacts {
 			// Held until commit, as for any debit: a freeze cannot commit between this read and
@@ -424,6 +496,8 @@ impl OperationStore for PgScopeLedger {
 			scope: compartments::scope_for_share(&mut tx, &terms.scope).await?,
 			source_owner: owner_on(&mut tx, &terms.scope, &terms.from).await?,
 			destination_owner,
+			destination_scope,
+			blocked_users,
 		};
 		outbox::lock_claim(&mut tx, &LedgerAccountKey::ScopeAccount(terms.scope.clone(), terms.from.clone())).await?;
 		match execution.execute(&recorded.operation, &facts, &mut TxReads::new(&mut tx)).await? {

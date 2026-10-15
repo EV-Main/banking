@@ -48,18 +48,19 @@ impl ConciergeApprovals {
 }
 
 /// Which failures a retry of the same call can cure. A refusal on the request itself is for
-/// good; a transport or server failure is not. UNAUTHENTICATED and UNIMPLEMENTED are
+/// good; a transport or server failure is not; RESOURCE_EXHAUSTED is concierge's cap on live
+/// proposals in one scope, which says nothing about the others. UNAUTHENTICATED and UNIMPLEMENTED are
 /// configuration (a wrong token, a concierge that predates approvals): retried, because the
 /// fix is a deploy, not a different request — and logged loudly by the caller meanwhile.
 fn classify(rpc: &str, status: Status) -> ApprovalsError {
 	let message = format!("{rpc}: {:?}: {}", status.code(), status.message());
 	match status.code() {
+		Code::ResourceExhausted => ApprovalsError::Throttled(message),
 		Code::InvalidArgument | Code::NotFound | Code::AlreadyExists | Code::PermissionDenied | Code::FailedPrecondition | Code::OutOfRange => ApprovalsError::Refused(message),
 		Code::Ok
 		| Code::Cancelled
 		| Code::Unknown
 		| Code::DeadlineExceeded
-		| Code::ResourceExhausted
 		| Code::Aborted
 		| Code::Unimplemented
 		| Code::Internal

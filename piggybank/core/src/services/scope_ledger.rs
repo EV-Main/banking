@@ -311,6 +311,7 @@ fn refused(rpc: &'static str, client: &ClientId, err: TransferError) -> Status {
 			return Status::internal("internal error");
 		}
 		TransferError::Domain(err) => map_err(err),
+		TransferError::Exhausted(why) => Status::resource_exhausted(why),
 	};
 	match status.code() {
 		Code::Unavailable | Code::Internal | Code::Unknown => tracing::warn!(rpc, %client, code = ?status.code(), "scope ledger: {}", status.message()),

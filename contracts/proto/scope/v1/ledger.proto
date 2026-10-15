@@ -71,8 +71,10 @@ syntax = "proto3";
 //   - A frozen user takes no new debit of their compartment (Reserve, Charge), and a
 //     hold already standing on it is not captured into ANOTHER user's compartment:
 //     FAILED_PRECONDITION `user_frozen`. Capturing such a hold into the caller's own
-//     account (the purchase the user consented to), voiding it, and crediting them
-//     (Payout, Capture into them) are allowed.
+//     account (the purchase the user consented to), voiding it, and a Capture into them
+//     are allowed. A payout naming a frozen or disabled user is `user_frozen` too (D24(7):
+//     they may take their money back to `main`, nothing new goes into a compartment) —
+//     at the request, and again when an approved payout executes.
 //
 // USER CONSENT. A service never debits a user on its own word. Reserve and Charge draw
 // on the user's MANDATE for the calling client in the scope — granted by the user on
@@ -100,8 +102,8 @@ syntax = "proto3";
 //
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
-// `hold_not_active`, `scope_frozen`, `user_frozen`, `not_account_owner`, `not_granted`);
-// clients branch on (code, message) and nothing else.
+// `hold_not_active`, `scope_frozen`, `scope_closed`, `user_frozen`, `not_account_owner`,
+// `not_granted`); clients branch on (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
 // positive, at most the ledger's precision. Banking reads any plain decimal and always
@@ -179,12 +181,18 @@ service ScopeLedgerService {
   // empty until it is); besides concierge's fields it carries `max_line` (the largest
   // line) and `over_scope_budget` — set when the payout would break the scope's daily
   // budget counted with every live scope-level payout, which sends it to the owners.
-  // A request concierge refuses to open ends REJECTED with `proposal_refused`.
+  // A request concierge refuses to open ends REJECTED with `proposal_refused`, one it does
+  // not open within 72 h with `proposal_not_opened`. The approval names the requesting
+  // service (`service`, in its `payload_hash`). Every request: the source must cover it now
+  // (`insufficient_funds`; nothing is reserved, the execution checks again), and a client
+  // has at most 20 operations awaiting an approval in one scope (RESOURCE_EXHAUSTED).
   rpc RequestPayout(RequestPayoutRequest) returns (PendingOperation);
 
   // Ask for a transfer that needs approval — between two accounts of the scope
   // (`bank:account_transfer`) or into another scope (`bank:scope_transfer`). Both ends
   // must be the caller's own (`not_account_owner` otherwise, `main` and `fee` included).
+  // Into another scope, that scope must be active (`scope_frozen` / `scope_closed`), at the
+  // request and again at the execution.
   rpc RequestTransfer(RequestTransferRequest) returns (PendingOperation);
 
   // One requested operation as it stands now. Only the client that requested it

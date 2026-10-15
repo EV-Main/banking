@@ -573,6 +573,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		Some(settings) => {
 			let store = Arc::new(PgScopeLedger::new(state.pool.clone()));
 			let executor = ApprovalExecutor {
+				grants: Arc::new(settings.grants.clone()),
 				operations: store.clone(),
 				// The bridge's endpoint and token: banking↔concierge is one trust relationship.
 				approvals: Arc::new(ConciergeApprovals::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),

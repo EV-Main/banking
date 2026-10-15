@@ -245,6 +245,8 @@ impl PayoutStore for PgScopeLedger {
 			paid_24h: paid_24h(&mut tx, key.client, key.scope).await?,
 			scope_out_24h: scope_out_24h(&mut tx, key.scope).await?,
 			destination_owner: None,
+			destination_scope: None,
+			live_operations: 0,
 		};
 		// The lock every spender of the account takes, so the spendable the admission reads
 		// cannot be spent twice.

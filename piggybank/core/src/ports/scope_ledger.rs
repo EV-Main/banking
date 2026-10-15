@@ -80,6 +80,8 @@ pub enum TransferError {
 	Refused(LedgerRefusal),
 	Internal(String),
 	Domain(DomainError),
+	/// The caller holds as much as it may of something at once (RESOURCE_EXHAUSTED).
+	Exhausted(String),
 }
 
 impl From<DomainError> for TransferError {
