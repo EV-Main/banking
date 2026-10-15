@@ -14,9 +14,10 @@
 //!     stolen from one client is useless on another client's connection.
 //!
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
-//! `Void`, `GetHold` — every `Reserve` is `mandate_required` until users can grant mandates)
-//! and `MoneyEvents.Pull`, behind the same two layers. Every other RPC is UNIMPLEMENTED with
-//! the reason, and a client must treat that as "not yet", not "never".
+//! `Void`, `GetHold` — every `Reserve` is `mandate_required` until users can grant mandates),
+//! `Payout`, the requested operations (`RequestPayout`, `RequestTransfer`,
+//! `GetPendingOperation`) and `MoneyEvents.Pull`, behind the same two layers. `Charge` is
+//! UNIMPLEMENTED with the reason, and a client must treat that as "not yet", not "never".
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -33,6 +34,7 @@ use std::{
 use domain::{
 	money::Usdt,
 	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, MoneyEventKind, SubjectRef, TransferReason},
+	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
 use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of, grpc_auth_layer};
@@ -57,12 +59,16 @@ use tower_http::trace::{DefaultOnFailure, TraceLayer};
 use uuid::Uuid;
 
 use crate::{
-	application::scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+	application::{
+		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
+	},
 	config::ScopeLedgerSettings,
 	ports::{
 		compartments::CompartmentStore,
 		ledger::Ledger,
 		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MandateBook, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
+		scope_operations::{OperationStore, PayoutStore, RecordedOperation, RecordedPayout},
 	},
 	services::support::map_err,
 };
@@ -180,6 +186,10 @@ pub struct ScopeLedgerDeps {
 	pub ledger: Arc<dyn Ledger>,
 	/// Nudged after a transfer commits so the relay posts it at once.
 	pub relay: Arc<Notify>,
+	pub payouts: Arc<dyn PayoutStore>,
+	pub operations: Arc<dyn OperationStore>,
+	/// Nudged after an operation is stored so its approval is opened at once.
+	pub executor: Arc<Notify>,
 }
 
 /// Everything the listener needs: the settings checked at boot ([`ScopeLedgerSettings`]) and
@@ -256,6 +266,15 @@ impl ScopeLedgerSvc {
 			scopes: self.deps.scopes.as_ref(),
 			ledger: self.deps.ledger.as_ref(),
 			relay: &self.deps.relay,
+		}
+	}
+
+	fn operation_ports<'a>(&'a self, base: &'a ScopeLedgerPorts<'a>) -> OperationPorts<'a> {
+		OperationPorts {
+			base,
+			payouts: self.deps.payouts.as_ref(),
+			operations: self.deps.operations.as_ref(),
+			executor: &self.deps.executor,
 		}
 	}
 }
@@ -337,7 +356,25 @@ fn optional_amount(raw: &str) -> Result<Option<Usdt>, Status> {
 	}
 	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
 }
-const NEEDS_APPROVALS: &str = "banking does not open approvals for scope operations yet";
+
+fn operation_id_of(raw: &str) -> Result<Uuid, Status> {
+	Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::invalid_argument("operation_id must be a lowercase uuid"))
+}
+
+fn lines_of(lines: Vec<pb::PayoutLine>) -> Result<Vec<RequestedLine>, Status> {
+	lines
+		.into_iter()
+		.map(|line| {
+			Ok(RequestedLine {
+				amount: Usdt::parse_decimal(&line.amount).map_err(map_err)?,
+				auth_subject: line.auth_subject,
+			})
+		})
+		.collect()
+}
 
 #[tonic::async_trait]
 impl ScopeLedgerService for ScopeLedgerSvc {
@@ -406,8 +443,28 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 	}
 
 	async fn payout(&self, request: Request<pb::PayoutRequest>) -> Result<Response<pb::ScopePayout>, Status> {
-		caller(&request)?;
-		Err(not_yet("Payout", "payouts into users' compartments come with the compartments grant"))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let reason = match pb::PayoutReason::try_from(req.reason) {
+			Ok(pb::PayoutReason::Redemption) => PayoutReason::Redemption,
+			Ok(pb::PayoutReason::Book) => PayoutReason::Book,
+			Ok(pb::PayoutReason::FeeRebate) => PayoutReason::FeeRebate,
+			Ok(pb::PayoutReason::Unspecified) | Err(_) => return Err(Status::invalid_argument("reason is required")),
+		};
+		let parsed = PayoutRequest {
+			scope: scope_of(&req.scope)?,
+			from: label_of(&req.from_label)?,
+			lines: lines_of(req.lines)?,
+			reason,
+			subject_ref: subject_of(&req.subject_ref)?,
+			memo: req.memo,
+			idempotency_key: req.idempotency_key,
+		};
+		let base = self.ports();
+		let recorded = operations_app::payout(&self.operation_ports(&base), &client, parsed)
+			.await
+			.map_err(|err| refused("Payout", &client, err))?;
+		Ok(Response::new(payout_to_proto(&recorded)))
 	}
 
 	async fn transfer(&self, request: Request<pb::TransferRequest>) -> Result<Response<pb::ScopeTransfer>, Status> {
@@ -432,18 +489,53 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 	}
 
 	async fn request_payout(&self, request: Request<pb::RequestPayoutRequest>) -> Result<Response<pb::PendingOperation>, Status> {
-		caller(&request)?;
-		Err(not_yet("RequestPayout", NEEDS_APPROVALS))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = RequestPayoutRequest {
+			scope: scope_of(&req.scope)?,
+			from: label_of(&req.from_label)?,
+			lines: lines_of(req.lines)?,
+			distribution: req.distribution,
+			subject_ref: subject_of(&req.subject_ref)?,
+			memo: req.memo,
+			idempotency_key: req.idempotency_key,
+		};
+		let base = self.ports();
+		let recorded = operations_app::request_payout(&self.operation_ports(&base), &client, parsed)
+			.await
+			.map_err(|err| refused("RequestPayout", &client, err))?;
+		Ok(Response::new(operation_to_proto(&recorded)))
 	}
 
 	async fn request_transfer(&self, request: Request<pb::RequestTransferRequest>) -> Result<Response<pb::PendingOperation>, Status> {
-		caller(&request)?;
-		Err(not_yet("RequestTransfer", NEEDS_APPROVALS))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = RequestTransferRequest {
+			scope: scope_of(&req.scope)?,
+			from: label_of(&req.from_label)?,
+			to_scope: if req.to_scope.is_empty() { None } else { Some(scope_of(&req.to_scope)?) },
+			to: label_of(&req.to_label)?,
+			amount: Usdt::parse_decimal(&req.amount).map_err(map_err)?,
+			subject_ref: subject_of(&req.subject_ref)?,
+			memo: req.memo,
+			idempotency_key: req.idempotency_key,
+		};
+		let base = self.ports();
+		let recorded = operations_app::request_transfer(&self.operation_ports(&base), &client, parsed)
+			.await
+			.map_err(|err| refused("RequestTransfer", &client, err))?;
+		Ok(Response::new(operation_to_proto(&recorded)))
 	}
 
 	async fn get_pending_operation(&self, request: Request<pb::GetPendingOperationRequest>) -> Result<Response<pb::PendingOperation>, Status> {
-		caller(&request)?;
-		Err(not_yet("GetPendingOperation", NEEDS_APPROVALS))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let scope = scope_of(&req.scope)?;
+		let base = self.ports();
+		let recorded = operations_app::get_pending_operation(&self.operation_ports(&base), &client, &scope, operation_id_of(&req.operation_id)?)
+			.await
+			.map_err(|err| refused("GetPendingOperation", &client, err))?;
+		Ok(Response::new(operation_to_proto(&recorded)))
 	}
 
 	async fn get_balances(&self, request: Request<pb::GetBalancesRequest>) -> Result<Response<pb::GetBalancesResponse>, Status> {
@@ -543,6 +635,10 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 			MoneyEventKind::HoldVoided => Kind::HoldVoided,
 			MoneyEventKind::HoldExpired => Kind::HoldExpired,
 			MoneyEventKind::Transferred => Kind::Transferred,
+			MoneyEventKind::PaidOut => Kind::PaidOut,
+			MoneyEventKind::OperationRequested => Kind::OperationRequested,
+			MoneyEventKind::OperationRejected => Kind::OperationRejected,
+			MoneyEventKind::OperationFailed => Kind::OperationFailed,
 		} as i32,
 		ref_id: event.ref_id.clone(),
 		aggregate_version: event.aggregate_version,
@@ -590,8 +686,78 @@ fn transfer_to_proto(recorded: &RecordedTransfer) -> pb::ScopeTransfer {
 		memo: transfer.memo().to_owned(),
 		reason: match transfer.reason() {
 			TransferReason::FeeSweep => pb::TransferReason::FeeSweep as i32,
+			// An approved transfer has no automatic reason; its operation says why.
+			TransferReason::Approved => pb::TransferReason::Unspecified as i32,
 		},
 		to_scope: recorded.to_scope.as_str().to_owned(),
-		operation_id: String::new(),
+		operation_id: transfer.operation_id().map(|id| id.to_string()).unwrap_or_default(),
+	}
+}
+
+fn payout_lines_to_proto<'a>(lines: impl Iterator<Item = &'a domain::scope_operations::PayoutLine>) -> Vec<pb::PayoutLine> {
+	lines
+		.map(|line| pb::PayoutLine {
+			auth_subject: line.auth_subject.clone(),
+			amount: line.amount.to_decimal_string(),
+		})
+		.collect()
+}
+
+fn payout_to_proto(recorded: &RecordedPayout) -> pb::ScopePayout {
+	let payout = &recorded.payout;
+	let terms = payout.terms();
+	pb::ScopePayout {
+		payout_id: payout.id().to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		from_label: terms.from.as_str().to_owned(),
+		lines: payout_lines_to_proto(terms.lines.iter()),
+		total: payout.total().to_decimal_string(),
+		created_at: recorded.created_at,
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		memo: terms.memo.clone(),
+		reason: match terms.reason {
+			PayoutReason::Redemption => pb::PayoutReason::Redemption,
+			PayoutReason::Book => pb::PayoutReason::Book,
+			PayoutReason::FeeRebate => pb::PayoutReason::FeeRebate,
+			// An approved payout has no automatic reason; its operation says why.
+			PayoutReason::Approved => pb::PayoutReason::Unspecified,
+		} as i32,
+		operation_id: terms.operation_id.map(|id| id.to_string()).unwrap_or_default(),
+	}
+}
+
+fn operation_to_proto(recorded: &RecordedOperation) -> pb::PendingOperation {
+	let operation = &recorded.operation;
+	let terms = operation.terms();
+	let progress = operation.progress();
+	let (to_scope, to_label, lines, distribution) = match &terms.body {
+		OperationBody::Payout { lines, distribution, .. } => (String::new(), String::new(), lines.as_slice(), *distribution),
+		OperationBody::Transfer { to_scope, to, .. } => (to_scope.as_str().to_owned(), to.as_str().to_owned(), [].as_slice(), false),
+	};
+	pb::PendingOperation {
+		operation_id: operation.id().to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		state: match progress.state {
+			OperationState::AwaitingApproval => pb::PendingOperationState::AwaitingApproval,
+			OperationState::Executed => pb::PendingOperationState::Executed,
+			OperationState::Rejected => pb::PendingOperationState::Rejected,
+			OperationState::Failed => pb::PendingOperationState::Failed,
+		} as i32,
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		approval_id: progress.approval_id.clone().unwrap_or_default(),
+		kind: operation.kind().as_str().to_owned(),
+		from_label: terms.from.as_str().to_owned(),
+		to_scope,
+		to_label,
+		recipients: u32::try_from(lines.len()).unwrap_or(u32::MAX),
+		lines: payout_lines_to_proto(lines.iter()),
+		lines_digest: recorded.lines_digest.clone().unwrap_or_default(),
+		distribution,
+		total: operation.total().to_decimal_string(),
+		memo: terms.memo.clone(),
+		created_at: recorded.created_at,
+		decided_at: recorded.decided_at.unwrap_or(0),
+		result_id: progress.result_id.clone().unwrap_or_default(),
+		failure_reason: progress.failure_reason.clone().unwrap_or_default(),
 	}
 }

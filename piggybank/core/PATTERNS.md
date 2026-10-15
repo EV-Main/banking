@@ -987,8 +987,8 @@ accounts.
 ## Scope ledger — the service-facing money surface (`domain::scope_ledger`, `ScopeLedgerService`)
 
 `scope/v1/ledger.proto` is how a scope's own service (invest, the SA panel) moves money in
-its scope. Part 1 serves `OpenAccount`, `GetBalances` and `Transfer`; the rest is
-UNIMPLEMENTED with the reason (mandates, holds, payouts, approvals come next).
+its scope. Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds, `Payout`, the requested
+operations and `MoneyEvents.Pull`; `Charge` is UNIMPLEMENTED until users can grant mandates.
 
 **Its own listener, mTLS only** (`services::scope_ledger`, `config::ScopeLedgerSettings`):
 `SCOPE_LEDGER_BIND` turns it on, and then the server certificate, the client CA and the
@@ -1044,7 +1044,7 @@ NOT_FOUND), at most 256 labels per call, repeats answered once.
 
 **Transfer** is a client's automatic fee sweep: from an account it owns into `(scope, fee)`,
 `reason = FEE_SWEEP`; any other destination is `approval_required` (the client asks with
-`RequestTransfer`, not served yet). One Postgres transaction takes, in order, the key lock
+`RequestTransfer`). One Postgres transaction takes, in order, the key lock
 `(client, scope, rpc, key)`, the ceiling lock `(client, scope)`, the scope row `FOR SHARE`
 (a freeze cannot commit between the check and the record) and the source account's claim
 lock, then checks: owner, `scope_frozen` (a closed scope's accounts can still be swept),
@@ -1105,7 +1105,44 @@ owner; `Pull` returns only the receiving client's own. Appends serialize on one 
 lock held to commit, so a cursor never passes a position that commits later. `Pull` with a
 scope outside the caller's grants (`main` included) is `not_granted`; an empty scope means
 every scope it is granted in now. Kinds so far: ACCOUNT_OPENED, HOLD_PLACED / CAPTURED /
-VOIDED / EXPIRED, TRANSFERRED.
+VOIDED / EXPIRED, TRANSFERRED, PAID_OUT, OPERATION_REQUESTED / REJECTED / FAILED.
+
+**Payouts** (`Payout`, `scope_payouts` + `scope_payout_lines`, part 2b). A payout is ONE
+linked TigerBeetle chain, one posted leg per line, `Dr scope_account:<s>:<from> / Cr
+scope_claim:<s>:<user>` (`TransferCode::ScopePayout` = 58, ids `uuid_v5(payout_id,
+"scope:payout:<line_no>")`, FROZEN): every line lands or none does, and a source that cannot
+cover it after all fails the whole payout (`relay::Posting::ScopePayout`, the same single
+posting discipline and reaper replay as a transfer). One transaction takes the key lock, the
+scope's **budget lock** (`scope_ledger_budget:<scope>`), the scope row `FOR SHARE` and the
+source's claim lock, then checks: the `compartments` flag and the label grant, owner,
+`scope_frozen`, every user known (NOT_FOUND), the ceilings, `spendable_locked`. Ceilings:
+`auto_payout_per_op` on the total, `auto_payout_24h` over the client's automatic payouts in
+the scope, and the scope's ONE daily budget (`scope_policies.scope_budget_24h`, D24(4)) over
+every client's automatic payouts plus the scope-level payout decisions still live or executed
+in 24 h. Under the budget lock concurrent payouts cannot both count the same room.
+
+**Requested operations** (`RequestPayout` / `RequestTransfer` / `GetPendingOperation`,
+`scope_operations` + `scope_operation_lines`). The request is stored whole with its
+`lines_digest` and `payload_hash` (concierge's encoding, `scope_operations::approval_payload`),
+its source owned by the caller (a label grant is not needed — the approvers decide), a
+transfer's destination the caller's own too. A requested payout carries `over_scope_budget`,
+decided under the budget lock. Nothing is opened on the request path: the **approval
+executor** (`application::scope_operations::ApprovalExecutor`, every 30 s and on a nudge, only
+when the listener is on) proposes over the bridge (`infrastructure::approvals`, the bridge
+token = namespace `bank`, `dedupe_key = subject_ref = pending_operation:<id>`), pulls passed
+decisions, RE-READS each by id right before moving money, checks kind, scope, subject_ref,
+`lines_digest` and `payload_hash` against the stored row, and executes in one transaction under
+the operation's `FOR UPDATE` — an approved payout or transfer (reason `approved`, naming the
+operation) or FAILED with the reason; then reports the outcome (a lost report is repeated on
+the next pull, never the execution). A decision that does not match is FAILED
+`approval_mismatch` and reported VOID; a rejected / vetoed / expired / cancelled / void one
+ends REJECTED `approval_<state>`; a proposal concierge refuses ends REJECTED
+`proposal_refused`; concierge away only puts it off (backoff to 15 min). The client sees
+OPERATION_REQUESTED / _REJECTED / _FAILED, and PAID_OUT / TRANSFERRED under its
+`subject_ref` when executed; an approved transfer between scopes shows once per side.
+
+**Reconciliation** (8) gauges scope transfers and payouts recorded and unposted for over 15
+min (`telemetry::note_stale_scope_postings`), outside `clean()`.
 
 **`ServiceClaim(svc)` is not migrated here.** The allocation claims stay on
 `service:<slug>` until the units migration window (§6.5 of the org plan): each one becomes

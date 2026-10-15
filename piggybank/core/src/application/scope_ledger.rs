@@ -76,7 +76,7 @@ pub struct TransferRequest {
 	pub idempotency_key: String,
 }
 
-fn check_key(key: &str) -> Result<(), DomainError> {
+pub(crate) fn check_key(key: &str) -> Result<(), DomainError> {
 	let chars = key.chars().count();
 	if chars == 0 || chars > MAX_IDEMPOTENCY_KEY {
 		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} characters")));
@@ -92,7 +92,7 @@ fn check_key(key: &str) -> Result<(), DomainError> {
 /// The gate every call passes first: `main` is banking's, a scope the client holds no grant in
 /// is not its business — refused alike, so a client cannot probe which scopes exist — and a
 /// granted scope banking has not heard of from concierge is NOT_FOUND.
-async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
+pub(crate) async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
 	if scope.is_main() || ports.grants.in_scope(client, scope).next().is_none() {
 		return Err(TransferError::Refused(LedgerRefusal::NotGranted));
 	}
@@ -104,7 +104,7 @@ async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &
 
 /// What an earlier call under the same key did, when it asked for the same thing; a conflict
 /// when it did not.
-fn same_terms(stored: &StoredRequest, terms: &str) -> Result<(), DomainError> {
+pub(crate) fn same_terms(stored: &StoredRequest, terms: &str) -> Result<(), DomainError> {
 	if stored.terms == terms {
 		Ok(())
 	} else {
@@ -208,11 +208,13 @@ pub async fn transfer(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: 
 		client: client.clone(),
 		scope: request.scope.clone(),
 		from: request.from,
+		to_scope: request.scope.clone(),
 		to: request.to,
 		amount: request.amount,
 		reason: request.reason,
 		subject_ref: request.subject_ref,
 		memo: request.memo,
+		operation_id: None,
 	};
 	let canonical_terms = terms.canonical();
 	let mut transfer = ScopeTransfer::request(ScopeTransferId::new(), terms)?;
@@ -333,7 +335,7 @@ pub struct ReserveRequest {
 /// Longest `auth_subject` accepted, in bytes — what `users.auth_subject` was ever given.
 const MAX_AUTH_SUBJECT: usize = 255;
 
-fn check_subject(raw: &str) -> Result<(), DomainError> {
+pub(crate) fn check_subject(raw: &str) -> Result<(), DomainError> {
 	if raw.is_empty() || raw.len() > MAX_AUTH_SUBJECT || raw.chars().any(char::is_control) {
 		return Err(DomainError::Validation(format!("auth_subject must be 1..{MAX_AUTH_SUBJECT} bytes of plain text")));
 	}

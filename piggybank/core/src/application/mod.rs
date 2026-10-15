@@ -44,7 +44,8 @@
 //! reconciliation's "every unit at a holder" checks.
 //! [`scope_ledger`] is what a scope's own service may do with money in its scope — open an
 //! account, read its balances, sweep fees into the scope's collector — held against banking's
-//! grants for the client the transport proved.
+//! grants for the client the transport proved. [`scope_operations`] adds its payouts and the
+//! operations that wait on concierge's approval, with the executor that carries them out.
 
 pub mod allocations;
 pub mod auth_sync;
@@ -60,6 +61,7 @@ pub mod operations;
 pub mod ownership;
 pub mod payments;
 pub mod scope_ledger;
+pub mod scope_operations;
 pub mod users;
 pub mod wallet;
 pub mod withdrawals;

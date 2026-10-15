@@ -155,7 +155,12 @@ service ScopeLedgerService {
   // Pay out of a scope account the caller owns into users' compartments in the scope,
   // for an AUTOMATIC reason (redemption, book, fee rebate) and within the automatic
   // ceilings. One line is a single payout, many lines a batch; a batch is ATOMIC —
-  // every line posts or none does. At most 1000 lines; more is INVALID_ARGUMENT.
+  // every line posts or none does. At most 1000 lines; more is INVALID_ARGUMENT. Needs
+  // the `compartments` grant. Besides the caller's own ceilings, every scope has ONE daily
+  // budget for what leaves its accounts without the platform owners — every client's
+  // automatic payouts plus the payouts its admins decide (`scope_budget_24h`, default 5000
+  // USDT, rolling 24 h); past it the payout is `approval_required` too. An `auth_subject`
+  // banking has no user for is NOT_FOUND.
   rpc Payout(PayoutRequest) returns (ScopePayout);
 
   // Move money from an account the caller owns into `(scope, fee)`, for an AUTOMATIC
@@ -168,11 +173,18 @@ service ScopeLedgerService {
   // ceilings. Banking opens a `bank:scope_payout` approval (subject
   // `pending_operation:<operation_id>`) and executes the payout once it is approved;
   // the result appears as PAID_OUT events carrying the caller's `subject_ref`, and in
-  // `GetPendingOperation`.
+  // `GetPendingOperation`. Needs the `compartments` grant and the source's ownership —
+  // not a grant still covering its label: an approved payout is how money left under a
+  // prefix taken away gets out. The approval is opened asynchronously (`approval_id`
+  // empty until it is); besides concierge's fields it carries `max_line` (the largest
+  // line) and `over_scope_budget` — set when the payout would break the scope's daily
+  // budget counted with every live scope-level payout, which sends it to the owners.
+  // A request concierge refuses to open ends REJECTED with `proposal_refused`.
   rpc RequestPayout(RequestPayoutRequest) returns (PendingOperation);
 
   // Ask for a transfer that needs approval — between two accounts of the scope
-  // (`bank:account_transfer`) or into another scope (`bank:scope_transfer`).
+  // (`bank:account_transfer`) or into another scope (`bank:scope_transfer`). Both ends
+  // must be the caller's own (`not_account_owner` otherwise, `main` and `fee` included).
   rpc RequestTransfer(RequestTransferRequest) returns (PendingOperation);
 
   // One requested operation as it stands now. Only the client that requested it
@@ -442,10 +454,12 @@ enum PendingOperationState {
   PENDING_OPERATION_STATE_AWAITING_APPROVAL = 1;
   // Approved and executed — exactly once; `result_id` names the payout or transfer.
   PENDING_OPERATION_STATE_EXECUTED = 2;
-  // The approvers said no, or the approval expired or was withdrawn.
+  // The approvers said no, or the approval expired, was vetoed, withdrawn or voided
+  // (`approval_<state>`), or concierge refused to open it (`proposal_refused`).
   PENDING_OPERATION_STATE_REJECTED = 3;
   // Approved, but could not execute (the source no longer covers it, the scope is
-  // frozen, …). `failure_reason` says why; nothing retries silently.
+  // frozen, the decision did not match this record: `approval_mismatch`, …).
+  // `failure_reason` says why; nothing retries silently.
   PENDING_OPERATION_STATE_FAILED = 4;
 }
 
