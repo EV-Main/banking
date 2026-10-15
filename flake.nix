@@ -18,7 +18,7 @@
         rust = v_flakes.rs.default_nightly system;
         pre-commit-check = pre-commit-hooks.lib.${system}.run (v_flakes.files.preCommit {
           inherit pkgs;
-          webAssets.root = "cabinet/frontend"; # next/image decodes the source on every cache miss on the weak pod (site_conductor#236)
+          webAssets = { }; # next/image decodes the source on every cache miss on the weak pod (site_conductor#236)
         });
         pname = "ev_banking";
         # ── ev_invest dev topology (single source of truth for ports) ───────
