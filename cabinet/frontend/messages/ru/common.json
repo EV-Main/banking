@@ -7586,5 +7586,73 @@
   "walletAction.unavailable": {
     "en": "This is not available yet. Nothing has been charged or moved.",
     "t": "Пока недоступно. Ничего не списано и не перемещено."
+  },
+  "walletMfe.available": {
+    "en": "Available",
+    "t": "Доступно"
+  },
+  "walletMfe.compartments": {
+    "en": "In compartments",
+    "t": "В отсеках"
+  },
+  "walletMfe.compartmentsDesc": {
+    "en": "Across all services; moves to and from main are instant",
+    "t": "По всем сервисам; переводы в основной счёт и обратно мгновенные"
+  },
+  "walletMfe.history": {
+    "en": "Recent activity",
+    "t": "Последние операции"
+  },
+  "walletMfe.historyEmpty": {
+    "en": "No activity yet",
+    "t": "Операций пока нет"
+  },
+  "walletMfe.historyEmptyDesc": {
+    "en": "Deposits, withdrawals and moves between compartments will show up here.",
+    "t": "Здесь появятся пополнения, выводы и переводы между отсеками."
+  },
+  "walletMfe.inOrders": {
+    "en": "In orders",
+    "t": "В ордерах"
+  },
+  "walletMfe.invested": {
+    "en": "Invested",
+    "t": "Инвестировано"
+  },
+  "walletMfe.main": {
+    "en": "Main account",
+    "t": "Основной счёт"
+  },
+  "walletMfe.mainDesc": {
+    "en": "Deposits and withdrawals go through here",
+    "t": "Пополнения и выводы проходят через него"
+  },
+  "walletMfe.move": {
+    "en": "Move funds",
+    "t": "Перевести"
+  },
+  "walletMfe.payInvoice": {
+    "en": "Pay invoice",
+    "t": "Оплатить счёт"
+  },
+  "walletMfe.pendingWithdrawal": {
+    "en": "Pending withdrawal",
+    "t": "Ожидает вывода"
+  },
+  "walletMfe.signedOut": {
+    "en": "Sign in to see your wallet",
+    "t": "Войдите, чтобы увидеть кошелёк"
+  },
+  "walletMfe.signedOutDesc": {
+    "en": "Your balance and activity appear here once you are signed in to EV Invest.",
+    "t": "Баланс и операции появятся здесь, когда вы войдёте в EV Invest."
+  },
+  "walletMfe.stale": {
+    "en": "Some figures may be out of date.",
+    "t": "Часть данных может быть устаревшей."
+  },
+  "walletMfe.unavailable": {
+    "en": "Your wallet could not be loaded.",
+    "t": "Не удалось загрузить кошелёк."
   }
 }

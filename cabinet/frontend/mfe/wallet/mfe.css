@@ -1,0 +1,17 @@
+/* Stylesheet for the wallet element remotes. Same shape as mfe/account-chip/mfe.css, and
+   for the same reasons (read the note there before changing the layering): light DOM, so
+   no preflight and no fonts; utilities pre-assigned to `reamfe` so the host always wins;
+   the theme import unlayered so fractional spacing steps still compile. */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css" layer(reamfe);
+@import "@evinvest/uikit/styles/tokens.css" layer(reamfe);
+
+/* The element's own markup, and the uikit components it renders: their classes ship
+   compiled in the kit's dist, so the files they live in must be scanned too. Deps hoist
+   to the repo-root node_modules (npm workspaces). */
+@source "../../features/wallet-mfe/ui";
+@source "../../../../node_modules/@evinvest/uikit/dist/components/{alert,badge,button,card,empty,list-rows,resource-error,shell-icons,skeleton}.js";
+
+@theme inline {
+  --font-serif: var(--font-inter, "Inter"), ui-sans-serif, system-ui, sans-serif;
+}

@@ -7586,5 +7586,73 @@
   "walletAction.unavailable": {
     "en": "This is not available yet. Nothing has been charged or moved.",
     "t": "Tính năng này chưa khả dụng. Chưa có khoản nào bị trừ hay chuyển đi."
+  },
+  "walletMfe.available": {
+    "en": "Available",
+    "t": "Khả dụng"
+  },
+  "walletMfe.compartments": {
+    "en": "In compartments",
+    "t": "Trong các ngăn"
+  },
+  "walletMfe.compartmentsDesc": {
+    "en": "Across all services; moves to and from main are instant",
+    "t": "Trên tất cả dịch vụ; chuyển qua lại với tài khoản chính là tức thì"
+  },
+  "walletMfe.history": {
+    "en": "Recent activity",
+    "t": "Hoạt động gần đây"
+  },
+  "walletMfe.historyEmpty": {
+    "en": "No activity yet",
+    "t": "Chưa có hoạt động nào"
+  },
+  "walletMfe.historyEmptyDesc": {
+    "en": "Deposits, withdrawals and moves between compartments will show up here.",
+    "t": "Các khoản nạp, rút và chuyển giữa các ngăn sẽ hiển thị tại đây."
+  },
+  "walletMfe.inOrders": {
+    "en": "In orders",
+    "t": "Trong lệnh"
+  },
+  "walletMfe.invested": {
+    "en": "Invested",
+    "t": "Đã đầu tư"
+  },
+  "walletMfe.main": {
+    "en": "Main account",
+    "t": "Tài khoản chính"
+  },
+  "walletMfe.mainDesc": {
+    "en": "Deposits and withdrawals go through here",
+    "t": "Nạp và rút tiền đều đi qua tài khoản này"
+  },
+  "walletMfe.move": {
+    "en": "Move funds",
+    "t": "Chuyển tiền"
+  },
+  "walletMfe.payInvoice": {
+    "en": "Pay invoice",
+    "t": "Thanh toán hóa đơn"
+  },
+  "walletMfe.pendingWithdrawal": {
+    "en": "Pending withdrawal",
+    "t": "Đang chờ rút"
+  },
+  "walletMfe.signedOut": {
+    "en": "Sign in to see your wallet",
+    "t": "Đăng nhập để xem ví của bạn"
+  },
+  "walletMfe.signedOutDesc": {
+    "en": "Your balance and activity appear here once you are signed in to EV Invest.",
+    "t": "Số dư và hoạt động sẽ hiển thị tại đây khi bạn đăng nhập EV Invest."
+  },
+  "walletMfe.stale": {
+    "en": "Some figures may be out of date.",
+    "t": "Một số số liệu có thể chưa được cập nhật."
+  },
+  "walletMfe.unavailable": {
+    "en": "Your wallet could not be loaded.",
+    "t": "Không thể tải ví của bạn."
   }
 }

@@ -1895,5 +1895,22 @@
   "walletAction.mandateTitle": "Allow a service to charge you",
   "walletAction.moveTitle": "Move funds",
   "walletAction.payTitle": "Pay invoice",
-  "walletAction.unavailable": "This is not available yet. Nothing has been charged or moved."
+  "walletAction.unavailable": "This is not available yet. Nothing has been charged or moved.",
+  "walletMfe.available": "Available",
+  "walletMfe.compartments": "In compartments",
+  "walletMfe.compartmentsDesc": "Across all services; moves to and from main are instant",
+  "walletMfe.history": "Recent activity",
+  "walletMfe.historyEmpty": "No activity yet",
+  "walletMfe.historyEmptyDesc": "Deposits, withdrawals and moves between compartments will show up here.",
+  "walletMfe.inOrders": "In orders",
+  "walletMfe.invested": "Invested",
+  "walletMfe.main": "Main account",
+  "walletMfe.mainDesc": "Deposits and withdrawals go through here",
+  "walletMfe.move": "Move funds",
+  "walletMfe.payInvoice": "Pay invoice",
+  "walletMfe.pendingWithdrawal": "Pending withdrawal",
+  "walletMfe.signedOut": "Sign in to see your wallet",
+  "walletMfe.signedOutDesc": "Your balance and activity appear here once you are signed in to EV Invest.",
+  "walletMfe.stale": "Some figures may be out of date.",
+  "walletMfe.unavailable": "Your wallet could not be loaded."
 }

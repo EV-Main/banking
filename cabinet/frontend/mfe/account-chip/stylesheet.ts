@@ -23,11 +23,12 @@
 /** Never hidden longer than this: a lost load event must not cost the host its account chip. */
 const READY_TIMEOUT_MS = 4000;
 
-export function stylesheetHref(): string {
+/** The sibling sheet `file` next to this bundle. The wallet bundle reuses this module with its own sheet. */
+export function stylesheetHref(file = "account-chip.css"): string {
   const src = import.meta.url;
   // String math, not `new URL(…, import.meta.url)`: esbuild would try to resolve and inline
   // the sheet, which the Tailwind CLI emits separately.
-  return src.slice(0, src.lastIndexOf("/") + 1) + "account-chip.css";
+  return src.slice(0, src.lastIndexOf("/") + 1) + file;
 }
 
 /** Whether `node` is our sheet: a link to it, or a style importing it (the conductor's demotion). */

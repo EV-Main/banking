@@ -3088,6 +3088,23 @@
     "tips.wallet.withdraw.queueing.title",
     "tips.wallet.withdraw.review.body",
     "tips.wallet.withdraw.review.title",
-    "ui.services"
+    "ui.services",
+    "walletMfe.available",
+    "walletMfe.compartments",
+    "walletMfe.compartmentsDesc",
+    "walletMfe.history",
+    "walletMfe.historyEmpty",
+    "walletMfe.historyEmptyDesc",
+    "walletMfe.inOrders",
+    "walletMfe.invested",
+    "walletMfe.main",
+    "walletMfe.mainDesc",
+    "walletMfe.move",
+    "walletMfe.payInvoice",
+    "walletMfe.pendingWithdrawal",
+    "walletMfe.signedOut",
+    "walletMfe.signedOutDesc",
+    "walletMfe.stale",
+    "walletMfe.unavailable"
   ]
 }
