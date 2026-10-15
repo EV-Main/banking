@@ -13,8 +13,10 @@
 //!     then bound to the certificate: its `sub` must be that client's id, so a service token
 //!     stolen from one client is useless on another client's connection.
 //!
-//! Part 1 serves `OpenAccount`, `GetBalances` and `Transfer`; every other RPC is
-//! UNIMPLEMENTED with the reason, and a client must treat that as "not yet", not "never".
+//! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
+//! `Void`, `GetHold` — every `Reserve` is `mandate_required` until users can grant mandates)
+//! and `MoneyEvents.Pull`, behind the same two layers. Every other RPC is UNIMPLEMENTED with
+//! the reason, and a client must treat that as "not yet", not "never".
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -30,12 +32,13 @@ use std::{
 
 use domain::{
 	money::Usdt,
-	scope_ledger::{ClientDirectory, ClientId, Grants, SubjectRef, TransferReason},
+	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, MoneyEventKind, SubjectRef, TransferReason},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
 use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of, grpc_auth_layer};
 use evbanking_contracts::scope::v1::{
 	self as pb,
+	money_events_server::{MoneyEvents, MoneyEventsServer},
 	scope_ledger_service_server::{ScopeLedgerService, ScopeLedgerServiceServer},
 };
 use sha2::{Digest, Sha256};
@@ -51,14 +54,15 @@ use tonic::{
 };
 use tower::{Layer, Service};
 use tower_http::trace::{DefaultOnFailure, TraceLayer};
+use uuid::Uuid;
 
 use crate::{
-	application::scope_ledger::{self as ledger_app, AccountView, ScopeLedgerPorts, TransferError, TransferRequest},
+	application::scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 	config::ScopeLedgerSettings,
 	ports::{
 		compartments::CompartmentStore,
 		ledger::Ledger,
-		scope_ledger::{RecordedTransfer, ScopeLedgerStore},
+		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MandateBook, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
 	},
 	services::support::map_err,
 };
@@ -167,6 +171,10 @@ impl<S: tonic::server::NamedService> tonic::server::NamedService for ClientIdent
 #[derive(Clone)]
 pub struct ScopeLedgerDeps {
 	pub store: Arc<dyn ScopeLedgerStore>,
+	pub holds: Arc<dyn HoldStore>,
+	/// Users' consent to holds; `NoMandates` until users can grant them.
+	pub mandates: Arc<dyn MandateBook>,
+	pub events: Arc<dyn MoneyEventStore>,
 	/// The scope registry (which scopes exist, their state and policy).
 	pub scopes: Arc<dyn CompartmentStore>,
 	pub ledger: Arc<dyn Ledger>,
@@ -225,7 +233,8 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 	Server::builder()
 		.tls_config(listener.tls)?
 		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::DEBUG)))
-		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service))))
+		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service.clone()))))
+		.add_service(identity.layer(auth.layer(MoneyEventsServer::new(service))))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
 }
@@ -241,6 +250,9 @@ impl ScopeLedgerSvc {
 		ScopeLedgerPorts {
 			grants: &self.grants,
 			store: self.deps.store.as_ref(),
+			holds: self.deps.holds.as_ref(),
+			mandates: self.deps.mandates.as_ref(),
+			events: self.deps.events.as_ref(),
 			scopes: self.deps.scopes.as_ref(),
 			ledger: self.deps.ledger.as_ref(),
 			relay: &self.deps.relay,
@@ -305,6 +317,26 @@ fn not_yet(rpc: &str, why: &str) -> Status {
 const MAX_BALANCE_LABELS: usize = 256;
 
 const NEEDS_MANDATES: &str = "it draws on users' mandates, which are not granted yet";
+
+fn subject_of(raw: &str) -> Result<SubjectRef, Status> {
+	SubjectRef::parse(raw).map_err(map_err)
+}
+
+fn hold_id_of(raw: &str) -> Result<Uuid, Status> {
+	// Lowercase only, as banking writes it: one hold, one spelling.
+	Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::invalid_argument("hold_id must be a lowercase uuid"))
+}
+
+/// An optional amount: empty means "everything".
+fn optional_amount(raw: &str) -> Result<Option<Usdt>, Status> {
+	if raw.is_empty() {
+		return Ok(None);
+	}
+	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
+}
 const NEEDS_APPROVALS: &str = "banking does not open approvals for scope operations yet";
 
 #[tonic::async_trait]
@@ -321,18 +353,51 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 	}
 
 	async fn reserve(&self, request: Request<pb::ReserveRequest>) -> Result<Response<pb::Hold>, Status> {
-		caller(&request)?;
-		Err(not_yet("Reserve", NEEDS_MANDATES))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = ReserveRequest {
+			scope: scope_of(&req.scope)?,
+			auth_subject: req.auth_subject,
+			amount: Usdt::parse_decimal(&req.amount).map_err(map_err)?,
+			ttl_seconds: req.ttl_seconds,
+			subject_ref: subject_of(&req.subject_ref)?,
+			idempotency_key: req.idempotency_key,
+		};
+		let recorded = ledger_app::reserve(&self.ports(), &client, parsed).await.map_err(|err| refused("Reserve", &client, err))?;
+		Ok(Response::new(hold_to_proto(&recorded)))
 	}
 
 	async fn capture(&self, request: Request<pb::CaptureRequest>) -> Result<Response<pb::Hold>, Status> {
-		caller(&request)?;
-		Err(not_yet("Capture", "there are no holds yet"))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let to = match req.to.and_then(|to| to.account) {
+			Some(pb::account_ref::Account::ScopeLabel(label)) => CaptureTarget::Account(label_of(&label)?),
+			Some(pb::account_ref::Account::AuthSubject(subject)) => CaptureTarget::User(subject),
+			None => return Err(Status::invalid_argument("to is required")),
+		};
+		let parsed = CaptureRequest {
+			scope: scope_of(&req.scope)?,
+			hold_id: hold_id_of(&req.hold_id)?,
+			to,
+			amount: optional_amount(&req.amount)?,
+			subject_ref: subject_of(&req.subject_ref)?,
+			idempotency_key: req.idempotency_key,
+		};
+		let recorded = ledger_app::capture(&self.ports(), &client, parsed).await.map_err(|err| refused("Capture", &client, err))?;
+		Ok(Response::new(hold_to_proto(&recorded)))
 	}
 
 	async fn void(&self, request: Request<pb::VoidRequest>) -> Result<Response<pb::Hold>, Status> {
-		caller(&request)?;
-		Err(not_yet("Void", "there are no holds yet"))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = VoidRequest {
+			scope: scope_of(&req.scope)?,
+			hold_id: hold_id_of(&req.hold_id)?,
+			subject_ref: subject_of(&req.subject_ref)?,
+			idempotency_key: req.idempotency_key,
+		};
+		let recorded = ledger_app::void(&self.ports(), &client, parsed).await.map_err(|err| refused("Void", &client, err))?;
+		Ok(Response::new(hold_to_proto(&recorded)))
 	}
 
 	async fn charge(&self, request: Request<pb::ChargeRequest>) -> Result<Response<pb::ScopeCharge>, Status> {
@@ -405,8 +470,100 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 	}
 
 	async fn get_hold(&self, request: Request<pb::GetHoldRequest>) -> Result<Response<pb::Hold>, Status> {
-		caller(&request)?;
-		Err(not_yet("GetHold", "there are no holds yet"))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let scope = scope_of(&req.scope)?;
+		let recorded = ledger_app::get_hold(&self.ports(), &client, &scope, hold_id_of(&req.hold_id)?)
+			.await
+			.map_err(|err| refused("GetHold", &client, err))?;
+		Ok(Response::new(hold_to_proto(&recorded)))
+	}
+}
+
+#[tonic::async_trait]
+impl MoneyEvents for ScopeLedgerSvc {
+	async fn pull(&self, request: Request<pb::PullRequest>) -> Result<Response<pb::PullResponse>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let scope = if req.scope.is_empty() { None } else { Some(scope_of(&req.scope)?) };
+		let pulled = ledger_app::pull(&self.ports(), &client, scope.as_ref(), req.after_position, req.limit)
+			.await
+			.map_err(|err| refused("Pull", &client, err))?;
+		Ok(Response::new(pb::PullResponse {
+			events: pulled.events.iter().map(event_to_proto).collect(),
+			next_position: pulled.next_position,
+		}))
+	}
+}
+
+fn hold_to_proto(recorded: &RecordedHold) -> pb::Hold {
+	let hold = &recorded.hold;
+	let terms = hold.terms();
+	pb::Hold {
+		hold_id: hold.id().to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		auth_subject: recorded.auth_subject.clone(),
+		amount: terms.amount.to_decimal_string(),
+		captured: hold.progress().captured.to_decimal_string(),
+		remaining: hold.remaining().to_decimal_string(),
+		state: match hold.state() {
+			HoldState::Active => pb::HoldState::Active,
+			HoldState::Captured => pb::HoldState::Captured,
+			HoldState::Voided => pb::HoldState::Voided,
+			HoldState::Expired => pb::HoldState::Expired,
+		} as i32,
+		expires_at: terms.expires_at.unwrap_or(0),
+		created_at: recorded.created_at,
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		mandate_id: terms.mandate_id.to_string(),
+		placed_by_client: terms.client.as_str().to_owned(),
+	}
+}
+
+fn account_ref(account: &EventAccount) -> pb::AccountRef {
+	pb::AccountRef {
+		account: Some(match account {
+			EventAccount::Account(label) => pb::account_ref::Account::ScopeLabel(label.as_str().to_owned()),
+			EventAccount::User(subject) => pb::account_ref::Account::AuthSubject(subject.clone()),
+		}),
+	}
+}
+
+fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
+	use pb::money_event::Kind;
+	pb::MoneyEvent {
+		event_id: event.event_id.to_string(),
+		position: event.position,
+		scope: event.scope.as_str().to_owned(),
+		occurred_at: event.occurred_at,
+		kind: match event.kind {
+			MoneyEventKind::AccountOpened => Kind::AccountOpened,
+			MoneyEventKind::HoldPlaced => Kind::HoldPlaced,
+			MoneyEventKind::HoldCaptured => Kind::HoldCaptured,
+			MoneyEventKind::HoldVoided => Kind::HoldVoided,
+			MoneyEventKind::HoldExpired => Kind::HoldExpired,
+			MoneyEventKind::Transferred => Kind::Transferred,
+		} as i32,
+		ref_id: event.ref_id.clone(),
+		aggregate_version: event.aggregate_version,
+		auth_subject: event.auth_subject.clone(),
+		amount: event.amount.map(|amount| amount.to_decimal_string()).unwrap_or_default(),
+		from: event.from.as_ref().map(account_ref),
+		to: event.to.as_ref().map(account_ref),
+		subject_ref: event.subject_ref.clone(),
+		initiator_client: event.initiator_client.clone(),
+		balance_after: event
+			.balances
+			.iter()
+			.map(|entry| pb::AccountBalance {
+				account: Some(account_ref(&EventAccount::Account(entry.label.clone()))),
+				balance: entry.balance.to_decimal_string(),
+			})
+			.collect(),
+		hold_remaining: event.hold_remaining.map(|remaining| remaining.to_decimal_string()).unwrap_or_default(),
+		paid_from: String::new(),
+		counterparty_scope: event.counterparty_scope.clone(),
+		failure_reason: event.failure_reason.clone(),
 	}
 }
 

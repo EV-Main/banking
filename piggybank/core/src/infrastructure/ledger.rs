@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{claims::TxReads, tigerbeetle::TigerBeetle},
-	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LockedReads, PendingCompletion},
+	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
 };
 
 /// The USDT cash ledger id (`Ledger::Usdt`) — the plane `cash_invariant` scans; each
@@ -406,6 +406,63 @@ impl Ledger for TbLedger {
 			..Default::default()
 		};
 		self.create_transfers(&[row]).await
+	}
+
+	async fn apply_linked(&self, legs: &[LinkedLeg]) -> Result<(), LedgerError> {
+		let Some(first) = legs.first() else {
+			return Ok(());
+		};
+		// As in `post_linked`: the chain is atomic, so its first id existing means it landed.
+		if self.transfer_exists(first.id()).await? {
+			return Ok(());
+		}
+		let mut rows = Vec::with_capacity(legs.len());
+		for (index, leg) in legs.iter().enumerate() {
+			let linked = if index + 1 < legs.len() { tb::TransferFlags::Linked } else { tb::TransferFlags::empty() };
+			let row = match leg {
+				LinkedLeg::Post(transfer) | LinkedLeg::Reserve(transfer) => {
+					let (debit_id, credit_id) = self.ensure_pair(&transfer.debit, &transfer.credit).await?;
+					// `timeout = 0` on a reserve, as in `reserve`: the saga owns its lifecycle.
+					let kind = if matches!(leg, LinkedLeg::Reserve(_)) {
+						tb::TransferFlags::Pending
+					} else {
+						tb::TransferFlags::empty()
+					};
+					tb::Transfer {
+						id: transfer.id,
+						debit_account_id: debit_id,
+						credit_account_id: credit_id,
+						amount: transfer.amount,
+						ledger: transfer.debit.ledger().id(),
+						code: transfer.code.code(),
+						user_data_128: transfer.reference,
+						flags: kind | linked,
+						..Default::default()
+					}
+				}
+				LinkedLeg::Complete(completion) => {
+					let (debit_id, credit_id) = self.ensure_pair(&completion.debit, &completion.credit).await?;
+					let (kind, amount) = match completion.kind {
+						CompletionKind::Post => (tb::TransferFlags::PostPendingTransfer, completion.amount),
+						CompletionKind::Void => (tb::TransferFlags::VoidPendingTransfer, 0),
+					};
+					tb::Transfer {
+						id: completion.id,
+						debit_account_id: debit_id,
+						credit_account_id: credit_id,
+						amount,
+						pending_id: completion.pending_id,
+						ledger: completion.debit.ledger().id(),
+						code: completion.code.code(),
+						user_data_128: completion.reference,
+						flags: kind | linked,
+						..Default::default()
+					}
+				}
+			};
+			rows.push(row);
+		}
+		self.create_transfers(&rows).await
 	}
 
 	async fn share_holdings(&self, scope: &HoldingScope) -> Result<Vec<(LedgerAccountKey, u128)>, LedgerError> {

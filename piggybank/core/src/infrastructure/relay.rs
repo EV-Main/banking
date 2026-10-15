@@ -43,7 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
-	scope_ledger::{LedgerRefusal, ScopeLedgerEvent},
+	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
 	users::UserId,
@@ -57,14 +57,14 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{
-		book, compartments, fee_accrual, issuance,
+		book, compartments, fee_accrual, issuance, money_events,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
 		scope_ledger,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
-		ledger::{CompletionKind, Ledger, LedgerError, LedgerTransfer, PendingCompletion},
+		ledger::{CompletionKind, Ledger, LedgerError, LedgerTransfer, LinkedLeg, PendingCompletion},
 	},
 };
 
@@ -148,6 +148,14 @@ const COMPARTMENT_MOVE: &[u8] = b"compartment:move";
 /// Salt for a scope transfer's one posted leg, derived from the TRANSFER id for the same
 /// reason. FROZEN.
 const SCOPE_TRANSFER: &[u8] = b"scope:transfer";
+
+/// Salts of a hold's ledger ids, each followed by the version of the event that applies it:
+/// the reservation a version creates, the void and the capture post a version applies.
+/// Derived from the HOLD id, so the next event can name the reservation it voids from the
+/// row's `pending_version` alone. FROZEN.
+const HOLD_PENDING: &str = "scope:hold:pending:";
+const HOLD_VOID: &str = "scope:hold:void:";
+const HOLD_CAPTURE: &str = "scope:hold:capture:";
 
 /// An event whose one ledger leg is recorded on a control-plane row of its own — `pending`
 /// until the relay posts it, then `posted`, or `failed` for good when the ledger refuses it.
@@ -502,11 +510,16 @@ impl Relay {
 				return Outcome::park(format!("{name} planned no leg"));
 			};
 			match self.ledger.transfer_exists(leg.transfer_id).await {
-				Ok(true) =>
+				Ok(true) => {
+					// The leg posted on an earlier delivery that stopped before its money event.
+					if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
+						return Outcome::Retry(format!("{name} money event: {err}"));
+					}
 					return match posting.mark_posted(&self.pool, row.aggregate_id).await {
 						Ok(()) => Outcome::Done,
 						Err(err) => Outcome::Retry(format!("{name} posted stamp: {err}")),
-					},
+					};
+				}
 				Ok(false) => {}
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
@@ -608,6 +621,25 @@ impl Relay {
 				Err(err) => return Outcome::Retry(format!("broadcast-row check: {err}")),
 			}
 		}
+		// A hold's capture or release voids the reservation an earlier event (strictly earlier in
+		// `seq`) created. Neither it nor this event's own first leg in the ledger means that
+		// reservation was parked, never applied: voiding it would answer "not found" until the
+		// bounded retries ran out, holding up the whole queue meanwhile. Park at once instead.
+		for op in &ops {
+			let LedgerAction::Linked(legs) = &op.action else { continue };
+			let Some(LinkedLeg::Complete(void)) = legs.first() else { continue };
+			if !matches!(op.role, "hold_capture" | "hold_release") {
+				continue;
+			}
+			let applied = match (self.ledger.transfer_exists(void.id).await, self.ledger.transfer_exists(void.pending_id).await) {
+				(Ok(this), Ok(reserved)) => this || reserved,
+				(Err(LedgerError::Unavailable(err)), _) | (_, Err(LedgerError::Unavailable(err))) => return Outcome::Retry(err),
+				(Err(err), _) | (_, Err(err)) => return Outcome::park(format!("hold reservation check: {err}")),
+			};
+			if !applied {
+				return Outcome::park("hold reservation never applied to the ledger (parked?) — nothing to capture or release".into());
+			}
+		}
 		// Track applied legs so a park *after* an earlier leg posted (`applied > 0`) is flagged
 		// half-applied — the genuine residual a balance pre-check can't predict (a bare TB
 		// Conflict on a non-first leg). A first-leg park leaves nothing applied.
@@ -618,6 +650,7 @@ impl Relay {
 				LedgerAction::PostLinked(transfers) => self.ledger.post_linked(transfers).await,
 				LedgerAction::Reserve(transfer) => self.ledger.reserve(transfer).await,
 				LedgerAction::Complete(completion) => self.ledger.complete(completion).await,
+				LedgerAction::Linked(legs) => self.ledger.apply_linked(legs).await,
 				LedgerAction::Broadcast(request) => self.custody.broadcast(request).await.map_err(custody_to_ledger),
 			};
 			match result {
@@ -684,6 +717,11 @@ impl Relay {
 			&& let Err(err) = project_trade(&self.pool, row).await
 		{
 			return Outcome::Retry(format!("book trade projection: {err}"));
+		}
+		// Before the posted stamp: a failure here retries the row, and the stamp's early path
+		// above records the event that is still owed.
+		if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
+			return Outcome::Retry(format!("money event: {err}"));
 		}
 		if let Some(posting) = posting
 			&& let Err(err) = posting.mark_posted(&self.pool, row.aggregate_id).await
@@ -930,6 +968,10 @@ enum LedgerAction {
 	PostLinked(Vec<LedgerTransfer>),
 	Reserve(LedgerTransfer),
 	Complete(PendingCompletion),
+	/// Posted, pending and completing legs as one TigerBeetle linked chain — a hold's
+	/// capture: void the reservation, post the capture, reserve the rest. A release is a
+	/// chain of one, so every hold step that voids shares one reservation pre-check.
+	Linked(Vec<LinkedLeg>),
 	Broadcast(BroadcastRequest),
 }
 
@@ -944,6 +986,10 @@ pub(crate) fn planned_debit(row: &OutboxRow, key: &LedgerAccountKey) -> Result<u
 		let legs = match &op.action {
 			LedgerAction::Post(transfer) | LedgerAction::Reserve(transfer) => std::slice::from_ref(transfer),
 			LedgerAction::PostLinked(transfers) => transfers.as_slice(),
+			LedgerAction::Linked(legs) => {
+				total = total.checked_add(chain_debit(legs, key)?).ok_or("planned debits overflow")?;
+				continue;
+			}
 			LedgerAction::Complete(_) | LedgerAction::Broadcast(_) => &[],
 		};
 		for leg in legs.iter().filter(|leg| &leg.debit == key) {
@@ -951,6 +997,26 @@ pub(crate) fn planned_debit(row: &OutboxRow, key: &LedgerAccountKey) -> Result<u
 		}
 	}
 	Ok(total)
+}
+
+/// What a chain takes out of `key` beyond what it gives back. A capture voids the standing
+/// reservation and takes the captured part and the rest out of exactly that, so it takes
+/// nothing the ledger does not already show as locked; counting its post and new reservation
+/// without the void would hold the user's money twice until the relay applied it.
+fn chain_debit(legs: &[LinkedLeg], key: &LedgerAccountKey) -> Result<u128, String> {
+	let (mut taken, mut released) = (0u128, 0u128);
+	for leg in legs {
+		match leg {
+			LinkedLeg::Post(transfer) | LinkedLeg::Reserve(transfer) if &transfer.debit == key => {
+				taken = taken.checked_add(transfer.amount).ok_or("planned debits overflow")?;
+			}
+			LinkedLeg::Complete(completion) if completion.kind == CompletionKind::Void && &completion.debit == key => {
+				released = released.checked_add(completion.amount).ok_or("planned releases overflow")?;
+			}
+			LinkedLeg::Post(_) | LinkedLeg::Reserve(_) | LinkedLeg::Complete(_) => {}
+		}
+	}
+	Ok(taken.saturating_sub(released))
 }
 
 /// Map an outbox event to the ledger op(s) (and any custody broadcast) it performs.
@@ -999,6 +1065,10 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 		"scope_ledger" => {
 			let event: ScopeLedgerEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(vec![plan_scope_ledger(event, row.aggregate_id, reference)])
+		}
+		"scope_holds" => {
+			let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(vec![plan_hold(event, row.aggregate_id, reference)])
 		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
@@ -1064,6 +1134,99 @@ fn plan_scope_ledger(event: ScopeLedgerEvent, aggregate_id: Uuid, reference: u12
 			code: TransferCode::ScopeTransfer,
 			reference,
 		}),
+	}
+}
+
+fn hold_tid(hold_id: Uuid, salt: &str, version: u64) -> u128 {
+	tid(hold_id, format!("{salt}{version}").as_bytes())
+}
+
+/// A hold's steps (see [`domain::scope_ledger::Hold`]): a placement reserves the amount out of
+/// the user's compartment; a capture voids the standing reservation, posts what it takes out of
+/// the compartment to its destination and reserves the rest, linked; a release voids the
+/// reservation. Every reservation is credited to `hold_clearing`, so nothing posted ever lands
+/// there.
+fn plan_hold(event: HoldEvent, hold_id: Uuid, reference: u128) -> PlannedOp {
+	let reservation = |scope: &domain::scopes::ScopeId, user: UserId, version: u64, amount: Usdt| LedgerTransfer {
+		id: hold_tid(hold_id, HOLD_PENDING, version),
+		debit: LedgerAccountKey::ScopeClaim(user, scope.clone()),
+		credit: LedgerAccountKey::HoldClearing,
+		amount: amount.base_units(),
+		code: TransferCode::ScopeHold,
+		reference,
+	};
+	let void = |scope: &domain::scopes::ScopeId, user: UserId, version: u64, released: u64, held: Usdt| {
+		LinkedLeg::Complete(PendingCompletion {
+			id: hold_tid(hold_id, HOLD_VOID, version),
+			pending_id: hold_tid(hold_id, HOLD_PENDING, released),
+			kind: CompletionKind::Void,
+			debit: LedgerAccountKey::ScopeClaim(user, scope.clone()),
+			credit: LedgerAccountKey::HoldClearing,
+			amount: held.base_units(),
+			code: TransferCode::ScopeHold,
+			reference,
+		})
+	};
+	match event {
+		HoldEvent::Placed { scope, user, amount, version, .. } => {
+			let leg = reservation(&scope, user, version, amount);
+			PlannedOp {
+				role: "hold_reserve",
+				transfer_id: leg.id,
+				action: LedgerAction::Reserve(leg),
+			}
+		}
+		HoldEvent::Captured {
+			scope,
+			user,
+			version,
+			released,
+			held,
+			amount,
+			to,
+			..
+		} => {
+			let credit = match to {
+				HoldDestination::Account(label) => LedgerAccountKey::ScopeAccount(scope.clone(), label),
+				HoldDestination::User(other) => LedgerAccountKey::ScopeClaim(other, scope.clone()),
+			};
+			let mut legs = vec![
+				void(&scope, user, version, released, held),
+				LinkedLeg::Post(LedgerTransfer {
+					id: hold_tid(hold_id, HOLD_CAPTURE, version),
+					debit: LedgerAccountKey::ScopeClaim(user, scope.clone()),
+					credit,
+					amount: amount.base_units(),
+					code: TransferCode::ScopeHold,
+					reference,
+				}),
+			];
+			// The domain never captures more than is held, so `None` is never the answer.
+			let rest = held.checked_sub(amount).unwrap_or(Usdt::ZERO);
+			if !rest.is_zero() {
+				legs.push(LinkedLeg::Reserve(reservation(&scope, user, version, rest)));
+			}
+			PlannedOp {
+				role: "hold_capture",
+				transfer_id: legs[0].id(),
+				action: LedgerAction::Linked(legs),
+			}
+		}
+		HoldEvent::Released {
+			scope,
+			user,
+			version,
+			released,
+			held,
+			..
+		} => {
+			let leg = void(&scope, user, version, released, held);
+			PlannedOp {
+				role: "hold_release",
+				transfer_id: leg.id(),
+				action: LedgerAction::Linked(vec![leg]),
+			}
+		}
 	}
 }
 
@@ -2148,5 +2311,40 @@ mod tests {
 		assert!(matches!(ops[0].action, LedgerAction::Complete(PendingCompletion { kind: CompletionKind::Post, .. })));
 		assert_eq!(ops[1].role, "redeem_payout");
 		assert!(matches!(ops[1].action, LedgerAction::Post(_)));
+	}
+
+	// A capture voids the standing reservation and takes the captured part and the rest out of
+	// it: nothing beyond what is already locked, or an undispatched capture would hold the
+	// user's money twice.
+	#[test]
+	fn a_hold_capture_chains_void_post_reserve_and_takes_nothing_beyond_the_reservation() {
+		let (hold, user, other) = (Uuid::new_v4(), UserId::new(), UserId::new());
+		let scope = domain::scopes::ScopeId::parse("sa").unwrap();
+		let usdt = |raw: &str| Usdt::parse_decimal(raw).unwrap();
+		let op = plan_hold(
+			HoldEvent::Captured {
+				hold_id: domain::scope_ledger::HoldId::from_raw(hold),
+				scope: scope.clone(),
+				user,
+				version: 3,
+				released: 2,
+				held: usdt("10"),
+				amount: usdt("4"),
+				to: HoldDestination::User(other),
+				subject_ref: domain::scope_ledger::SubjectRef::parse("order:4f0c2d1e-0000-4000-8000-0123456789ab").unwrap(),
+			},
+			hold,
+			0,
+		);
+		let LedgerAction::Linked(legs) = &op.action else { panic!("a capture is one linked chain") };
+		let [LinkedLeg::Complete(void), LinkedLeg::Post(post), LinkedLeg::Reserve(rest)] = legs.as_slice() else {
+			panic!("{legs:?}")
+		};
+		assert_eq!(void.pending_id, hold_tid(hold, HOLD_PENDING, 2), "voids the reservation version 2 made");
+		assert_eq!(rest.id, hold_tid(hold, HOLD_PENDING, 3), "the rest is version 3's reservation");
+		assert_eq!((post.amount, rest.amount), (usdt("4").base_units(), usdt("6").base_units()));
+		assert_eq!(post.credit, LedgerAccountKey::ScopeClaim(other, scope.clone()));
+		let held = LedgerAccountKey::ScopeClaim(user, scope);
+		assert_eq!(chain_debit(legs, &held).unwrap(), 0, "the void gives back what the post and the new reservation take");
 	}
 }

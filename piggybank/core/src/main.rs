@@ -17,7 +17,7 @@ use evbanking_auth::{AuthConfig, AuthService, ServiceTokenSource, provisioner_ch
 use evbanking_contracts::signer::v1::signer_service_client::SignerServiceClient;
 use piggybank_core::{
 	AppState,
-	application::{auth_sync, book::BookFeed},
+	application::{auth_sync, book::BookFeed, scope_ledger::NoMandates},
 	config::{self, Rails},
 	infrastructure::{
 		allocations::PgAllocations,
@@ -560,10 +560,15 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	);
 
 	let scope_ledger = scope_ledger_settings.map(|settings| {
+		let store = Arc::new(PgScopeLedger::new(state.pool.clone()));
 		ScopeLedgerListener::new(
 			settings,
 			ScopeLedgerDeps {
-				store: Arc::new(PgScopeLedger::new(state.pool.clone())),
+				store: store.clone(),
+				holds: store.clone(),
+				// Users cannot grant mandates yet; every hold is refused until they can.
+				mandates: Arc::new(NoMandates),
+				events: store,
 				scopes: state.compartments.clone(),
 				ledger: state.ledger.clone(),
 				relay: state.relay_notify.clone(),

@@ -316,6 +316,8 @@ pub enum AccountCode {
 	ScopeClaim,
 	/// A scope's own account `(scope, label)`, `(main, treasury)` included.
 	ScopeAccount,
+	/// The credit side of every hold a scope's service places on a user's compartment.
+	HoldClearing,
 }
 
 impl AccountCode {
@@ -330,6 +332,7 @@ impl AccountCode {
 			Self::ScopeAccount => 31,
 			Self::RetiredFeeClaim => 40,
 			Self::WithdrawalClearing => 50,
+			Self::HoldClearing => 51,
 			Self::UserShares => 60,
 			Self::SharesOutstanding => 61,
 			Self::FeeShares => 62,
@@ -353,6 +356,7 @@ impl AccountCode {
 			31 => Self::ScopeAccount,
 			40 => Self::RetiredFeeClaim,
 			50 => Self::WithdrawalClearing,
+			51 => Self::HoldClearing,
 			60 => Self::UserShares,
 			61 => Self::SharesOutstanding,
 			62 => Self::FeeShares,
@@ -441,6 +445,10 @@ pub enum TransferCode {
 	/// Money between two scope accounts — a client's automatic transfer into its scope's
 	/// `fee` collector (`scope.v1.ScopeLedgerService.Transfer`).
 	ScopeTransfer,
+	/// A hold on a user's compartment (`ScopeLedgerService.Reserve`): its pending
+	/// reservation, the void that releases it, and a capture's posted leg out of the
+	/// compartment. One code for all three: the flags and the account pair say which.
+	ScopeHold,
 }
 
 impl TransferCode {
@@ -477,6 +485,7 @@ impl TransferCode {
 			Self::UnitRetire => 53,
 			Self::CompartmentMove => 55,
 			Self::ScopeTransfer => 56,
+			Self::ScopeHold => 57,
 		}
 	}
 }
@@ -550,6 +559,11 @@ pub enum LedgerAccountKey {
 	/// A scope's own money under a label its owner chose (credit-normal, USDT ledger):
 	/// `(main, treasury)` holds the fees banking charges for its own service (D17).
 	ScopeAccount(ScopeId, ScopeAccountLabel),
+	/// The credit side of the pending reservations that hold users' compartments
+	/// (credit-normal, USDT ledger, one for every hold). Pending only: a capture voids the
+	/// reservation and posts out of the compartment directly, so nothing is ever posted
+	/// here and the cash invariant never sees it.
+	HoldClearing,
 }
 
 impl LedgerAccountKey {
@@ -568,6 +582,7 @@ impl LedgerAccountKey {
 			Self::BookCash(user) => format!("book_cash:{user}"),
 			Self::ScopeClaim(user, scope) => format!("scope_claim:{scope}:{user}"),
 			Self::ScopeAccount(scope, label) => format!("scope_account:{scope}:{label}"),
+			Self::HoldClearing => "hold_clearing".to_owned(),
 		}
 	}
 
@@ -593,6 +608,7 @@ impl LedgerAccountKey {
 			Self::BookCash(_) => AccountCode::BookCash,
 			Self::ScopeClaim(..) => AccountCode::ScopeClaim,
 			Self::ScopeAccount(..) => AccountCode::ScopeAccount,
+			Self::HoldClearing => AccountCode::HoldClearing,
 		}
 	}
 
@@ -602,8 +618,14 @@ impl LedgerAccountKey {
 	pub fn normal(&self) -> Normal {
 		match self {
 			Self::CryptoWallet(_) | Self::BankCustody | Self::UserShares(..) | Self::FeeShares(_) | Self::BookShares(..) => Normal::Debit,
-			Self::UserClaim(_) | Self::ServiceClaim(_) | Self::WithdrawalClearing | Self::SharesOutstanding(_) | Self::BookCash(_) | Self::ScopeClaim(..) | Self::ScopeAccount(..) =>
-				Normal::Credit,
+			Self::UserClaim(_)
+			| Self::ServiceClaim(_)
+			| Self::WithdrawalClearing
+			| Self::SharesOutstanding(_)
+			| Self::BookCash(_)
+			| Self::ScopeClaim(..)
+			| Self::ScopeAccount(..)
+			| Self::HoldClearing => Normal::Credit,
 		}
 	}
 
@@ -632,6 +654,7 @@ impl LedgerAccountKey {
 		}
 		match raw {
 			"clearing" => Ok(Self::WithdrawalClearing),
+			"hold_clearing" => Ok(Self::HoldClearing),
 			"bank" => Ok(Self::BankCustody),
 			_ => {
 				let (prefix, rest) = raw.split_once(':').ok_or_else(|| DomainError::Validation(format!("unknown logical key: {raw}")))?;
@@ -888,6 +911,7 @@ mod tests {
 			LedgerAccountKey::ScopeClaim(uid, ScopeId::parse("invest").unwrap()),
 			LedgerAccountKey::ScopeAccount(ScopeId::main(), ScopeAccountLabel::treasury()),
 			LedgerAccountKey::ScopeAccount(ScopeId::parse("sa").unwrap(), ScopeAccountLabel::parse("alloc:service_arb").unwrap()),
+			LedgerAccountKey::HoldClearing,
 		];
 		for key in keys {
 			let raw = key.logical_key();
@@ -965,6 +989,7 @@ mod tests {
 			AccountCode::BookCash,
 			AccountCode::ScopeClaim,
 			AccountCode::ScopeAccount,
+			AccountCode::HoldClearing,
 		]
 		.map(AccountCode::code);
 		let mut sorted = account_codes;
@@ -1003,6 +1028,7 @@ mod tests {
 			TransferCode::UnitRetire,
 			TransferCode::CompartmentMove,
 			TransferCode::ScopeTransfer,
+			TransferCode::ScopeHold,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

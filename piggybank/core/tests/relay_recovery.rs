@@ -40,7 +40,7 @@ use piggybank_core::{
 	},
 	ports::{
 		BroadcastRequest, Custody, CustodyError, RedemptionRepository, UserRepository, WithdrawalRepository,
-		ledger::{CashInvariant, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LockedReads, PendingCompletion},
+		ledger::{CashInvariant, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
 	},
 };
 use sqlx::PgPool;
@@ -651,6 +651,10 @@ impl Ledger for FailFeeLegOnce {
 
 	async fn complete(&self, completion: &PendingCompletion) -> Result<(), LedgerError> {
 		self.inner.complete(completion).await
+	}
+
+	async fn apply_linked(&self, legs: &[LinkedLeg]) -> Result<(), LedgerError> {
+		self.inner.apply_linked(legs).await
 	}
 
 	async fn cash_invariant(&self) -> Result<CashInvariant, LedgerError> {

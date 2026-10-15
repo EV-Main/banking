@@ -20,7 +20,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{claims::TxReads, compartments, outbox},
+	infrastructure::{claims::TxReads, compartments, money_events, outbox},
 	ports::scope_ledger::{OwnedAccount, Recorded, RecordedTransfer, RequestKey, ScopeLedgerStore, StoredRequest, TransferAdmission, TransferError, TransferFacts},
 };
 
@@ -31,6 +31,10 @@ pub struct PgScopeLedger {
 impl PgScopeLedger {
 	pub fn new(pool: PgPool) -> Self {
 		Self { pool }
+	}
+
+	pub(crate) fn pool(&self) -> &PgPool {
+		&self.pool
 	}
 }
 
@@ -61,11 +65,11 @@ const SELECT_ACCOUNT: &str = "SELECT scope, label, owner_client, EXTRACT(EPOCH F
 
 /// The advisory-lock name of one idempotency key. The RPC is part of it: keys are unique per
 /// (client, scope, RPC), so the same key under two RPCs is two keys.
-fn key_lock(key: &RequestKey<'_>) -> String {
+pub(crate) fn key_lock(key: &RequestKey<'_>) -> String {
 	format!("scope_ledger_key:{}:{}:{}:{}", key.client, key.scope, key.rpc, key.key)
 }
 
-async fn find_request(conn: &mut PgConnection, key: &RequestKey<'_>) -> Result<Option<StoredRequest>, DomainError> {
+pub(crate) async fn find_request(conn: &mut PgConnection, key: &RequestKey<'_>) -> Result<Option<StoredRequest>, DomainError> {
 	sqlx::query_as::<_, (String, String)>("SELECT terms, result_id FROM scope_ledger_requests WHERE client_id = $1 AND scope = $2 AND rpc = $3 AND idempotency_key = $4")
 		.bind(key.client.as_str())
 		.bind(key.scope.as_str())
@@ -81,7 +85,7 @@ async fn find_request(conn: &mut PgConnection, key: &RequestKey<'_>) -> Result<O
 /// violation (23505): another call recorded the key first. The key lock makes that
 /// unreachable while every writer takes it; should one ever not, the caller rolls back and
 /// answers with what the other call recorded instead of an internal error.
-async fn insert_request(conn: &mut PgConnection, key: &RequestKey<'_>, terms: &str, result_id: &str) -> Result<bool, DomainError> {
+pub(crate) async fn insert_request(conn: &mut PgConnection, key: &RequestKey<'_>, terms: &str, result_id: &str) -> Result<bool, DomainError> {
 	let inserted = sqlx::query("INSERT INTO scope_ledger_requests (client_id, scope, rpc, idempotency_key, terms, result_id) VALUES ($1, $2, $3, $4, $5, $6)")
 		.bind(key.client.as_str())
 		.bind(key.scope.as_str())
@@ -99,7 +103,7 @@ async fn insert_request(conn: &mut PgConnection, key: &RequestKey<'_>, terms: &s
 }
 
 /// What the call that won the key recorded, read after this one rolled back.
-async fn raced_request(pool: &PgPool, key: &RequestKey<'_>) -> Result<StoredRequest, DomainError> {
+pub(crate) async fn raced_request(pool: &PgPool, key: &RequestKey<'_>) -> Result<StoredRequest, DomainError> {
 	let mut conn = pool.acquire().await.map_err(repo_err)?;
 	find_request(&mut conn, key)
 		.await?
@@ -151,7 +155,7 @@ async fn transfer_on(conn: &mut PgConnection, id: Uuid) -> Result<Option<Recorde
 		.transpose()
 }
 
-async fn owner_on(conn: &mut PgConnection, scope: &ScopeId, label: &ScopeAccountLabel) -> Result<Option<ClientId>, DomainError> {
+pub(crate) async fn owner_on(conn: &mut PgConnection, scope: &ScopeId, label: &ScopeAccountLabel) -> Result<Option<ClientId>, DomainError> {
 	sqlx::query_as::<_, AccountRow>(SELECT_ACCOUNT)
 		.bind(scope.as_str())
 		.bind(label.as_str())
@@ -192,13 +196,15 @@ impl ScopeLedgerStore for PgScopeLedger {
 		// Two first opens of one label by two clients race on the primary key, never on a
 		// lock either of them holds: `ON CONFLICT DO NOTHING` lets exactly one insert, and the
 		// other reads the winner's row.
-		sqlx::query("INSERT INTO scope_accounts (scope, label, owner_client) VALUES ($1, $2, $3) ON CONFLICT (scope, label) DO NOTHING")
+		let opened = sqlx::query("INSERT INTO scope_accounts (scope, label, owner_client) VALUES ($1, $2, $3) ON CONFLICT (scope, label) DO NOTHING")
 			.bind(key.scope.as_str())
 			.bind(label.as_str())
 			.bind(key.client.as_str())
 			.execute(&mut *tx)
 			.await
-			.map_err(repo_err)?;
+			.map_err(repo_err)?
+			.rows_affected()
+			== 1;
 		let account = sqlx::query_as::<_, AccountRow>(SELECT_ACCOUNT)
 			.bind(key.scope.as_str())
 			.bind(label.as_str())
@@ -212,6 +218,11 @@ impl ScopeLedgerStore for PgScopeLedger {
 		if !insert_request(&mut tx, &key, terms, label.as_str()).await? {
 			drop(tx);
 			return Ok(Recorded::Existing(raced_request(&self.pool, &key).await?));
+		}
+		// Only the call that created the row announces it: a second key naming an account the
+		// client already owns opened nothing.
+		if opened {
+			money_events::append(&mut tx, &money_events::account_opened(&account)).await?;
 		}
 		tx.commit().await.map_err(repo_err)?;
 		Ok(Recorded::New(account))

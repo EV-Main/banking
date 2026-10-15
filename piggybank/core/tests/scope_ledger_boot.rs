@@ -15,6 +15,7 @@ use domain::scopes::ScopeId;
 use evbanking_auth::{AuthConfig, AuthService, provisioner_channel};
 use evbanking_contracts::scope::v1::{GetBalancesRequest, scope_ledger_service_client::ScopeLedgerServiceClient};
 use piggybank_core::{
+	application::scope_ledger::NoMandates,
 	config::ScopeLedgerSettings,
 	infrastructure::{compartments::PgCompartments, scope_ledger::PgScopeLedger},
 	services::scope_ledger::{self, ScopeLedgerDeps, ScopeLedgerListener},
@@ -67,6 +68,9 @@ async fn the_listener_handshakes_with_the_provider_main_installs() {
 		},
 		ScopeLedgerDeps {
 			store: Arc::new(PgScopeLedger::new(pool.clone())),
+			holds: Arc::new(PgScopeLedger::new(pool.clone())),
+			mandates: Arc::new(NoMandates),
+			events: Arc::new(PgScopeLedger::new(pool.clone())),
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),

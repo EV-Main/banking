@@ -1071,6 +1071,42 @@ rolls back and answers with what the winner recorded.
 since part 1, alerts on value on a scope account no `scope_accounts` row owns
 (`unowned_scope_accounts`, part of `clean()`).
 
+**Holds** (`Reserve` / `Capture` / `Void` / `GetHold`, `scope_holds`, part 2a). A hold is
+ONE pending TigerBeetle transfer at a time, `Dr scope_claim:<s>:<user> / Cr hold_clearing`
+(`AccountCode::HoldClearing` = 51, `TransferCode::ScopeHold` = 57), for exactly what is
+left. A capture is a linked chain (`Ledger::apply_linked`): void the standing reservation,
+post the captured amount out of the compartment to its destination, reserve the rest anew —
+TigerBeetle posts a pending only once, so a partial capture cannot be a partial post, and
+the chain keeps the user's money from being free in between. A release is the void alone.
+Ids derive from the hold id and the version of the event (`scope:hold:{pending,void,capture}:<v>`,
+FROZEN); the row's `pending_version` names the reservation standing now. Nothing is ever
+posted to `hold_clearing`. `Reserve` takes the key lock and the compartment's claim lock
+and checks, in order: the `compartments` grant flag, `scope_frozen`, the user (unknown →
+`mandate_required`, indistinguishable from no consent), the mandate, `user_frozen`, and
+`spendable_locked` of the compartment (an undispatched hold counts through the outbox scan;
+a capture's chain counts net of the void it carries, `relay::chain_debit`). `Capture` /
+`Void` lock the hold's row (another client's hold is NOT_FOUND). Into an account: only the
+caller's own, never banking's. Into another user: the `compartments` flag, `scope_frozen`,
+BOOK_FILL on the hold's own mandate, and the holder not frozen. A due hold is not capturable;
+voiding it expires it; the reaper releases due holds (`scope_holds::expire_due_holds`).
+**No user can grant a mandate yet**: production wires `NoMandates`, so every `Reserve` is
+`mandate_required` until `GrantMandate` lands — the caps (`cap_per_op`, `cap_24h`,
+`cap_outstanding`) are that part's, under the mandate row's lock. A reservation the ledger
+refused parks like any refused reserve; the relay parks a later capture or release of that
+hold at once rather than retrying a void of nothing.
+
+**Money events** (`MoneyEvents.Pull`, `money_events` + `money_event_deliveries`). Written
+once: an account's opening in its own transaction, a movement by the relay right after the
+ledger took it (single writer, so the balances read then are the balances right after the
+event), with an id derived from what it is about so a redelivered row records nothing new.
+Who receives an event is decided at write time — the initiating client and the owners of
+the scope accounts it touched, never banking — and `balances` carries each account with its
+owner; `Pull` returns only the receiving client's own. Appends serialize on one advisory
+lock held to commit, so a cursor never passes a position that commits later. `Pull` with a
+scope outside the caller's grants (`main` included) is `not_granted`; an empty scope means
+every scope it is granted in now. Kinds so far: ACCOUNT_OPENED, HOLD_PLACED / CAPTURED /
+VOIDED / EXPIRED, TRANSFERRED.
+
 **`ServiceClaim(svc)` is not migrated here.** The allocation claims stay on
 `service:<slug>` until the units migration window (§6.5 of the org plan): each one becomes
 `ScopeAccount(<scope of the allocation>, alloc:<slug>)` owned by the invest client, moved by
