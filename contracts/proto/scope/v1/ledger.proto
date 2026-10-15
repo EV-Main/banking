@@ -68,9 +68,11 @@ syntax = "proto3";
 //     is a `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,
 //     Transfer, Request*): FAILED_PRECONDITION `scope_frozen`; credits and reads go on.
-//   - A frozen user takes no new debit of their compartment (Reserve, Charge):
-//     FAILED_PRECONDITION `user_frozen`. Capturing a hold already standing and crediting
-//     them (Payout, Capture into them) are allowed.
+//   - A frozen user takes no new debit of their compartment (Reserve, Charge), and a
+//     hold already standing on it is not captured into ANOTHER user's compartment:
+//     FAILED_PRECONDITION `user_frozen`. Capturing such a hold into the caller's own
+//     account (the purchase the user consented to), voiding it, and crediting them
+//     (Payout, Capture into them) are allowed.
 //
 // USER CONSENT. A service never debits a user on its own word. Reserve and Charge draw
 // on the user's MANDATE for the calling client in the scope — granted by the user on
@@ -126,7 +128,9 @@ service ScopeLedgerService {
   // Place a hold on a user's compartment in the scope, under the user's mandate for
   // the caller (operation RESERVE, counted against its caps): the amount stops being
   // available to the user but stays theirs until captured. FAILED_PRECONDITION
-  // `insufficient_funds` when the compartment cannot cover it right now.
+  // `insufficient_funds` when the compartment cannot cover it right now. An
+  // `auth_subject` banking has no wallet for is `mandate_required`, like a user who never
+  // granted one, so a client cannot probe which subjects exist.
   rpc Reserve(ReserveRequest) returns (Hold);
 
   // Move (part of) a held amount to a scope account the caller owns (a subscription's
