@@ -1109,7 +1109,7 @@ VOIDED / EXPIRED, TRANSFERRED, PAID_OUT, OPERATION_REQUESTED / REJECTED / FAILED
 
 **Payouts** (`Payout`, `scope_payouts` + `scope_payout_lines`, part 2b). A payout is ONE
 linked TigerBeetle chain, one posted leg per line, `Dr scope_account:<s>:<from> / Cr
-scope_claim:<s>:<user>` (`TransferCode::ScopePayout` = 58, ids `uuid_v5(payout_id,
+scope_claim:<s>:<user>` (`TransferCode::ScopePayout` = 59, ids `uuid_v5(payout_id,
 "scope:payout:<line_no>")`, FROZEN): every line lands or none does, and a source that cannot
 cover it after all fails the whole payout (`relay::Posting::ScopePayout`, the same single
 posting discipline and reaper replay as a transfer). One transaction takes the key lock, the
@@ -1128,7 +1128,10 @@ its source owned by the caller (a label grant is not needed — the approvers de
 transfer's destination the caller's own too. A requested payout carries `over_scope_budget`,
 decided under the budget lock. Nothing is opened on the request path: the **approval
 executor** (`application::scope_operations::ApprovalExecutor`, every 30 s and on a nudge, only
-when the listener is on) proposes over the bridge (`infrastructure::approvals`, the bridge
+when the listener is on) first publishes banking's `bank:*` catalog
+(`scope_operations::BANK_CATALOG`, versioned by `BANK_CATALOG_VERSION` — bump it with every
+change; the same version again is a no-op in concierge, a transient failure is retried with
+backoff and holds proposals back), then proposes over the bridge (`infrastructure::approvals`, the bridge
 token = namespace `bank`, `dedupe_key = subject_ref = pending_operation:<id>`), pulls passed
 decisions, RE-READS each by id right before moving money, checks kind, scope, subject_ref,
 `lines_digest` and `payload_hash` against the stored row, and executes in one transaction under

@@ -7,7 +7,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_ledger::{ClientId, ScopeTransfer},
-	scope_operations::{ApprovalField, PendingOperation, ScopePayout},
+	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
 };
 use uuid::Uuid;
@@ -312,4 +312,8 @@ pub trait Approvals: Send + Sync {
 	async fn pull_approved(&self, limit: u32) -> Result<Vec<ApprovalView>, ApprovalsError>;
 
 	async fn report(&self, approval_id: &str, outcome: ApprovalOutcome, detail: &str) -> Result<(), ApprovalsError>;
+
+	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole:
+	/// the same version with the same kinds is a no-op on concierge's side.
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError>;
 }

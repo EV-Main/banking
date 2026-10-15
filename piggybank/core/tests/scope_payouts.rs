@@ -19,14 +19,14 @@ use domain::{
 	error::DomainError,
 	money::{Network, Usdt},
 	scope_ledger::{ClientId, Grant, Grants, LedgerRefusal, MoneyEventKind, SubjectRef},
-	scope_operations::{ApprovalValue, OperationKind, OperationState, PayoutReason, RequestedLine},
+	scope_operations::{ApprovalValue, BANK_CATALOG, BANK_CATALOG_VERSION, KindSpec, OperationKind, OperationState, PayoutReason, RequestedLine},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId, ScopeState},
 	users::UserId,
 };
 use piggybank_core::{
 	application::{
 		scope_ledger::{self as ledger_app, NoMandates, ScopeLedgerPorts, TransferError},
-		scope_operations::{self as ops, ExecutorPorts, ExecutorRound, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
+		scope_operations::{self as ops, CatalogGate, ExecutorPorts, ExecutorRound, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
 	infrastructure::{compartments::PgCompartments, relay::Relay, scope_ledger::PgScopeLedger, scope_payouts, telemetry},
 	ports::{
@@ -67,6 +67,15 @@ struct FakeState {
 	/// Serve passed decisions on every pull, reported or not.
 	serve_reported: bool,
 	reports: Vec<(String, ApprovalOutcome, String)>,
+	/// The catalog stored for `bank`: its version and its kinds by name; `None` before the
+	/// first publication.
+	catalog: Option<(u64, Vec<String>)>,
+	/// Every publication that changed the stored catalog.
+	published_versions: Vec<u64>,
+	/// Publications refused as unavailable before one goes through.
+	publish_outages: u32,
+	/// Calls in order: `publish` and `propose`.
+	calls: Vec<&'static str>,
 }
 
 /// concierge's `ApprovalExecutionService` as banking sees it. The payload hash is computed
@@ -140,7 +149,10 @@ impl Approvals for FakeConcierge {
 			if s.down {
 				return Err(ApprovalsError::Unavailable("down".into()));
 			}
-			if s.refuse_propose {
+			s.calls.push("propose");
+			// concierge refuses a kind its namespace's catalog does not hold.
+			let known = s.catalog.as_ref().is_some_and(|(_, kinds)| kinds.contains(&proposal.kind));
+			if s.refuse_propose || !known {
 				return Err(ApprovalsError::Refused("unknown kind".into()));
 			}
 			if let Some(id) = s.by_dedupe.get(&proposal.dedupe_key) {
@@ -207,6 +219,28 @@ impl Approvals for FakeConcierge {
 		})
 	}
 
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError> {
+		self.with(|s| {
+			s.calls.push("publish");
+			if s.down || s.publish_outages > 0 {
+				s.publish_outages = s.publish_outages.saturating_sub(1);
+				return Err(ApprovalsError::Unavailable("down".into()));
+			}
+			let names: Vec<String> = kinds.iter().map(|spec| spec.kind.as_str().to_owned()).collect();
+			match &s.catalog {
+				// concierge's rule: the same version with the same content is a no-op, with
+				// other content or older is refused.
+				Some((stored, kinds)) if *stored == version && *kinds == names => Ok(()),
+				Some((stored, _)) if *stored >= version => Err(ApprovalsError::Refused(format!("version {version} does not supersede the stored {stored}"))),
+				_ => {
+					s.catalog = Some((version, names));
+					s.published_versions.push(version);
+					Ok(())
+				}
+			}
+		})
+	}
+
 	async fn report(&self, approval_id: &str, outcome: ApprovalOutcome, detail: &str) -> Result<(), ApprovalsError> {
 		self.with(|s| {
 			if s.down {
@@ -236,6 +270,7 @@ struct Harness {
 	notify: Arc<Notify>,
 	executor: Notify,
 	concierge: FakeConcierge,
+	catalog: CatalogGate,
 	_serial: tokio::sync::MutexGuard<'static, ()>,
 }
 
@@ -253,6 +288,7 @@ async fn harness() -> Option<Harness> {
 		notify,
 		executor: Notify::new(),
 		concierge: FakeConcierge::default(),
+		catalog: CatalogGate::new(),
 		_serial: serial,
 	})
 }
@@ -283,6 +319,7 @@ fn executor(h: &Harness) -> ExecutorPorts<'_> {
 	ExecutorPorts {
 		operations: &h.store,
 		approvals: &h.concierge,
+		catalog: &h.catalog,
 		ledger: h.ledger.as_ref(),
 		relay: &h.notify,
 	}
@@ -1032,4 +1069,56 @@ async fn reconciliation_counts_scope_money_stuck_in_flight() {
 	assert_eq!(telemetry::stale_scope_postings(), u64::try_from(before + 1).unwrap());
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(scope_payouts::stale_postings(&h.pool, std::time::Duration::ZERO).await.unwrap(), before);
+}
+
+#[tokio::test]
+async fn the_catalog_is_published_before_the_first_proposal_and_once_per_version() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "1000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "3000").await;
+	let (_, alice) = user(&h).await;
+	let b = base(&h, &grants);
+	let p = ops_ports(&h, &b);
+	let asked = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1500")], &key()))
+		.await
+		.unwrap();
+
+	// concierge away at start: nothing is proposed, nothing is lost, the service runs on.
+	h.concierge.with(|s| s.publish_outages = 1);
+	round(&h).await;
+	assert_eq!(h.concierge.with(|s| s.calls.clone()), vec!["publish"], "no proposal before the catalog");
+	assert_eq!(reload(&h, &asked).await.operation.state(), OperationState::AwaitingApproval);
+
+	// The next try waits out its backoff; once it publishes, the proposal follows.
+	let quick = CatalogGate::new();
+	let ports = ExecutorPorts { catalog: &quick, ..executor(&h) };
+	ops::executor_round(&ports).await.unwrap();
+	let calls = h.concierge.with(|s| s.calls.clone());
+	assert_eq!(&calls[1..3], ["publish", "propose"], "{calls:?}");
+	assert!(reload(&h, &asked).await.operation.progress().approval_id.is_some());
+	let stored = h.concierge.with(|s| s.catalog.clone()).unwrap();
+	assert_eq!(stored.0, BANK_CATALOG_VERSION);
+	assert_eq!(stored.1, BANK_CATALOG.iter().map(|spec| spec.kind.as_str().to_owned()).collect::<Vec<_>>());
+
+	// A restart publishes again, and concierge keeps the one version.
+	let restarted = CatalogGate::new();
+	ops::executor_round(&ExecutorPorts {
+		catalog: &restarted,
+		..executor(&h)
+	})
+	.await
+	.unwrap();
+	ops::executor_round(&ExecutorPorts {
+		catalog: &restarted,
+		..executor(&h)
+	})
+	.await
+	.unwrap();
+	assert_eq!(h.concierge.with(|s| s.published_versions.clone()), vec![BANK_CATALOG_VERSION]);
+	assert_eq!(
+		h.concierge.with(|s| s.calls.iter().filter(|call| **call == "publish").count()),
+		3,
+		"once per start, not per round"
+	);
 }

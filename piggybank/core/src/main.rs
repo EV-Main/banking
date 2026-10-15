@@ -17,7 +17,12 @@ use evbanking_auth::{AuthConfig, AuthService, ServiceTokenSource, provisioner_ch
 use evbanking_contracts::signer::v1::signer_service_client::SignerServiceClient;
 use piggybank_core::{
 	AppState,
-	application::{auth_sync, book::BookFeed, scope_ledger::NoMandates, scope_operations::ApprovalExecutor},
+	application::{
+		auth_sync,
+		book::BookFeed,
+		scope_ledger::NoMandates,
+		scope_operations::{ApprovalExecutor, CatalogGate},
+	},
 	config::{self, Rails},
 	infrastructure::{
 		allocations::PgAllocations,
@@ -574,6 +579,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 				ledger: state.ledger.clone(),
 				relay: state.relay_notify.clone(),
 				wake: executor_wake.clone(),
+				catalog: CatalogGate::new(),
 			};
 			let listener = ScopeLedgerListener::new(
 				settings,

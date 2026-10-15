@@ -3,15 +3,16 @@
 //! `BRIDGE_SERVICE_TOKEN` as the lifecycle consumer and the governance mail, which concierge
 //! maps to namespace `bank` (its `docs/SCOPES-AND-APPROVALS.md`, "Service callers"). One trust
 //! relationship between the planes, as before — and so a leaked bridge token now also opens
-//! and reports banking's approvals.
+//! and reports banking's approvals, and publishes the `bank:*` catalog.
 
 use std::time::Duration;
 
 use async_trait::async_trait;
-use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue};
+use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, EscalationTest, FieldType, KindLevel, KindSpec};
 use evconcierge_contracts::concierge::v1::{
-	Approval, ApprovalAmount, ApprovalFieldValue, ApprovalLevel as WireLevel, ApprovalOutcome as WireOutcome, ApprovalState as WireState, GetProposalRequest, ProposeRequest,
-	PullApprovedRequest, ReportOutcomeRequest, approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value,
+	Approval, ApprovalAmount, ApprovalEscalation, ApprovalFieldSpec, ApprovalFieldType, ApprovalFieldValue, ApprovalKindSpec, ApprovalLevel as WireLevel, ApprovalOutcome as WireOutcome,
+	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
+	approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value, scope_catalog_service_client::ScopeCatalogServiceClient,
 };
 use tonic::{Code, Request, Status, metadata::MetadataValue, transport::Channel};
 
@@ -82,6 +83,51 @@ fn field(field: &ApprovalField) -> ApprovalFieldValue {
 	ApprovalFieldValue {
 		key: field.key.to_owned(),
 		value: Some(value),
+	}
+}
+
+fn kind_spec(spec: &KindSpec) -> ApprovalKindSpec {
+	ApprovalKindSpec {
+		name: spec.kind.as_str().to_owned(),
+		label: spec.label.to_owned(),
+		description: spec.description.to_owned(),
+		level: match spec.level {
+			KindLevel::Platform => WireLevel::Platform,
+			KindLevel::Scope => WireLevel::Scope,
+		} as i32,
+		fields: spec
+			.fields
+			.iter()
+			.map(|field| ApprovalFieldSpec {
+				key: field.key.to_owned(),
+				label: field.label.to_owned(),
+				r#type: match field.field_type {
+					FieldType::Text => ApprovalFieldType::Text,
+					FieldType::Amount => ApprovalFieldType::Amount,
+					FieldType::Flag => ApprovalFieldType::Flag,
+					FieldType::User => ApprovalFieldType::User,
+					FieldType::Count => ApprovalFieldType::Count,
+				} as i32,
+				required: field.required,
+			})
+			.collect(),
+		escalations: spec
+			.escalations
+			.iter()
+			.map(|escalation| ApprovalEscalation {
+				parameter: escalation.parameter.to_owned(),
+				field_key: escalation.field_key.to_owned(),
+				test: match escalation.test {
+					EscalationTest::AmountAbove => WireTest::AmountAbove,
+					EscalationTest::Rolling24hAmountAbove => WireTest::Rolling24hAmountAbove,
+					EscalationTest::FlagSet => WireTest::FlagSet,
+				} as i32,
+				default_threshold: escalation.default_threshold.to_owned(),
+				currency: escalation.currency.to_owned(),
+			})
+			.collect(),
+		// Filled by concierge on read; ignored on publish.
+		proposer: String::new(),
 	}
 }
 
@@ -162,6 +208,20 @@ impl Approvals for ConciergeApprovals {
 			detail: detail.to_owned(),
 		})?;
 		self.client().report_outcome(request).await.map_err(|status| classify("ReportOutcome", status))?;
+		Ok(())
+	}
+
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError> {
+		let request = self.request(PublishScopeCatalogRequest {
+			version,
+			approval_kinds: kinds.iter().map(kind_spec).collect(),
+			// banking publishes no notification topics; its mails go through the relay.
+			notification_topics: Vec::new(),
+		})?;
+		ScopeCatalogServiceClient::new(self.channel.clone())
+			.publish_scope_catalog(request)
+			.await
+			.map_err(|status| classify("PublishScopeCatalog", status))?;
 		Ok(())
 	}
 }

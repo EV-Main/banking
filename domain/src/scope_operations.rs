@@ -481,6 +481,177 @@ impl ApprovalValue {
 	}
 }
 
+/// The type of an approval field (`ApprovalFieldType`), as the catalog declares it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FieldType {
+	Text,
+	Amount,
+	Flag,
+	User,
+	Count,
+}
+
+impl ApprovalValue {
+	pub const fn field_type(&self) -> FieldType {
+		match self {
+			Self::Text(_) => FieldType::Text,
+			Self::Amount(_) => FieldType::Amount,
+			Self::Flag(_) => FieldType::Flag,
+			Self::User(_) => FieldType::User,
+			Self::Count(_) => FieldType::Count,
+		}
+	}
+}
+
+/// Who decides a kind before escalation (`ApprovalLevel`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KindLevel {
+	Platform,
+	Scope,
+}
+
+/// How a field escalates a scope-level kind to the owners (`EscalationTest`) — the tests
+/// banking's kinds use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EscalationTest {
+	AmountAbove,
+	Rolling24hAmountAbove,
+	FlagSet,
+}
+
+/// One field of a kind (`ApprovalFieldSpec`).
+#[derive(Clone, Copy, Debug)]
+pub struct FieldSpec {
+	pub key: &'static str,
+	pub label: &'static str,
+	pub field_type: FieldType,
+	pub required: bool,
+}
+
+/// One escalation of a kind (`ApprovalEscalation`). Concierge's floor adds its own beside
+/// these and caps them, so these may only be as strict or stricter.
+#[derive(Clone, Copy, Debug)]
+pub struct EscalationSpec {
+	pub parameter: &'static str,
+	pub field_key: &'static str,
+	pub test: EscalationTest,
+	/// A canonical USDT amount; empty for FLAG_SET.
+	pub default_threshold: &'static str,
+	/// `USDT` for the amount tests; empty for FLAG_SET.
+	pub currency: &'static str,
+}
+
+/// One `bank:*` kind as banking publishes it (`ApprovalKindSpec`).
+#[derive(Clone, Copy, Debug)]
+pub struct KindSpec {
+	pub kind: OperationKind,
+	pub label: &'static str,
+	pub description: &'static str,
+	pub level: KindLevel,
+	pub fields: &'static [FieldSpec],
+	pub escalations: &'static [EscalationSpec],
+}
+
+/// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
+/// every change to the catalog — concierge refuses a catalog of the version it stores with
+/// other content, and one more than a day ahead of its clock.
+pub const BANK_CATALOG_VERSION: u64 = 1_792_022_400;
+
+const fn field(key: &'static str, label: &'static str, field_type: FieldType, required: bool) -> FieldSpec {
+	FieldSpec { key, label, field_type, required }
+}
+
+const TRANSFER_FIELDS: &[FieldSpec] = &[
+	field("from_account", "From account", FieldType::Text, true),
+	field("to_account", "To account", FieldType::Text, true),
+	field("amount", "Amount", FieldType::Amount, true),
+];
+
+/// The kinds banking proposes today — what [`PendingOperation::approval_fields`] sends,
+/// field for field. `bank:payment`, `bank:seed_capital`, `bank:treasury_surplus` and
+/// `bank:compartment_policy` join it when banking opens them over this seam; a catalog is
+/// published whole, so a kind left out here is one concierge stops accepting.
+pub const BANK_CATALOG: &[KindSpec] = &[
+	KindSpec {
+		kind: OperationKind::ScopePayout,
+		label: "Payout from a scope account",
+		description: "A payout from a scope account to users' compartments in the scope, requested by the scope's service.",
+		level: KindLevel::Scope,
+		fields: &[
+			field("from_account", "From account", FieldType::Text, true),
+			field("total", "Total", FieldType::Amount, true),
+			field("recipients", "Recipients", FieldType::Count, true),
+			field("max_line", "Largest line", FieldType::Amount, true),
+			field("recipient", "Recipient", FieldType::User, false),
+			field("lines_digest", "Lines digest", FieldType::Text, true),
+			field("distribution", "Distribution to every holder", FieldType::Flag, true),
+			field("over_scope_budget", "Over the scope's daily budget", FieldType::Flag, true),
+		],
+		escalations: &[
+			EscalationSpec {
+				parameter: "per_operation",
+				field_key: "total",
+				test: EscalationTest::AmountAbove,
+				default_threshold: "1000",
+				currency: APPROVAL_CURRENCY,
+			},
+			EscalationSpec {
+				parameter: "daily",
+				field_key: "total",
+				test: EscalationTest::Rolling24hAmountAbove,
+				default_threshold: "5000",
+				currency: APPROVAL_CURRENCY,
+			},
+			EscalationSpec {
+				parameter: "distribution",
+				field_key: "distribution",
+				test: EscalationTest::FlagSet,
+				default_threshold: "",
+				currency: "",
+			},
+			// D24(4): banking counts the scope's one daily budget itself and sets the flag.
+			EscalationSpec {
+				parameter: "over_scope_budget",
+				field_key: "over_scope_budget",
+				test: EscalationTest::FlagSet,
+				default_threshold: "",
+				currency: "",
+			},
+		],
+	},
+	KindSpec {
+		kind: OperationKind::AccountTransfer,
+		label: "Transfer between accounts of a scope",
+		description: "A transfer between two accounts of one scope, requested by the service that owns both.",
+		level: KindLevel::Scope,
+		fields: TRANSFER_FIELDS,
+		escalations: &[
+			EscalationSpec {
+				parameter: "per_operation",
+				field_key: "amount",
+				test: EscalationTest::AmountAbove,
+				default_threshold: "1000",
+				currency: APPROVAL_CURRENCY,
+			},
+			EscalationSpec {
+				parameter: "daily",
+				field_key: "amount",
+				test: EscalationTest::Rolling24hAmountAbove,
+				default_threshold: "5000",
+				currency: APPROVAL_CURRENCY,
+			},
+		],
+	},
+	KindSpec {
+		kind: OperationKind::ScopeTransfer,
+		label: "Transfer between scopes",
+		description: "A transfer from an account of one scope into an account of another, requested by the service that owns both.",
+		level: KindLevel::Platform,
+		fields: TRANSFER_FIELDS,
+		escalations: &[],
+	},
+];
+
 /// One field of an approval, by its key in the kind's spec.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApprovalField {
@@ -954,6 +1125,39 @@ mod tests {
 		let mut sorted = keys.clone();
 		sorted.sort_unstable();
 		assert_eq!(keys, sorted, "fields are encoded sorted by key");
+	}
+
+	/// Every field an operation's approval carries is declared by its kind with that type, and
+	/// every required field is always carried — else concierge refuses the proposal.
+	#[test]
+	fn the_catalog_declares_exactly_what_the_approvals_carry() {
+		let spec = |kind: OperationKind| BANK_CATALOG.iter().find(|spec| spec.kind == kind).expect("kind published");
+		let ops = [
+			payout_op(vec![paid("a", "1")]),
+			payout_op(vec![paid("a", "1"), paid("b", "2")]),
+			transfer_op("invest", "alloc:y").unwrap(),
+			transfer_op("sa", "alloc:y").unwrap(),
+		];
+		for op in ops {
+			let spec = spec(op.kind());
+			let fields = op.approval_fields(Some("d")).unwrap();
+			for sent in &fields {
+				let declared = spec
+					.fields
+					.iter()
+					.find(|field| field.key == sent.key)
+					.unwrap_or_else(|| panic!("{} undeclared in {:?}", sent.key, spec.kind));
+				assert_eq!(declared.field_type, sent.value.field_type(), "{}", sent.key);
+			}
+			for required in spec.fields.iter().filter(|field| field.required) {
+				assert!(fields.iter().any(|sent| sent.key == required.key), "{} not sent for {:?}", required.key, spec.kind);
+			}
+			for escalation in spec.escalations {
+				let tested = spec.fields.iter().find(|field| field.key == escalation.field_key).unwrap();
+				assert!(tested.required, "an escalation over an optional field can be switched off");
+			}
+		}
+		assert!(BANK_CATALOG.iter().filter(|spec| spec.level == KindLevel::Platform).all(|spec| spec.escalations.is_empty()));
 	}
 
 	#[test]

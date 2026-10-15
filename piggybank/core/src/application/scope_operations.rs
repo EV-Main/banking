@@ -12,7 +12,10 @@
 //! the operation out of `awaiting_approval` once, under its row lock. Nothing a client sends
 //! can stand in for an approval: there is no `approval_ref` on the wire.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+	sync::{Arc, Mutex},
+	time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use domain::{
@@ -21,8 +24,8 @@ use domain::{
 	money::Usdt,
 	scope_ledger::{ClientId, LedgerRefusal, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, canonical},
 	scope_operations::{
-		AutoPayoutFacts, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms, PendingOperation, RequestedLine, ScopePayout,
-		ScopePayoutId, canonical_lines, check_lines,
+		AutoPayoutFacts, BANK_CATALOG, BANK_CATALOG_VERSION, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms,
+		PendingOperation, RequestedLine, ScopePayout, ScopePayoutId, canonical_lines, check_lines,
 	},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
 };
@@ -445,10 +448,72 @@ fn backoff(attempts: u32) -> u32 {
 	30u32.saturating_mul(1u32 << attempts.min(5)).min(900)
 }
 
+/// Whether banking's `bank:*` catalog stands published in concierge for this process. A
+/// proposal of a kind concierge does not know is refused for good, so nothing is proposed
+/// until the catalog went through; publishing again on every start is free — the same
+/// version with the same kinds is a no-op there.
+#[derive(Default)]
+pub struct CatalogGate {
+	state: Mutex<GateState>,
+}
+
+#[derive(Default)]
+struct GateState {
+	settled: bool,
+	failures: u32,
+	retry_at: Option<Instant>,
+}
+
+impl CatalogGate {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	/// Publish the catalog unless this process already did; `true` once proposing may go on.
+	/// A transient failure is retried with a doubling backoff and keeps proposals waiting;
+	/// a refusal (an older version than concierge stores — a newer banking published — or a
+	/// catalog concierge's floor rejects) is logged and settles the gate: proposals then meet
+	/// whatever catalog concierge holds.
+	async fn ensure(&self, approvals: &dyn Approvals) -> bool {
+		{
+			let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+			if state.settled {
+				return true;
+			}
+			if state.retry_at.is_some_and(|at| Instant::now() < at) {
+				return false;
+			}
+		}
+		let outcome = approvals.publish_catalog(BANK_CATALOG_VERSION, BANK_CATALOG).await;
+		let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+		match outcome {
+			Ok(()) => {
+				info!(version = BANK_CATALOG_VERSION, "scope operations: bank:* approval catalog published");
+				state.settled = true;
+			}
+			Err(ApprovalsError::Refused(why)) => {
+				error!(
+					version = BANK_CATALOG_VERSION,
+					"scope operations: concierge refused the bank:* approval catalog; proposals meet the catalog it holds: {why}"
+				);
+				state.settled = true;
+			}
+			Err(ApprovalsError::Unavailable(why)) => {
+				let wait = backoff(state.failures);
+				state.failures = state.failures.saturating_add(1);
+				state.retry_at = Some(Instant::now() + Duration::from_secs(u64::from(wait)));
+				warn!(retry_in_secs = wait, "scope operations: could not publish the bank:* approval catalog, proposals wait: {why}");
+			}
+		}
+		state.settled
+	}
+}
+
 /// The driven ports the executor runs on.
 pub struct ExecutorPorts<'a> {
 	pub operations: &'a dyn OperationStore,
 	pub approvals: &'a dyn Approvals,
+	pub catalog: &'a CatalogGate,
 	pub ledger: &'a dyn Ledger,
 	/// Nudged after an execution commits so the relay posts it at once.
 	pub relay: &'a Notify,
@@ -471,7 +536,9 @@ pub struct ExecutorRound {
 /// the next pass; nothing here retries a terminal operation.
 pub async fn executor_round(ports: &ExecutorPorts<'_>) -> Result<ExecutorRound, DomainError> {
 	let mut round = ExecutorRound::default();
-	propose_due(ports, &mut round).await?;
+	if ports.catalog.ensure(ports.approvals).await {
+		propose_due(ports, &mut round).await?;
+	}
 	execute_approved(ports, &mut round).await?;
 	settle_decided(ports, &mut round).await?;
 	Ok(round)
@@ -794,6 +861,7 @@ pub struct ApprovalExecutor {
 	pub ledger: Arc<dyn Ledger>,
 	pub relay: Arc<Notify>,
 	pub wake: Arc<Notify>,
+	pub catalog: CatalogGate,
 }
 
 impl ApprovalExecutor {
@@ -806,6 +874,7 @@ impl ApprovalExecutor {
 			let ports = ExecutorPorts {
 				operations: self.operations.as_ref(),
 				approvals: self.approvals.as_ref(),
+				catalog: &self.catalog,
 				ledger: self.ledger.as_ref(),
 				relay: &self.relay,
 			};
