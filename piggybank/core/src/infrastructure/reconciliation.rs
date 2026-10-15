@@ -48,6 +48,14 @@
 //!      attribution: a scope account no client and not banking owns is money nobody may
 //!      debit and nobody answers for. An alert, and part of [`ReconReport::clean`].
 //!
+//!   8. **Holds vs `hold_clearing`** — a hold is one pending transfer onto `hold_clearing`
+//!      for exactly what it still holds, so the account's pending must equal Σ remaining of
+//!      the ACTIVE holds in Postgres, and nothing is ever posted to it
+//!      ([`scope_holds::hold_clearing_expected`]). Compared only on a pass with no hold event
+//!      in flight, when the two sides are meant to agree. A hold answering captures for money
+//!      the ledger never placed (banking#514), or a reservation nobody will release, shows
+//!      here: an alert, and part of [`ReconReport::clean`].
+//!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
 
@@ -63,7 +71,7 @@ use crate::{
 	infrastructure::{
 		outbox,
 		scope_events::{self, StreamFreshness},
-		scope_ledger, telemetry,
+		scope_holds, scope_ledger, telemetry,
 	},
 	ports::{AllocationRegistry, ledger::Ledger},
 };
@@ -110,6 +118,25 @@ pub struct ReconReport {
 	pub scope_stream: Option<StreamFreshness>,
 	/// Scope accounts holding value with no owner on record, by logical key (module header, 7).
 	pub unowned_scope_accounts: Vec<String>,
+	/// `hold_clearing` against the active holds (module header, 8); `None` when not compared
+	/// this pass.
+	pub hold_clearing: Option<HoldClearingCheck>,
+}
+
+/// One comparison of `hold_clearing` with the holds Postgres says are active, base units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HoldClearingCheck {
+	/// Σ remaining of the active holds.
+	pub expected: u128,
+	/// In flight on `hold_clearing`: its pending, whichever side the ledger reports it on.
+	pub held: u128,
+	pub posted: u128,
+}
+
+impl HoldClearingCheck {
+	pub fn holds(&self) -> bool {
+		self.held == self.expected && self.posted == 0
+	}
 }
 
 impl ReconReport {
@@ -123,6 +150,7 @@ impl ReconReport {
 			&& self.parked_rows == 0
 			&& self.treasury_debits == self.treasury_debits_approved
 			&& self.unowned_scope_accounts.is_empty()
+			&& self.hold_clearing.is_none_or(|check| check.holds())
 	}
 }
 
@@ -298,6 +326,8 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope account owners read failed, attribution not verified this pass: {err}"),
 		}
 
+		self.check_hold_clearing(&mut report).await;
+
 		if report.clean() {
 			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
 		}
@@ -329,6 +359,40 @@ impl Reconciliation {
 			}
 			Err(err) => warn!(%logical_key, "reconciliation: unowned scope account balance read failed, not verified this pass: {err}"),
 		}
+	}
+
+	/// (8) Holds vs `hold_clearing`. A read failure, or a hold event still in flight, skips it
+	/// this pass.
+	async fn check_hold_clearing(&self, report: &mut ReconReport) {
+		let expected = match scope_holds::hold_clearing_expected(&self.pool).await {
+			Ok(Some(expected)) => expected.base_units(),
+			Ok(None) => return,
+			Err(err) => {
+				warn!("reconciliation: active holds read failed, hold_clearing not verified this pass: {err}");
+				return;
+			}
+		};
+		let balance = match self.ledger.balance(&LedgerAccountKey::HoldClearing).await {
+			Ok(balance) => balance,
+			Err(err) => {
+				warn!("reconciliation: hold_clearing balance read failed, not verified this pass: {err}");
+				return;
+			}
+		};
+		let check = HoldClearingCheck {
+			expected,
+			held: balance.pending.saturating_add(balance.locked),
+			posted: balance.posted,
+		};
+		if !check.holds() {
+			error!(
+				expected = %check.expected,
+				held = %check.held,
+				posted = %check.posted,
+				"reconciliation: HOLD CLEARING DRIFT — the ledger's hold reservations are not what the active holds say they hold"
+			);
+		}
+		report.hold_clearing = Some(check);
 	}
 
 	async fn check_treasury(&self, report: &mut ReconReport) -> Result<(), sqlx::Error> {
