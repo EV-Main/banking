@@ -185,10 +185,16 @@ pub async fn mark_dispatched(pool: &PgPool, seq: i64) -> Result<(), sqlx::Error>
 /// [`next_batch`] so it never wedges the single-worker drain. The relay still advances
 /// past it in-memory; this is what replaces the old "park == mark_dispatched" drop.
 pub async fn mark_parked(pool: &PgPool, seq: i64, reason: &str) -> Result<(), sqlx::Error> {
+	mark_parked_on(&mut *pool.acquire().await?, seq, reason).await
+}
+
+/// [`mark_parked`] inside the caller's transaction, for a park that must change
+/// control-plane state with it or not at all.
+pub async fn mark_parked_on(conn: &mut PgConnection, seq: i64, reason: &str) -> Result<(), sqlx::Error> {
 	sqlx::query("UPDATE outbox SET parked_at = now(), attempts = attempts + 1, last_error = $2 WHERE seq = $1")
 		.bind(seq)
 		.bind(reason)
-		.execute(pool)
+		.execute(conn)
 		.await?;
 	Ok(())
 }

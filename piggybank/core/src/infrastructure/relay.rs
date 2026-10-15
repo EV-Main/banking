@@ -61,7 +61,7 @@ use crate::{
 		book, compartments, fee_accrual, issuance, money_events,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
-		scope_invoices, scope_ledger,
+		scope_holds, scope_invoices, scope_ledger,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
@@ -444,6 +444,21 @@ impl Relay {
 					}
 					return DrainStep::Throttle;
 				}
+				Outcome::MoneyEvent(reason) => {
+					// The ledger took the event; only its money event is missing. Bounded, so one
+					// row that can never be recorded stops itself and not every deposit and
+					// withdrawal behind it (banking#514).
+					if row.attempts + 1 >= MAX_RETRYABLE_ATTEMPTS {
+						self.park_unrecorded(row, &format!("money event: {reason}")).await;
+						advanced = true;
+					} else {
+						if let Err(err) = outbox::record_failure(&self.pool, row.seq, &reason).await {
+							warn!(seq = row.seq, "relay: failed to record the retry attempt: {err}");
+						}
+						warn!(seq = row.seq, attempts = row.attempts + 1, "relay: money event not recorded, retrying from here: {reason}");
+						return DrainStep::Throttle;
+					}
+				}
 				Outcome::RetryBounded(reason) => {
 					// A retryable that can never resolve (a completion whose pending was
 					// itself parked, so it is never found) must not wedge the single-worker
@@ -471,7 +486,14 @@ impl Relay {
 	/// `tracing_layer` ships) so the aggregate's PG-vs-TB divergence is surfaced. Auto-
 	/// reversing the applied TB legs stays a follow-up — reconciliation owns recovery today.
 	async fn park(&self, row: &OutboxRow, reason: &str, applied_legs: usize) {
-		if let Err(err) = outbox::mark_parked(&self.pool, row.seq, reason).await {
+		// A hold whose reservation the ledger did not place must stop answering captures in
+		// the same breath as its event parks, or a Capture is told CAPTURED for money nobody
+		// holds (banking#514).
+		let parked = match refused_reserve(row, applied_legs) {
+			Some(hold_id) => scope_holds::park_refused_reserve(&self.pool, row.seq, reason, hold_id).await,
+			None => outbox::mark_parked(&self.pool, row.seq, reason).await,
+		};
+		if let Err(err) = parked {
 			error!(seq = row.seq, "relay: failed to stamp parked_at (event will re-deliver): {err}");
 		}
 		// A parked escrow lock is an order standing on the book with nothing behind it —
@@ -502,7 +524,41 @@ impl Relay {
 		}
 	}
 
+	/// Park an event the ledger fully applied but whose money event could not be recorded. Not
+	/// a refusal: a move or transfer it carries stays `pending` (its money did move), nothing is
+	/// owed back, and an unpark replays only what is missing — the legs answer `Exists`, the
+	/// money event and the posted stamp are written then.
+	async fn park_unrecorded(&self, row: &OutboxRow, reason: &str) {
+		if let Err(err) = outbox::mark_parked(&self.pool, row.seq, reason).await {
+			error!(seq = row.seq, "relay: failed to stamp parked_at (event will re-deliver): {err}");
+		}
+		error!(seq = row.seq, event_id = %row.event_id, aggregate = %row.aggregate, "relay: parking an applied event whose money event cannot be recorded (needs intervention): {reason}");
+	}
+
+	/// What a failed money event means for the drain: an outage of Postgres or the ledger is
+	/// waited out like any other; anything else — a row that cannot be read or decoded — is
+	/// retried a bounded number of times and then parked alone.
+	async fn money_event_failed(&self, reason: String) -> Outcome {
+		if let Err(err) = sqlx::query("SELECT 1").execute(&self.pool).await {
+			return Outcome::Retry(format!("{reason} (database unavailable: {err})"));
+		}
+		// Any id answers the probe; only whether the ledger answers matters.
+		if let Err(LedgerError::Unavailable(err)) = self.ledger.transfer_exists(0).await {
+			return Outcome::Retry(format!("{reason} (ledger unavailable: {err})"));
+		}
+		Outcome::MoneyEvent(reason)
+	}
+
 	async fn dispatch(&self, row: &OutboxRow) -> Outcome {
+		// The ledger refused this reservation once and its hold was voided for it: an unpark of
+		// it must not place money nobody will ever release.
+		if let Some(hold_id) = refused_reserve(row, 0) {
+			match scope_holds::reserve_refused(&self.pool, hold_id).await {
+				Ok(true) => return Outcome::Done,
+				Ok(false) => {}
+				Err(err) => return Outcome::Retry(format!("hold refusal read: {err}")),
+			}
+		}
 		let ops = match plan(row) {
 			Ok(ops) => ops,
 			Err(reason) => return Outcome::park(format!("unplannable event: {reason}")),
@@ -530,7 +586,7 @@ impl Relay {
 				Ok(true) => {
 					// The leg posted on an earlier delivery that stopped before its money event.
 					if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
-						return Outcome::Retry(format!("{name} money event: {err}"));
+						return self.money_event_failed(format!("{name} money event: {err}")).await;
 					}
 					return match posting.mark_posted(&self.pool, row).await {
 						Ok(()) => Outcome::Done,
@@ -738,7 +794,7 @@ impl Relay {
 		// Before the posted stamp: a failure here retries the row, and the stamp's early path
 		// above records the event that is still owed.
 		if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
-			return Outcome::Retry(format!("money event: {err}"));
+			return self.money_event_failed(err).await;
 		}
 		if let Some(posting) = posting
 			&& let Err(err) = posting.mark_posted(&self.pool, row).await
@@ -950,6 +1006,10 @@ enum Outcome {
 	/// Transient infra outage (TB/custody unreachable) — stop and retry from this `seq`
 	/// **unbounded** (it resolves when the dependency recovers).
 	Retry(String),
+	/// The ledger applied the event but its money event was not recorded, for a reason other
+	/// than an outage — retry from this `seq`, bounded like [`Self::RetryBounded`], then park
+	/// without failing or compensating anything ([`Relay::park_unrecorded`]).
+	MoneyEvent(String),
 	/// A retryable ledger state (a pending not yet visible) — retry from this `seq`, but
 	/// **bounded**: a pending that can never appear (its reserve was itself parked) must
 	/// not wedge the single-worker queue forever, so park after `MAX_RETRYABLE_ATTEMPTS`.
@@ -962,6 +1022,18 @@ enum Outcome {
 		reason: String,
 		applied_legs: usize,
 	},
+}
+
+/// The hold of a reservation event that applied nothing — the one park that voids a hold.
+fn refused_reserve(row: &OutboxRow, applied_legs: usize) -> Option<Uuid> {
+	if row.kind != HoldEvent::KIND || applied_legs > 0 {
+		return None;
+	}
+	// An undecodable payload names no hold to void; the relay parks it as unplannable anyway.
+	match serde_json::from_str::<HoldEvent>(&row.payload).ok()? {
+		HoldEvent::Placed { hold_id, .. } => Some(hold_id.raw()),
+		HoldEvent::Captured { .. } | HoldEvent::Released { .. } => None,
+	}
 }
 
 impl Outcome {
