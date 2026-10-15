@@ -208,6 +208,8 @@ async fn append_event(conn: &mut PgConnection, mandate: &Mandate, kind: MoneyEve
 		initiator_client: String::new(),
 		balances: Vec::new(),
 		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
 		paid_from: String::new(),
 		audience: vec![mandate.terms.client.clone()],
 	};

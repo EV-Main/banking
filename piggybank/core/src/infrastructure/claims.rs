@@ -8,6 +8,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	scope_invoices::InvoiceEvent,
 	scope_ledger::ScopeLedgerEvent,
+	scope_operations::ScopePayoutEvent,
 	scopes::{Compartment, CompartmentEvent},
 	users::UserId,
 };
@@ -61,9 +62,9 @@ fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 	}
 }
 
-/// Moves, scope transfers and invoice payments are counted from their own tables, not the
-/// outbox: a `pending` one whose event a relay dispatched without posting (the reaper's case)
-/// is still promised away.
+/// Moves, scope transfers, payouts and invoice payments are counted from their own tables,
+/// not the outbox: a `pending` one whose event a relay dispatched without posting (the
+/// reaper's case) is still promised away.
 const UNAPPLIED_EVENTS: &str = "SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox \
 	 WHERE dispatched_at IS NULL AND parked_at IS NULL AND kind <> ALL($1) AND ($2::text IS NULL OR strpos(payload::text, $2) > 0)";
 
@@ -91,7 +92,7 @@ pub async fn unapplied_debits(conn: &mut PgConnection, key: &LedgerAccountKey) -
 	.map_err(|e| LedgerError::Unavailable(format!("pending moves and transfers of {}: {e}", key.logical_key())))?
 	.map_or(0, |pending| pending.base_units());
 	let rows = sqlx::query_as::<_, OutboxRow>(UNAPPLIED_EVENTS)
-		.bind([CompartmentEvent::KIND, ScopeLedgerEvent::KIND, InvoiceEvent::KIND].as_slice())
+		.bind([CompartmentEvent::KIND, ScopeLedgerEvent::KIND, ScopePayoutEvent::KIND, InvoiceEvent::KIND].as_slice())
 		.bind(owner(key).map(|user| user.to_string()))
 		.fetch_all(&mut *conn)
 		.await

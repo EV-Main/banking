@@ -89,7 +89,7 @@ pub(crate) fn check_key(key: &str) -> Result<(), DomainError> {
 /// The gate every call passes first: `main` is banking's, a scope the client holds no grant in
 /// is not its business — refused alike, so a client cannot probe which scopes exist — and a
 /// granted scope banking has not heard of from concierge is NOT_FOUND.
-async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
+pub(crate) async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
 	granted_in(ports.grants, ports.scopes, client, scope).await
 }
 
@@ -210,11 +210,13 @@ pub async fn transfer(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: 
 		client: client.clone(),
 		scope: request.scope.clone(),
 		from: request.from,
+		to_scope: request.scope.clone(),
 		to: request.to,
 		amount: request.amount,
 		reason: request.reason,
 		subject_ref: request.subject_ref,
 		memo: request.memo,
+		operation_id: None,
 	};
 	let canonical_terms = terms.canonical();
 	let mut transfer = ScopeTransfer::request(ScopeTransferId::new(), terms)?;

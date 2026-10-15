@@ -110,13 +110,28 @@ pub(crate) async fn raced_request(pool: &PgPool, key: &RequestKey<'_>) -> Result
 		.ok_or_else(|| DomainError::Repository(format!("idempotency key {} was taken, then not found", key.key)))
 }
 
-type TransferRow = (Uuid, String, String, String, String, String, String, String, String, String, String, Option<String>, i64);
+type TransferRow = (
+	Uuid,
+	String,
+	String,
+	String,
+	String,
+	String,
+	String,
+	String,
+	String,
+	String,
+	String,
+	Option<String>,
+	i64,
+	Option<Uuid>,
+);
 
 macro_rules! select_transfer {
 	($tail:literal) => {
 		concat!(
 			"SELECT id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref, memo, state, failure_reason, ",
-			"EXTRACT(EPOCH FROM created_at)::BIGINT FROM scope_transfers WHERE id = $1",
+			"EXTRACT(EPOCH FROM created_at)::BIGINT, operation_id FROM scope_transfers WHERE id = $1",
 			$tail
 		)
 	};
@@ -124,28 +139,31 @@ macro_rules! select_transfer {
 const SELECT_TRANSFER: &str = select_transfer!("");
 
 fn recorded_transfer(row: TransferRow) -> Result<RecordedTransfer, DomainError> {
-	let (id, client, scope, from, to_scope, to, raw_amount, reason, subject_ref, memo, state, failure_reason, created_at) = row;
+	let (id, client, scope, from, to_scope, to, raw_amount, reason, subject_ref, memo, state, failure_reason, created_at, operation_id) = row;
 	let corrupt = |e: DomainError| DomainError::Repository(format!("scope transfer {id}: {e}"));
+	let to_scope = ScopeId::parse(&to_scope).map_err(corrupt)?;
 	let terms = TransferTerms {
 		client: ClientId::parse(&client).map_err(corrupt)?,
 		scope: ScopeId::parse(&scope).map_err(corrupt)?,
 		from: ScopeAccountLabel::parse(&from).map_err(corrupt)?,
+		to_scope: to_scope.clone(),
 		to: ScopeAccountLabel::parse(&to).map_err(corrupt)?,
 		amount: amount(&raw_amount)?,
 		reason: TransferReason::parse(&reason).map_err(corrupt)?,
 		subject_ref: SubjectRef::parse(&subject_ref).map_err(corrupt)?,
 		memo,
+		operation_id,
 	};
 	Ok(RecordedTransfer {
 		transfer: ScopeTransfer::restore(ScopeTransferId::from_raw(id), terms).map_err(corrupt)?,
-		to_scope: ScopeId::parse(&to_scope).map_err(corrupt)?,
+		to_scope,
 		state: MoveState::parse(&state).map_err(corrupt)?,
 		failure_reason,
 		created_at,
 	})
 }
 
-async fn transfer_on(conn: &mut PgConnection, id: Uuid) -> Result<Option<RecordedTransfer>, DomainError> {
+pub(crate) async fn transfer_on(conn: &mut PgConnection, id: Uuid) -> Result<Option<RecordedTransfer>, DomainError> {
 	sqlx::query_as::<_, TransferRow>(SELECT_TRANSFER)
 		.bind(id)
 		.fetch_optional(conn)
@@ -166,7 +184,7 @@ pub(crate) async fn owner_on(conn: &mut PgConnection, scope: &ScopeId, label: &S
 		.transpose()
 }
 
-fn sum(amounts: &[String], what: &str) -> Result<Usdt, DomainError> {
+pub(crate) fn sum(amounts: &[String], what: &str) -> Result<Usdt, DomainError> {
 	amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
 		total.checked_add(amount(raw)?).ok_or_else(|| DomainError::Repository(format!("{what} overflow")))
 	})
@@ -255,13 +273,16 @@ impl ScopeLedgerStore for PgScopeLedger {
 		// The lock every spender of this account takes, so the spendable read below cannot be
 		// raced by another debit of it.
 		outbox::lock_claim(&mut tx, &LedgerAccountKey::ScopeAccount(scope.clone(), transfer.from().clone())).await?;
-		let recent: Vec<String> =
-			sqlx::query_scalar("SELECT amount FROM scope_transfers WHERE client_id = $1 AND scope = $2 AND state IN ('pending', 'posted') AND created_at > now() - interval '24 hours'")
-				.bind(key.client.as_str())
-				.bind(scope.as_str())
-				.fetch_all(&mut *tx)
-				.await
-				.map_err(repo_err)?;
+		// The client's own transfers only: an approved one was the approvers' to allow.
+		let recent: Vec<String> = sqlx::query_scalar(
+			"SELECT amount FROM scope_transfers WHERE client_id = $1 AND scope = $2 AND operation_id IS NULL AND state IN ('pending', 'posted') \
+			 AND created_at > now() - interval '24 hours'",
+		)
+		.bind(key.client.as_str())
+		.bind(scope.as_str())
+		.fetch_all(&mut *tx)
+		.await
+		.map_err(repo_err)?;
 		let facts = TransferFacts {
 			scope: scope_record,
 			source_owner,
@@ -270,22 +291,7 @@ impl ScopeLedgerStore for PgScopeLedger {
 		};
 		// The refusal rolls the transaction back with nothing written.
 		admission.admit(&facts, &mut TxReads::new(&mut tx)).await?;
-		let created_at: i64 = sqlx::query_scalar(
-			"INSERT INTO scope_transfers (id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref, memo) \
-			 VALUES ($1, $2, $3, $4, $3, $5, $6, $7, $8, $9) RETURNING EXTRACT(EPOCH FROM created_at)::BIGINT",
-		)
-		.bind(transfer.id().raw())
-		.bind(transfer.client().as_str())
-		.bind(scope.as_str())
-		.bind(transfer.from().as_str())
-		.bind(transfer.to().as_str())
-		.bind(transfer.amount().base_units().to_string())
-		.bind(transfer.reason().as_str())
-		.bind(transfer.subject_ref().as_str())
-		.bind(transfer.memo())
-		.fetch_one(&mut *tx)
-		.await
-		.map_err(repo_err)?;
+		let created_at = insert_transfer(&mut tx, transfer).await?;
 		if !insert_request(&mut tx, &key, terms, &transfer.id().to_string()).await? {
 			drop(tx);
 			return Ok(Recorded::Existing(raced_request(&self.pool, &key).await?));
@@ -295,7 +301,7 @@ impl ScopeLedgerStore for PgScopeLedger {
 		let recorded = ScopeTransfer::restore(transfer.id(), transfer_terms(transfer))?;
 		Ok(Recorded::New(RecordedTransfer {
 			transfer: recorded,
-			to_scope: scope,
+			to_scope: transfer.to_scope().clone(),
 			state: MoveState::Pending,
 			failure_reason: None,
 			created_at,
@@ -303,31 +309,59 @@ impl ScopeLedgerStore for PgScopeLedger {
 	}
 }
 
-fn transfer_terms(transfer: &ScopeTransfer) -> TransferTerms {
+pub(crate) fn transfer_terms(transfer: &ScopeTransfer) -> TransferTerms {
 	TransferTerms {
 		client: transfer.client().clone(),
 		scope: transfer.scope().clone(),
 		from: transfer.from().clone(),
+		to_scope: transfer.to_scope().clone(),
 		to: transfer.to().clone(),
 		amount: transfer.amount(),
 		reason: transfer.reason(),
 		subject_ref: transfer.subject_ref().clone(),
 		memo: transfer.memo().to_owned(),
+		operation_id: transfer.operation_id(),
 	}
 }
 
-/// Σ the `pending` transfers out of `(scope, label)`: promised away, not yet off the ledger.
-/// Part of what [`claims::unapplied_debits`](super::claims::unapplied_debits) counts — from
-/// this table rather than the outbox, so a transfer whose event an older relay dispatched
-/// without posting is still counted until the reaper replays it.
+/// Write a transfer's row; its event is the caller's to drain in the same transaction.
+/// Returns its creation time, unix seconds.
+pub(crate) async fn insert_transfer(conn: &mut PgConnection, transfer: &ScopeTransfer) -> Result<i64, DomainError> {
+	sqlx::query_scalar(
+		"INSERT INTO scope_transfers (id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref, memo, operation_id) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING EXTRACT(EPOCH FROM created_at)::BIGINT",
+	)
+	.bind(transfer.id().raw())
+	.bind(transfer.client().as_str())
+	.bind(transfer.scope().as_str())
+	.bind(transfer.from().as_str())
+	.bind(transfer.to_scope().as_str())
+	.bind(transfer.to().as_str())
+	.bind(transfer.amount().base_units().to_string())
+	.bind(transfer.reason().as_str())
+	.bind(transfer.subject_ref().as_str())
+	.bind(transfer.memo())
+	.bind(transfer.operation_id())
+	.fetch_one(conn)
+	.await
+	.map_err(repo_err)
+}
+
+/// Σ the `pending` transfers and payouts out of `(scope, label)`: promised away, not yet off
+/// the ledger. Part of what [`claims::unapplied_debits`](super::claims::unapplied_debits)
+/// counts — from these tables rather than the outbox, so a transfer or payout whose event an
+/// older relay dispatched without posting is still counted until the reaper replays it.
 pub async fn pending_out(conn: &mut PgConnection, scope: &ScopeId, label: &ScopeAccountLabel) -> Result<Usdt, DomainError> {
-	let amounts: Vec<String> = sqlx::query_scalar("SELECT amount FROM scope_transfers WHERE scope = $1 AND from_label = $2 AND state = 'pending'")
-		.bind(scope.as_str())
-		.bind(label.as_str())
-		.fetch_all(conn)
-		.await
-		.map_err(repo_err)?;
-	sum(&amounts, "pending transfers")
+	let amounts: Vec<String> = sqlx::query_scalar(
+		"SELECT amount FROM scope_transfers WHERE scope = $1 AND from_label = $2 AND state = 'pending' \
+		 UNION ALL SELECT total FROM scope_payouts WHERE scope = $1 AND from_label = $2 AND state = 'pending'",
+	)
+	.bind(scope.as_str())
+	.bind(label.as_str())
+	.fetch_all(conn)
+	.await
+	.map_err(repo_err)?;
+	sum(&amounts, "pending transfers and payouts")
 }
 
 /// Where transfer `id` stands, `None` when no row holds it. The relay reads it before posting:

@@ -17,10 +17,15 @@ use evbanking_auth::{AuthConfig, AuthService, ServiceTokenSource, provisioner_ch
 use evbanking_contracts::signer::v1::signer_service_client::SignerServiceClient;
 use piggybank_core::{
 	AppState,
-	application::{auth_sync, book::BookFeed},
+	application::{
+		auth_sync,
+		book::BookFeed,
+		scope_operations::{ApprovalExecutor, CatalogGate},
+	},
 	config::{self, Rails},
 	infrastructure::{
 		allocations::PgAllocations,
+		approvals::ConciergeApprovals,
 		book::PgBook,
 		bridge::{
 			BridgeConsumer,
@@ -562,21 +567,42 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	)
 	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default());
 
-	let scope_ledger = scope_ledger_settings.map(|settings| {
-		let store = scope_ledger_store;
-		ScopeLedgerListener::new(
-			settings,
-			ScopeLedgerDeps {
-				store: store.clone(),
-				holds: store.clone(),
-				events: store.clone(),
-				invoices: store,
-				scopes: state.compartments.clone(),
+	// Operations are only ever requested over the scope ledger's listener, so their executor
+	// runs exactly when the listener does: a hub without it neither opens nor pulls banking's
+	// approvals.
+	let executor_wake = Arc::new(Notify::new());
+	let (scope_ledger, approval_executor) = match scope_ledger_settings {
+		Some(settings) => {
+			let store = scope_ledger_store;
+			let executor = ApprovalExecutor {
+				grants: Arc::new(settings.grants.clone()),
+				operations: store.clone(),
+				// The bridge's endpoint and token: banking↔concierge is one trust relationship.
+				approvals: Arc::new(ConciergeApprovals::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
 				ledger: state.ledger.clone(),
 				relay: state.relay_notify.clone(),
-			},
-		)
-	});
+				wake: executor_wake.clone(),
+				catalog: CatalogGate::new(),
+			};
+			let listener = ScopeLedgerListener::new(
+				settings,
+				ScopeLedgerDeps {
+					store: store.clone(),
+					holds: store.clone(),
+					events: store.clone(),
+					invoices: store.clone(),
+					scopes: state.compartments.clone(),
+					ledger: state.ledger.clone(),
+					relay: state.relay_notify.clone(),
+					payouts: store.clone(),
+					operations: store,
+					executor: executor_wake,
+				},
+			);
+			(Some(listener), Some(executor))
+		}
+		None => (None, None),
+	};
 	let scope_ledger_authorizer = state.authorizer.clone();
 	tracing::info!(
 		core = %config.grpc_addr,
@@ -608,6 +634,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		fee_sweeper_done,
 		bridge_done,
 		scope_events_done,
+		approval_executor_done,
 		watcher_done,
 		withdrawal_watcher_done,
 		sweep_done,
@@ -650,6 +677,11 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 			infallible(run_or_idle(shutdown.clone(), bridge.map(|consumer| consumer.run(shutdown.clone()))))
 		),
 		branch(&shutdown, "scope events", infallible(scope_events.run(shutdown.clone()))),
+		branch(
+			&shutdown,
+			"approval executor",
+			infallible(run_or_idle(shutdown.clone(), approval_executor.map(|executor| executor.run(shutdown.clone()))))
+		),
 		branch(
 			&shutdown,
 			"deposit watcher",
@@ -741,6 +773,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		.and(fee_sweeper_done)
 		.and(bridge_done)
 		.and(scope_events_done)
+		.and(approval_executor_done)
 		.and(watcher_done)
 		.and(withdrawal_watcher_done)
 		.and(sweep_done)

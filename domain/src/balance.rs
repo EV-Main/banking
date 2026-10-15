@@ -449,6 +449,10 @@ pub enum TransferCode {
 	/// reservation, the void that releases it, and a capture's posted leg out of the
 	/// compartment. One code for all three: the flags and the account pair say which.
 	ScopeHold,
+	/// A payout out of a scope account into users' compartments in the scope
+	/// (`ScopeLedgerService.Payout`, or an approved `RequestPayout`): one leg per line, posted
+	/// as one linked chain.
+	ScopePayout,
 	/// A user paying a scope's invoice (`banking.v1.InvoicePaymentService.PayInvoice`):
 	/// `Dr <main or the compartment in the scope> / Cr scope_account:<scope>:<label>`, posted
 	/// at once.
@@ -490,6 +494,7 @@ impl TransferCode {
 			Self::CompartmentMove => 55,
 			Self::ScopeTransfer => 56,
 			Self::ScopeHold => 57,
+			Self::ScopePayout => 59,
 			Self::InvoicePayment => 58,
 		}
 	}
@@ -1034,6 +1039,7 @@ mod tests {
 			TransferCode::CompartmentMove,
 			TransferCode::ScopeTransfer,
 			TransferCode::ScopeHold,
+			TransferCode::ScopePayout,
 			TransferCode::InvoicePayment,
 		]
 		.map(TransferCode::code);

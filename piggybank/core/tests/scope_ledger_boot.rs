@@ -73,6 +73,9 @@ async fn the_listener_handshakes_with_the_provider_main_installs() {
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),
+			payouts: Arc::new(PgScopeLedger::new(pool.clone())),
+			operations: Arc::new(PgScopeLedger::new(pool.clone())),
+			executor: Arc::new(Notify::new()),
 		},
 	);
 	// No signing key: the authorizer answers every token NotConfigured, which is enough to

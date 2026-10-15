@@ -74,7 +74,7 @@ impl core::fmt::Display for ClientId {
 }
 
 /// One client's standing in one scope: the labels it may open there, and whether it may touch
-/// users' compartments (Reserve, Charge, Capture into a user, Payout — not served yet).
+/// users' compartments (Reserve, Charge, Capture into a user, Payout, RequestPayout).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Grant {
 	pub client: ClientId,
@@ -234,6 +234,9 @@ pub enum LedgerRefusal {
 	NotAccountOwner,
 	/// The scope is frozen: no new debit (FAILED_PRECONDITION).
 	ScopeFrozen,
+	/// The destination scope of a transfer between scopes is closed: it takes nothing new
+	/// (FAILED_PRECONDITION).
+	ScopeClosed,
 	/// The source cannot cover it right now (FAILED_PRECONDITION).
 	InsufficientFunds,
 	/// Past an automatic ceiling, or not an automatic move at all: ask with `RequestTransfer`
@@ -257,6 +260,7 @@ impl LedgerRefusal {
 			Self::NotGranted => "not_granted",
 			Self::NotAccountOwner => "not_account_owner",
 			Self::ScopeFrozen => "scope_frozen",
+			Self::ScopeClosed => "scope_closed",
 			Self::InsufficientFunds => "insufficient_funds",
 			Self::ApprovalRequired => "approval_required",
 			Self::HoldNotActive => "hold_not_active",
@@ -270,7 +274,14 @@ impl LedgerRefusal {
 	pub const fn is_permission(self) -> bool {
 		match self {
 			Self::NotGranted | Self::NotAccountOwner => true,
-			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired | Self::InvoiceNotOpen => false,
+			Self::ScopeFrozen
+			| Self::ScopeClosed
+			| Self::InsufficientFunds
+			| Self::ApprovalRequired
+			| Self::HoldNotActive
+			| Self::UserFrozen
+			| Self::MandateRequired
+			| Self::InvoiceNotOpen => false,
 		}
 	}
 }
@@ -384,18 +395,22 @@ fn is_format(c: char) -> bool {
 pub enum TransferReason {
 	/// Fees collected from the caller's account into the scope's `fee` collector.
 	FeeSweep,
+	/// banking executing an approved `RequestTransfer` — never a reason a client names.
+	Approved,
 }
 
 impl TransferReason {
 	pub const fn as_str(self) -> &'static str {
 		match self {
 			Self::FeeSweep => "fee_sweep",
+			Self::Approved => "approved",
 		}
 	}
 
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
 		match raw {
 			"fee_sweep" => Ok(Self::FeeSweep),
+			"approved" => Ok(Self::Approved),
 			other => Err(DomainError::Validation(format!("unknown transfer reason: {other}"))),
 		}
 	}
@@ -432,20 +447,22 @@ pub type ScopeTransferId = Id<ScopeTransferTag>;
 /// Phantom tag making [`ScopeTransferId`] a distinct, incompatible identity type.
 pub struct ScopeTransferTag;
 
-/// A client moving money from a scope account it owns into the scope's `fee` collector. One
-/// posted ledger transfer, applied by the relay: `Dr <from> / Cr <to>`, both scope accounts
-/// of one scope.
+/// Money from a scope account into another: a client's fee sweep into its scope's `fee`
+/// collector, or banking executing an approved `RequestTransfer` — inside the scope or into
+/// another one. One posted ledger transfer, applied by the relay: `Dr <from> / Cr <to>`.
 #[derive(Clone, Debug)]
 pub struct ScopeTransfer {
 	id: ScopeTransferId,
 	client: ClientId,
 	scope: ScopeId,
 	from: ScopeAccountLabel,
+	to_scope: ScopeId,
 	to: ScopeAccountLabel,
 	amount: Usdt,
 	reason: TransferReason,
 	subject_ref: SubjectRef,
 	memo: String,
+	operation_id: Option<uuid::Uuid>,
 	pending: Vec<ScopeLedgerEvent>,
 }
 
@@ -455,16 +472,23 @@ pub struct TransferTerms {
 	pub client: ClientId,
 	pub scope: ScopeId,
 	pub from: ScopeAccountLabel,
+	/// `scope` for a fee sweep; another scope only for an approved scope transfer.
+	pub to_scope: ScopeId,
 	pub to: ScopeAccountLabel,
 	pub amount: Usdt,
 	pub reason: TransferReason,
 	pub subject_ref: SubjectRef,
 	pub memo: String,
+	/// The approved operation this transfer executes; `Some` exactly when the reason is
+	/// [`TransferReason::Approved`].
+	pub operation_id: Option<uuid::Uuid>,
 }
 
 impl TransferTerms {
-	/// The canonical rendering stored beside the idempotency key. Every field is
-	/// length-prefixed, so no two different requests render alike.
+	/// The canonical rendering stored beside a `Transfer` idempotency key. Every field is
+	/// length-prefixed, so no two different requests render alike. FROZEN as it is: keys
+	/// stored before `to_scope` and `operation_id` existed must still compare equal, and a
+	/// client's transfer can carry neither (its destination is always its own scope).
 	pub fn canonical(&self) -> String {
 		canonical(&[
 			self.from.as_str(),
@@ -483,16 +507,15 @@ pub fn canonical(fields: &[&str]) -> String {
 }
 
 impl ScopeTransfer {
-	/// A client's automatic transfer: into the scope's `fee` collector only, out of a label
-	/// that is not one of banking's own, a positive amount, a valid memo. Who owns the source
-	/// is the store's to check, under its lock.
+	/// A new transfer — a client's fee sweep, or an approved operation's execution — raising
+	/// its ledger event. Who owns the source is the store's to check, under its lock.
 	pub fn request(id: ScopeTransferId, terms: TransferTerms) -> Result<Self, DomainError> {
 		let mut requested = Self::restore(id, terms)?;
 		requested.pending.push(ScopeLedgerEvent::Transferred {
 			transfer_id: id,
 			scope: requested.scope.clone(),
 			from_label: requested.from.clone(),
-			to_scope: requested.scope.clone(),
+			to_scope: requested.to_scope.clone(),
 			to_label: requested.to.clone(),
 			amount: requested.amount,
 		});
@@ -504,20 +527,27 @@ impl ScopeTransfer {
 		if terms.amount.is_zero() {
 			return Err(DomainError::Validation("amount must be positive".into()));
 		}
-		if terms.scope.is_main() {
+		if terms.scope.is_main() || terms.to_scope.is_main() {
 			return Err(DomainError::Validation("a client's transfer never names main".into()));
 		}
-		if terms.from == terms.to {
+		if terms.scope == terms.to_scope && terms.from == terms.to {
 			return Err(DomainError::Validation("a transfer needs two different accounts".into()));
 		}
 		// The domain's own floor under the use case's checks: no client transfer debits one
-		// of banking's labels, and a fee sweep only ever lands in the fee collector.
+		// of banking's labels, a fee sweep only ever lands in its own scope's fee collector,
+		// and only an approved operation moves money anywhere else.
 		if terms.from.is_reserved() {
 			return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.from)));
 		}
 		match terms.reason {
-			TransferReason::FeeSweep if terms.to != ScopeAccountLabel::fee() => return Err(DomainError::Validation("a fee sweep goes into the fee collector".into())),
+			TransferReason::FeeSweep if terms.to != ScopeAccountLabel::fee() || terms.to_scope != terms.scope => {
+				return Err(DomainError::Validation("a fee sweep goes into its scope's fee collector".into()));
+			}
+			TransferReason::FeeSweep if terms.operation_id.is_some() => return Err(DomainError::Validation("a fee sweep executes no operation".into())),
 			TransferReason::FeeSweep => {}
+			TransferReason::Approved if terms.operation_id.is_none() => return Err(DomainError::Validation("an approved transfer names its operation".into())),
+			TransferReason::Approved if terms.to.is_reserved() => return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.to))),
+			TransferReason::Approved => {}
 		}
 		validate_memo(&terms.memo)?;
 		Ok(Self {
@@ -525,11 +555,13 @@ impl ScopeTransfer {
 			client: terms.client,
 			scope: terms.scope,
 			from: terms.from,
+			to_scope: terms.to_scope,
 			to: terms.to,
 			amount: terms.amount,
 			reason: terms.reason,
 			subject_ref: terms.subject_ref,
 			memo: terms.memo,
+			operation_id: terms.operation_id,
 			pending: Vec::new(),
 		})
 	}
@@ -552,6 +584,14 @@ impl ScopeTransfer {
 
 	pub fn to(&self) -> &ScopeAccountLabel {
 		&self.to
+	}
+
+	pub fn to_scope(&self) -> &ScopeId {
+		&self.to_scope
+	}
+
+	pub fn operation_id(&self) -> Option<uuid::Uuid> {
+		self.operation_id
 	}
 
 	pub fn amount(&self) -> Usdt {
@@ -943,6 +983,12 @@ pub enum MoneyEventKind {
 	HoldVoided,
 	HoldExpired,
 	Transferred,
+	/// One line of a payout.
+	PaidOut,
+	/// A `Request*` was stored and its approval opened.
+	OperationRequested,
+	OperationRejected,
+	OperationFailed,
 	InvoiceCreated,
 	InvoicePaid,
 	InvoiceCancelled,
@@ -960,6 +1006,10 @@ impl MoneyEventKind {
 			Self::HoldVoided => "hold_voided",
 			Self::HoldExpired => "hold_expired",
 			Self::Transferred => "transferred",
+			Self::PaidOut => "paid_out",
+			Self::OperationRequested => "operation_requested",
+			Self::OperationRejected => "operation_rejected",
+			Self::OperationFailed => "operation_failed",
 			Self::InvoiceCreated => "invoice_created",
 			Self::InvoicePaid => "invoice_paid",
 			Self::InvoiceCancelled => "invoice_cancelled",
@@ -977,6 +1027,10 @@ impl MoneyEventKind {
 			"hold_voided" => Ok(Self::HoldVoided),
 			"hold_expired" => Ok(Self::HoldExpired),
 			"transferred" => Ok(Self::Transferred),
+			"paid_out" => Ok(Self::PaidOut),
+			"operation_requested" => Ok(Self::OperationRequested),
+			"operation_rejected" => Ok(Self::OperationRejected),
+			"operation_failed" => Ok(Self::OperationFailed),
 			"invoice_created" => Ok(Self::InvoiceCreated),
 			"invoice_paid" => Ok(Self::InvoicePaid),
 			"invoice_cancelled" => Ok(Self::InvoiceCancelled),
@@ -1113,6 +1167,7 @@ mod tests {
 			auto_payout_24h: usdt("5000"),
 			auto_transfer_per_op: usdt("1000"),
 			auto_transfer_24h: usdt("5000"),
+			scope_budget_24h: usdt("5000"),
 		};
 		let facts = |amount: &str, before: &str| AutoTransferFacts {
 			amount: usdt(amount),
@@ -1136,11 +1191,13 @@ mod tests {
 			client: client("invest"),
 			scope: scope("invest"),
 			from: label("alloc:quy_nhon"),
+			to_scope: scope("invest"),
 			to: ScopeAccountLabel::fee(),
 			amount: usdt("12.5"),
 			reason: TransferReason::FeeSweep,
 			subject_ref: SubjectRef::parse("fee_settlement:4f0c2d1e-0000-4000-8000-0123456789ab").unwrap(),
 			memo: String::new(),
+			operation_id: None,
 		}
 	}
 
@@ -1168,6 +1225,31 @@ mod tests {
 			..terms()
 		};
 		assert!(ScopeTransfer::request(ScopeTransferId::new(), sideways).is_err(), "a fee sweep lands only in fee");
+		let abroad = TransferTerms { to_scope: scope("sa"), ..terms() };
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), abroad).is_err(), "a fee sweep stays in its scope");
+	}
+
+	#[test]
+	fn only_an_approved_operation_moves_money_into_another_account_or_scope() {
+		let approved = |operation_id: Option<uuid::Uuid>, to: &str| TransferTerms {
+			to_scope: scope("sa"),
+			to: label(to),
+			reason: TransferReason::Approved,
+			operation_id,
+			..terms()
+		};
+		let mut transfer = ScopeTransfer::request(ScopeTransferId::new(), approved(Some(uuid::Uuid::new_v4()), "alloc:quy_nhon")).unwrap();
+		let events = transfer.drain_events();
+		let json = serde_json::to_value(&events[0]).unwrap();
+		assert_eq!(json["to_scope"], "sa", "same label, another scope, is another account");
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), approved(None, "alloc:y")).is_err());
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), approved(Some(uuid::Uuid::new_v4()), "fee")).is_err());
+		let sweep_with_operation = TransferTerms {
+			operation_id: Some(uuid::Uuid::new_v4()),
+			..terms()
+		};
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), sweep_with_operation).is_err());
+		assert_eq!(TransferReason::parse("approved").unwrap(), TransferReason::Approved);
 	}
 
 	#[test]
@@ -1284,6 +1366,10 @@ mod tests {
 			MoneyEventKind::HoldVoided,
 			MoneyEventKind::HoldExpired,
 			MoneyEventKind::Transferred,
+			MoneyEventKind::PaidOut,
+			MoneyEventKind::OperationRequested,
+			MoneyEventKind::OperationRejected,
+			MoneyEventKind::OperationFailed,
 		] {
 			assert_eq!(MoneyEventKind::parse(kind.as_str()).unwrap(), kind);
 		}
