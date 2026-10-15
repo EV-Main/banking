@@ -38,6 +38,9 @@ impl MandateOperation {
 	}
 }
 
+/// The furthest a dated mandate may end from its grant: five years.
+pub const MAX_MANDATE_SECONDS: i64 = 5 * 366 * 24 * 60 * 60;
+
 /// What a mandate allows the client to draw. `book_fill_24h` is set exactly when the mandate
 /// lists BOOK_FILL.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,10 +111,12 @@ impl MandateTerms {
 		})
 	}
 
-	/// A grant that is over before it starts is a mistake, not a mandate.
+	/// A grant that is over before it starts is a mistake, not a mandate; one that ends past
+	/// [`MAX_MANDATE_SECONDS`] is "until revoked" in disguise and must say so.
 	pub fn check_expiry(&self, now: i64) -> Result<(), DomainError> {
 		match self.expires_at {
 			Some(at) if at <= now => Err(DomainError::Validation("expires_at must be in the future".into())),
+			Some(at) if at > now.saturating_add(MAX_MANDATE_SECONDS) => Err(DomainError::Validation("expires_at must be within 5 years".into())),
 			Some(_) | None => Ok(()),
 		}
 	}
@@ -154,13 +159,13 @@ pub struct Mandate {
 /// decided under.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MandateUsage {
-	/// Holds placed and charges made in the rolling 24 h: a hold at its full amount until it
-	/// is released, then at what was captured of it.
+	/// Debits in the rolling 24 h: a hold placed in it at its full amount until it is
+	/// released, then at what was captured of it; and what was captured in it of an older hold.
 	pub drawn_24h: Usdt,
 	/// What the client's active holds hold now.
 	pub outstanding: Usdt,
-	/// Captured from holds under this mandate into other users' compartments in the rolling
-	/// 24 h.
+	/// Captured from the client's holds on the compartment into other users' compartments in
+	/// the rolling 24 h, under whichever mandate.
 	pub book_filled_24h: Usdt,
 }
 
@@ -188,20 +193,26 @@ impl Mandate {
 		Ok(())
 	}
 
-	/// Whether `amount` of a hold placed under this mandate may go to another user. Decided by
-	/// this mandate for the hold's whole life, replaced or not; a revoked one has no active
-	/// holds left to ask.
-	pub fn admit_book_fill(&self, amount: Usdt, usage: MandateUsage) -> Result<(), LedgerRefusal> {
-		let Some(cap) = self
-			.terms
+	/// The BOOK_FILL cap, when this mandate grants it and is not revoked.
+	fn book_fill_cap(&self) -> Option<Usdt> {
+		self.terms
 			.caps
 			.book_fill_24h
 			.filter(|_| self.terms.lists(MandateOperation::BookFill) && self.revoked_at.is_none())
-		else {
-			return Err(LedgerRefusal::MandateRequired);
+	}
+
+	/// Whether `amount` of a hold placed under this mandate may go to another user. Both the
+	/// mandate the hold was placed under and the user's `current` one for the client must grant
+	/// BOOK_FILL, and the tighter of their caps bounds the rolling 24 h: a re-grant that drops
+	/// BOOK_FILL or lowers its cap takes effect on holds already standing.
+	pub fn admit_book_fill(&self, current: Option<&Mandate>, amount: Usdt, usage: MandateUsage, now: i64) -> Result<(), LedgerRefusal> {
+		let refuse = Err(LedgerRefusal::MandateRequired);
+		let Some(current) = current.filter(|current| current.is_live(now)) else { return refuse };
+		let (Some(placed), Some(now_cap)) = (self.book_fill_cap(), current.book_fill_cap()) else {
+			return refuse;
 		};
-		if usage.book_filled_24h.checked_add(amount).is_none_or(|filled| filled > cap) {
-			return Err(LedgerRefusal::MandateRequired);
+		if usage.book_filled_24h.checked_add(amount).is_none_or(|filled| filled > placed.min(now_cap)) {
+			return refuse;
 		}
 		Ok(())
 	}
@@ -317,18 +328,42 @@ mod tests {
 	}
 
 	#[test]
-	fn a_book_fill_needs_the_holds_mandate_to_list_it_within_its_cap() {
-		let m = mandate(caps("5", "5", "5", Some("3")), &[MandateOperation::Reserve, MandateOperation::BookFill], None);
-		assert_eq!(m.admit_book_fill(usdt("1"), usage("0", "0", "2")), Ok(()));
-		assert_eq!(m.admit_book_fill(usdt("1.1"), usage("0", "0", "2")), Err(LedgerRefusal::MandateRequired));
-		let replaced = Mandate { replaced_at: Some(1), ..m.clone() };
+	fn a_book_fill_needs_both_the_holds_and_the_current_mandate_within_the_tighter_cap() {
+		use MandateOperation::*;
+		let m = mandate(caps("5", "5", "5", Some("3")), &[Reserve, BookFill], None);
+		assert_eq!(m.admit_book_fill(Some(&m), usdt("1"), usage("0", "0", "2"), 0), Ok(()));
+		assert_eq!(m.admit_book_fill(Some(&m), usdt("1.1"), usage("0", "0", "2"), 0), Err(LedgerRefusal::MandateRequired));
 		assert_eq!(
-			replaced.admit_book_fill(usdt("1"), MandateUsage::default()),
-			Ok(()),
-			"the hold keeps the mandate it was placed under"
+			m.admit_book_fill(None, usdt("1"), MandateUsage::default(), 0),
+			Err(LedgerRefusal::MandateRequired),
+			"no current mandate"
 		);
-		let plain = mandate(caps("5", "5", "5", None), &[MandateOperation::Reserve], None);
-		assert_eq!(plain.admit_book_fill(usdt("1"), MandateUsage::default()), Err(LedgerRefusal::MandateRequired));
+		let replaced = Mandate { replaced_at: Some(1), ..m.clone() };
+		let lower = mandate(caps("5", "5", "5", Some("2")), &[Reserve, BookFill], None);
+		assert_eq!(replaced.admit_book_fill(Some(&lower), usdt("2"), MandateUsage::default(), 0), Ok(()));
+		assert_eq!(
+			replaced.admit_book_fill(Some(&lower), usdt("2.1"), MandateUsage::default(), 0),
+			Err(LedgerRefusal::MandateRequired),
+			"a lower cap granted since binds the standing hold"
+		);
+		let dropped = mandate(caps("5", "5", "5", None), &[Reserve], None);
+		assert_eq!(
+			replaced.admit_book_fill(Some(&dropped), usdt("1"), MandateUsage::default(), 0),
+			Err(LedgerRefusal::MandateRequired),
+			"a re-grant without BOOK_FILL ends it for standing holds"
+		);
+		let plain = mandate(caps("5", "5", "5", None), &[Reserve], None);
+		assert_eq!(plain.admit_book_fill(Some(&m), usdt("1"), MandateUsage::default(), 0), Err(LedgerRefusal::MandateRequired));
+		let expiring = mandate(caps("5", "5", "5", Some("3")), &[Reserve, BookFill], Some(10));
+		assert_eq!(m.admit_book_fill(Some(&expiring), usdt("1"), MandateUsage::default(), 10), Err(LedgerRefusal::MandateRequired));
+	}
+
+	#[test]
+	fn a_dated_mandate_ends_within_five_years() {
+		let now = 1_000;
+		let at = |expires_at| terms(caps("1", "1", "1", None), &[MandateOperation::Reserve], Some(expires_at)).unwrap();
+		assert!(at(now + MAX_MANDATE_SECONDS).check_expiry(now).is_ok());
+		assert!(at(now + MAX_MANDATE_SECONDS + 1).check_expiry(now).is_err());
 	}
 
 	#[test]

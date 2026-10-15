@@ -59,7 +59,8 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{
-		book, compartments, fee_accrual, issuance, money_events,
+		book, compartments, fee_accrual, issuance,
+		money_events::{self, MoneyEventError},
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
 		scope_holds, scope_invoices, scope_ledger, scope_payouts,
@@ -463,15 +464,21 @@ impl Relay {
 					// The ledger took the event; only its money event is missing. Bounded, so one
 					// row that can never be recorded stops itself and not every deposit and
 					// withdrawal behind it (banking#514).
-					if row.attempts + 1 >= MAX_RETRYABLE_ATTEMPTS {
-						self.park_unrecorded(row, &format!("money event: {reason}")).await;
-						advanced = true;
-					} else {
-						if let Err(err) = outbox::record_failure(&self.pool, row.seq, &reason).await {
-							warn!(seq = row.seq, "relay: failed to record the retry attempt: {err}");
+					match outbox::record_money_event_failure(&self.pool, row.seq, &reason).await {
+						Ok(tries) if tries >= MAX_RETRYABLE_ATTEMPTS => {
+							self.park_unrecorded(row, &format!("money event: {reason}")).await;
+							advanced = true;
 						}
-						warn!(seq = row.seq, attempts = row.attempts + 1, "relay: money event not recorded, retrying from here: {reason}");
-						return DrainStep::Throttle;
+						Ok(tries) => {
+							warn!(seq = row.seq, attempts = tries, "relay: money event not recorded, retrying from here: {reason}");
+							return DrainStep::Throttle;
+						}
+						// Uncounted, so not parked on this try: the database that refused the count
+						// is the likelier fault, and the next pass asks again.
+						Err(err) => {
+							warn!(seq = row.seq, "relay: money event not recorded ({reason}), nor its attempt: {err}");
+							return DrainStep::Throttle;
+						}
 					}
 				}
 				Outcome::RetryBounded(reason) => {
@@ -505,8 +512,8 @@ impl Relay {
 		// the same breath as its event parks, or a Capture is told CAPTURED for money nobody
 		// holds (banking#514).
 		let parked = match refused_reserve(row, applied_legs) {
-			Some(hold_id) => scope_holds::park_refused_reserve(&self.pool, row.seq, reason, hold_id).await,
-			None => outbox::mark_parked(&self.pool, row.seq, reason).await,
+			Some(hold_id) => scope_holds::park_refused_reserve(&self.pool, row.seq, reason, hold_id).await.map_err(|e| e.to_string()),
+			None => outbox::mark_parked(&self.pool, row.seq, reason).await.map_err(|e| e.to_string()),
 		};
 		if let Err(err) = parked {
 			error!(seq = row.seq, "relay: failed to stamp parked_at (event will re-deliver): {err}");
@@ -551,17 +558,13 @@ impl Relay {
 	}
 
 	/// What a failed money event means for the drain: an outage of Postgres or the ledger is
-	/// waited out like any other; anything else — a row that cannot be read or decoded — is
-	/// retried a bounded number of times and then parked alone.
-	async fn money_event_failed(&self, reason: String) -> Outcome {
-		if let Err(err) = sqlx::query("SELECT 1").execute(&self.pool).await {
-			return Outcome::Retry(format!("{reason} (database unavailable: {err})"));
+	/// waited out like any other; anything else — a row that cannot be read or decoded, an
+	/// event the database refuses — is retried a bounded number of times and then parked alone.
+	fn money_event_failed(context: &str, err: MoneyEventError) -> Outcome {
+		match err {
+			MoneyEventError::Unavailable(reason) => Outcome::Retry(format!("{context}money event: {reason}")),
+			MoneyEventError::Unrecordable(reason) => Outcome::MoneyEvent(format!("{context}{reason}")),
 		}
-		// Any id answers the probe; only whether the ledger answers matters.
-		if let Err(LedgerError::Unavailable(err)) = self.ledger.transfer_exists(0).await {
-			return Outcome::Retry(format!("{reason} (ledger unavailable: {err})"));
-		}
-		Outcome::MoneyEvent(reason)
 	}
 
 	async fn dispatch(&self, row: &OutboxRow) -> Outcome {
@@ -601,7 +604,7 @@ impl Relay {
 				Ok(true) => {
 					// The leg posted on an earlier delivery that stopped before its money event.
 					if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
-						return self.money_event_failed(format!("{name} money event: {err}")).await;
+						return Self::money_event_failed(&format!("{name}: "), err);
 					}
 					return match posting.mark_posted(&self.pool, row).await {
 						Ok(()) => Outcome::Done,
@@ -809,7 +812,7 @@ impl Relay {
 		// Before the posted stamp: a failure here retries the row, and the stamp's early path
 		// above records the event that is still owed.
 		if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
-			return self.money_event_failed(err).await;
+			return Self::money_event_failed("", err);
 		}
 		if let Some(posting) = posting
 			&& let Err(err) = posting.mark_posted(&self.pool, row).await

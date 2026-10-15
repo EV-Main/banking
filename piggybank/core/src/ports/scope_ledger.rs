@@ -199,9 +199,13 @@ pub struct HoldChangeFacts {
 	pub destination_owner: Option<ClientId>,
 	/// A capture into a user: who that is (`None` when banking has no such user).
 	pub destination_user: Option<HoldUser>,
-	/// A capture into a user: the mandate the hold was placed under, with its book fills of the
-	/// rolling 24 h counted under that mandate's book-fill lock (`None` when it is gone).
+	/// A capture into a user: the mandate the hold was placed under, with the client's book
+	/// fills on the compartment over the rolling 24 h, counted under the compartment's
+	/// book-fill lock (`None` when the mandate is gone).
 	pub book_fill: Option<MandateDraw>,
+	/// A capture into a user: the user's current mandate for the client in the scope, which
+	/// must grant BOOK_FILL too (`None` when there is none).
+	pub current_mandate: Option<Mandate>,
 }
 
 /// Applies a capture or a void to the locked hold, or refuses. A hold left unchanged (a void

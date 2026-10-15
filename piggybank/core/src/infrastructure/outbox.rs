@@ -51,11 +51,15 @@ pub async fn lock_claim(conn: &mut PgConnection, claim: &LedgerAccountKey) -> Re
 /// same key space as [`lock_claim`]; a name is never a ledger logical key, so the two cannot
 /// meet by accident — prefix it with what it locks.
 pub async fn lock_named(conn: &mut PgConnection, name: &str) -> Result<(), DomainError> {
+	lock_named_on(conn, name).await.map_err(repo_err)
+}
+
+/// [`lock_named`] with the driver's error, for a caller that tells an outage from the rest.
+pub async fn lock_named_on(conn: &mut PgConnection, name: &str) -> Result<(), sqlx::Error> {
 	sqlx::query("SELECT pg_advisory_xact_lock($1)")
 		.bind(advisory_key(Uuid::new_v5(&Uuid::NAMESPACE_OID, name.as_bytes())))
 		.execute(&mut *conn)
-		.await
-		.map_err(repo_err)?;
+		.await?;
 	Ok(())
 }
 
@@ -205,6 +209,17 @@ pub async fn mark_compensated(pool: &PgPool, seq: i64) -> Result<(), sqlx::Error
 	sqlx::query("UPDATE outbox SET compensated_at = now() WHERE seq = $1").bind(seq).execute(pool).await?;
 	Ok(())
 }
+/// One more failed try at an applied row's money event; returns how many there have been.
+/// Counted apart from `attempts`, so an outage waited out before does not spend the bound, and
+/// read only here — the drain's own read never names the column, so a relay over a database
+/// migrated short of 0058 (a test replaying production's history) still drains.
+pub async fn record_money_event_failure(pool: &PgPool, seq: i64, error: &str) -> Result<i32, sqlx::Error> {
+	sqlx::query_scalar("UPDATE outbox SET money_event_attempts = money_event_attempts + 1, last_error = $2 WHERE seq = $1 RETURNING money_event_attempts")
+		.bind(seq)
+		.bind(error)
+		.fetch_one(pool)
+		.await
+}
 /// Record a transient (retryable) failure for forensics without advancing or parking —
 /// bumps the attempt counter and stores the last error.
 pub async fn record_failure(pool: &PgPool, seq: i64, error: &str) -> Result<(), sqlx::Error> {
@@ -247,10 +262,12 @@ pub async fn parked_rows(pool: &PgPool) -> Result<Vec<ParkedRow>, sqlx::Error> {
 /// (nothing to re-drive) and a **compensated** one — its recovery event already applied,
 /// so re-driving would double-apply. Returns whether a row was unparked.
 pub async fn unpark(pool: &PgPool, seq: i64) -> Result<bool, sqlx::Error> {
-	let result = sqlx::query("UPDATE outbox SET parked_at = NULL, attempts = 0 WHERE seq = $1 AND parked_at IS NOT NULL AND dispatched_at IS NULL AND compensated_at IS NULL")
-		.bind(seq)
-		.execute(pool)
-		.await?;
+	let result = sqlx::query(
+		"UPDATE outbox SET parked_at = NULL, attempts = 0, money_event_attempts = 0 WHERE seq = $1 AND parked_at IS NOT NULL AND dispatched_at IS NULL AND compensated_at IS NULL",
+	)
+	.bind(seq)
+	.execute(pool)
+	.await?;
 	Ok(result.rows_affected() > 0)
 }
 /// One row's terminal stamps — `(dispatched, compensated)` — read after a refused

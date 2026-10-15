@@ -81,6 +81,27 @@ impl AppConfig {
 	pub fn cookie_secure(&self) -> bool {
 		self.auth_cookie_secure.unwrap_or(self.app_env == "production")
 	}
+
+	/// In production, no script from another origin may run in the cabinet's page. The
+	/// wallet's consent routes (GrantMandate above all) trust a request from the first-party
+	/// origin with the user's cookies, and a microfrontend mounts in that page's light DOM,
+	/// so a scope's bundle could grant itself a mandate with no one clicking. Until concierge
+	/// stamps a login time the BFF can demand a fresh sign-in by, the only safe list is one
+	/// naming nothing but the cabinet's own origin.
+	pub fn check_script_origins(&self) -> Result<(), String> {
+		if self.app_env != "production" {
+			return Ok(());
+		}
+		let own = self.cabinet_ws_origin.as_deref().unwrap_or_default();
+		let foreign: Vec<&str> = self.mfe_allowed_origins.iter().map(String::as_str).filter(|origin| *origin != own).collect();
+		if foreign.is_empty() {
+			return Ok(());
+		}
+		Err(format!(
+			"MFE_ALLOWED_ORIGINS names origins other than the cabinet's own ({own}): {}. Their scripts would run with the user's session on the wallet's consent routes",
+			foreign.join(", ")
+		))
+	}
 }
 
 /// The issuance bearer as a newtype with a hand-written `Debug`, so the secret is never
@@ -253,6 +274,31 @@ mod tests {
 	/// production: a websocket handshake is exempt from CORS but still carries the
 	/// `ev_access` cookie, so an unset origin there would let any page read the live
 	/// consilium feed as the signed-in owner. Unset is a boot failure, not a default.
+	#[test]
+	fn production_refuses_scripts_from_any_origin_but_the_cabinets() {
+		let mut env = minimal_env();
+		env.insert("APP_ENV".to_string(), "production".to_string());
+		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
+		env.insert("CABINET_WS_ORIGIN".to_string(), "https://evinvest.ltd".to_string());
+		let load = |origins: &str| {
+			let mut env = env.clone();
+			env.insert("MFE_ALLOWED_ORIGINS".to_string(), origins.to_string());
+			AppConfig::from_source(|var| env.get(var).cloned()).expect("production env loads")
+		};
+		assert!(load("").check_script_origins().is_ok());
+		assert!(load("https://evinvest.ltd").check_script_origins().is_ok());
+		let refused = load("https://evinvest.ltd,https://aquafix.example")
+			.check_script_origins()
+			.expect_err("a scope's origin must not boot");
+		assert!(refused.contains("https://aquafix.example"), "{refused}");
+		assert!(load("https://sub.evinvest.ltd").check_script_origins().is_err(), "a subdomain is another origin");
+
+		let mut dev = minimal_env();
+		dev.insert("MFE_ALLOWED_ORIGINS".to_string(), "http://localhost:3001".to_string());
+		let dev = AppConfig::from_source(|var| dev.get(var).cloned()).expect("dev env loads");
+		assert!(dev.check_script_origins().is_ok(), "local MFEs run on their own ports");
+	}
+
 	#[test]
 	fn the_websocket_origin_guard_is_mandatory_in_production() {
 		let mut env = minimal_env();

@@ -511,21 +511,23 @@ impl HoldChange for CaptureChange<'_> {
 					ScopeState::Frozen => return Err(TransferError::Refused(LedgerRefusal::ScopeFrozen)),
 					ScopeState::Active | ScopeState::Closed => {}
 				}
-				// Decided by the mandate the hold was placed under, for the hold's whole life,
-				// and capped over a rolling 24 h by that mandate's own BOOK_FILL cap.
+				// Granted by the mandate the hold was placed under and by the user's current one,
+				// and capped over a rolling 24 h by the tighter of their BOOK_FILL caps.
 				let draw = facts
 					.book_fill
 					.as_ref()
 					.filter(|draw| draw.mandate.id == hold.terms().mandate_id)
 					.ok_or(TransferError::Refused(LedgerRefusal::MandateRequired))?;
 				draw.mandate
-					.admit_book_fill(request.amount.unwrap_or_else(|| hold.remaining()), draw.usage)
+					.admit_book_fill(facts.current_mandate.as_ref(), request.amount.unwrap_or_else(|| hold.remaining()), draw.usage, facts.now)
 					.map_err(TransferError::Refused)?;
 				let other = facts.destination_user.ok_or_else(|| DomainError::NotFound {
 					entity: "user",
 					id: target_subject(&request.to).to_owned(),
 				})?;
-				if facts.held_user.is_none_or(|held| held.blocked) {
+				// Neither side of a fill may be frozen: the payer's money stays put, and a frozen
+				// recipient takes no money in, as with a move into a frozen user's compartment.
+				if facts.held_user.is_none_or(|held| held.blocked) || other.blocked {
 					return Err(TransferError::Refused(LedgerRefusal::UserFrozen));
 				}
 				HoldDestination::User(other.id)

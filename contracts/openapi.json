@@ -3018,7 +3018,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "GrantMandate",
-        "description": "Let a scope's service draw on the caller's compartment in that scope — hold it\n (a subscription, a buy order) or charge it — within caps the caller sets. This is\n the only consent a service's debit stands on; without it the service can only\n send an invoice. A client that banking's grants do not allow to touch users'\n compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,\n client): granting again replaces it — new holds and charges draw on the new one,\n while holds already standing stay under the mandate they were placed with (its\n BOOK_FILL still decides their captures) until they finish. Naturally confirmed on\n the caller's first move into the scope, on one screen.",
+        "description": "Let a scope's service draw on the caller's compartment in that scope — hold it\n (a subscription, a buy order) or charge it — within caps the caller sets. This is\n the only consent a service's debit stands on; without it the service can only\n send an invoice. A client that banking's grants do not allow to touch users'\n compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,\n client): granting again replaces it — new holds and charges draw on the new one,\n while holds already standing stay under the mandate they were placed with until they\n finish. The new mandate still binds them: none outlives its `expires_at`, and a\n capture of one into another user needs BOOK_FILL from both. Naturally confirmed on\n the caller's first move into the scope, on one screen.",
         "operationId": "banking.v1.CompartmentService.GrantMandate",
         "parameters": [
           {
@@ -3136,7 +3136,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "ListMandates",
-        "description": "The caller's live mandates, newest first.",
+        "description": "The caller's live mandates, and replaced ones whose holds still hold money, newest\n first.",
         "operationId": "banking.v1.CompartmentService.ListMandates",
         "parameters": [
           {
@@ -10754,7 +10754,7 @@
             ],
             "title": "expires_at",
             "format": "int64",
-            "description": "unix seconds, in the future; 0 = until revoked"
+            "description": "unix seconds, in the future and within 5 years; 0 = until revoked"
           },
           "idempotency_key": {
             "type": "string",
@@ -10769,12 +10769,12 @@
           "cap_book_fill_24h": {
             "type": "string",
             "title": "cap_book_fill_24h",
-            "description": "Required exactly when `operations` lists BOOK_FILL, \u003e 0: the most a rolling 24 h of\n captures may send from holds under this mandate into OTHER users' compartments."
+            "description": "Required exactly when `operations` lists BOOK_FILL, \u003e 0: the most a rolling 24 h of\n captures may send from the client's holds into OTHER users' compartments. A hold\n placed under an earlier mandate is bound by the lower of its cap and this one."
           }
         },
         "title": "GrantMandateRequest",
         "additionalProperties": false,
-        "description": "The caps are decimal USDT. What counts against them is the client's draws on the caller's\n compartment in the scope — under this mandate and any it replaced, so granting again\n never resets a cap: a hold counts at its full amount from when it is placed, until it is\n voided or expires, when only what was captured of it still counts."
+        "description": "The caps are decimal USDT. What counts against them is the client's draws on the caller's\n compartment in the scope — under this mandate and any it replaced, so granting again\n never resets a cap: a hold counts at its full amount from when it is placed, until it is\n voided or expires, when only what was captured of it still counts; a capture of a hold\n placed more than 24 h ago counts from when it is made."
       },
       "banking.v1.HolderGrantTerms": {
         "type": "object",
@@ -11322,6 +11322,15 @@
             "type": "string",
             "title": "book_filled_24h",
             "description": "sent to other users in the rolling 24 h"
+          },
+          "replaced_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "replaced_at",
+            "format": "int64",
+            "description": "0 unless a later grant replaced it; then `outstanding` is its own holds'"
           }
         },
         "title": "Mandate",
