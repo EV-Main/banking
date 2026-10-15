@@ -4,20 +4,22 @@
   };
   outputs = { self, v_flakes }:
     let
-      inherit (v_flakes) flake-utils pre-commit-hooks rust-overlay;
+      inherit (v_flakes) flake-utils pre-commit-hooks;
     in
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import v_flakes.default_nixpkgs {
           inherit system;
-          overlays = [ (import rust-overlay) ];
           config.allowUnfree = true;
         };
         # Canonical toolchain pinned in v_flakes — byte-identical across repos, so
         # the nix store dedups it and sccache cross-references compilations.
         rust = v_flakes.rs.default_nightly system;
-        pre-commit-check = pre-commit-hooks.lib.${system}.run (v_flakes.files.preCommit { inherit pkgs; });
+        pre-commit-check = pre-commit-hooks.lib.${system}.run (v_flakes.files.preCommit {
+          inherit pkgs;
+          webAssets.root = "cabinet/frontend"; # next/image decodes the source on every cache miss on the weak pod (site_conductor#236)
+        });
         pname = "ev_banking";
         # ── ev_invest dev topology (single source of truth for ports) ───────
         # ONE postgres + ONE redis serve every sibling repo (concierge and
@@ -210,9 +212,7 @@
         '';
 
         # ── production binaries + OCI images ────────────────────────────────
-        # Lean toolchain for release image builds: rustc + cargo + std only, keeping
-        # the fat dev toolchain out of the release closure (mirrors site_conductor).
-        rustBuild = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal);
+        rustBuild = v_flakes.rs.build_nightly system;
         rustPlatformBuild = pkgs.makeRustPlatform { cargo = rustBuild; rustc = rustBuild; };
         buildSrc = pkgs.lib.cleanSourceWith {
           src = ./.;
@@ -298,6 +298,10 @@
             cp -r cabinet/frontend/.next/standalone/. $out/
             cp -r cabinet/frontend/.next/static $out/cabinet/frontend/.next/static
             cp -r cabinet/frontend/public $out/cabinet/frontend/public
+            # Next writes its caches under the (read-only) store path; `/tmp` is the pod's emptyDir.
+            # Not a subdir: Next's recursive mkdir fails through a dangling link.
+            ln -sT /tmp $out/cabinet/frontend/.next/cache
+            ln -sT /tmp $out/cabinet/frontend/.next/server/route-cache
             runHook postInstall
           '';
           dontNpmInstall = true;
@@ -459,10 +463,13 @@
             # basePath mount: the zone answers under /cabinet (3xx from / counts as probe success).
             healthPath = "/cabinet";
             criticality = "normal";
-            entrypoint = [ "${pkgs.nodejs}/bin/node" "${cabinetApp}/cabinet/frontend/server.js" ];
+            # V8 sizes its heap without regard to the 192Mi limit and defers major GC until the OOM kill (site_conductor#236).
+            # Soaked on /login: uncapped ratchets to ~370M RSS; these flags plateau at ~158M, the semi-space cap alone saving ~20M.
+            entrypoint = [ "${pkgs.nodejs}/bin/node" "--max-old-space-size=96" "--max-semi-space-size=2" "${cabinetApp}/cabinet/frontend/server.js" ];
             contents = [ pkgs.nodejs cabinetApp ];
             workingDir = "${cabinetApp}/cabinet/frontend";
-            imageEnv = [ "PORT=50061" "HOSTNAME=0.0.0.0" "NODE_ENV=production" ];
+            # glibc's per-thread arenas keep freed native buffers resident, ratcheting RSS (site_conductor#236)
+            imageEnv = [ "PORT=50061" "HOSTNAME=0.0.0.0" "NODE_ENV=production" "MALLOC_ARENA_MAX=2" ];
             env = {
               # Runtime reads (proxy.ts CSP etc.) — the rewrite itself is baked at build.
               CABINET_BACKEND_URL = "http://ev-banking-cabinet-backend:50062";
