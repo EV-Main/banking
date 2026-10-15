@@ -49,9 +49,17 @@ ev::settings! {
 		/// local dev (the frontend runs on some `http://localhost:PORT`) and never right in
 		/// production — where a missing value fails the boot rather than failing open. The
 		/// same origin is the first-party gate of the mutating wallet routes
-		/// (`routes::first_party_origin`).
+		/// (`routes::first_party_origin`), which, unlike the socket, fails CLOSED when it is
+		/// unset: a dev box that wants to move money sets it to its browser origin.
 		#[required_in("production")]
 		cabinet_ws_origin: Option<String>,
+		/// The scope hosts (`https://invest.evinvest.ltd`, …) that may READ the wallet
+		/// cross-origin with the user's cookies — `GET /api/wallet`, `/api/wallet/compartments`,
+		/// `/api/operations` and nothing else (`routes::cors`). Empty ⇒ no CORS at all. Not
+		/// required in production: an empty list only means the scope hosts cannot show a
+		/// balance, never that anyone can move money. Mirrors the origins in
+		/// `cabinet/frontend/shared/config/wallet-scopes.ts`.
+		wallet_cors_origins: Vec<CorsOrigin> = "",
 		app_env: String,
 		/// Unset ⇒ error monitoring is a silent no-op. Right locally; in
 		/// production it means the BFF's errors reach nobody, so there the boot
@@ -93,6 +101,38 @@ impl std::str::FromStr for IssuanceToken {
 	}
 }
 ev::settings_via_from_str!(IssuanceToken);
+
+/// One exact `scheme://host[:port]` origin, compared byte for byte against the browser's
+/// `Origin`. Parsed strictly so a typo fails the boot instead of silently never matching,
+/// and so the two values that would hand the user's balance to anyone — `*` and the
+/// `null` origin of a sandboxed frame — cannot be configured at all.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CorsOrigin(String);
+
+impl CorsOrigin {
+	pub fn as_str(&self) -> &str {
+		&self.0
+	}
+}
+
+impl std::str::FromStr for CorsOrigin {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let host = s
+			.strip_prefix("https://")
+			// Plain http only on loopback, for a dev scope host; anything else would let a
+			// network attacker on the path read the balance the cookie unlocks.
+			.or_else(|| s.strip_prefix("http://").filter(|h| ["localhost", "127.0.0.1"].contains(&h.split(':').next().unwrap_or_default())))
+			.ok_or_else(|| format!("{s:?} is not an https:// origin"))?;
+		let well_formed = !host.is_empty() && host.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | ':')) && !host.starts_with(['.', '-', ':']);
+		if !well_formed {
+			return Err(format!("{s:?} is not a bare lowercase origin (no path, wildcard or trailing slash)"));
+		}
+		Ok(Self(s.to_owned()))
+	}
+}
+ev::settings_via_from_str!(CorsOrigin);
 
 #[cfg(test)]
 mod tests {
@@ -140,6 +180,7 @@ mod tests {
 				"MFE_REGISTRY_PATH",
 				"MFE_ALLOWED_ORIGINS",
 				"CABINET_WS_ORIGIN",
+				"WALLET_CORS_ORIGINS",
 				"APP_ENV",
 				"SENTRY_DSN",
 				"POSTHOG_KEY",
@@ -170,6 +211,42 @@ mod tests {
 
 		let vars: Vec<&str> = error.errors.iter().map(|e| e.var.as_str()).collect();
 		assert_eq!(vars, vec!["CABINET_WS_ORIGIN", "SENTRY_DSN"]);
+	}
+
+	#[test]
+	fn wallet_cors_origins_parse_the_scope_hosts_and_default_to_none() {
+		assert!(
+			AppConfig::from_source(|var| minimal_env().get(var).cloned())
+				.expect("minimal env loads")
+				.wallet_cors_origins
+				.is_empty()
+		);
+		let mut env = minimal_env();
+		env.insert("WALLET_CORS_ORIGINS".into(), "https://invest.evinvest.ltd, https://sa.evinvest.ltd".into());
+		let config = AppConfig::from_source(|var| env.get(var).cloned()).expect("two scope hosts load");
+		let origins: Vec<&str> = config.wallet_cors_origins.iter().map(CorsOrigin::as_str).collect();
+		assert_eq!(origins, ["https://invest.evinvest.ltd", "https://sa.evinvest.ltd"]);
+	}
+
+	/// A value that would widen the cross-origin read past named hosts must stop the boot.
+	#[test]
+	fn a_wildcard_or_malformed_cors_origin_is_refused() {
+		for bad in [
+			"*",
+			"null",
+			"https://*.evinvest.ltd",
+			"https://sa.evinvest.ltd/",
+			"https://SA.evinvest.ltd",
+			"http://sa.evinvest.ltd",
+			"http://localhost.evil.example",
+			"sa.evinvest.ltd",
+			"https://",
+		] {
+			assert!(bad.parse::<CorsOrigin>().is_err(), "{bad} must be refused");
+		}
+		for good in ["https://sa.evinvest.ltd", "https://invest.evinvest.ltd:8443", "http://localhost:3000", "http://127.0.0.1:3000"] {
+			assert!(good.parse::<CorsOrigin>().is_ok(), "{good} must parse");
+		}
 	}
 
 	/// The governance socket's cross-site guard must never be able to fail OPEN in

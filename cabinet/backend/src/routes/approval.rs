@@ -274,26 +274,29 @@ fn clamp(value: &str, max: usize) -> String {
 	value.chars().take(max).collect()
 }
 
-// ── the per-IP bound ─────────────────────────────────────────────────────────
+// ── the per-client bound ─────────────────────────────────────────────────────
 
-/// How long one window lasts, and how many vote attempts it admits.
+/// The vote POST's window, and how many attempts it admits per client.
 const WINDOW: Duration = Duration::from_secs(60);
 const MAX_ATTEMPTS: u32 = 10;
 /// Above this many tracked clients the map is swept of expired windows, so a spray across
 /// forged `X-Forwarded-For` values cannot grow it without bound.
 const SWEEP_AT: usize = 4096;
 
-/// A per-IP fixed window on the vote POST.
+/// A per-client fixed window. [`Default`] is the vote POST's quota, keyed by IP; the money
+/// mutations key a second instance by the verified subject (see `AppState::money_mutations`).
 ///
-/// In-process and per-replica ON PURPOSE. The real anti-brute-force bound is the
-/// server-side five-attempt token burn, which is transactional, permanent and global
+/// In-process and per-replica ON PURPOSE. On the vote the real anti-brute-force bound is
+/// the server-side five-attempt token burn, which is transactional, permanent and global
 /// (docs/CONSILIUM.md, pitfall 7) — 46 bits of code behind five tries needs no help from
-/// the edge. This exists only so a script, or a mail gateway retrying a POST, cannot turn
+/// the edge; on money the bounds that matter are the hub's own limits and idempotency.
+/// This exists only so a script, or a client retrying a POST, cannot turn one session or
 /// one leaked link into a flood of upstream RPCs; approximate, per-replica counting is
-/// enough for that, and a shared store would put a dependency in front of a path that has
+/// enough for that, and a shared store would put a dependency in front of paths that have
 /// to keep working when the rest is degraded.
-#[derive(Default)]
 pub struct AttemptLimiter {
+	window: Duration,
+	max_attempts: u32,
 	windows: Mutex<HashMap<String, Window>>,
 }
 
@@ -302,20 +305,34 @@ struct Window {
 	attempts: u32,
 }
 
+impl Default for AttemptLimiter {
+	fn default() -> Self {
+		Self::new(WINDOW, MAX_ATTEMPTS)
+	}
+}
+
 impl AttemptLimiter {
+	pub fn new(window: Duration, max_attempts: u32) -> Self {
+		Self {
+			window,
+			max_attempts,
+			windows: Mutex::new(HashMap::new()),
+		}
+	}
+
 	/// Count one attempt from `client`, and say whether it may proceed.
 	pub fn allow(&self, client: &str) -> bool {
 		let mut windows = self.windows.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 		let now = Instant::now();
 		if windows.len() >= SWEEP_AT {
-			windows.retain(|_, window| now.duration_since(window.started) < WINDOW);
+			windows.retain(|_, window| now.duration_since(window.started) < self.window);
 		}
 		let window = windows.entry(client.to_string()).or_insert(Window { started: now, attempts: 0 });
-		if now.duration_since(window.started) >= WINDOW {
+		if now.duration_since(window.started) >= self.window {
 			*window = Window { started: now, attempts: 0 };
 		}
 		window.attempts += 1;
-		window.attempts <= MAX_ATTEMPTS
+		window.attempts <= self.max_attempts
 	}
 }
 

@@ -3,6 +3,7 @@ pub mod approval;
 pub mod book;
 pub mod book_ws;
 pub mod consilium;
+pub mod cors;
 pub mod governance_ws;
 pub mod grants;
 pub mod identity;
@@ -37,7 +38,7 @@ use tower_http::{
 	trace::{DefaultOnFailure, TraceLayer},
 };
 
-use crate::{error::ApiError, session::MoneyToken, state::AppState};
+use crate::{error::ApiError, routes::approval::AttemptLimiter, session::MoneyToken, state::AppState};
 
 /// Outer per-request deadline: a handler that is still awaiting an upstream plane past
 /// this bound is aborted and the response becomes a 504, so a wedged plane can never hold
@@ -87,7 +88,10 @@ fn requests(state: AppState) -> Router {
 		.route("/api/notifications/settings", get(notifications::settings))
 		.route("/api/notifications/settings/channel", post(notifications::set_channel))
 		.route("/api/notifications/settings/topic", post(notifications::set_topic))
-		.route("/api/wallet", get(money::get_wallet))
+		// The three reads a scope host shows; see `cors` for why nothing else is listed.
+		.route("/api/wallet", cors::scope_readable(&state, get(money::get_wallet)))
+		.route("/api/wallet/compartments", cors::scope_readable(&state, get(money::list_compartments)))
+		.route("/api/wallet/compartments/move", post(money::move_funds))
 		.route("/api/wallet/deposit-address", get(money::deposit_address))
 		.route("/api/wallet/withdrawals", get(money::list_withdrawals).post(money::request_withdrawal))
 		.route("/api/wallet/withdrawals/cancel", post(money::cancel_withdrawal))
@@ -98,7 +102,7 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/mandates/{id}/revoke", post(money::revoke_mandate))
 		.route("/api/allocations", get(money::list_allocations))
 		.route("/api/allocations/detail", get(money::get_allocation))
-		.route("/api/operations", get(money::list_operations))
+		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
 		.route("/api/funds/nav", get(money::fund_nav))
 		.route("/api/funds/nav/history", get(money::fund_nav_history))
 		.route("/api/funds/positions", get(money::list_positions))
@@ -279,10 +283,40 @@ pub async fn require_token(state: &AppState, jar: &CookieJar) -> Result<String, 
 /// verifier would reject on issuer/audience.
 pub async fn require_money_token(state: &AppState, jar: &CookieJar) -> Result<String, ApiError> {
 	let (_token, claims) = require_identity(state, jar).await?;
+	money_token_for(state, &claims).await
+}
+
+async fn money_token_for(state: &AppState, claims: &Claims) -> Result<String, ApiError> {
 	match state.banking.token_for(&claims.sub, &state.grpc).await {
 		MoneyToken::Token(token) => Ok(token),
 		MoneyToken::NotIssued => Err(ApiError::NotConfigured),
 	}
+}
+
+/// Money mutations a user may start per [`MONEY_MUTATION_WINDOW`]. A person moving, paying
+/// or withdrawing does a handful a minute; the bound is far above that and far below what a
+/// script holding a stolen session could otherwise push at the hub.
+const MONEY_MUTATIONS_PER_WINDOW: u32 = 20;
+const MONEY_MUTATION_WINDOW: Duration = Duration::from_secs(60);
+
+/// The per-user limiter [`money_mutation`] consults.
+pub fn money_mutation_limiter() -> AttemptLimiter {
+	AttemptLimiter::new(MONEY_MUTATION_WINDOW, MONEY_MUTATIONS_PER_WINDOW)
+}
+
+/// The preamble of a route that moves the caller's money or consents to it being drawn:
+/// first-party origin and CSRF, then the verified identity, then the per-user bound, and
+/// only then the banking token — so a refused request never costs an exchange RPC. Returns
+/// the money-plane token.
+pub async fn money_mutation(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<String, ApiError> {
+	if !first_party_origin(state, headers) || !verify_csrf(state, jar, headers) {
+		return Err(ApiError::Csrf);
+	}
+	let (_token, claims) = require_identity(state, jar).await?;
+	if !state.money_mutations.allow(&claims.sub) {
+		return Err(ApiError::Grpc(Status::resource_exhausted("too many money operations; try again shortly")));
+	}
+	money_token_for(state, &claims).await
 }
 
 /// The console gate: the verified caller must hold `permission` among what concierge's
@@ -303,10 +337,15 @@ pub async fn require_permission(state: &AppState, jar: &CookieJar, permission: i
 /// request must come from a page on evinvest.ltd itself, so a scope's own host — which may
 /// read the wallet cross-origin — can only send the user there, never move their money. The
 /// origin is the one the websockets admit (`CABINET_WS_ORIGIN`, `https://evinvest.ltd` in
-/// production and required there); unset, as in local development, the gate is off. A
-/// request without `Origin` is refused: every browser sends it on a POST.
+/// production and required there). A request without `Origin` is refused: every browser
+/// sends it on a POST.
+///
+/// Unlike the socket's [`ws::origin_allowed`], an unset origin refuses everything. Production
+/// cannot boot without it, so this only changes a box run with `APP_ENV` unset or wrong —
+/// and there, a gate that opens because a variable is missing is the one way a cross-site
+/// page gets to move money. The socket stays open in that case because it only reads.
 pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
-	ws::origin_allowed(state, headers)
+	state.config.cabinet_ws_origin.as_deref().is_some_and(|expected| ws::origin_is(headers, expected))
 }
 
 /// CSRF double-submit: the `x-ev-csrf` header must equal the readable `ev_csrf` cookie.

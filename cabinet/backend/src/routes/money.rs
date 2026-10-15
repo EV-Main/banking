@@ -12,7 +12,7 @@ use tonic::{Code, Status};
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{first_party_origin, parse_body, require_money_token, required, verify_csrf},
+	routes::{first_party_origin, money_mutation, parse_body, require_money_token, required, verify_csrf},
 	state::AppState,
 };
 
@@ -90,6 +90,36 @@ pub async fn list_deposits(State(st): State<AppState>, jar: CookieJar) -> Result
 	Ok(Json(list.into()))
 }
 
+// ── compartments (main and one balance per scope) ────────────────────────────
+
+/// `GET /api/wallet/compartments` — `main` first, then every scope with the caller's balance
+/// there and its policy. Readable from the scope hosts (`routes::cors`).
+pub async fn list_compartments(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::CompartmentList>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let list = st.grpc.list_compartments(&token).await.map_err(|s| ApiError::read(s, "compartments unavailable"))?;
+	Ok(Json(list.into()))
+}
+
+/// `POST /api/wallet/compartments/move` — first-party, CSRF-checked and rate-limited: move money
+/// between `main` and one scope. The hub checks the policy, the balance and that one side is
+/// `main`; the BFF only refuses a body that names nothing.
+pub async fn move_funds(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::CompartmentMove>, ApiError> {
+	let token = money_mutation(&st, &jar, &headers).await?;
+	let v = parse_body(&body);
+	let (Some(from_scope), Some(to_scope), Some(amount), Some(idempotency_key)) =
+		(required(&v, "from_scope"), required(&v, "to_scope"), required(&v, "amount"), required(&v, "idempotency_key"))
+	else {
+		return Err(ApiError::BadRequest("from_scope, to_scope, amount and idempotency_key are required".into()));
+	};
+	let req = bk::MoveFundsRequest {
+		from_scope,
+		to_scope,
+		amount,
+		idempotency_key,
+	};
+	Ok(Json(st.grpc.move_funds(&token, req).await?.into()))
+}
+
 // ── operations ───────────────────────────────────────────────────────────────
 
 /// `GET /api/operations?limit=` — the caller's unified activity timeline, newest first.
@@ -105,12 +135,10 @@ pub async fn list_operations(State(st): State<AppState>, jar: CookieJar, Query(q
 	Ok(Json(list.into()))
 }
 
-/// `POST /api/wallet/withdrawals` — CSRF-checked: open a withdrawal of free balance.
+/// `POST /api/wallet/withdrawals` — first-party, CSRF-checked and rate-limited: open a
+/// withdrawal of free balance. Money leaving the platform, so a scope's host never asks.
 pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
+	let token = money_mutation(&st, &jar, &headers).await?;
 	let v = parse_body(&body);
 	let (Some(network), Some(address), Some(amount)) = (required(&v, "network"), required(&v, "address"), required(&v, "amount")) else {
 		return Err(ApiError::BadRequest("network, address and amount are required".into()));
@@ -119,9 +147,10 @@ pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, head
 	Ok(Json(st.grpc.request_withdrawal(&token, req).await?.into()))
 }
 
-/// `POST /api/wallet/withdrawals/cancel` — CSRF-checked: cancel a still-queued withdrawal.
+/// `POST /api/wallet/withdrawals/cancel` — first-party and CSRF-checked: cancel a still-queued
+/// withdrawal. Not rate-limited: it only ever returns money to the caller.
 pub async fn cancel_withdrawal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
+	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
 		return Err(ApiError::Csrf);
 	}
 	let token = require_money_token(&st, &jar).await?;
@@ -141,14 +170,11 @@ pub async fn get_payable_invoice(State(st): State<AppState>, jar: CookieJar, Pat
 	Ok(Json(invoice.into()))
 }
 
-/// `POST /api/wallet/invoices/{id}/pay` — first-party and CSRF-checked: pay the invoice from
+/// `POST /api/wallet/invoices/{id}/pay` — first-party, CSRF-checked and rate-limited: pay the invoice from
 /// `main` or from the caller's compartment in its scope. The body names only the source and the
 /// click's idempotency key; what is paid, how much and to whom is the server's invoice.
 pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::PayableInvoice>, ApiError> {
-	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
+	let token = money_mutation(&st, &jar, &headers).await?;
 	let v = parse_body(&body);
 	let (Some(pay_from), Some(idempotency_key)) = (required(&v, "pay_from"), required(&v, "idempotency_key")) else {
 		return Err(ApiError::BadRequest("pay_from and idempotency_key are required".into()));
@@ -170,14 +196,11 @@ pub async fn list_mandates(State(st): State<AppState>, jar: CookieJar) -> Result
 	Ok(Json(list.into()))
 }
 
-/// `POST /api/wallet/mandates` — first-party and CSRF-checked: let a scope's service draw on the
+/// `POST /api/wallet/mandates` — first-party, CSRF-checked and rate-limited: let a scope's service draw on the
 /// caller's compartment within the caps the body names. Consent to future debits, so only a
 /// page on evinvest.ltd may ask for it — never a scope's own host.
 pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
-	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
+	let token = money_mutation(&st, &jar, &headers).await?;
 	let v = parse_body(&body);
 	let (Some(scope), Some(client_id), Some(cap_per_op), Some(cap_24h), Some(idempotency_key)) = (
 		required(&v, "scope"),
@@ -222,13 +245,10 @@ fn mandate_operations(v: &serde_json::Value) -> Result<Vec<i32>, ApiError> {
 		.collect()
 }
 
-/// `POST /api/wallet/mandates/{id}/revoke` — first-party and CSRF-checked: end a mandate; the
+/// `POST /api/wallet/mandates/{id}/revoke` — first-party, CSRF-checked and rate-limited: end a mandate; the
 /// service's holds on the caller's compartment are released.
 pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::Mandate>, ApiError> {
-	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
+	let token = money_mutation(&st, &jar, &headers).await?;
 	Ok(Json(st.grpc.revoke_mandate(&token, &id).await?.into()))
 }
 
@@ -406,117 +426,276 @@ mod tests {
 	}
 }
 
-/// `PayInvoice` and the mandate routes through the real router, every plane unreachable: the
-/// first-party gate answers before anything is dialled.
+/// The money mutations and the scope-readable reads through the real router. Every plane is
+/// unreachable except, where a session is needed, a stub concierge that only publishes the
+/// JWKS: each assertion is on a decision the BFF makes before it reaches the money plane.
 #[cfg(test)]
-mod invoice_gate_tests {
-	use std::{collections::HashMap, sync::Arc};
+mod wallet_gate_tests {
+	use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 	use axum::{
 		body::{Body, to_bytes},
-		http::{Request, StatusCode},
+		http::{HeaderMap, Request, StatusCode, header},
 	};
 	use evconcierge_auth::{TokenType, Verifier, VerifierConfig};
+	use evconcierge_contracts::concierge::v1::auth_service_server::AuthServiceServer;
+	use tokio::net::TcpListener;
+	use tokio_stream::wrappers::TcpListenerStream;
+	use tonic::transport::Server;
 	use tower::ServiceExt;
 
 	use crate::{
 		config::AppConfig,
 		cookies::CookieNames,
-		routes::{approval::AttemptLimiter, router},
+		routes::{
+			approval::AttemptLimiter,
+			first_party_origin, router,
+			test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token},
+			ws,
+		},
 		session::BankingTokens,
 		state::{AppState, Grpc},
 	};
 
 	const BLACK_HOLE: &str = "http://127.0.0.1:1";
 	const FIRST_PARTY: &str = "https://evinvest.ltd";
+	const SCOPE_HOST: &str = "https://sa.evinvest.ltd";
+	const SCOPE_HOSTS: &str = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
 	const CSRF: &str = "csrf-token";
+	const MANDATE: &str = r#"{"scope":"invest","client_id":"invest","cap_per_op":"1","cap_24h":"1","operations":["reserve"],"idempotency_key":"k-1"}"#;
+	const MOVE: &str = r#"{"from_scope":"main","to_scope":"sa","amount":"1","idempotency_key":"k-1"}"#;
 
-	fn app() -> axum::Router {
-		let env = HashMap::from([
-			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE),
-			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE),
-			("CONCIERGE_GRPC_ADDR", BLACK_HOLE),
-			("BANKING_ISSUANCE_TOKEN", "test-issuance"),
-			("AUTH_ISSUER", "https://auth.test"),
-			("AUTH_CLIENT_AUDIENCE", "concierge"),
-			("MFE_REGISTRY_PATH", "/mfe-registry.json"),
-			("CABINET_WS_ORIGIN", FIRST_PARTY),
-			("APP_ENV", "development"),
+	/// Every route that moves money or consents to it being drawn, with a body that passes
+	/// the BFF's own field checks.
+	const MONEY_MUTATIONS: [(&str, &str); 5] = [
+		("/api/wallet/compartments/move", MOVE),
+		("/api/wallet/withdrawals", r#"{"network":"bep20","address":"0xabc","amount":"1"}"#),
+		("/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay", r#"{"pay_from":"main","idempotency_key":"k-1"}"#),
+		("/api/wallet/mandates", MANDATE),
+		("/api/wallet/mandates/4f0c2d1e-0000-4000-8000-0123456789ab/revoke", ""),
+	];
+
+	struct Env {
+		ws_origin: Option<&'static str>,
+		cors: &'static str,
+		concierge: String,
+	}
+
+	impl Default for Env {
+		fn default() -> Self {
+			Self {
+				ws_origin: Some(FIRST_PARTY),
+				cors: "",
+				concierge: BLACK_HOLE.into(),
+			}
+		}
+	}
+
+	fn state(env: Env) -> AppState {
+		let mut vars = HashMap::from([
+			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE.to_string()),
+			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE.to_string()),
+			("CONCIERGE_GRPC_ADDR", env.concierge.clone()),
+			("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
+			("AUTH_ISSUER", ISSUER.into()),
+			("AUTH_CLIENT_AUDIENCE", AUDIENCE.into()),
+			("MFE_REGISTRY_PATH", "/mfe-registry.json".into()),
+			("WALLET_CORS_ORIGINS", env.cors.into()),
+			("APP_ENV", "development".into()),
 		]);
-		let config = AppConfig::from_source(|var| env.get(var).map(|value| (*value).to_string())).expect("the test env loads");
+		if let Some(origin) = env.ws_origin {
+			vars.insert("CABINET_WS_ORIGIN", origin.into());
+		}
+		let config = AppConfig::from_source(|var| vars.get(var).cloned()).expect("the test env loads");
 		let verifier = Verifier::try_new(VerifierConfig {
-			issuer: config.auth_issuer.clone(),
-			audiences: vec![config.auth_client_audience.clone()],
+			issuer: ISSUER.into(),
+			audiences: vec![AUDIENCE.into()],
 			allowed_types: vec![TokenType::Access],
-			jwks_grpc_endpoint: BLACK_HOLE.into(),
+			jwks_grpc_endpoint: env.concierge.clone(),
 		})
 		.expect("build the verifier");
-		router(AppState {
+		AppState {
 			cookies: Arc::new(CookieNames::new(config.cookie_secure())),
 			banking: Arc::new(BankingTokens::new()),
 			approvals: Arc::new(AttemptLimiter::default()),
+			money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 			verifier,
-			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, BLACK_HOLE, Some("test-issuance".into())).expect("build the lazy channels"),
+			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, &env.concierge, Some("test-issuance".into())).expect("build the lazy channels"),
 			config: Arc::new(config),
-		})
+		}
 	}
 
-	/// A pay request with a valid CSRF pair and no session, from `origin`.
-	async fn pay_from(origin: Option<&str>) -> (StatusCode, String) {
-		post_from(
-			"/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay",
-			r#"{"pay_from":"main","idempotency_key":"k-1"}"#,
-			origin,
-		)
-		.await
+	fn app() -> axum::Router {
+		router(state(Env::default()))
+	}
+
+	/// A stub concierge on an ephemeral port that answers only `Jwks`, so a signed
+	/// `ev_access` cookie verifies. The listener is handed over, never re-bound — see the
+	/// same helper in `admin.rs` for the race that rules out.
+	async fn jwks() -> SocketAddr {
+		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
+		let addr = listener.local_addr().expect("the listener has an address");
+		tokio::spawn(async move {
+			Server::builder()
+				.add_service(AuthServiceServer::new(ConciergeJwks))
+				.serve_with_incoming(TcpListenerStream::new(listener))
+				.await
+				.expect("the stub concierge serves");
+		});
+		addr
+	}
+
+	fn request(method: &str, uri: &str, body: &str, origin: Option<&str>, session: bool) -> Request<Body> {
+		let cookie = if session {
+			format!("ev_access={}; ev_csrf={CSRF}", access_token())
+		} else {
+			format!("ev_csrf={CSRF}")
+		};
+		let mut request = Request::builder()
+			.method(method)
+			.uri(uri)
+			.header(header::COOKIE, cookie)
+			.header("x-ev-csrf", CSRF)
+			.header(header::CONTENT_TYPE, "application/json");
+		if let Some(origin) = origin {
+			request = request.header(header::ORIGIN, origin);
+		}
+		request.body(Body::from(body.to_owned())).expect("build the request")
+	}
+
+	async fn send(app: &axum::Router, request: Request<Body>) -> (StatusCode, HeaderMap, String) {
+		let response = app.clone().oneshot(request).await.expect("the router responds");
+		let status = response.status();
+		let headers = response.headers().clone();
+		let body = to_bytes(response.into_body(), 1 << 16).await.expect("read the body");
+		(status, headers, String::from_utf8_lossy(&body).into_owned())
 	}
 
 	/// A POST with a valid CSRF pair and no session, from `origin`.
-	async fn post_from(uri: &str, body: &'static str, origin: Option<&str>) -> (StatusCode, String) {
-		let mut request = Request::builder()
-			.method("POST")
-			.uri(uri)
-			.header("cookie", format!("ev_csrf={CSRF}"))
-			.header("x-ev-csrf", CSRF)
-			.header("content-type", "application/json");
-		if let Some(origin) = origin {
-			request = request.header("origin", origin);
-		}
-		let request = request.body(Body::from(body)).expect("build the request");
-		let response = app().oneshot(request).await.expect("the router responds");
-		let status = response.status();
-		let body = to_bytes(response.into_body(), 1 << 16).await.expect("read the body");
-		(status, String::from_utf8_lossy(&body).into_owned())
+	async fn post_from(uri: &str, body: &str, origin: Option<&str>) -> (StatusCode, String) {
+		let (status, _, body) = send(&app(), request("POST", uri, body, origin, false)).await;
+		(status, body)
 	}
 
-	/// A scope's own host may read the wallet but never pay from it, and a request that does
-	/// not say where it comes from is not first-party either.
+	/// A scope's own host may read the wallet but never act on it, and a request that does not
+	/// say where it comes from is not first-party either. Cancelling a withdrawal is gated the
+	/// same way (`wallet.proto` lists it), though it only returns money.
 	#[tokio::test]
-	async fn only_evinvest_ltd_may_pay_an_invoice() {
-		for origin in [Some("https://sa.evinvest.ltd"), Some("https://evil.example"), None] {
-			let (status, body) = pay_from(origin).await;
-			assert_eq!(status, StatusCode::FORBIDDEN, "{origin:?}: {body}");
-			assert!(body.contains("csrf"), "{origin:?}: {body}");
-		}
-		// Past the gate the next refusal is the missing session — the gate let it through.
-		let (status, _) = pay_from(Some(FIRST_PARTY)).await;
-		assert_eq!(status, StatusCode::UNAUTHORIZED);
-	}
-
-	/// Granting or revoking a mandate moves who may draw on the user's money: like paying, only
-	/// a page on evinvest.ltd may do it, never a scope's own host.
-	#[tokio::test]
-	async fn only_evinvest_ltd_may_grant_or_revoke_a_mandate() {
-		const GRANT: &str = r#"{"scope":"invest","client_id":"invest","cap_per_op":"1","cap_24h":"1","operations":["reserve"],"idempotency_key":"k-1"}"#;
-		let routes = [("/api/wallet/mandates", GRANT), ("/api/wallet/mandates/4f0c2d1e-0000-4000-8000-0123456789ab/revoke", "")];
-		for (uri, body) in routes {
-			for origin in [Some("https://sa.evinvest.ltd"), Some("https://evil.example"), None] {
+	async fn only_evinvest_ltd_may_move_pay_withdraw_or_change_a_mandate() {
+		let cancel = [("/api/wallet/withdrawals/cancel", r#"{"withdrawal_id":"w-1"}"#)];
+		for (uri, body) in MONEY_MUTATIONS.iter().chain(cancel.iter()) {
+			for origin in [Some(SCOPE_HOST), Some("https://evil.example"), None] {
 				let (status, response) = post_from(uri, body, origin).await;
 				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} from {origin:?}: {response}");
 				assert!(response.contains("csrf"), "{uri} from {origin:?}: {response}");
 			}
 			let (status, _) = post_from(uri, body, Some(FIRST_PARTY)).await;
 			assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}: past the gate the next refusal is the missing session");
+		}
+	}
+
+	/// With no first-party origin configured the money gate refuses everything, even the
+	/// origin production would accept; the websocket guard, which only reads, stays open
+	/// for local development.
+	#[tokio::test]
+	async fn an_unset_first_party_origin_closes_the_money_gate_but_not_the_socket() {
+		let st = state(Env { ws_origin: None, ..Env::default() });
+		let mut headers = HeaderMap::new();
+		headers.insert(header::ORIGIN, FIRST_PARTY.parse().expect("a header value"));
+		assert!(!first_party_origin(&st, &headers));
+		assert!(ws::origin_allowed(&st, &headers));
+
+		let app = router(st);
+		for (uri, body) in MONEY_MUTATIONS {
+			let (status, _, response) = send(&app, request("POST", uri, body, Some(FIRST_PARTY), true)).await;
+			assert_eq!(status, StatusCode::FORBIDDEN, "{uri}: {response}");
+		}
+	}
+
+	/// The per-user bound is one budget across every money mutation: a script cannot dodge it
+	/// by spreading over routes. The limiter runs after the identity check, so it is spent
+	/// only by a signed-in caller and keyed by who they are.
+	#[tokio::test]
+	async fn money_mutations_share_one_per_user_budget() {
+		let concierge = jwks().await;
+		let app = router(state(Env {
+			concierge: format!("http://{concierge}"),
+			..Env::default()
+		}));
+		for attempt in 0..crate::routes::MONEY_MUTATIONS_PER_WINDOW as usize {
+			let (uri, body) = MONEY_MUTATIONS[attempt % MONEY_MUTATIONS.len()];
+			let (status, _, response) = send(&app, request("POST", uri, body, Some(FIRST_PARTY), true)).await;
+			assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "attempt {attempt} on {uri} is within the budget: {response}");
+			assert_ne!(status, StatusCode::UNAUTHORIZED, "the stub session must verify: {response}");
+		}
+		for (uri, body) in MONEY_MUTATIONS {
+			let (status, _, response) = send(&app, request("POST", uri, body, Some(FIRST_PARTY), true)).await;
+			assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{uri}: {response}");
+		}
+		// Reads are not money mutations and do not draw on the budget.
+		let (status, _, _) = send(&app, request("GET", "/api/wallet/withdrawals", "", Some(FIRST_PARTY), true)).await;
+		assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+	}
+
+	const SCOPE_READS: [&str; 3] = ["/api/wallet", "/api/wallet/compartments", "/api/operations"];
+
+	fn cors_of(headers: &HeaderMap) -> (Option<&str>, Option<&str>) {
+		let get = |name| headers.get(name).and_then(|v| v.to_str().ok());
+		(get(header::ACCESS_CONTROL_ALLOW_ORIGIN), get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS))
+	}
+
+	/// A configured scope host reads the three wallet reads with credentials — its own origin
+	/// echoed, never `*` — and the answer says it varies by `Origin`. Even the 401 carries the
+	/// headers, so the scope host can tell "signed out" from a network failure.
+	#[tokio::test]
+	async fn a_scope_host_reads_the_wallet_with_credentials() {
+		let app = router(state(Env {
+			cors: SCOPE_HOSTS,
+			..Env::default()
+		}));
+		for uri in SCOPE_READS {
+			for origin in ["https://invest.evinvest.ltd", SCOPE_HOST] {
+				let (_, headers, _) = send(&app, request("GET", uri, "", Some(origin), false)).await;
+				assert_eq!(cors_of(&headers), (Some(origin), Some("true")), "{uri} from {origin}");
+				assert!(headers.get_all(header::VARY).iter().any(|v| v == "origin"), "{uri}: {headers:?}");
+			}
+		}
+	}
+
+	/// Anyone else, any other route and every mutation get no CORS headers at all, so the
+	/// browser hides the response from the calling page.
+	#[tokio::test]
+	async fn nothing_else_is_readable_cross_origin() {
+		let app = router(state(Env {
+			cors: SCOPE_HOSTS,
+			..Env::default()
+		}));
+		for uri in SCOPE_READS {
+			for origin in ["https://evil.example", "https://sa.evinvest.ltd.evil.example", "null", FIRST_PARTY] {
+				let (_, headers, _) = send(&app, request("GET", uri, "", Some(origin), false)).await;
+				assert_eq!(cors_of(&headers), (None, None), "{uri} from {origin}");
+			}
+			// No preflight is answered: only simple reads are served cross-origin.
+			let (_, headers, _) = send(&app, request("OPTIONS", uri, "", Some(SCOPE_HOST), false)).await;
+			assert_eq!(cors_of(&headers), (None, None), "OPTIONS {uri}");
+		}
+		for uri in ["/api/wallet/withdrawals", "/api/wallet/deposit-address", "/api/wallet/mandates", "/api/wallet/deposits"] {
+			let (_, headers, _) = send(&app, request("GET", uri, "", Some(SCOPE_HOST), false)).await;
+			assert_eq!(cors_of(&headers), (None, None), "{uri} is not a scope read");
+		}
+		for (uri, body) in MONEY_MUTATIONS {
+			let (_, headers, _) = send(&app, request("POST", uri, body, Some(SCOPE_HOST), true)).await;
+			assert_eq!(cors_of(&headers), (None, None), "POST {uri}");
+		}
+	}
+
+	/// An empty list is CORS switched off, scope hosts included.
+	#[tokio::test]
+	async fn no_configured_hosts_means_no_cors() {
+		let app = app();
+		for uri in SCOPE_READS {
+			let (_, headers, _) = send(&app, request("GET", uri, "", Some(SCOPE_HOST), false)).await;
+			assert_eq!(cors_of(&headers), (None, None), "{uri}");
 		}
 	}
 }

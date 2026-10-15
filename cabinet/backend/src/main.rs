@@ -111,6 +111,7 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
 		banking: Arc::new(BankingTokens::new()),
 		approvals: Arc::new(AttemptLimiter::default()),
+		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 		verifier,
 		grpc,
 		config: Arc::new(config),
