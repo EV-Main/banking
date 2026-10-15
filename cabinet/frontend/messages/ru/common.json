@@ -7538,5 +7538,53 @@
   "wallet.chip.inCompartments": {
     "en": "IN COMPARTMENTS",
     "t": "В ОТСЕКАХ"
+  },
+  "walletAction.back": {
+    "en": "Go back",
+    "t": "Вернуться"
+  },
+  "walletAction.cancel": {
+    "en": "Cancel",
+    "t": "Отмена"
+  },
+  "walletAction.cancelled": {
+    "en": "Cancelled",
+    "t": "Отменено"
+  },
+  "walletAction.close": {
+    "en": "Close window",
+    "t": "Закрыть окно"
+  },
+  "walletAction.closeHint": {
+    "en": "You can close this window — the page that opened it has been told.",
+    "t": "Это окно можно закрыть — страница, которая его открыла, уже получила результат."
+  },
+  "walletAction.closeHintLocal": {
+    "en": "You can close this window now.",
+    "t": "Теперь это окно можно закрыть."
+  },
+  "walletAction.done": {
+    "en": "Done",
+    "t": "Готово"
+  },
+  "walletAction.failed": {
+    "en": "That did not go through",
+    "t": "Не получилось"
+  },
+  "walletAction.mandateTitle": {
+    "en": "Allow a service to charge you",
+    "t": "Разрешить сервису списания"
+  },
+  "walletAction.moveTitle": {
+    "en": "Move funds",
+    "t": "Перевести средства"
+  },
+  "walletAction.payTitle": {
+    "en": "Pay invoice",
+    "t": "Оплатить счёт"
+  },
+  "walletAction.unavailable": {
+    "en": "This is not available yet. Nothing has been charged or moved.",
+    "t": "Пока недоступно. Ничего не списано и не перемещено."
   }
 }

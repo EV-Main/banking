@@ -7538,5 +7538,53 @@
   "wallet.chip.inCompartments": {
     "en": "IN COMPARTMENTS",
     "t": "TRONG NGĂN"
+  },
+  "walletAction.back": {
+    "en": "Go back",
+    "t": "Quay lại"
+  },
+  "walletAction.cancel": {
+    "en": "Cancel",
+    "t": "Hủy"
+  },
+  "walletAction.cancelled": {
+    "en": "Cancelled",
+    "t": "Đã hủy"
+  },
+  "walletAction.close": {
+    "en": "Close window",
+    "t": "Đóng cửa sổ"
+  },
+  "walletAction.closeHint": {
+    "en": "You can close this window — the page that opened it has been told.",
+    "t": "Bạn có thể đóng cửa sổ này — trang đã mở nó đã được thông báo."
+  },
+  "walletAction.closeHintLocal": {
+    "en": "You can close this window now.",
+    "t": "Bây giờ bạn có thể đóng cửa sổ này."
+  },
+  "walletAction.done": {
+    "en": "Done",
+    "t": "Hoàn tất"
+  },
+  "walletAction.failed": {
+    "en": "That did not go through",
+    "t": "Không thực hiện được"
+  },
+  "walletAction.mandateTitle": {
+    "en": "Allow a service to charge you",
+    "t": "Cho phép dịch vụ trừ tiền"
+  },
+  "walletAction.moveTitle": {
+    "en": "Move funds",
+    "t": "Chuyển tiền"
+  },
+  "walletAction.payTitle": {
+    "en": "Pay invoice",
+    "t": "Thanh toán hóa đơn"
+  },
+  "walletAction.unavailable": {
+    "en": "This is not available yet. Nothing has been charged or moved.",
+    "t": "Tính năng này chưa khả dụng. Chưa có khoản nào bị trừ hay chuyển đi."
   }
 }

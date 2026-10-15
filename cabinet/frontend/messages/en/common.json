@@ -1883,5 +1883,17 @@
   "wallet.withdrawalQueued": "Withdrawal queued",
   "wallet.withdrawalSubmitted": "Withdrawal submitted",
   "wallet.youWillReceive": "You will receive",
-  "wallet.yourDepositAddress": "Your {network} deposit address"
+  "wallet.yourDepositAddress": "Your {network} deposit address",
+  "walletAction.back": "Go back",
+  "walletAction.cancel": "Cancel",
+  "walletAction.cancelled": "Cancelled",
+  "walletAction.close": "Close window",
+  "walletAction.closeHint": "You can close this window — the page that opened it has been told.",
+  "walletAction.closeHintLocal": "You can close this window now.",
+  "walletAction.done": "Done",
+  "walletAction.failed": "That did not go through",
+  "walletAction.mandateTitle": "Allow a service to charge you",
+  "walletAction.moveTitle": "Move funds",
+  "walletAction.payTitle": "Pay invoice",
+  "walletAction.unavailable": "This is not available yet. Nothing has been charged or moved."
 }

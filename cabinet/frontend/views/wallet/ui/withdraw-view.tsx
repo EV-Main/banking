@@ -44,7 +44,9 @@ function withdrawableFor(wallet: Wallet | null | undefined, network: string): Ne
 // Send USDT out to an external address (Figma `cabinet/wallet/withdraw` +
 // `cabinet/mobile/wallet/withdraw`). Review is a distinct step: the reviewed figures are
 // snapshotted so Confirm can never submit something the user didn't see.
-export function WithdrawView({ initialNetwork }: { initialNetwork?: string }) {
+// `onWithdrawn` lets the evinvest.ltd action page (a host's popup) report the request once
+// the hub has accepted it; the cabinet's own route leaves it unset.
+export function WithdrawView({ initialNetwork, onWithdrawn }: { initialNetwork?: string; onWithdrawn?: (withdrawal: Withdrawal) => void }) {
   const t = useT();
   const locale = useLocale();
   const id = useId();
@@ -93,6 +95,7 @@ export function WithdrawView({ initialNetwork }: { initialNetwork?: string }) {
       // themselves. No explicit reload here any more.
       const withdrawal = await submitWithdrawal({ network: confirming.network, address: confirming.address, amount: confirming.amount });
       setDone(withdrawal);
+      onWithdrawn?.(withdrawal);
       setAddress("");
       setAmount("");
     } catch (e) {

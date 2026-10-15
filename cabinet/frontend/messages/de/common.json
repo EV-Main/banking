@@ -7538,5 +7538,53 @@
   "wallet.chip.inCompartments": {
     "en": "IN COMPARTMENTS",
     "t": "IN FÄCHERN"
+  },
+  "walletAction.back": {
+    "en": "Go back",
+    "t": "Zurück"
+  },
+  "walletAction.cancel": {
+    "en": "Cancel",
+    "t": "Abbrechen"
+  },
+  "walletAction.cancelled": {
+    "en": "Cancelled",
+    "t": "Abgebrochen"
+  },
+  "walletAction.close": {
+    "en": "Close window",
+    "t": "Fenster schließen"
+  },
+  "walletAction.closeHint": {
+    "en": "You can close this window — the page that opened it has been told.",
+    "t": "Sie können dieses Fenster schließen – die Seite, die es geöffnet hat, wurde informiert."
+  },
+  "walletAction.closeHintLocal": {
+    "en": "You can close this window now.",
+    "t": "Sie können dieses Fenster jetzt schließen."
+  },
+  "walletAction.done": {
+    "en": "Done",
+    "t": "Erledigt"
+  },
+  "walletAction.failed": {
+    "en": "That did not go through",
+    "t": "Das hat nicht geklappt"
+  },
+  "walletAction.mandateTitle": {
+    "en": "Allow a service to charge you",
+    "t": "Einem Dienst Abbuchungen erlauben"
+  },
+  "walletAction.moveTitle": {
+    "en": "Move funds",
+    "t": "Guthaben verschieben"
+  },
+  "walletAction.payTitle": {
+    "en": "Pay invoice",
+    "t": "Rechnung bezahlen"
+  },
+  "walletAction.unavailable": {
+    "en": "This is not available yet. Nothing has been charged or moved.",
+    "t": "Das ist noch nicht verfügbar. Es wurde nichts abgebucht oder verschoben."
   }
 }
