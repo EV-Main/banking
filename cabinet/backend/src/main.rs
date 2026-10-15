@@ -51,6 +51,11 @@ fn main() -> color_eyre::Result<()> {
 	// aggregate error, before anything binds — exiting 78 (EX_CONFIG), so "the
 	// config is wrong" is distinguishable from a dependency blip.
 	let config = ev::settings::or_exit(AppConfig::from_env());
+	if let Err(reason) = config.check_script_origins() {
+		eprintln!("config: {reason}");
+		// EX_CONFIG, as `or_exit` uses for every other configuration error.
+		std::process::exit(78);
+	}
 
 	// Guard must stay alive for the duration of main — dropping it flushes events. A
 	// `None` DSN makes `init` return `None`, so this binding is simply inert.
