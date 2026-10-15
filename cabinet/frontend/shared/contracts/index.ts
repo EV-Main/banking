@@ -53,6 +53,8 @@ export type {
   // Payment orders are NOT re-exported from `./gen`: the BFF reshapes them (resolved ends
   // with a `detail`, a nested consent, lowercase states, string stamps), so the
   // hand-written `./payments` is the cabinet's contract for that surface.
+  // Mandates are not re-exported either: the BFF reshapes them (lowercase operation
+  // names, string stamps), so `cabinet/backend/src/dto.rs` `Mandate` is their contract.
 } from "./gen";
 
 // The allocation catalog is served to BOTH the investor surface (`/api/allocations`,

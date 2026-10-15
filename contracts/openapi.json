@@ -3254,7 +3254,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "RevokeMandate",
-        "description": "End a mandate at once. Every hold the client still has on the caller's compartment\n under it is voided — the money is back with the caller, and the service learns it\n from the money events.",
+        "description": "End a live mandate at once. Every hold the client still has on the caller's\n compartment in the scope is voided — under this mandate or one it replaced — so the\n money is back with the caller, and the service learns it from the money events. A\n mandate already revoked or replaced is returned as it is; anyone else's, or an\n unknown id, is NOT_FOUND.",
         "operationId": "banking.v1.CompartmentService.RevokeMandate",
         "parameters": [
           {
@@ -10732,12 +10732,12 @@
           "cap_per_op": {
             "type": "string",
             "title": "cap_per_op",
-            "description": "decimal USDT, \u003e 0"
+            "description": "\u003e 0: the most one hold or charge may draw"
           },
           "cap_24h": {
             "type": "string",
             "title": "cap_24h",
-            "description": "decimal USDT, rolling 24 h, \u003e= cap_per_op"
+            "description": "\u003e= cap_per_op: drawn over a rolling 24 h"
           },
           "operations": {
             "type": "array",
@@ -10745,7 +10745,7 @@
               "$ref": "#/components/schemas/banking.v1.MandateOperation"
             },
             "title": "operations",
-            "description": "at least one"
+            "description": "at least one, each once"
           },
           "expires_at": {
             "type": [
@@ -10754,15 +10754,27 @@
             ],
             "title": "expires_at",
             "format": "int64",
-            "description": "unix seconds; 0 = until revoked"
+            "description": "unix seconds, in the future; 0 = until revoked"
           },
           "idempotency_key": {
             "type": "string",
-            "title": "idempotency_key"
+            "title": "idempotency_key",
+            "description": "1..128 chars; a repeat returns the original mandate"
+          },
+          "cap_outstanding": {
+            "type": "string",
+            "title": "cap_outstanding",
+            "description": "\u003e= cap_per_op; empty = cap_24h. The most the client's ACTIVE holds may hold at once,\n whenever they were placed — a hold without a TTL stays out of a rolling 24 h window\n while it still holds the money."
+          },
+          "cap_book_fill_24h": {
+            "type": "string",
+            "title": "cap_book_fill_24h",
+            "description": "Required exactly when `operations` lists BOOK_FILL, \u003e 0: the most a rolling 24 h of\n captures may send from holds under this mandate into OTHER users' compartments."
           }
         },
         "title": "GrantMandateRequest",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "The caps are decimal USDT. What counts against them is the client's draws on the caller's\n compartment in the scope — under this mandate and any it replaced, so granting again\n never resets a cap: a hold counts at its full amount from when it is placed, until it is\n voided or expires, when only what was captured of it still counts."
       },
       "banking.v1.HolderGrantTerms": {
         "type": "object",
@@ -11291,6 +11303,25 @@
             "type": "string",
             "title": "used_24h",
             "description": "drawn in the rolling 24 h, decimal USDT"
+          },
+          "cap_outstanding": {
+            "type": "string",
+            "title": "cap_outstanding"
+          },
+          "cap_book_fill_24h": {
+            "type": "string",
+            "title": "cap_book_fill_24h",
+            "description": "empty unless `operations` lists BOOK_FILL"
+          },
+          "outstanding": {
+            "type": "string",
+            "title": "outstanding",
+            "description": "held by the client's active holds now"
+          },
+          "book_filled_24h": {
+            "type": "string",
+            "title": "book_filled_24h",
+            "description": "sent to other users in the rolling 24 h"
           }
         },
         "title": "Mandate",
