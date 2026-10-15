@@ -244,7 +244,7 @@ async fn an_invoice_is_issued_once_per_key_into_an_account_the_caller_owns() {
 	assert_eq!(issued.invoice.state(), InvoiceState::Open);
 	assert_eq!(
 		invoices_app::pay_url(issued.invoice.id()),
-		format!("https://evinvest.ltd/wallet/invoices/{}", invoice_id(&issued))
+		format!("https://evinvest.ltd/wallet/pay?invoice={}", invoice_id(&issued))
 	);
 	let repeat = invoices_app::create_invoice(&p, &client, request.clone()).await.unwrap();
 	assert_eq!(invoice_id(&repeat), invoice_id(&issued), "a repeat is the original invoice");
@@ -328,8 +328,13 @@ async fn paying_from_main_posts_one_transfer_into_the_scope_account_without_the_
 
 	let k = key();
 	let paid = pay(&h, user, &invoice, Compartment::Main, &k).await.unwrap();
-	assert_eq!(paid.state(), InvoiceState::Paid);
+	// Paid means posted: until the relay applies it, nobody — payer or issuer — reads it paid.
+	assert_eq!(paid.state(), InvoiceState::Open);
+	assert!(paid.own_payment().is_none());
 	assert_eq!(paid.recorded.invoice.payment().map(|payment| payment.from.clone()), Some(Compartment::Main));
+	let unposted = invoices_app::get_invoice(&issuer_ports(&h, &grants), &client, &scope, invoice_id(&invoice)).await.unwrap();
+	assert_eq!(unposted.invoice.state_at(unposted.read_at), InvoiceState::Open);
+	assert!(unposted.invoice.posted_payment().is_none());
 	// Before the relay applied it, the payment is already spoken for.
 	let second = issue(&h, &client, &grants, &scope, "10", None).await;
 	assert_eq!(payment_refusal(pay(&h, user, &second, Compartment::Main, &key()).await), InvoiceRefusal::InsufficientFunds);
@@ -345,6 +350,14 @@ async fn paying_from_main_posts_one_transfer_into_the_scope_account_without_the_
 
 	let repeat = pay(&h, user, &invoice, Compartment::Main, &k).await.unwrap();
 	assert_eq!(repeat.state(), InvoiceState::Paid, "a repeat of the key returns the paid invoice");
+	assert_eq!(repeat.own_payment().map(|payment| payment.from.clone()), Some(Compartment::Main));
+	let (stranger, _) = payer(&h, &scope, "0", "0").await;
+	let seen = invoices_app::get_payable(&payer_ports(&h), stranger, invoice_id(&invoice)).await.unwrap();
+	assert_eq!(
+		(seen.state(), seen.own_payment().is_none()),
+		(InvoiceState::Paid, true),
+		"who paid, and from where, is the payer's alone"
+	);
 	assert_eq!(payment_refusal(pay(&h, user, &invoice, Compartment::Main, &key()).await), InvoiceRefusal::NotOpen);
 	assert!(matches!(payment_domain_err(pay(&h, user, &second, Compartment::Main, &k).await), DomainError::Conflict(_)));
 
@@ -568,4 +581,73 @@ async fn an_invoice_past_its_expiry_reads_expired_takes_no_payment_and_the_reape
 	assert_eq!(events.len(), 1, "expired once, however often swept");
 	assert_eq!((events[0].aggregate_version, events[0].initiator_client.as_str()), (2, ""));
 	assert_eq!(posted(&h, LedgerAccountKey::UserClaim(user)).await, usdt("10"));
+}
+
+#[tokio::test]
+async fn a_payment_the_ledger_refuses_reopens_the_invoice_and_holds_the_money_until_then() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = issuer(&h).await;
+	let (user, _) = payer(&h, &scope, "10", "0").await;
+	let invoice = issue(&h, &client, &grants, &scope, "10", None).await;
+	let k = key();
+	pay(&h, user, &invoice, Compartment::Main, &k).await.unwrap();
+
+	// Not released before the ledger answers: the pending payment holds the whole wallet.
+	let other = issue(&h, &client, &grants, &scope, "1", None).await;
+	assert_eq!(payment_refusal(pay(&h, user, &other, Compartment::Main, &key()).await), InvoiceRefusal::InsufficientFunds);
+
+	// The ledger disagrees with the control plane: the money left the claim behind its back,
+	// so the relay's leg is refused.
+	h.ledger
+		.post(&LedgerTransfer {
+			id: Uuid::new_v4().as_u128(),
+			debit: LedgerAccountKey::UserClaim(user),
+			credit: LedgerAccountKey::CryptoWallet(Network::Bep20),
+			amount: usdt("10").base_units(),
+			code: TransferCode::Withdraw,
+			reference: 0,
+		})
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+
+	let reopened = invoices_app::get_invoice(&issuer_ports(&h, &grants), &client, &scope, invoice_id(&invoice)).await.unwrap();
+	assert_eq!((reopened.invoice.state(), reopened.invoice.version()), (InvoiceState::Open, 3));
+	assert!(reopened.invoice.payment().is_none());
+	let reason: Option<String> = sqlx::query_scalar("SELECT pay_failure_reason FROM scope_invoices WHERE id = $1")
+		.bind(invoice_id(&invoice))
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(reason.as_deref(), Some("insufficient_funds"));
+	assert_eq!(posted(&h, LedgerAccountKey::ScopeAccount(scope.clone(), label("sales:main"))).await, Usdt::ZERO);
+	assert!(
+		!events_of(&h, &client, &grants, &scope).await.iter().any(|event| event.kind == MoneyEventKind::InvoicePaid),
+		"the issuer is never told of a payment that did not happen"
+	);
+
+	// Paid again — under the same click's key, which named nothing that happened — it posts.
+	h.ledger
+		.post(&LedgerTransfer {
+			id: Uuid::new_v4().as_u128(),
+			debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
+			credit: LedgerAccountKey::UserClaim(user),
+			amount: usdt("10").base_units(),
+			code: TransferCode::Deposit,
+			reference: 0,
+		})
+		.await
+		.unwrap();
+	pay(&h, user, &invoice, Compartment::Main, &k).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let paid = invoices_app::get_payable(&payer_ports(&h), user, invoice_id(&invoice)).await.unwrap();
+	assert_eq!(paid.state(), InvoiceState::Paid);
+	assert_eq!(posted(&h, LedgerAccountKey::ScopeAccount(scope.clone(), label("sales:main"))).await, usdt("10"));
+	let paid_events: Vec<MoneyEventRecord> = events_of(&h, &client, &grants, &scope)
+		.await
+		.into_iter()
+		.filter(|event| event.kind == MoneyEventKind::InvoicePaid)
+		.collect();
+	assert_eq!(paid_events.len(), 1);
+	assert_eq!(paid_events[0].aggregate_version, 4, "the second attempt's payment");
 }

@@ -82,7 +82,7 @@ impl InvoicePaymentService for InvoicePaymentSvc {
 fn payable_to_proto(view: &PayableView) -> pb::PayableInvoice {
 	let invoice = &view.recorded.invoice;
 	let terms = invoice.terms();
-	let payment = invoice.payment();
+	let payment = view.own_payment();
 	pb::PayableInvoice {
 		invoice_id: invoice.id().to_string(),
 		scope: terms.scope.as_str().to_owned(),

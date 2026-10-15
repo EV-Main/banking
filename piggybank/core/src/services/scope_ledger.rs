@@ -563,7 +563,9 @@ impl InvoiceService for ScopeLedgerSvc {
 fn invoice_to_proto(recorded: &RecordedInvoice) -> pb::Invoice {
 	let invoice = &recorded.invoice;
 	let terms = invoice.terms();
-	let payment = invoice.payment();
+	// A payment the ledger has not taken is nobody's news yet: the invoice reads open
+	// (`state_at`) and names no payer until it posts.
+	let payment = invoice.posted_payment();
 	pb::Invoice {
 		invoice_id: invoice.id().to_string(),
 		scope: terms.scope.as_str().to_owned(),

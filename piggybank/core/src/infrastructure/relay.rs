@@ -43,7 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
-	scope_invoices::InvoiceEvent,
+	scope_invoices::{InvoiceEvent, InvoiceRefusal},
 	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
 	subscriptions::SubscriptionEvent,
@@ -61,7 +61,7 @@ use crate::{
 		book, compartments, fee_accrual, issuance, money_events,
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
-		scope_ledger,
+		scope_invoices, scope_ledger,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
@@ -158,18 +158,22 @@ const HOLD_PENDING: &str = "scope:hold:pending:";
 const HOLD_VOID: &str = "scope:hold:void:";
 const HOLD_CAPTURE: &str = "scope:hold:capture:";
 
-/// The salt of an invoice payment's one posted leg, over the invoice id: an invoice is paid at
-/// most once, so its id alone names the transfer. FROZEN.
-const INVOICE_PAY: &[u8] = b"scope:invoice:pay";
+/// The salt of an invoice payment's one posted leg, over the invoice id, followed by the version
+/// of the payment's event: a refused attempt reopens the invoice, and the next attempt must not
+/// share its id — nor may a replay of the refused one ever post as the later one. FROZEN.
+const INVOICE_PAY: &str = "scope:invoice:pay:";
 
 /// An event whose one ledger leg is recorded on a control-plane row of its own — `pending`
 /// until the relay posts it, then `posted`, or `failed` for good when the ledger refuses it.
-/// A compartment move and a client's scope transfer are the two; both follow one discipline
-/// (see `dispatch`), so it is spelled once.
+/// A compartment move, a client's scope transfer and an invoice payment are the three; all
+/// follow one discipline (see `dispatch`), so it is spelled once. An invoice payment is the one
+/// whose "failed" is not terminal for the invoice: the refusal reopens it
+/// (`scope_invoices::fail_payment`), and the stamps match the attempt the event carries.
 #[derive(Clone, Copy)]
 enum Posting {
 	Move,
 	ScopeTransfer,
+	InvoicePayment,
 }
 
 impl Posting {
@@ -178,6 +182,8 @@ impl Posting {
 			Some(Self::Move)
 		} else if kind == ScopeLedgerEvent::KIND {
 			Some(Self::ScopeTransfer)
+		} else if kind == InvoiceEvent::KIND {
+			Some(Self::InvoicePayment)
 		} else {
 			None
 		}
@@ -187,6 +193,7 @@ impl Posting {
 		match self {
 			Self::Move => "compartment move",
 			Self::ScopeTransfer => "scope transfer",
+			Self::InvoicePayment => "invoice payment",
 		}
 	}
 
@@ -195,27 +202,31 @@ impl Posting {
 		match self {
 			Self::Move => MoveRefusal::InsufficientFunds.reason(),
 			Self::ScopeTransfer => LedgerRefusal::InsufficientFunds.reason(),
+			Self::InvoicePayment => InvoiceRefusal::InsufficientFunds.reason(),
 		}
 	}
 
-	async fn state(self, pool: &PgPool, id: Uuid) -> Result<Option<MoveState>, sqlx::Error> {
+	async fn state(self, pool: &PgPool, row: &OutboxRow) -> Result<Option<MoveState>, sqlx::Error> {
 		match self {
-			Self::Move => compartments::move_state(pool, id).await,
-			Self::ScopeTransfer => scope_ledger::transfer_state(pool, id).await,
+			Self::Move => compartments::move_state(pool, row.aggregate_id).await,
+			Self::ScopeTransfer => scope_ledger::transfer_state(pool, row.aggregate_id).await,
+			Self::InvoicePayment => scope_invoices::payment_state(pool, row.aggregate_id, &row.payload).await,
 		}
 	}
 
-	async fn mark_posted(self, pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+	async fn mark_posted(self, pool: &PgPool, row: &OutboxRow) -> Result<(), sqlx::Error> {
 		match self {
-			Self::Move => compartments::mark_posted(pool, id).await,
-			Self::ScopeTransfer => scope_ledger::mark_posted(pool, id).await,
+			Self::Move => compartments::mark_posted(pool, row.aggregate_id).await,
+			Self::ScopeTransfer => scope_ledger::mark_posted(pool, row.aggregate_id).await,
+			Self::InvoicePayment => scope_invoices::mark_payment_posted(pool, row.aggregate_id, &row.payload).await,
 		}
 	}
 
-	async fn mark_failed(self, pool: &PgPool, id: Uuid, reason: &str) -> Result<(), sqlx::Error> {
+	async fn mark_failed(self, pool: &PgPool, row: &OutboxRow, reason: &str) -> Result<(), sqlx::Error> {
 		match self {
-			Self::Move => compartments::mark_failed(pool, id, reason).await,
-			Self::ScopeTransfer => scope_ledger::mark_failed(pool, id, reason).await,
+			Self::Move => compartments::mark_failed(pool, row.aggregate_id, reason).await,
+			Self::ScopeTransfer => scope_ledger::mark_failed(pool, row.aggregate_id, reason).await,
+			Self::InvoicePayment => scope_invoices::fail_payment(pool, row.aggregate_id, &row.payload, reason).await,
 		}
 	}
 }
@@ -472,11 +483,12 @@ impl Relay {
 		{
 			error!(seq = row.seq, order = %order_id, "relay: failed to mark the order rejected after its lock parked: {err}");
 		}
-		// A parked move (or scope transfer) is a refused one: the caller is told it failed, the
-		// money it promised is spendable again, and an operator's unpark replays an event whose
-		// row is terminal — a no-op (see `dispatch`). Nothing of it applies before its one leg.
+		// A parked move, scope transfer or invoice payment is a refused one: the caller is told it
+		// failed (a payment's invoice is open again), the money it promised is spendable again,
+		// and an operator's unpark replays an event whose attempt is over — a no-op (see
+		// `dispatch`). Nothing of it applies before its one leg.
 		if let Some(posting) = Posting::of(&row.kind)
-			&& let Err(err) = posting.mark_failed(&self.pool, row.aggregate_id, &format!("parked:{}", park_kind(reason))).await
+			&& let Err(err) = posting.mark_failed(&self.pool, row, &format!("parked:{}", park_kind(reason))).await
 		{
 			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked {} failed: {err}", posting.name());
 		}
@@ -501,7 +513,7 @@ impl Relay {
 		// A `posted` one already did.
 		if let Some(posting) = posting {
 			let name = posting.name();
-			match posting.state(&self.pool, row.aggregate_id).await {
+			match posting.state(&self.pool, row).await {
 				Ok(Some(MoveState::Pending)) => {}
 				Ok(Some(MoveState::Posted | MoveState::Failed)) => return Outcome::Done,
 				Ok(None) => return Outcome::park(format!("{name} row is missing")),
@@ -520,7 +532,7 @@ impl Relay {
 					if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
 						return Outcome::Retry(format!("{name} money event: {err}"));
 					}
-					return match posting.mark_posted(&self.pool, row.aggregate_id).await {
+					return match posting.mark_posted(&self.pool, row).await {
 						Ok(()) => Outcome::Done,
 						Err(err) => Outcome::Retry(format!("{name} posted stamp: {err}")),
 					};
@@ -679,7 +691,7 @@ impl Relay {
 					// refusal is its terminal outcome, recorded on its row, not an event for an
 					// operator.
 					if let Some(posting) = posting {
-						return match posting.mark_failed(&self.pool, row.aggregate_id, posting.insufficient_funds()).await {
+						return match posting.mark_failed(&self.pool, row, posting.insufficient_funds()).await {
 							Ok(()) => Outcome::Done,
 							Err(err) => Outcome::Retry(format!("{} failed stamp: {err}", posting.name())),
 						};
@@ -729,7 +741,7 @@ impl Relay {
 			return Outcome::Retry(format!("money event: {err}"));
 		}
 		if let Some(posting) = posting
-			&& let Err(err) = posting.mark_posted(&self.pool, row.aggregate_id).await
+			&& let Err(err) = posting.mark_posted(&self.pool, row).await
 		{
 			return Outcome::Retry(format!("{} posted stamp: {err}", posting.name()));
 		}
@@ -1239,6 +1251,10 @@ fn plan_hold(event: HoldEvent, hold_id: Uuid, reference: u128) -> PlannedOp {
 	}
 }
 
+fn invoice_pay_tid(invoice_id: Uuid, version: u64) -> u128 {
+	tid(invoice_id, format!("{INVOICE_PAY}{version}").as_bytes())
+}
+
 /// An invoice payment: one posted transfer out of the payer's `main` or compartment straight into
 /// the scope account the invoice names. The other steps of an invoice move no money and never
 /// reach the outbox; should one, it plans nothing.
@@ -1249,12 +1265,13 @@ fn plan_invoice(event: InvoiceEvent, invoice_id: Uuid, reference: u128) -> Optio
 		amount,
 		payer,
 		from,
+		version,
 		..
 	} = event
 	else {
 		return None;
 	};
-	let id = tid(invoice_id, INVOICE_PAY);
+	let id = invoice_pay_tid(invoice_id, version);
 	Some(PlannedOp {
 		role: "invoice_pay",
 		transfer_id: id,
@@ -2380,7 +2397,8 @@ mod tests {
 		let ops = plan(&from_main).unwrap();
 		let [op] = ops.as_slice() else { panic!("one leg") };
 		let LedgerAction::Post(leg) = &op.action else { panic!("a posted transfer") };
-		assert_eq!((leg.id, leg.code), (tid(invoice, INVOICE_PAY), TransferCode::InvoicePayment));
+		assert_eq!((leg.id, leg.code), (invoice_pay_tid(invoice, 2), TransferCode::InvoicePayment));
+		assert_ne!(invoice_pay_tid(invoice, 2), invoice_pay_tid(invoice, 4), "a later attempt never shares a refused one's id");
 		assert_eq!(
 			leg.credit,
 			LedgerAccountKey::ScopeAccount(scope.clone(), domain::scopes::ScopeAccountLabel::parse("sales").unwrap())

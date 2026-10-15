@@ -6,7 +6,12 @@ package scope.v1;
 // user pays on evinvest.ltd (`banking.v1.InvoicePaymentService`) straight from `main`
 // or from their compartment in the scope, with no transfer between compartments
 // first; the receiving scope's `min_kyc_level` applies to the payer. Payment shows up
-// as `KIND_INVOICE_PAID` in `MoneyEvents`; this service has no callback. This is how a
+// as `KIND_INVOICE_PAID` in `MoneyEvents`; this service has no callback.
+//
+// PAID MEANS POSTED. An invoice is PAID — here, in `GetInvoice`, and as
+// `KIND_INVOICE_PAID` — only once the ledger has taken the payment. Until then it reads
+// OPEN with no payer, and a payment the ledger refuses leaves it OPEN, payable again; the
+// issuer is never told of a payment that did not happen. This is how a
 // service takes a one-off payment from a user who gave it no mandate.
 //
 // Grants, identifiers, amounts, `idempotency_key` and `subject_ref` follow
@@ -22,7 +27,8 @@ service InvoiceService {
   // `idempotency_key`, by design: it names the invoice and asks for one end state, so a
   // retry IS a repeat — cancelling a cancelled invoice returns it unchanged, whoever
   // cancelled it and whenever. A paid or expired one (an open one past `expires_at`
-  // included) is FAILED_PRECONDITION `invoice_not_open`.
+  // included, and one whose payment is waiting for the ledger) is FAILED_PRECONDITION
+  // `invoice_not_open`.
   rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);
 
   // One invoice the caller issued, as it stands now; anyone else's is NOT_FOUND. An open

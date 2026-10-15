@@ -2,16 +2,18 @@
 //! (`scope_invoices`, migration 0056) under the scope ledger's idempotency keys for the issuer
 //! and the payer's own key for the payment — plus the reaper's expiry of open invoices past
 //! `expires_at`. A payment's ledger leg is the relay's, from the outbox event written in the
-//! same transaction as the paid row; every other step writes its money event itself.
+//! same transaction as the paid row: the row's `ledger_state` is `pending` until the relay
+//! posts it, and the relay's refusal or park puts the invoice back to open
+//! ([`fail_payment`]). Every other step writes its money event itself.
 
 use async_trait::async_trait;
 use domain::{
-	architecture::Id,
+	architecture::{AggregateRoot, DomainEvent, Id},
 	error::DomainError,
 	money::Usdt,
 	scope_invoices::{Invoice, InvoiceEvent, InvoicePayment, InvoiceRefusal, InvoiceState, InvoiceTerms},
 	scope_ledger::{ClientId, LedgerRefusal, SubjectRef},
-	scopes::{Compartment, ScopeAccountLabel, ScopeId},
+	scopes::{Compartment, MoveState, ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
 use sqlx::{PgConnection, PgPool, Row, postgres::PgRow};
@@ -38,8 +40,8 @@ macro_rules! select_invoice {
 		concat!(
 			"SELECT id, client_id, scope, to_label, amount, memo, payer_auth_subject, subject_ref, state, version, ",
 			"EXTRACT(EPOCH FROM expires_at)::BIGINT AS expires_at, paid_by_user, paid_by_auth_subject, paid_from, ",
-			"EXTRACT(EPOCH FROM paid_at)::BIGINT AS paid_at, EXTRACT(EPOCH FROM created_at)::BIGINT AS created_at, ",
-			"EXTRACT(EPOCH FROM now())::BIGINT AS read_at FROM scope_invoices ",
+			"EXTRACT(EPOCH FROM paid_at)::BIGINT AS paid_at, ledger_state, EXTRACT(EPOCH FROM created_at)::BIGINT AS created_at, ",
+			"floor(EXTRACT(EPOCH FROM clock_timestamp()))::BIGINT AS read_at FROM scope_invoices ",
 			$tail
 		)
 	};
@@ -77,6 +79,7 @@ fn recorded_invoice(row: &PgRow) -> Result<RecordedInvoice, DomainError> {
 					.ok_or_else(|| missing("paid_by_auth_subject"))?,
 				from: Compartment::parse(&row.try_get::<Option<String>, _>("paid_from").map_err(repo_err)?.ok_or_else(|| missing("paid_from"))?).map_err(corrupt)?,
 				paid_at: row.try_get::<Option<i64>, _>("paid_at").map_err(repo_err)?.ok_or_else(|| missing("paid_at"))?,
+				posted: row.try_get::<Option<String>, _>("ledger_state").map_err(repo_err)?.ok_or_else(|| missing("ledger_state"))? == "posted",
 			})
 		}
 	};
@@ -90,9 +93,15 @@ fn recorded_invoice(row: &PgRow) -> Result<RecordedInvoice, DomainError> {
 	})
 }
 
-/// The database's clock: one clock for every expiry, whichever replica asks.
+/// The database's clock: one clock for every expiry, whichever replica asks. The wall clock of
+/// the statement, not `now()` — that is the transaction's start, which a payment waiting on
+/// the row lock would read as earlier than it is, letting it in past `expires_at`. Floored, so
+/// the last second before the expiry is still before it.
 async fn db_now(conn: &mut PgConnection) -> Result<i64, DomainError> {
-	sqlx::query_scalar("SELECT EXTRACT(EPOCH FROM now())::BIGINT").fetch_one(conn).await.map_err(repo_err)
+	sqlx::query_scalar("SELECT floor(EXTRACT(EPOCH FROM clock_timestamp()))::BIGINT")
+		.fetch_one(conn)
+		.await
+		.map_err(repo_err)
 }
 
 async fn locked(conn: &mut PgConnection, id: Uuid) -> Result<Option<RecordedInvoice>, DomainError> {
@@ -211,11 +220,17 @@ impl InvoiceStore for PgScopeLedger {
 			entity: "invoice",
 			id: id.to_string(),
 		};
-		let mut recorded = locked(&mut tx, id).await?.ok_or_else(not_found)?;
-		let terms = recorded.invoice.terms();
-		if &terms.client != client || &terms.scope != scope {
-			return Err(not_found().into());
-		}
+		let mut recorded = sqlx::query(select_invoice!("WHERE id = $1 AND client_id = $2 AND scope = $3 FOR UPDATE"))
+			.bind(id)
+			.bind(client.as_str())
+			.bind(scope.as_str())
+			.fetch_optional(&mut *tx)
+			.await
+			.map_err(repo_err)?
+			.as_ref()
+			.map(recorded_invoice)
+			.transpose()?
+			.ok_or_else(not_found)?;
 		let now = db_now(&mut tx).await?;
 		match recorded.invoice.cancel(now) {
 			Ok(true) => record_closed(&mut tx, &mut recorded.invoice).await?,
@@ -268,7 +283,7 @@ impl InvoiceStore for PgScopeLedger {
 			.ok_or_else(|| DomainError::Repository(format!("invoice {id}: admitted without a payment")))?;
 		let updated = sqlx::query(
 			"UPDATE scope_invoices SET state = 'paid', version = $2, paid_by_user = $3, paid_by_auth_subject = $4, paid_from = $5, \
-			 paid_at = to_timestamp($6), pay_idempotency_key = $7, updated_at = now() WHERE id = $1",
+			 paid_at = to_timestamp($6), pay_idempotency_key = $7, ledger_state = 'pending', pay_failure_reason = NULL, updated_at = now() WHERE id = $1",
 		)
 		.bind(id)
 		.bind(version(&recorded.invoice)?)
@@ -326,4 +341,154 @@ pub async fn expire_due_invoices(pool: &PgPool) -> Result<usize, sqlx::Error> {
 		}
 	}
 	Ok(expired)
+}
+
+/// Σ the payer's payments out of `from` the ledger has not taken yet: promised away. Part of
+/// what [`claims::unapplied_debits`](super::claims::unapplied_debits) counts, from the row and
+/// not the outbox, so a payment whose event a relay dispatched without posting still counts.
+pub async fn pending_payments(conn: &mut PgConnection, payer: UserId, from: &Compartment) -> Result<Usdt, DomainError> {
+	let amounts: Vec<String> = sqlx::query_scalar("SELECT amount FROM scope_invoices WHERE paid_by_user = $1 AND paid_from = $2 AND ledger_state = 'pending'")
+		.bind(payer.raw())
+		.bind(from.as_str())
+		.fetch_all(conn)
+		.await
+		.map_err(repo_err)?;
+	amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
+		let amount = raw
+			.parse::<u128>()
+			.map(Usdt::from_base_units)
+			.map_err(|_| DomainError::Repository(format!("pending invoice payment is not a base-unit amount: {raw:?}")))?;
+		total.checked_add(amount).ok_or_else(|| DomainError::Repository("pending invoice payments overflow".into()))
+	})
+}
+
+/// The version of the payment an outbox event carries — what the relay's stamps are matched
+/// on, so an event of an attempt the ledger refused can never stamp a later one.
+fn paid_version(payload: &str) -> Result<u64, sqlx::Error> {
+	match serde_json::from_str::<InvoiceEvent>(payload).map_err(|e| sqlx::Error::Decode(Box::new(e)))? {
+		InvoiceEvent::Paid { version, .. } => Ok(version),
+		InvoiceEvent::Created { .. } | InvoiceEvent::Cancelled { .. } | InvoiceEvent::Expired { .. } | InvoiceEvent::PaymentFailed { .. } =>
+			Err(sqlx::Error::Protocol("only a payment reaches the relay".into())),
+	}
+}
+
+fn version_param(version: u64) -> Result<i64, sqlx::Error> {
+	i64::try_from(version).map_err(|_| sqlx::Error::Protocol(format!("invoice version {version} overflows")))
+}
+
+/// Where the payment an outbox event carries stands: `pending` while the row still waits for
+/// exactly that attempt, `posted` once the relay stamped it, `failed` for anything else — the
+/// attempt was refused and the invoice reopened (and maybe paid again since).
+pub async fn payment_state(pool: &PgPool, id: Uuid, payload: &str) -> Result<Option<MoveState>, sqlx::Error> {
+	let version = version_param(paid_version(payload)?)?;
+	let row: Option<(i64, Option<String>)> = sqlx::query_as("SELECT version, ledger_state FROM scope_invoices WHERE id = $1")
+		.bind(id)
+		.fetch_optional(pool)
+		.await?;
+	Ok(row.map(|(current, ledger_state)| match ledger_state.as_deref() {
+		Some("pending") if current == version => MoveState::Pending,
+		Some("posted") if current == version => MoveState::Posted,
+		_ => MoveState::Failed,
+	}))
+}
+
+/// The ledger took the payment: from now on the invoice reads paid and the issuer is told. Only
+/// the attempt the event carries, only while pending; a repeat is a no-op.
+pub async fn mark_payment_posted(pool: &PgPool, id: Uuid, payload: &str) -> Result<(), sqlx::Error> {
+	sqlx::query("UPDATE scope_invoices SET ledger_state = 'posted', updated_at = now() WHERE id = $1 AND version = $2 AND ledger_state = 'pending'")
+		.bind(id)
+		.bind(version_param(paid_version(payload)?)?)
+		.execute(pool)
+		.await?;
+	Ok(())
+}
+
+/// The ledger refused the payment, or the relay parked it: nothing moved, so the invoice is open
+/// again and the payer's money is spendable again. The reason stays on the row and in the event
+/// log; the issuer, never told of the payment, is told nothing. Only the attempt the event
+/// carries, only while pending; a repeat is a no-op.
+pub async fn fail_payment(pool: &PgPool, id: Uuid, payload: &str, reason: &str) -> Result<(), sqlx::Error> {
+	let version = paid_version(payload)?;
+	let mut tx = pool.begin().await?;
+	let row = sqlx::query(select_invoice!("WHERE id = $1 AND version = $2 AND ledger_state = 'pending' FOR UPDATE"))
+		.bind(id)
+		.bind(version_param(version)?)
+		.fetch_optional(&mut *tx)
+		.await?;
+	let Some(row) = row else { return Ok(()) };
+	let mut invoice = recorded_invoice(&row).map_err(|e| sqlx::Error::Protocol(e.to_string()))?.invoice;
+	if !invoice.fail_payment(reason) {
+		return Ok(());
+	}
+	sqlx::query(
+		"UPDATE scope_invoices SET state = 'open', version = $2, paid_by_user = NULL, paid_by_auth_subject = NULL, paid_from = NULL, paid_at = NULL, \
+		 pay_idempotency_key = NULL, ledger_state = NULL, pay_failure_reason = $3, updated_at = now() WHERE id = $1",
+	)
+	.bind(id)
+	.bind(version_param(invoice.version())?)
+	.bind(reason)
+	.execute(&mut *tx)
+	.await?;
+	outbox::drain_to_outbox_by(&mut tx, &mut invoice, InvoiceEvent::moves_money)
+		.await
+		.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+	tx.commit().await
+}
+
+/// Put one stale payment's event back on the outbox; `false` when it was posted or failed since
+/// the scan.
+async fn redrive_one(pool: &PgPool, id: Uuid) -> Result<bool, DomainError> {
+	let mut tx = pool.begin().await.map_err(repo_err)?;
+	let row = sqlx::query(select_invoice!("WHERE id = $1 AND ledger_state = 'pending' FOR UPDATE"))
+		.bind(id)
+		.fetch_optional(&mut *tx)
+		.await
+		.map_err(repo_err)?;
+	let Some(row) = row else { return Ok(false) };
+	let invoice = recorded_invoice(&row)?.invoice;
+	let payment = invoice.payment().ok_or_else(|| DomainError::Repository(format!("invoice {id}: pending without a payment")))?;
+	let terms = invoice.terms();
+	let event = InvoiceEvent::Paid {
+		invoice_id: invoice.id(),
+		scope: terms.scope.clone(),
+		to_label: terms.to.clone(),
+		amount: terms.amount,
+		payer: payment.payer,
+		from: payment.from.clone(),
+		version: invoice.version(),
+	};
+	let payload = serde_json::to_string(&event).map_err(|e| DomainError::Repository(e.to_string()))?;
+	outbox::insert_event(&mut tx, Uuid::new_v4(), Invoice::NAME, id, InvoiceEvent::KIND, &payload, true).await?;
+	sqlx::query("UPDATE scope_invoices SET updated_at = now() WHERE id = $1")
+		.bind(id)
+		.execute(&mut *tx)
+		.await
+		.map_err(repo_err)?;
+	tx.commit().await.map_err(repo_err)?;
+	Ok(true)
+}
+
+/// Re-enqueue every payment `pending` for `older_than` whose event is no longer waiting in the
+/// outbox — a relay dispatched it without posting it (an older build that did not know the
+/// kind, during a rolling deploy or a rollback), and the payer's money would stay promised away
+/// for good. The same discipline as a compartment move's replay: the ledger id derives from the
+/// invoice and the attempt's version, so a payment that did post answers `Exists` and is
+/// stamped `posted`. Returns how many it re-enqueued.
+pub async fn redrive_stale_payments(pool: &PgPool, older_than: std::time::Duration) -> Result<usize, sqlx::Error> {
+	let stale: Vec<Uuid> = sqlx::query_scalar(
+		"SELECT i.id FROM scope_invoices i WHERE i.ledger_state = 'pending' AND i.updated_at < now() - make_interval(secs => $1) \
+		 AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.dispatched_at IS NULL AND o.aggregate_id = i.id) ORDER BY i.updated_at LIMIT 100",
+	)
+	.bind(older_than.as_secs_f64())
+	.fetch_all(pool)
+	.await?;
+	let mut redriven = 0;
+	for id in stale {
+		match redrive_one(pool, id).await {
+			Ok(true) => redriven += 1,
+			Ok(false) => {}
+			Err(err) => tracing::warn!(invoice_id = %id, "reaper: could not replay a pending invoice payment: {err}"),
+		}
+	}
+	Ok(redriven)
 }

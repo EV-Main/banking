@@ -45,19 +45,28 @@ CREATE TABLE IF NOT EXISTS scope_invoices (
 	paid_from            TEXT CHECK (paid_from = 'main' OR paid_from = scope),
 	paid_at              TIMESTAMPTZ,
 	pay_idempotency_key  TEXT CHECK (length(pay_idempotency_key) BETWEEN 1 AND 128),
+	-- The payment's ledger leg: `pending` from the moment it is paid until the relay posts it,
+	-- then `posted`; a refused or parked leg puts the invoice back to `open` (NULL again) and
+	-- leaves its reason in `pay_failure_reason`. Only `posted` is a payment anyone is told of.
+	ledger_state         TEXT CHECK (ledger_state IN ('pending', 'posted')),
+	pay_failure_reason   TEXT,
 	created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 	updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
 	CHECK ((state = 'paid') = (paid_by_user IS NOT NULL)),
 	CHECK ((paid_by_user IS NULL) = (paid_by_auth_subject IS NULL)),
 	CHECK ((paid_by_user IS NULL) = (paid_from IS NULL)),
 	CHECK ((paid_by_user IS NULL) = (paid_at IS NULL)),
-	CHECK ((paid_by_user IS NULL) = (pay_idempotency_key IS NULL))
+	CHECK ((paid_by_user IS NULL) = (pay_idempotency_key IS NULL)),
+	CHECK ((paid_by_user IS NULL) = (ledger_state IS NULL))
 );
 -- A payer's key names one payment: the repeat finds it, and a racer past the key lock cannot
 -- pay a second invoice under it.
 CREATE UNIQUE INDEX IF NOT EXISTS scope_invoices_pay_key_idx ON scope_invoices (paid_by_user, pay_idempotency_key) WHERE paid_by_user IS NOT NULL;
 -- The reaper's scan for open invoices past their expiry.
 CREATE INDEX IF NOT EXISTS scope_invoices_due_idx ON scope_invoices (expires_at) WHERE state = 'open';
+-- A payer's payments not yet on the ledger — promised away from their source in every spend
+-- check — and the reaper's scan for one whose event was lost.
+CREATE INDEX IF NOT EXISTS scope_invoices_pending_idx ON scope_invoices (paid_by_user) WHERE ledger_state = 'pending';
 
 -- Where an invoice was paid from (`MoneyEvent.paid_from`): `main` or the scope. A constant
 -- default keeps the column metadata-only: no table rewrite, no long lock.

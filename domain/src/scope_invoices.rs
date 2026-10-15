@@ -98,6 +98,9 @@ pub struct InvoicePayment {
 	pub from: Compartment,
 	/// Unix seconds.
 	pub paid_at: i64,
+	/// Whether the ledger took it. Until it has, nobody is told the invoice is paid: a leg the
+	/// ledger refuses puts the invoice back to open ([`Invoice::fail_payment`]).
+	pub posted: bool,
 }
 
 /// Why a payment did not happen — each one the whole wire status message.
@@ -227,9 +230,41 @@ impl Invoice {
 	}
 
 	/// The state as anyone reading it at `now` must see it: an open invoice past its expiry is
-	/// expired even before the reaper records it, so no reader offers to pay it.
+	/// expired even before the reaper records it, so no reader offers to pay it; a payment the
+	/// ledger has not taken yet is not a payment to anyone outside — the invoice reads open
+	/// until it posts (and stays open if it is refused).
 	pub fn state_at(&self, now: i64) -> InvoiceState {
-		if self.is_due(now) { InvoiceState::Expired } else { self.state }
+		if self.is_due(now) {
+			return InvoiceState::Expired;
+		}
+		match (self.state, &self.payment) {
+			(InvoiceState::Paid, Some(payment)) if !payment.posted => InvoiceState::Open,
+			(state, _) => state,
+		}
+	}
+
+	/// The payment, once the ledger took it — the only payment a reader is shown.
+	pub fn posted_payment(&self) -> Option<&InvoicePayment> {
+		self.payment.as_ref().filter(|payment| payment.posted)
+	}
+
+	/// The ledger refused (or the relay parked) the payment's leg: the invoice is open again,
+	/// with nothing paid, and may be paid anew. `false` when there is no payment waiting for
+	/// the ledger — a posted one is final.
+	pub fn fail_payment(&mut self, reason: &str) -> bool {
+		if self.state != InvoiceState::Paid || self.payment.as_ref().is_none_or(|payment| payment.posted) {
+			return false;
+		}
+		self.version += 1;
+		self.state = InvoiceState::Open;
+		self.payment = None;
+		self.pending.push(InvoiceEvent::PaymentFailed {
+			invoice_id: self.id,
+			scope: self.terms.scope.clone(),
+			version: self.version,
+			reason: reason.to_owned(),
+		});
+		true
 	}
 
 	/// Whether the user named `auth_subject` may see and pay it.
@@ -252,6 +287,7 @@ impl Invoice {
 		}
 		self.version += 1;
 		self.state = InvoiceState::Paid;
+		let payment = InvoicePayment { posted: false, ..payment };
 		self.pending.push(InvoiceEvent::Paid {
 			invoice_id: self.id,
 			scope: self.terms.scope.clone(),
@@ -346,13 +382,21 @@ pub enum InvoiceEvent {
 		scope: ScopeId,
 		version: u64,
 	},
+	/// The payment's leg was refused or parked; the invoice is open again. The issuer was never
+	/// told of the payment, so it is told nothing of this either.
+	PaymentFailed {
+		invoice_id: InvoiceId,
+		scope: ScopeId,
+		version: u64,
+		reason: String,
+	},
 }
 
 impl InvoiceEvent {
 	pub fn moves_money(&self) -> bool {
 		match self {
 			Self::Paid { .. } => true,
-			Self::Created { .. } | Self::Cancelled { .. } | Self::Expired { .. } => false,
+			Self::Created { .. } | Self::Cancelled { .. } | Self::Expired { .. } | Self::PaymentFailed { .. } => false,
 		}
 	}
 }
@@ -394,6 +438,7 @@ mod tests {
 			payer_auth_subject: subject.into(),
 			from,
 			paid_at: at,
+			posted: false,
 		}
 	}
 
@@ -470,6 +515,31 @@ mod tests {
 		assert!(due.expire(NOW + 3600));
 		assert!(!due.expire(NOW + 3600));
 		assert!(matches!(due.drain_events().as_slice(), [InvoiceEvent::Expired { version: 2, .. }]));
+	}
+
+	#[test]
+	fn a_payment_reads_open_until_the_ledger_takes_it_and_a_refused_one_reopens_the_invoice() {
+		let mut invoice = open(None);
+		invoice.pay(payment("u-1", Compartment::Main, NOW)).unwrap();
+		invoice.drain_events();
+		assert_eq!((invoice.state(), invoice.state_at(NOW)), (InvoiceState::Paid, InvoiceState::Open));
+		assert!(invoice.posted_payment().is_none());
+		assert!(invoice.fail_payment("insufficient_funds"));
+		assert_eq!((invoice.state(), invoice.version()), (InvoiceState::Open, 3));
+		assert!(invoice.payment().is_none());
+		assert!(matches!(invoice.drain_events().as_slice(), [InvoiceEvent::PaymentFailed { version: 3, .. }]));
+		assert!(!invoice.fail_payment("again"), "nothing waits for the ledger now");
+		invoice.pay(payment("u-2", Compartment::Main, NOW)).unwrap();
+		let posted = Invoice::restore(
+			invoice.id(),
+			invoice.terms().clone(),
+			InvoiceState::Paid,
+			invoice.version(),
+			invoice.payment().cloned().map(|payment| InvoicePayment { posted: true, ..payment }),
+		)
+		.unwrap();
+		assert_eq!(posted.state_at(NOW), InvoiceState::Paid);
+		assert!(!posted.clone().fail_payment("late"), "a posted payment is final");
 	}
 
 	#[test]

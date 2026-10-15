@@ -37,7 +37,9 @@ use crate::{
 
 /// Where every invoice is paid. First-party only: a scope's own host never takes the payment,
 /// and nothing a client sends changes this.
-pub const PAY_URL_BASE: &str = "https://evinvest.ltd/wallet/invoices/";
+/// The page is `@evinvest/wallet`'s pay action (`sdk/wallet`): it takes the invoice id and
+/// reads everything else from the server's invoice.
+pub const PAY_URL_BASE: &str = "https://evinvest.ltd/wallet/pay?invoice=";
 
 pub fn pay_url(id: InvoiceId) -> String {
 	format!("{PAY_URL_BASE}{id}")
@@ -176,6 +178,8 @@ pub struct PayerPorts<'a> {
 #[derive(Clone, Debug)]
 pub struct PayableView {
 	pub recorded: RecordedInvoice,
+	/// Who is looking: the payment's details are the payer's alone.
+	pub viewer: UserId,
 	/// The scope's human name.
 	pub display_name: String,
 	pub available_main: Usdt,
@@ -186,6 +190,12 @@ impl PayableView {
 	/// The state the payer is shown: an open invoice past its expiry reads expired.
 	pub fn state(&self) -> InvoiceState {
 		self.recorded.invoice.state_at(self.recorded.read_at)
+	}
+
+	/// The payment, when the ledger took it and the viewer is the one who paid — anyone else
+	/// with the id learns only that the invoice is paid, not by whom, when or from where.
+	pub fn own_payment(&self) -> Option<&InvoicePayment> {
+		self.recorded.invoice.posted_payment().filter(|payment| payment.payer == self.viewer)
 	}
 }
 
@@ -210,6 +220,7 @@ async fn view(ports: &PayerPorts<'_>, user: UserId, recorded: RecordedInvoice) -
 	};
 	Ok(PayableView {
 		recorded,
+		viewer: user,
 		display_name,
 		available_main: Usdt::from_base_units(main.available()),
 		available_scope: Usdt::from_base_units(compartment.available()),
@@ -272,7 +283,9 @@ impl PaymentAdmission for Admission<'_> {
 	async fn admit(&self, invoice: &mut Invoice, facts: &PaymentFacts, reads: &mut dyn LockedReads) -> Result<(), PaymentError> {
 		// What is no longer payable says so before anything about the payer: a second payer of a
 		// paid invoice learns that, not why they could not have paid it anyway.
-		if invoice.state_at(facts.now) != InvoiceState::Open {
+		// The stored state, not the read view: a payment still waiting for the ledger reads open
+		// but is a payment all the same.
+		if invoice.state() != InvoiceState::Open || invoice.is_due(facts.now) {
 			return Err(PaymentError::Refused(InvoiceRefusal::NotOpen));
 		}
 		let scope = facts.scope.as_ref().ok_or_else(|| DomainError::NotFound {
