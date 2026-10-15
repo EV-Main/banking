@@ -127,7 +127,7 @@ ev::settings_via_from_str!(IssuanceToken);
 /// `Origin`. Parsed strictly so a typo fails the boot instead of silently never matching,
 /// and so the two values that would hand the user's balance to anyone — `*` and the
 /// `null` origin of a sandboxed frame — cannot be configured at all.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CorsOrigin(String);
 
 impl CorsOrigin {
