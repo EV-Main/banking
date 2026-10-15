@@ -663,7 +663,8 @@ pub enum HoldState {
 	Active,
 	/// Everything held was captured.
 	Captured,
-	/// Released by the client (or, later, by a revoked mandate).
+	/// Released by the client, by the user revoking the mandate, or because the ledger never
+	/// placed it.
 	Voided,
 	/// Released by its TTL.
 	Expired,
@@ -877,6 +878,15 @@ impl Hold {
 		self.is_due(now) && self.release(HoldState::Expired, None)
 	}
 
+	/// The user's revoke of the client's mandate releases what is left, like a void with no
+	/// call of the client's behind it; `false` when the hold is no longer active.
+	pub fn void_by_user(&mut self, now: i64) -> bool {
+		if self.is_due(now) {
+			return self.release(HoldState::Expired, None);
+		}
+		self.progress.state == HoldState::Active && self.release(HoldState::Voided, None)
+	}
+
 	fn release(&mut self, state: HoldState, subject_ref: Option<SubjectRef>) -> bool {
 		let held = self.remaining();
 		let version = self.progress.version + 1;
@@ -983,6 +993,8 @@ pub enum MoneyEventKind {
 	InvoicePaid,
 	InvoiceCancelled,
 	InvoiceExpired,
+	MandateGranted,
+	MandateRevoked,
 }
 
 impl MoneyEventKind {
@@ -1002,6 +1014,8 @@ impl MoneyEventKind {
 			Self::InvoicePaid => "invoice_paid",
 			Self::InvoiceCancelled => "invoice_cancelled",
 			Self::InvoiceExpired => "invoice_expired",
+			Self::MandateGranted => "mandate_granted",
+			Self::MandateRevoked => "mandate_revoked",
 		}
 	}
 
@@ -1021,6 +1035,8 @@ impl MoneyEventKind {
 			"invoice_paid" => Ok(Self::InvoicePaid),
 			"invoice_cancelled" => Ok(Self::InvoiceCancelled),
 			"invoice_expired" => Ok(Self::InvoiceExpired),
+			"mandate_granted" => Ok(Self::MandateGranted),
+			"mandate_revoked" => Ok(Self::MandateRevoked),
 			other => Err(DomainError::Validation(format!("unknown money event kind: {other}"))),
 		}
 	}

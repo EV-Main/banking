@@ -54,11 +54,25 @@
 //!      [`ReconReport::clean`]: the reaper replays a lost one after five minutes, so a
 //!      nonzero reading is a backlog or a relay that is down — the parked-row scan (4) and
 //!      the relay's own alerts say which.
+//!   9. **Holds vs `hold_clearing`** — a hold is one pending transfer onto `hold_clearing`
+//!      for exactly what it still holds, so the account's pending must equal Σ remaining of
+//!      the ACTIVE holds in Postgres, and nothing is ever posted to it
+//!      ([`scope_holds::hold_clearing_snapshot`]). Compared only on a pass with no hold event
+//!      in flight and none written while the ledger was read, when the two sides are meant to
+//!      agree; a run of passes that cannot compare is its own alert. A hold answering captures
+//!      for money the ledger never placed (banking#514), or a reservation nobody will
+//!      release, shows here: an alert, and part of [`ReconReport::clean`].
 //!
 //! It is **read-only** and idempotent, so running it on every standby is harmless; it is
 //! wired as one `select!` branch of the composition root next to the relay.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+	sync::{
+		Arc,
+		atomic::{AtomicU32, Ordering},
+	},
+	time::Duration,
+};
 
 use domain::balance::{LedgerAccountKey, Party, ServiceId};
 use sqlx::PgPool;
@@ -70,7 +84,7 @@ use crate::{
 	infrastructure::{
 		outbox,
 		scope_events::{self, StreamFreshness},
-		scope_ledger, scope_payouts, telemetry,
+		scope_holds, scope_ledger, scope_payouts, telemetry,
 	},
 	ports::{AllocationRegistry, ledger::Ledger},
 };
@@ -125,6 +139,25 @@ pub struct ReconReport {
 	/// Scope transfers and payouts stuck unposted (module header, 8); `None` when unread.
 	/// Outside [`Self::clean`].
 	pub stale_scope_postings: Option<i64>,
+	/// `hold_clearing` against the active holds (module header, 9); `None` when not compared
+	/// this pass.
+	pub hold_clearing: Option<HoldClearingCheck>,
+}
+
+/// One comparison of `hold_clearing` with the holds Postgres says are active, base units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HoldClearingCheck {
+	/// Σ remaining of the active holds.
+	pub expected: u128,
+	/// In flight on `hold_clearing`: its pending, whichever side the ledger reports it on.
+	pub held: u128,
+	pub posted: u128,
+}
+
+impl HoldClearingCheck {
+	pub fn holds(&self) -> bool {
+		self.held == self.expected && self.posted == 0
+	}
 }
 
 impl ReconReport {
@@ -138,6 +171,7 @@ impl ReconReport {
 			&& self.parked_rows == 0
 			&& self.treasury_debits == self.treasury_debits_approved
 			&& self.unowned_scope_accounts.is_empty()
+			&& self.hold_clearing.is_none_or(|check| check.holds())
 	}
 }
 
@@ -146,11 +180,22 @@ pub struct Reconciliation {
 	pool: PgPool,
 	ledger: Arc<dyn Ledger>,
 	allocations: Arc<dyn AllocationRegistry>,
+	/// Passes in a row that could not compare `hold_clearing` (module header, 9).
+	hold_clearing_skips: AtomicU32,
 }
+
+/// Passes in a row (a minute each) that may skip the `hold_clearing` comparison before it is an
+/// alert: a busy book keeps a hold event in flight on many passes, never on an hour of them.
+pub const HOLD_CLEARING_MAX_SKIPS: u32 = 60;
 
 impl Reconciliation {
 	pub fn new(pool: PgPool, ledger: Arc<dyn Ledger>, allocations: Arc<dyn AllocationRegistry>) -> Self {
-		Self { pool, ledger, allocations }
+		Self {
+			pool,
+			ledger,
+			allocations,
+			hold_clearing_skips: AtomicU32::new(0),
+		}
 	}
 
 	pub async fn run(self, shutdown: CancellationToken) {
@@ -322,6 +367,9 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope postings in flight not read this pass: {err}"),
 		}
 
+		// (9) Holds against hold_clearing.
+		self.check_hold_clearing(&mut report).await;
+
 		if report.clean() {
 			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
 		}
@@ -353,6 +401,59 @@ impl Reconciliation {
 			}
 			Err(err) => warn!(%logical_key, "reconciliation: unowned scope account balance read failed, not verified this pass: {err}"),
 		}
+	}
+
+	/// (9) Holds vs `hold_clearing`: Postgres, then the ledger, then Postgres again, compared
+	/// only when nothing was in flight and no hold step landed between the two Postgres reads —
+	/// otherwise the ledger read may sit on either side of it. A pass that cannot compare is
+	/// skipped; [`HOLD_CLEARING_MAX_SKIPS`] of them in a row is an alert of its own, since a
+	/// check that never runs proves nothing.
+	async fn check_hold_clearing(&self, report: &mut ReconReport) {
+		match self.compare_hold_clearing().await {
+			Ok(check) => {
+				self.hold_clearing_skips.store(0, Ordering::Relaxed);
+				if !check.holds() {
+					error!(
+						expected = %check.expected,
+						held = %check.held,
+						posted = %check.posted,
+						"reconciliation: HOLD CLEARING DRIFT — the ledger's hold reservations are not what the active holds say they hold"
+					);
+				}
+				report.hold_clearing = Some(check);
+			}
+			Err(why) => {
+				let skipped = self.hold_clearing_skips.fetch_add(1, Ordering::Relaxed) + 1;
+				if skipped >= HOLD_CLEARING_MAX_SKIPS {
+					error!(skipped, "reconciliation: hold_clearing not compared for {skipped} passes in a row: {why}");
+				} else {
+					warn!(skipped, "reconciliation: hold_clearing not compared this pass: {why}");
+				}
+			}
+		}
+	}
+
+	async fn compare_hold_clearing(&self) -> Result<HoldClearingCheck, String> {
+		let before = scope_holds::hold_clearing_snapshot(&self.pool).await.map_err(|err| format!("active holds read failed: {err}"))?;
+		if before.in_flight {
+			return Err("a hold event is in flight".into());
+		}
+		let balance = self
+			.ledger
+			.balance(&LedgerAccountKey::HoldClearing)
+			.await
+			.map_err(|err| format!("hold_clearing balance read failed: {err}"))?;
+		let after = scope_holds::hold_clearing_snapshot(&self.pool)
+			.await
+			.map_err(|err| format!("active holds re-read failed: {err}"))?;
+		if after != before {
+			return Err("a hold changed during the ledger read".into());
+		}
+		Ok(HoldClearingCheck {
+			expected: before.expected.base_units(),
+			held: balance.pending.saturating_add(balance.locked),
+			posted: balance.posted,
+		})
 	}
 
 	async fn check_treasury(&self, report: &mut ReconReport) -> Result<(), sqlx::Error> {

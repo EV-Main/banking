@@ -25,7 +25,7 @@ use domain::{
 };
 use piggybank_core::{
 	application::{
-		scope_ledger::{self as ledger_app, NoMandates, ScopeLedgerPorts, TransferError},
+		scope_ledger::{self as ledger_app, ScopeLedgerPorts, TransferError},
 		scope_operations::{self as ops, CatalogGate, ExecutorPorts, ExecutorRound, MAX_LIVE_OPERATIONS, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
 	infrastructure::{compartments::PgCompartments, relay::Relay, scope_ledger::PgScopeLedger, scope_payouts, telemetry},
@@ -309,7 +309,6 @@ fn base<'a>(h: &'a Harness, grants: &'a Grants) -> ScopeLedgerPorts<'a> {
 		grants,
 		store: &h.store,
 		holds: &h.store,
-		mandates: &NoMandates,
 		events: &h.store,
 		scopes: &h.scopes,
 		ledger: h.ledger.as_ref(),
@@ -637,7 +636,6 @@ async fn concurrent_payouts_never_break_the_24h_ceiling() {
 				grants: &grants,
 				store: &store,
 				holds: &store,
-				mandates: &NoMandates,
 				events: &store,
 				scopes: &scopes,
 				ledger: ledger.as_ref(),

@@ -20,7 +20,6 @@ use piggybank_core::{
 	application::{
 		auth_sync,
 		book::BookFeed,
-		scope_ledger::NoMandates,
 		scope_operations::{ApprovalExecutor, CatalogGate},
 	},
 	config::{self, Rails},
@@ -565,7 +564,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		outflow,
 		compartments,
 		scope_ledger_store.clone(),
-	);
+	)
+	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default());
 
 	// Operations are only ever requested over the scope ledger's listener, so their executor
 	// runs exactly when the listener does: a hub without it neither opens nor pulls banking's
@@ -589,8 +589,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 				ScopeLedgerDeps {
 					store: store.clone(),
 					holds: store.clone(),
-					// Users cannot grant mandates yet; every hold is refused until they can.
-					mandates: Arc::new(NoMandates),
 					events: store.clone(),
 					invoices: store.clone(),
 					scopes: state.compartments.clone(),

@@ -25,12 +25,13 @@
 use std::sync::Arc;
 
 use application::book::BookFeed;
-use domain::{book::MatchingEngine, money::Network};
+use domain::{book::MatchingEngine, money::Network, scope_ledger::Grants};
 use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
 	AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
 	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger, scope_invoices::InvoiceStore,
+	scope_mandates::MandateStore,
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -129,6 +130,12 @@ pub struct AppState {
 	/// Invoices scopes issue, as their payers read and pay them. Control plane only; the
 	/// relay posts each payment.
 	pub invoices: Arc<dyn InvoiceStore>,
+	/// Users' mandates — their consent to a scope's service drawing on their compartment.
+	pub mandates: Arc<dyn MandateStore>,
+	/// Banking's grants to scope service clients, as the scope ledger serves them: a user may
+	/// grant a mandate only to a client these let touch compartments. Empty — every grant
+	/// refused — while the scope ledger is not configured ([`Self::with_scope_grants`]).
+	pub scope_grants: Arc<Grants>,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
 	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
@@ -180,6 +187,7 @@ impl AppState {
 		compartments: Arc<dyn CompartmentStore>,
 		invoices: Arc<dyn InvoiceStore>,
 	) -> Self {
+		let pool_for_mandates = pool.clone();
 		Self {
 			pool,
 			ledger,
@@ -213,6 +221,14 @@ impl AppState {
 			outflow,
 			compartments,
 			invoices,
+			mandates: Arc::new(infrastructure::scope_ledger::PgScopeLedger::new(pool_for_mandates)),
+			scope_grants: Arc::new(Grants::default()),
 		}
+	}
+
+	/// The grants the scope ledger was configured with, for the user's side of mandates.
+	pub fn with_scope_grants(mut self, grants: Grants) -> Self {
+		self.scope_grants = Arc::new(grants);
+		self
 	}
 }

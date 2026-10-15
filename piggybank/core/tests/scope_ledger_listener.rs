@@ -24,7 +24,6 @@ use evbanking_contracts::scope::v1::{
 	scope_ledger_service_client::ScopeLedgerServiceClient,
 };
 use piggybank_core::{
-	application::scope_ledger::NoMandates,
 	config::ScopeLedgerSettings,
 	infrastructure::{compartments::PgCompartments, scope_ledger::PgScopeLedger},
 	services::scope_ledger::{self, ScopeLedgerDeps, ScopeLedgerListener},
@@ -97,7 +96,6 @@ async fn harness() -> Option<Harness> {
 		deps: ScopeLedgerDeps {
 			store: store.clone(),
 			holds: store.clone(),
-			mandates: Arc::new(NoMandates),
 			events: store.clone(),
 			invoices: store.clone(),
 			scopes: Arc::new(PgCompartments::new(pool.clone())),

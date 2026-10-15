@@ -2025,6 +2025,12 @@ export type BankingV1GrantAllocationAccessRequest = {
 
 /**
  * GrantMandateRequest
+ *
+ * The caps are decimal USDT. What counts against them is the client's draws on the caller's
+ * compartment in the scope — under this mandate and any it replaced, so granting again
+ * never resets a cap: a hold counts at its full amount from when it is placed, until it is
+ * voided or expires, when only what was captured of it still counts; a capture of a hold
+ * placed more than 24 h ago counts from when it is made.
  */
 export type BankingV1GrantMandateRequest = {
     /**
@@ -2040,31 +2046,49 @@ export type BankingV1GrantMandateRequest = {
     /**
      * cap_per_op
      *
-     * decimal USDT, > 0
+     * > 0: the most one hold or charge may draw
      */
     cap_per_op?: string;
     /**
      * cap_24h
      *
-     * decimal USDT, rolling 24 h, >= cap_per_op
+     * >= cap_per_op: drawn over a rolling 24 h
      */
     cap_24h?: string;
     /**
      * operations
      *
-     * at least one
+     * at least one, each once
      */
     operations?: Array<BankingV1MandateOperation>;
     /**
      * expires_at
      *
-     * unix seconds; 0 = until revoked
+     * unix seconds, in the future and within 5 years; 0 = until revoked
      */
     expires_at?: number | string;
     /**
      * idempotency_key
+     *
+     * 1..128 chars; a repeat returns the original mandate
      */
     idempotency_key?: string;
+    /**
+     * cap_outstanding
+     *
+     * >= cap_per_op; empty = cap_24h. The most the client's ACTIVE holds may hold at once,
+     * whenever they were placed — a hold without a TTL stays out of a rolling 24 h window
+     * while it still holds the money.
+     */
+    cap_outstanding?: string;
+    /**
+     * cap_book_fill_24h
+     *
+     * Required exactly when `operations` lists BOOK_FILL, > 0: the most a rolling 24 h of
+     * captures may send from the client's holds into OTHER users' compartments. A hold
+     * placed under an earlier mandate is bound by the lower of its cap and this one.
+     */
+    cap_book_fill_24h?: string;
 };
 
 /**
@@ -2620,6 +2644,34 @@ export type BankingV1Mandate = {
      * drawn in the rolling 24 h, decimal USDT
      */
     used_24h?: string;
+    /**
+     * cap_outstanding
+     */
+    cap_outstanding?: string;
+    /**
+     * cap_book_fill_24h
+     *
+     * empty unless `operations` lists BOOK_FILL
+     */
+    cap_book_fill_24h?: string;
+    /**
+     * outstanding
+     *
+     * held by the client's active holds now
+     */
+    outstanding?: string;
+    /**
+     * book_filled_24h
+     *
+     * sent to other users in the rolling 24 h
+     */
+    book_filled_24h?: string;
+    /**
+     * replaced_at
+     *
+     * 0 unless a later grant replaced it; then `outstanding` is its own holds'
+     */
+    replaced_at?: number | string;
 };
 
 /**

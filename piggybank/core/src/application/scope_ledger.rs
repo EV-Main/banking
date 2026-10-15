@@ -2,7 +2,8 @@
 //! (`scope.v1.ScopeLedgerService`): open an account, read its accounts' balances, move money
 //! from one of them into the scope's `fee` collector within the automatic ceilings, hold a
 //! user's compartment under their mandate and capture or release the hold — and pull the money
-//! events it is party to (`scope.v1.MoneyEvents`).
+//! events it is party to (`scope.v1.MoneyEvents`). A hold stands on the user's current mandate
+//! for the client, read by the hold store with its row locked ([`HoldFacts::mandate`]).
 //!
 //! The caller is always a [`ClientId`] the transport proved (mTLS), and every call is first
 //! held against banking's [`Grants`]: `main` is never a client's, a scope the client holds no
@@ -20,7 +21,6 @@ use domain::{
 		TransferReason, TransferTerms, canonical,
 	},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
-	users::UserId,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -30,8 +30,8 @@ use crate::ports::{
 	compartments::{CompartmentStore, ScopeRecord},
 	ledger::{Ledger, LockedReads},
 	scope_ledger::{
-		CaptureTarget, HoldAdmission, HoldChange, HoldChangeFacts, HoldFacts, HoldStore, MandateBook, MoneyEventRecord, MoneyEventStore, OwnedAccount, RPC_CAPTURE, RPC_OPEN_ACCOUNT,
-		RPC_RESERVE, RPC_TRANSFER, RPC_VOID, Recorded, RecordedHold, RecordedTransfer, RequestKey, ScopeLedgerStore, StoredRequest, TransferAdmission, TransferFacts,
+		CaptureTarget, HoldAdmission, HoldChange, HoldChangeFacts, HoldFacts, HoldStore, MoneyEventRecord, MoneyEventStore, OwnedAccount, RPC_CAPTURE, RPC_OPEN_ACCOUNT, RPC_RESERVE,
+		RPC_TRANSFER, RPC_VOID, Recorded, RecordedHold, RecordedTransfer, RequestKey, ScopeLedgerStore, StoredRequest, TransferAdmission, TransferFacts,
 	},
 };
 
@@ -44,9 +44,6 @@ pub struct ScopeLedgerPorts<'a> {
 	pub grants: &'a Grants,
 	pub store: &'a dyn ScopeLedgerStore,
 	pub holds: &'a dyn HoldStore,
-	/// Users' consent to holds — refuses everything until mandates are granted
-	/// ([`NoMandates`]).
-	pub mandates: &'a dyn MandateBook,
 	pub events: &'a dyn MoneyEventStore,
 	/// The scope registry (which scopes exist, their state and policy).
 	pub scopes: &'a dyn CompartmentStore,
@@ -308,22 +305,6 @@ impl TransferAdmission for Admission<'_> {
 	}
 }
 
-/// The mandate book while users cannot grant mandates yet (`GrantMandate` is a later part):
-/// no user has consented to anything, so every hold is `mandate_required`. Wiring anything
-/// else in production would let a client debit users on its own word.
-pub struct NoMandates;
-
-#[async_trait]
-impl MandateBook for NoMandates {
-	async fn authorize(&self, _: &ClientId, _: &ScopeId, _: UserId, _: MandateOperation, _: Usdt) -> Result<Option<Uuid>, DomainError> {
-		Ok(None)
-	}
-
-	async fn lists(&self, _: Uuid, _: MandateOperation) -> Result<bool, DomainError> {
-		Ok(false)
-	}
-}
-
 /// What a client asks of `Reserve`, parsed.
 #[derive(Clone, Debug)]
 pub struct ReserveRequest {
@@ -424,12 +405,12 @@ impl HoldAdmission for ReserveAdmission<'_> {
 		// A user banking does not know has no mandate either, and the same answer keeps a
 		// client from learning which subjects have a wallet.
 		let user = facts.user.ok_or(TransferError::Refused(LedgerRefusal::MandateRequired))?;
-		let mandate = self
-			.ports
-			.mandates
-			.authorize(self.client, &request.scope, user.id, MandateOperation::Reserve, request.amount)
-			.await?
-			.ok_or(TransferError::Refused(LedgerRefusal::MandateRequired))?;
+		// The mandate row and the compartment are both locked, so two holds racing for the
+		// last of a cap cannot both see room for themselves.
+		let draw = facts.mandate.as_ref().ok_or(TransferError::Refused(LedgerRefusal::MandateRequired))?;
+		draw.mandate
+			.admit_draw(MandateOperation::Reserve, request.amount, draw.usage, facts.now)
+			.map_err(TransferError::Refused)?;
 		// After the mandate: a client the user never consented to learns nothing of the freeze.
 		if user.blocked {
 			return Err(TransferError::Refused(LedgerRefusal::UserFrozen));
@@ -439,10 +420,7 @@ impl HoldAdmission for ReserveAdmission<'_> {
 		if Usdt::from_base_units(spendable) < request.amount {
 			return Err(TransferError::Refused(LedgerRefusal::InsufficientFunds));
 		}
-		let expires_at = match request.ttl_seconds {
-			0 => None,
-			ttl => Some(facts.now.saturating_add(i64::from(ttl))),
-		};
+		let expires_at = draw.mandate.hold_expiry(request.ttl_seconds, facts.now);
 		Ok(Hold::place(
 			HoldId::new(),
 			HoldTerms {
@@ -452,7 +430,7 @@ impl HoldAdmission for ReserveAdmission<'_> {
 				amount: request.amount,
 				expires_at,
 				subject_ref: request.subject_ref.clone(),
-				mandate_id: mandate,
+				mandate_id: draw.mandate.id,
 			},
 		)?)
 	}
@@ -533,15 +511,23 @@ impl HoldChange for CaptureChange<'_> {
 					ScopeState::Frozen => return Err(TransferError::Refused(LedgerRefusal::ScopeFrozen)),
 					ScopeState::Active | ScopeState::Closed => {}
 				}
-				// Decided by the mandate the hold was placed under, for the hold's whole life.
-				if !self.ports.mandates.lists(hold.terms().mandate_id, MandateOperation::BookFill).await? {
-					return Err(TransferError::Refused(LedgerRefusal::MandateRequired));
-				}
+				// Granted by the mandate the hold was placed under and by the user's current one,
+				// and capped over a rolling 24 h by the tighter of their BOOK_FILL caps.
+				let draw = facts
+					.book_fill
+					.as_ref()
+					.filter(|draw| draw.mandate.id == hold.terms().mandate_id)
+					.ok_or(TransferError::Refused(LedgerRefusal::MandateRequired))?;
+				draw.mandate
+					.admit_book_fill(facts.current_mandate.as_ref(), request.amount.unwrap_or_else(|| hold.remaining()), draw.usage, facts.now)
+					.map_err(TransferError::Refused)?;
 				let other = facts.destination_user.ok_or_else(|| DomainError::NotFound {
 					entity: "user",
 					id: target_subject(&request.to).to_owned(),
 				})?;
-				if facts.held_user.is_none_or(|held| held.blocked) {
+				// Neither side of a fill may be frozen: the payer's money stays put, and a frozen
+				// recipient takes no money in, as with a move into a frozen user's compartment.
+				if facts.held_user.is_none_or(|held| held.blocked) || other.blocked {
 					return Err(TransferError::Refused(LedgerRefusal::UserFrozen));
 				}
 				HoldDestination::User(other.id)

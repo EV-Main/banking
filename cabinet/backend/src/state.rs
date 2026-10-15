@@ -77,6 +77,10 @@ impl Grpc {
 		bk::invoice_payment_service_client::InvoicePaymentServiceClient::new(self.piggybank.clone())
 	}
 
+	fn compartments(&self) -> bk::compartment_service_client::CompartmentServiceClient<Channel> {
+		bk::compartment_service_client::CompartmentServiceClient::new(self.piggybank.clone())
+	}
+
 	fn operations(&self) -> bk::operations_service_client::OperationsServiceClient<Channel> {
 		bk::operations_service_client::OperationsServiceClient::new(self.piggybank.clone())
 	}
@@ -209,6 +213,19 @@ impl Grpc {
 
 	pub async fn pay_invoice(&self, token: &str, req: bk::PayInvoiceRequest) -> Result<bk::PayableInvoice, Status> {
 		Ok(self.invoice_payments().pay_invoice(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn list_mandates(&self, token: &str) -> Result<bk::MandateList, Status> {
+		Ok(self.compartments().list_mandates(bearer(token, bk::ListMandatesRequest {})?).await?.into_inner())
+	}
+
+	pub async fn grant_mandate(&self, token: &str, req: bk::GrantMandateRequest) -> Result<bk::Mandate, Status> {
+		Ok(self.compartments().grant_mandate(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn revoke_mandate(&self, token: &str, mandate_id: &str) -> Result<bk::Mandate, Status> {
+		let req = bk::RevokeMandateRequest { mandate_id: mandate_id.to_string() };
+		Ok(self.compartments().revoke_mandate(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn list_withdrawals(&self, token: &str) -> Result<bk::WithdrawalList, Status> {

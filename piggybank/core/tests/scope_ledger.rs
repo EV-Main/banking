@@ -18,7 +18,7 @@ use domain::{
 	scopes::{MoveState, ScopeAccountLabel, ScopeId, ScopeState},
 };
 use piggybank_core::{
-	application::scope_ledger::{self as ledger_app, NoMandates, ScopeLedgerPorts, TransferError, TransferRequest},
+	application::scope_ledger::{self as ledger_app, ScopeLedgerPorts, TransferError, TransferRequest},
 	infrastructure::{
 		allocations::PgAllocations, compartments::PgCompartments, reaper::Reaper, reconciliation::Reconciliation, redemptions::PgRedemptions, relay::Relay, scope_ledger::PgScopeLedger,
 		withdrawals::PgWithdrawals,
@@ -65,7 +65,6 @@ fn ports<'a>(h: &'a Harness, grants: &'a Grants) -> ScopeLedgerPorts<'a> {
 		grants,
 		store: &h.store,
 		holds: &h.store,
-		mandates: &NoMandates,
 		events: &h.store,
 		scopes: &h.scopes,
 		ledger: h.ledger.as_ref(),
