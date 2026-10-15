@@ -17,6 +17,7 @@ use crate::{
 	error::DomainError,
 	money::{Usdt, contains_url},
 	scopes::{ScopeAccountLabel, ScopeId, ScopePolicy},
+	users::UserId,
 };
 
 /// banking's own client id: the owner of `(main, treasury)` and of every `(<scope>, fee)`.
@@ -146,6 +147,31 @@ impl Grants {
 	pub fn is_empty(&self) -> bool {
 		self.grants.is_empty()
 	}
+
+	/// Every scope `client` holds a grant in, each once, in configuration order.
+	pub fn scopes_of(&self, client: &ClientId) -> Vec<ScopeId> {
+		let mut scopes: Vec<ScopeId> = Vec::new();
+		for grant in self.grants.iter().filter(|grant| &grant.client == client) {
+			if !scopes.contains(&grant.scope) {
+				scopes.push(grant.scope.clone());
+			}
+		}
+		scopes
+	}
+
+	/// Whether one of `client`'s grants in `scope` lets it touch users' compartments there.
+	pub fn compartments(&self, client: &ClientId, scope: &ScopeId) -> bool {
+		self.in_scope(client, scope).any(|grant| grant.compartments)
+	}
+}
+
+/// What a user's mandate lets a client do with their compartment
+/// (`banking.v1.MandateOperation`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MandateOperation {
+	Reserve,
+	Charge,
+	BookFill,
 }
 
 /// Which client a TLS client certificate is: the SHA-256 of the certificate's DER bytes,
@@ -213,6 +239,14 @@ pub enum LedgerRefusal {
 	/// Past an automatic ceiling, or not an automatic move at all: ask with `RequestTransfer`
 	/// (FAILED_PRECONDITION).
 	ApprovalRequired,
+	/// The hold is captured, voided or expired — or past its expiry and about to be
+	/// (FAILED_PRECONDITION).
+	HoldNotActive,
+	/// The user is frozen: no new debit of their compartment, and no capture of a hold on
+	/// it into another user's (FAILED_PRECONDITION).
+	UserFrozen,
+	/// No live mandate of the user covers this for the caller (FAILED_PRECONDITION).
+	MandateRequired,
 }
 
 impl LedgerRefusal {
@@ -223,6 +257,9 @@ impl LedgerRefusal {
 			Self::ScopeFrozen => "scope_frozen",
 			Self::InsufficientFunds => "insufficient_funds",
 			Self::ApprovalRequired => "approval_required",
+			Self::HoldNotActive => "hold_not_active",
+			Self::UserFrozen => "user_frozen",
+			Self::MandateRequired => "mandate_required",
 		}
 	}
 
@@ -230,7 +267,7 @@ impl LedgerRefusal {
 	pub const fn is_permission(self) -> bool {
 		match self {
 			Self::NotGranted | Self::NotAccountOwner => true,
-			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired => false,
+			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired => false,
 		}
 	}
 }
@@ -539,6 +576,355 @@ impl EmitsEvents for ScopeTransfer {
 	}
 }
 
+/// A unique hold id (UUID). Minted by the application layer.
+pub type HoldId = Id<HoldTag>;
+/// Phantom tag making [`HoldId`] a distinct, incompatible identity type.
+pub struct HoldTag;
+
+/// Where a hold stands (`HoldState` on the wire).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HoldState {
+	/// Holding what is left; may be captured or voided.
+	Active,
+	/// Everything held was captured.
+	Captured,
+	/// Released by the client (or, later, by a revoked mandate).
+	Voided,
+	/// Released by its TTL.
+	Expired,
+}
+
+impl HoldState {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::Active => "active",
+			Self::Captured => "captured",
+			Self::Voided => "voided",
+			Self::Expired => "expired",
+		}
+	}
+
+	pub fn parse(raw: &str) -> Result<Self, DomainError> {
+		match raw {
+			"active" => Ok(Self::Active),
+			"captured" => Ok(Self::Captured),
+			"voided" => Ok(Self::Voided),
+			"expired" => Ok(Self::Expired),
+			other => Err(DomainError::Validation(format!("unknown hold state: {other}"))),
+		}
+	}
+}
+
+/// Where a capture sends held money: a scope account of the client that placed the hold, or
+/// another user's compartment in the same scope (the cash leg of a book fill).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum HoldDestination {
+	Account(ScopeAccountLabel),
+	User(UserId),
+}
+
+/// Everything a `Reserve` names once banking has resolved the user and the mandate.
+#[derive(Clone, Debug)]
+pub struct HoldTerms {
+	pub client: ClientId,
+	pub scope: ScopeId,
+	pub user: UserId,
+	pub amount: Usdt,
+	/// Unix seconds; `None` holds until captured or voided.
+	pub expires_at: Option<i64>,
+	pub subject_ref: SubjectRef,
+	/// The mandate the hold was placed under, for its whole life.
+	pub mandate_id: uuid::Uuid,
+}
+
+/// Where a hold stands, as stored — what [`Hold::restore`] needs beyond its terms.
+#[derive(Clone, Copy, Debug)]
+pub struct HoldProgress {
+	pub captured: Usdt,
+	pub state: HoldState,
+	/// The version of the hold's last event; each event is one more.
+	pub version: u64,
+	/// The version whose event created the ledger reservation standing now. Its ledger id
+	/// derives from it, so the next capture or release knows which pending to void.
+	pub pending_version: u64,
+}
+
+/// Why a capture did not happen: a refusal the wire names, or a request that cannot be one.
+#[derive(Debug)]
+pub enum HoldError {
+	Refused(LedgerRefusal),
+	Invalid(DomainError),
+}
+
+/// A client's hold on a user's compartment in a scope: money that stops being spendable for
+/// the user but stays theirs until the client captures it, or until it is voided or expires.
+///
+/// In the ledger a hold is ONE pending transfer at a time, `Dr <compartment> / Cr
+/// hold_clearing`, for exactly what is left. A capture voids it, posts the captured amount out
+/// of the compartment, and reserves the rest anew — one linked chain, so a partial capture
+/// never leaves the user's money free in between. TigerBeetle can post a pending only once,
+/// which is why a capture is not a partial post.
+#[derive(Clone, Debug)]
+pub struct Hold {
+	id: HoldId,
+	terms: HoldTerms,
+	progress: HoldProgress,
+	pending: Vec<HoldEvent>,
+}
+
+impl Hold {
+	/// A new hold for `terms.amount`, raising the reservation's event.
+	pub fn place(id: HoldId, terms: HoldTerms) -> Result<Self, DomainError> {
+		let progress = HoldProgress {
+			captured: Usdt::ZERO,
+			state: HoldState::Active,
+			version: 1,
+			pending_version: 1,
+		};
+		let mut hold = Self::restore(id, terms, progress)?;
+		hold.pending.push(HoldEvent::Placed {
+			hold_id: id,
+			scope: hold.terms.scope.clone(),
+			user: hold.terms.user,
+			amount: hold.terms.amount,
+			version: 1,
+		});
+		Ok(hold)
+	}
+
+	/// Rebuild from storage (no events).
+	pub fn restore(id: HoldId, terms: HoldTerms, progress: HoldProgress) -> Result<Self, DomainError> {
+		if terms.amount.is_zero() {
+			return Err(DomainError::Validation("amount must be positive".into()));
+		}
+		if terms.scope.is_main() {
+			return Err(DomainError::Validation("a hold is never placed in main".into()));
+		}
+		if progress.captured > terms.amount {
+			return Err(DomainError::Validation(format!("hold {id} captured more than it held")));
+		}
+		Ok(Self {
+			id,
+			terms,
+			progress,
+			pending: Vec::new(),
+		})
+	}
+
+	pub fn id(&self) -> HoldId {
+		self.id
+	}
+
+	pub fn terms(&self) -> &HoldTerms {
+		&self.terms
+	}
+
+	pub fn progress(&self) -> HoldProgress {
+		self.progress
+	}
+
+	pub fn state(&self) -> HoldState {
+		self.progress.state
+	}
+
+	/// What the hold still holds: nothing once it is no longer active.
+	pub fn remaining(&self) -> Usdt {
+		match self.progress.state {
+			HoldState::Active => self.terms.amount.checked_sub(self.progress.captured).unwrap_or(Usdt::ZERO),
+			HoldState::Captured | HoldState::Voided | HoldState::Expired => Usdt::ZERO,
+		}
+	}
+
+	/// Active, but past its expiry: the reaper's to release, and no longer capturable.
+	pub fn is_due(&self, now: i64) -> bool {
+		self.progress.state == HoldState::Active && self.terms.expires_at.is_some_and(|at| at <= now)
+	}
+
+	/// Move `amount` (everything left when `None`) to `to`. Refused unless the hold is active
+	/// and not yet due, and for more than it holds; capturing into the held user's own
+	/// compartment is not a capture at all — that is a void.
+	pub fn capture(&mut self, amount: Option<Usdt>, to: HoldDestination, subject_ref: SubjectRef, now: i64) -> Result<Usdt, HoldError> {
+		if to == HoldDestination::User(self.terms.user) {
+			return Err(HoldError::Invalid(DomainError::Validation("a capture into the held user's own compartment is a void".into())));
+		}
+		if self.progress.state != HoldState::Active || self.is_due(now) {
+			return Err(HoldError::Refused(LedgerRefusal::HoldNotActive));
+		}
+		let held = self.remaining();
+		let amount = amount.unwrap_or(held);
+		if amount.is_zero() {
+			return Err(HoldError::Invalid(DomainError::Validation("amount must be positive".into())));
+		}
+		if amount > held {
+			return Err(HoldError::Refused(LedgerRefusal::InsufficientFunds));
+		}
+		let version = self.progress.version + 1;
+		let released = self.progress.pending_version;
+		// `amount <= held <= terms.amount - captured`, so this cannot overflow.
+		self.progress.captured = self
+			.progress
+			.captured
+			.checked_add(amount)
+			.ok_or_else(|| HoldError::Invalid(DomainError::Validation("capture overflows".into())))?;
+		self.progress.version = version;
+		if amount == held {
+			self.progress.state = HoldState::Captured;
+		} else {
+			self.progress.pending_version = version;
+		}
+		self.pending.push(HoldEvent::Captured {
+			hold_id: self.id,
+			scope: self.terms.scope.clone(),
+			user: self.terms.user,
+			version,
+			released,
+			held,
+			amount,
+			to,
+			subject_ref,
+		});
+		Ok(amount)
+	}
+
+	/// Release what is left back to the user. A hold that is no longer active is left as it
+	/// is (`false`); one past its expiry expires instead of being voided — its TTL decided it
+	/// first.
+	pub fn void(&mut self, subject_ref: SubjectRef, now: i64) -> bool {
+		if self.is_due(now) {
+			return self.release(HoldState::Expired, Some(subject_ref));
+		}
+		self.progress.state == HoldState::Active && self.release(HoldState::Voided, Some(subject_ref))
+	}
+
+	/// The reaper's release of a hold past its expiry; `false` when it is not due.
+	pub fn expire(&mut self, now: i64) -> bool {
+		self.is_due(now) && self.release(HoldState::Expired, None)
+	}
+
+	fn release(&mut self, state: HoldState, subject_ref: Option<SubjectRef>) -> bool {
+		let held = self.remaining();
+		let version = self.progress.version + 1;
+		self.progress.version = version;
+		self.progress.state = state;
+		self.pending.push(HoldEvent::Released {
+			hold_id: self.id,
+			scope: self.terms.scope.clone(),
+			user: self.terms.user,
+			version,
+			released: self.progress.pending_version,
+			held,
+			expired: state == HoldState::Expired,
+			subject_ref,
+		});
+		true
+	}
+}
+
+impl Entity for Hold {
+	type Id = HoldId;
+
+	fn id(&self) -> HoldId {
+		self.id
+	}
+}
+
+impl AggregateRoot for Hold {
+	const NAME: &'static str = "scope_hold";
+}
+
+/// A hold's ledger steps, relayed in order. Every one names the user, so a scan of unapplied
+/// debits for that user's compartment finds it. `version` is the event's own; a reservation's
+/// ledger id derives from the version that created it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HoldEvent {
+	/// Relay: reserve `Dr scope_claim:<scope>:<user> / Cr hold_clearing` for `amount`,
+	/// pending, as the reservation of `version`.
+	Placed {
+		hold_id: HoldId,
+		scope: ScopeId,
+		user: UserId,
+		amount: Usdt,
+		version: u64,
+	},
+	/// Relay, linked: void the reservation of `released` (`held`), post `amount` out of the
+	/// compartment to `to`, and reserve `held - amount` as the reservation of `version`
+	/// when anything is left.
+	Captured {
+		hold_id: HoldId,
+		scope: ScopeId,
+		user: UserId,
+		version: u64,
+		released: u64,
+		held: Usdt,
+		amount: Usdt,
+		to: HoldDestination,
+		/// The capturing call's own ref.
+		subject_ref: SubjectRef,
+	},
+	/// Relay: void the reservation of `released`, giving `held` back to the user.
+	Released {
+		hold_id: HoldId,
+		scope: ScopeId,
+		user: UserId,
+		version: u64,
+		released: u64,
+		held: Usdt,
+		expired: bool,
+		/// The voiding call's ref; `None` when the TTL released it.
+		subject_ref: Option<SubjectRef>,
+	},
+}
+
+impl DomainEvent for HoldEvent {
+	const KIND: &'static str = "scope_holds";
+}
+
+impl EmitsEvents for Hold {
+	type Event = HoldEvent;
+
+	fn drain_events(&mut self) -> Vec<HoldEvent> {
+		core::mem::take(&mut self.pending)
+	}
+}
+
+/// What a client's money-event stream says happened (`MoneyEvent.Kind`). Stored by name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MoneyEventKind {
+	AccountOpened,
+	HoldPlaced,
+	HoldCaptured,
+	HoldVoided,
+	HoldExpired,
+	Transferred,
+}
+
+impl MoneyEventKind {
+	pub const fn as_str(self) -> &'static str {
+		match self {
+			Self::AccountOpened => "account_opened",
+			Self::HoldPlaced => "hold_placed",
+			Self::HoldCaptured => "hold_captured",
+			Self::HoldVoided => "hold_voided",
+			Self::HoldExpired => "hold_expired",
+			Self::Transferred => "transferred",
+		}
+	}
+
+	pub fn parse(raw: &str) -> Result<Self, DomainError> {
+		match raw {
+			"account_opened" => Ok(Self::AccountOpened),
+			"hold_placed" => Ok(Self::HoldPlaced),
+			"hold_captured" => Ok(Self::HoldCaptured),
+			"hold_voided" => Ok(Self::HoldVoided),
+			"hold_expired" => Ok(Self::HoldExpired),
+			"transferred" => Ok(Self::Transferred),
+			other => Err(DomainError::Validation(format!("unknown money event kind: {other}"))),
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -724,5 +1110,116 @@ mod tests {
 		let base = terms().canonical();
 		assert_ne!(base, TransferTerms { memo: "x".into(), ..terms() }.canonical());
 		assert_ne!(base, TransferTerms { amount: usdt("12.6"), ..terms() }.canonical());
+	}
+
+	fn sref() -> SubjectRef {
+		SubjectRef::parse("subscription:4f0c2d1e-0000-4000-8000-0123456789ab").unwrap()
+	}
+
+	fn hold(amount: &str, expires_at: Option<i64>) -> Hold {
+		let terms = HoldTerms {
+			client: client("invest"),
+			scope: scope("invest"),
+			user: UserId::new(),
+			amount: usdt(amount),
+			expires_at,
+			subject_ref: SubjectRef::parse("subscription:4f0c2d1e-0000-4000-8000-0123456789ab").unwrap(),
+			mandate_id: uuid::Uuid::new_v4(),
+		};
+		Hold::place(HoldId::new(), terms).unwrap()
+	}
+
+	#[test]
+	fn partial_captures_chain_reservations_until_the_hold_is_exhausted() {
+		let mut h = hold("10", None);
+		assert!(matches!(h.drain_events().as_slice(), [HoldEvent::Placed { version: 1, .. }]));
+		let to = HoldDestination::Account(label("alloc:x"));
+		assert_eq!(h.capture(Some(usdt("4")), to.clone(), sref(), 0).unwrap(), usdt("4"));
+		assert_eq!(h.remaining(), usdt("6"));
+		assert_eq!(h.state(), HoldState::Active);
+		let events = h.drain_events();
+		let [
+			HoldEvent::Captured {
+				version: 2,
+				released: 1,
+				held,
+				amount,
+				..
+			},
+		] = events.as_slice()
+		else {
+			panic!("{events:?}")
+		};
+		assert_eq!((*held, *amount), (usdt("10"), usdt("4")));
+		assert_eq!(h.progress().pending_version, 2, "the rest is reserved anew as version 2");
+		assert!(matches!(
+			h.capture(Some(usdt("6.000000000000000001")), to.clone(), sref(), 0),
+			Err(HoldError::Refused(LedgerRefusal::InsufficientFunds))
+		));
+		assert_eq!(h.capture(None, to.clone(), sref(), 0).unwrap(), usdt("6"), "empty = everything left");
+		assert_eq!(h.state(), HoldState::Captured);
+		assert_eq!(h.remaining(), Usdt::ZERO);
+		let events = h.drain_events();
+		assert!(matches!(events.as_slice(), [HoldEvent::Captured { version: 3, released: 2, .. }]), "{events:?}");
+		assert!(matches!(h.capture(None, to, sref(), 0), Err(HoldError::Refused(LedgerRefusal::HoldNotActive))));
+		assert!(!h.void(sref(), 0), "a captured hold is returned unchanged");
+		assert!(h.drain_events().is_empty());
+	}
+
+	#[test]
+	fn a_void_releases_what_is_left_and_a_due_hold_expires_instead() {
+		let mut h = hold("10", Some(100));
+		h.drain_events();
+		h.capture(Some(usdt("3")), HoldDestination::User(UserId::new()), sref(), 99).unwrap();
+		assert!(h.void(sref(), 99));
+		assert_eq!(h.state(), HoldState::Voided);
+		let events = h.drain_events();
+		let [
+			_,
+			HoldEvent::Released {
+				held, expired: false, released: 2, ..
+			},
+		] = events.as_slice()
+		else {
+			panic!("{events:?}")
+		};
+		assert_eq!(*held, usdt("7"));
+		assert_eq!(h.progress().captured, usdt("3"), "captured keeps what was taken before");
+
+		let mut due = hold("10", Some(100));
+		due.drain_events();
+		assert!(matches!(
+			due.capture(None, HoldDestination::Account(label("a")), sref(), 100),
+			Err(HoldError::Refused(LedgerRefusal::HoldNotActive))
+		));
+		assert!(!due.expire(99), "not due yet");
+		assert!(due.void(sref(), 100));
+		assert_eq!(due.state(), HoldState::Expired);
+		assert!(matches!(due.drain_events().as_slice(), [HoldEvent::Released { expired: true, .. }]));
+	}
+
+	#[test]
+	fn a_capture_into_the_held_users_own_compartment_is_not_a_capture() {
+		let mut h = hold("1", None);
+		let own = HoldDestination::User(h.terms().user);
+		assert!(matches!(h.capture(None, own, sref(), 0), Err(HoldError::Invalid(_))));
+		assert!(matches!(h.capture(Some(Usdt::ZERO), HoldDestination::Account(label("a")), sref(), 0), Err(HoldError::Invalid(_))));
+	}
+
+	#[test]
+	fn hold_states_and_money_event_kinds_round_trip_by_name() {
+		for state in [HoldState::Active, HoldState::Captured, HoldState::Voided, HoldState::Expired] {
+			assert_eq!(HoldState::parse(state.as_str()).unwrap(), state);
+		}
+		for kind in [
+			MoneyEventKind::AccountOpened,
+			MoneyEventKind::HoldPlaced,
+			MoneyEventKind::HoldCaptured,
+			MoneyEventKind::HoldVoided,
+			MoneyEventKind::HoldExpired,
+			MoneyEventKind::Transferred,
+		] {
+			assert_eq!(MoneyEventKind::parse(kind.as_str()).unwrap(), kind);
+		}
 	}
 }
