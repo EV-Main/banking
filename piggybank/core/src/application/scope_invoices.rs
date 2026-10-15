@@ -317,6 +317,7 @@ impl PaymentAdmission for Admission<'_> {
 				payer_auth_subject: self.subject.clone(),
 				from: self.from.clone(),
 				paid_at: facts.now,
+				posted: false,
 			})
 			.map_err(PaymentError::Refused)
 	}
