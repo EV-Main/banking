@@ -544,11 +544,13 @@ async fn a_key_won_by_a_concurrent_transfer_is_answered_with_its_result() {
 		client: client.clone(),
 		scope: scope.clone(),
 		from: request.from.clone(),
+		to_scope: scope.clone(),
 		to: request.to.clone(),
 		amount: request.amount,
 		reason: request.reason,
 		subject_ref: request.subject_ref.clone(),
 		memo: request.memo.clone(),
+		operation_id: None,
 	};
 	let won = Uuid::new_v4();
 	let mut winner = h.pool.begin().await.unwrap();

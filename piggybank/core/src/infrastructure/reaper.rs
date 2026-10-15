@@ -21,8 +21,8 @@
 //!   - **`pending` compartment moves untouched past a few minutes, with no event left in
 //!     the outbox → RE-ENQUEUE.** A relay that did not know the event (an older build in a
 //!     rolling deploy or after a rollback) dispatched it as a no-op; replaying is safe
-//!     because the move's ledger transfer id derives from the move id. A client's `pending`
-//!     scope transfer is replayed the same way, for the same reason.
+//!     because the move's ledger transfer id derives from the move id. A `pending` scope
+//!     transfer or payout is replayed the same way, for the same reason.
 //!
 //! The auto-fail/cancel paths go through the same row-locked repository commands a user
 //! would (idempotent, drain the void event), so the relay reverses the money exactly once.
@@ -37,7 +37,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{compartments, scope_holds, scope_invoices, scope_ledger},
+	infrastructure::{compartments, scope_holds, scope_invoices, scope_ledger, scope_payouts},
 	ports::{RedemptionRepository, WithdrawalRepository},
 };
 
@@ -69,6 +69,8 @@ pub struct ReaperReport {
 	pub redriven_compartment_moves: usize,
 	/// `pending` scope transfers whose lost event was put back on the outbox.
 	pub redriven_scope_transfers: usize,
+	/// `pending` scope payouts whose lost event was put back on the outbox.
+	pub redriven_scope_payouts: usize,
 	/// Active scope holds past their TTL, released back to their users.
 	pub expired_scope_holds: usize,
 	/// Open scope invoices past their expiry, recorded expired.
@@ -199,6 +201,14 @@ impl Reaper {
 			);
 		}
 
+		report.redriven_scope_payouts = scope_payouts::redrive_stale_payouts(&self.pool, self.move_redrive_after).await?;
+		if report.redriven_scope_payouts > 0 {
+			warn!(
+				count = report.redriven_scope_payouts,
+				"reaper: re-enqueued pending scope payouts whose event was dispatched without posting them"
+			);
+		}
+
 		report.redriven_invoice_payments = scope_invoices::redrive_stale_payments(&self.pool, self.move_redrive_after).await?;
 		if report.redriven_invoice_payments > 0 {
 			warn!(
@@ -225,6 +235,7 @@ impl Reaper {
 			|| report.reaped_queued_redemptions > 0
 			|| report.redriven_compartment_moves > 0
 			|| report.redriven_scope_transfers > 0
+			|| report.redriven_scope_payouts > 0
 			|| report.redriven_invoice_payments > 0
 			|| report.expired_scope_holds > 0
 		{

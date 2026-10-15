@@ -27,7 +27,8 @@
 //! for the one transaction a placement is.
 //!
 //! [`ScopeLedgerStore`] is the scope ledger's control plane: the owners of scope accounts,
-//! the idempotency keys of service clients, and their transfers.
+//! the idempotency keys of service clients, and their transfers; [`scope_operations`] adds
+//! their payouts, the operations that wait on an approval, and concierge's approvals seam.
 
 pub mod allocations;
 pub mod book;
@@ -48,6 +49,7 @@ pub mod positions;
 pub mod redemptions;
 pub mod scope_invoices;
 pub mod scope_ledger;
+pub mod scope_operations;
 pub mod subscriptions;
 pub mod withdrawals;
 

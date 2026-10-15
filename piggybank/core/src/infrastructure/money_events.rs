@@ -16,6 +16,7 @@ use domain::{
 	money::Usdt,
 	scope_invoices::{Invoice, InvoiceEvent, InvoiceState},
 	scope_ledger::{ClientId, HoldDestination, HoldEvent, MoneyEventKind, ScopeLedgerEvent},
+	scope_operations::ScopePayoutEvent,
 	scopes::{ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
@@ -51,6 +52,9 @@ pub struct NewMoneyEvent {
 	pub initiator_client: String,
 	pub balances: Vec<EventBalance>,
 	pub hold_remaining: Option<Usdt>,
+	/// The other scope of a movement between two scopes; empty otherwise.
+	pub counterparty_scope: String,
+	pub failure_reason: String,
 	/// An invoice payment's source: `main` or the scope; empty for every other kind.
 	pub paid_from: String,
 	/// Every client the event is delivered to; banking itself is never one.
@@ -65,7 +69,7 @@ struct StoredBalance {
 	balance: String,
 }
 
-fn event_id(name: &str) -> Uuid {
+pub(crate) fn event_id(name: &str) -> Uuid {
 	Uuid::new_v5(&Uuid::NAMESPACE_OID, format!("money_event:{name}").as_bytes())
 }
 
@@ -97,7 +101,8 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 	let (to_label, to_subject) = split(event.to.as_ref());
 	let position: Option<i64> = sqlx::query_scalar(
 		"INSERT INTO money_events (event_id, scope, kind, ref_id, aggregate_version, auth_subject, amount, from_label, from_subject, to_label, to_subject, \
-		 subject_ref, initiator_client, balances, hold_remaining, paid_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16) \
+		 subject_ref, initiator_client, balances, hold_remaining, counterparty_scope, failure_reason, paid_from) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18) \
 		 ON CONFLICT (event_id) DO NOTHING RETURNING position",
 	)
 	.bind(event.event_id)
@@ -115,6 +120,8 @@ pub async fn append(conn: &mut PgConnection, event: &NewMoneyEvent) -> Result<()
 	.bind(&event.initiator_client)
 	.bind(balances)
 	.bind(event.hold_remaining.map(|remaining| remaining.base_units().to_string()))
+	.bind(&event.counterparty_scope)
+	.bind(&event.failure_reason)
 	.bind(&event.paid_from)
 	.fetch_optional(&mut *conn)
 	.await
@@ -153,6 +160,8 @@ pub fn account_opened(account: &OwnedAccount) -> NewMoneyEvent {
 			balance: Usdt::ZERO,
 		}],
 		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
 		paid_from: String::new(),
 		audience: vec![account.owner.clone()],
 	}
@@ -192,27 +201,36 @@ async fn auth_subject_of(pool: &PgPool, user: UserId) -> Result<String, String> 
 /// no money event is a no-op. Called after the ledger took the row and before it is marked
 /// dispatched, so a failure here is retried with the row.
 pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow) -> Result<(), String> {
-	let event = if row.kind == ScopeLedgerEvent::KIND {
+	let events = if row.kind == ScopeLedgerEvent::KIND {
 		let event: ScopeLedgerEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 		transferred(pool, ledger, event).await?
 	} else if row.kind == HoldEvent::KIND {
 		let event: HoldEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-		hold_event(pool, ledger, event).await?
+		vec![hold_event(pool, ledger, event).await?]
+	} else if row.kind == ScopePayoutEvent::KIND {
+		let event: ScopePayoutEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+		paid_out(pool, ledger, event).await?
 	} else if row.kind == InvoiceEvent::KIND {
 		let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 		match invoice_paid(pool, ledger, event).await? {
-			Some(event) => event,
+			Some(event) => vec![event],
 			None => return Ok(()),
 		}
 	} else {
 		return Ok(());
 	};
 	let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-	append(&mut tx, &event).await.map_err(|e| e.to_string())?;
+	for event in &events {
+		append(&mut tx, event).await.map_err(|e| e.to_string())?;
+	}
 	tx.commit().await.map_err(|e| e.to_string())
 }
 
-async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent) -> Result<NewMoneyEvent, String> {
+/// A transfer inside one scope is one event naming both accounts. One between two scopes is
+/// one event per side (`events.proto`), each in its own scope, naming the other as the
+/// counterparty and showing only its own side's balance — so each side's owner learns of its
+/// own account and nothing of the other scope's.
+async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent) -> Result<Vec<NewMoneyEvent>, String> {
 	let ScopeLedgerEvent::Transferred {
 		transfer_id,
 		scope,
@@ -227,28 +245,93 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 		.await
 		.map_err(|e| format!("scope transfer {transfer_id}: {e}"))?;
 	let initiator = ClientId::parse(&client).map_err(|e| format!("scope transfer {transfer_id}: {e}"))?;
-	let mut balances = Vec::with_capacity(2);
-	balances.extend(balance_of(pool, ledger, &scope, &from_label).await?);
-	balances.extend(balance_of(pool, ledger, &to_scope, &to_label).await?);
+	let from_balance = balance_of(pool, ledger, &scope, &from_label).await?;
+	let to_balance = balance_of(pool, ledger, &to_scope, &to_label).await?;
+	let side = |event_name: String, side_scope: ScopeId, counterparty: String, balances: Vec<EventBalance>| {
+		let mut audience = vec![initiator.clone()];
+		audience.extend(balances.iter().map(|entry| entry.owner.clone()));
+		NewMoneyEvent {
+			event_id: event_id(&event_name),
+			scope: side_scope,
+			kind: MoneyEventKind::Transferred,
+			ref_id: transfer_id.to_string(),
+			aggregate_version: 1,
+			auth_subject: String::new(),
+			amount: Some(amount),
+			from: Some(EventAccount::Account(from_label.clone())),
+			to: Some(EventAccount::Account(to_label.clone())),
+			subject_ref: subject_ref.clone(),
+			initiator_client: initiator.as_str().to_owned(),
+			balances,
+			hold_remaining: None,
+			counterparty_scope: counterparty,
+			failure_reason: String::new(),
+			paid_from: String::new(),
+			audience,
+		}
+	};
+	if scope == to_scope {
+		let balances = from_balance.into_iter().chain(to_balance).collect();
+		return Ok(vec![side(format!("transferred:{transfer_id}"), scope, String::new(), balances)]);
+	}
+	Ok(vec![
+		side(
+			format!("transferred:{transfer_id}"),
+			scope.clone(),
+			to_scope.as_str().to_owned(),
+			from_balance.into_iter().collect(),
+		),
+		side(format!("transferred:{transfer_id}:in"), to_scope, scope.as_str().to_owned(), to_balance.into_iter().collect()),
+	])
+}
+
+/// One PAID_OUT per line (`events.proto`), sharing the payout id, each showing the source's
+/// balance after the whole chain — the chain is applied at once, so there is no balance between
+/// its lines.
+async fn paid_out(pool: &PgPool, ledger: &dyn Ledger, event: ScopePayoutEvent) -> Result<Vec<NewMoneyEvent>, String> {
+	let ScopePayoutEvent::PaidOut { payout_id, scope, from_label, .. } = event;
+	let (client, subject_ref): (String, String) = sqlx::query_as("SELECT client_id, subject_ref FROM scope_payouts WHERE id = $1")
+		.bind(payout_id.raw())
+		.fetch_one(pool)
+		.await
+		.map_err(|e| format!("scope payout {payout_id}: {e}"))?;
+	let initiator = ClientId::parse(&client).map_err(|e| format!("scope payout {payout_id}: {e}"))?;
+	let lines: Vec<(i32, String, String)> = sqlx::query_as("SELECT line_no, auth_subject, amount FROM scope_payout_lines WHERE payout_id = $1 ORDER BY line_no")
+		.bind(payout_id.raw())
+		.fetch_all(pool)
+		.await
+		.map_err(|e| format!("scope payout {payout_id} lines: {e}"))?;
+	let balances: Vec<EventBalance> = balance_of(pool, ledger, &scope, &from_label).await?.into_iter().collect();
 	let mut audience = vec![initiator.clone()];
 	audience.extend(balances.iter().map(|entry| entry.owner.clone()));
-	Ok(NewMoneyEvent {
-		event_id: event_id(&format!("transferred:{transfer_id}")),
-		scope,
-		kind: MoneyEventKind::Transferred,
-		ref_id: transfer_id.to_string(),
-		aggregate_version: 1,
-		auth_subject: String::new(),
-		amount: Some(amount),
-		from: Some(EventAccount::Account(from_label)),
-		to: Some(EventAccount::Account(to_label)),
-		subject_ref,
-		initiator_client: initiator.as_str().to_owned(),
-		balances,
-		hold_remaining: None,
-		paid_from: String::new(),
-		audience,
-	})
+	lines
+		.into_iter()
+		.map(|(line_no, auth_subject, raw)| {
+			let amount = raw
+				.parse::<u128>()
+				.map(Usdt::from_base_units)
+				.map_err(|_| format!("scope payout {payout_id}: line {line_no} amount {raw:?}"))?;
+			Ok(NewMoneyEvent {
+				event_id: event_id(&format!("paid_out:{payout_id}:{line_no}")),
+				scope: scope.clone(),
+				kind: MoneyEventKind::PaidOut,
+				ref_id: payout_id.to_string(),
+				aggregate_version: 1,
+				auth_subject: auth_subject.clone(),
+				amount: Some(amount),
+				from: Some(EventAccount::Account(from_label.clone())),
+				to: Some(EventAccount::User(auth_subject)),
+				subject_ref: subject_ref.clone(),
+				initiator_client: initiator.as_str().to_owned(),
+				balances: balances.clone(),
+				hold_remaining: None,
+				counterparty_scope: String::new(),
+				failure_reason: String::new(),
+				paid_from: String::new(),
+				audience: audience.clone(),
+			})
+		})
+		.collect()
 }
 
 async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Result<NewMoneyEvent, String> {
@@ -275,6 +358,8 @@ async fn hold_event(pool: &PgPool, ledger: &dyn Ledger, event: HoldEvent) -> Res
 		initiator_client: placer.as_str().to_owned(),
 		balances: Vec::new(),
 		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
 		paid_from: String::new(),
 		audience: vec![placer.clone()],
 	};
@@ -359,6 +444,8 @@ pub fn invoice_step(invoice: &Invoice) -> Result<NewMoneyEvent, DomainError> {
 		initiator_client: initiator.to_owned(),
 		balances: Vec::new(),
 		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
 		paid_from: String::new(),
 		audience: vec![terms.client.clone()],
 	})
@@ -405,6 +492,8 @@ async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -
 		initiator_client: String::new(),
 		balances,
 		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
 		paid_from: from.as_str().to_owned(),
 		audience,
 	}))

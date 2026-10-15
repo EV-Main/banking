@@ -33,7 +33,9 @@
 //! - [`compartments`] — Postgres adapter for the scope registry, the scope policies and
 //!   users' compartment moves (the money itself is posted by the relay).
 //! - [`scope_ledger`] — Postgres adapter for the scope ledger: scope-account owners, the
-//!   service clients' idempotency keys and their transfers (posted by the relay).
+//!   service clients' idempotency keys and their transfers (posted by the relay);
+//!   [`scope_payouts`] their payouts, [`scope_operations`] the operations awaiting an
+//!   approval, [`approvals`] concierge's approval execution seam over the bridge.
 //! - [`scope_invoices`] — Postgres adapter for invoices scopes issue and users pay (the
 //!   payment is posted by the relay), plus the reaper's expiry of open invoices.
 //! - [`scope_events`] — the consumer of concierge's scope stream: keeps `scopes` (state,
@@ -49,6 +51,7 @@
 //!   network. Per-protocol RPC, node error wording and log prefixes stay in the rail modules.
 
 pub mod allocations;
+pub mod approvals;
 pub mod book;
 pub mod bridge;
 pub mod claims;
@@ -86,6 +89,8 @@ pub mod scope_events;
 pub mod scope_holds;
 pub mod scope_invoices;
 pub mod scope_ledger;
+pub mod scope_operations;
+pub mod scope_payouts;
 pub mod signer_addresses;
 pub mod singleton;
 pub mod subscriptions;

@@ -246,6 +246,9 @@ pub struct ScopePolicy {
 	/// Largest single automatic `Transfer` a client makes in the scope.
 	pub auto_transfer_per_op: Usdt,
 	pub auto_transfer_24h: Usdt,
+	/// What may leave the scope's accounts in a rolling 24 h without the platform owners:
+	/// every client's automatic payouts and the scope-level decisions together (D24(4)).
+	pub scope_budget_24h: Usdt,
 }
 
 /// Where a recorded move stands. `Posted` and `Failed` are terminal: a failed move is
@@ -580,6 +583,7 @@ mod tests {
 			auto_payout_24h: usdt("5000"),
 			auto_transfer_per_op: usdt("1000"),
 			auto_transfer_24h: usdt("5000"),
+			scope_budget_24h: usdt("5000"),
 		}
 	}
 
