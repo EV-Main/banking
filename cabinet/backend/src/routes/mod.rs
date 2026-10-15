@@ -94,6 +94,8 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/deposits", get(money::list_deposits))
 		.route("/api/wallet/invoices/{id}", get(money::get_payable_invoice))
 		.route("/api/wallet/invoices/{id}/pay", post(money::pay_invoice))
+		.route("/api/wallet/mandates", get(money::list_mandates).post(money::grant_mandate))
+		.route("/api/wallet/mandates/{id}/revoke", post(money::revoke_mandate))
 		.route("/api/allocations", get(money::list_allocations))
 		.route("/api/allocations/detail", get(money::get_allocation))
 		.route("/api/operations", get(money::list_operations))

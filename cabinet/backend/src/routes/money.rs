@@ -161,6 +161,77 @@ pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): P
 	Ok(Json(st.grpc.pay_invoice(&token, req).await?.into()))
 }
 
+// ── mandates (what a scope's service may draw on the caller's compartment) ──────
+
+/// `GET /api/wallet/mandates` — the caller's live mandates, newest first.
+pub async fn list_mandates(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::MandateList>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let list = st.grpc.list_mandates(&token).await.map_err(|s| ApiError::read(s, "mandates unavailable"))?;
+	Ok(Json(list.into()))
+}
+
+/// `POST /api/wallet/mandates` — first-party and CSRF-checked: let a scope's service draw on the
+/// caller's compartment within the caps the body names. Consent to future debits, so only a
+/// page on evinvest.ltd may ask for it — never a scope's own host.
+pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
+	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
+		return Err(ApiError::Csrf);
+	}
+	let token = require_money_token(&st, &jar).await?;
+	let v = parse_body(&body);
+	let (Some(scope), Some(client_id), Some(cap_per_op), Some(cap_24h), Some(idempotency_key)) = (
+		required(&v, "scope"),
+		required(&v, "client_id"),
+		required(&v, "cap_per_op"),
+		required(&v, "cap_24h"),
+		required(&v, "idempotency_key"),
+	) else {
+		return Err(ApiError::BadRequest("scope, client_id, cap_per_op, cap_24h and idempotency_key are required".into()));
+	};
+	let operations = mandate_operations(&v)?;
+	let expires_at = match v.get("expires_at") {
+		None | Some(serde_json::Value::Null) => 0,
+		Some(raw) => raw.as_i64().filter(|at| *at >= 0).ok_or_else(|| ApiError::BadRequest("expires_at must be unix seconds".into()))?,
+	};
+	let req = bk::GrantMandateRequest {
+		scope,
+		client_id,
+		cap_per_op,
+		cap_24h,
+		operations,
+		expires_at,
+		idempotency_key,
+		cap_outstanding: required(&v, "cap_outstanding").unwrap_or_default(),
+		cap_book_fill_24h: required(&v, "cap_book_fill_24h").unwrap_or_default(),
+	};
+	Ok(Json(st.grpc.grant_mandate(&token, req).await?.into()))
+}
+
+/// The body's `operations`, by the names [`dto::mandate_operation_name`] writes.
+fn mandate_operations(v: &serde_json::Value) -> Result<Vec<i32>, ApiError> {
+	let invalid = || ApiError::BadRequest("operations must be a non-empty list of reserve, charge, book_fill".into());
+	let listed = v.get("operations").and_then(serde_json::Value::as_array).filter(|list| !list.is_empty()).ok_or_else(invalid)?;
+	listed
+		.iter()
+		.map(|item| match item.as_str() {
+			Some("reserve") => Ok(bk::MandateOperation::Reserve as i32),
+			Some("charge") => Ok(bk::MandateOperation::Charge as i32),
+			Some("book_fill") => Ok(bk::MandateOperation::BookFill as i32),
+			_ => Err(invalid()),
+		})
+		.collect()
+}
+
+/// `POST /api/wallet/mandates/{id}/revoke` — first-party and CSRF-checked: end a mandate; the
+/// service's holds on the caller's compartment are released.
+pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::Mandate>, ApiError> {
+	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
+		return Err(ApiError::Csrf);
+	}
+	let token = require_money_token(&st, &jar).await?;
+	Ok(Json(st.grpc.revoke_mandate(&token, &id).await?.into()))
+}
+
 // ── allocations (the catalog of investable products) ─────────────────────────
 
 /// `GET /api/allocations` — the investor-facing catalog: the `open` allocations the caller
@@ -335,8 +406,8 @@ mod tests {
 	}
 }
 
-/// `PayInvoice` through the real router, every plane unreachable: the first-party gate answers
-/// before anything is dialled.
+/// `PayInvoice` and the mandate routes through the real router, every plane unreachable: the
+/// first-party gate answers before anything is dialled.
 #[cfg(test)]
 mod invoice_gate_tests {
 	use std::{collections::HashMap, sync::Arc};
@@ -392,16 +463,26 @@ mod invoice_gate_tests {
 
 	/// A pay request with a valid CSRF pair and no session, from `origin`.
 	async fn pay_from(origin: Option<&str>) -> (StatusCode, String) {
+		post_from(
+			"/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay",
+			r#"{"pay_from":"main","idempotency_key":"k-1"}"#,
+			origin,
+		)
+		.await
+	}
+
+	/// A POST with a valid CSRF pair and no session, from `origin`.
+	async fn post_from(uri: &str, body: &'static str, origin: Option<&str>) -> (StatusCode, String) {
 		let mut request = Request::builder()
 			.method("POST")
-			.uri("/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay")
+			.uri(uri)
 			.header("cookie", format!("ev_csrf={CSRF}"))
 			.header("x-ev-csrf", CSRF)
 			.header("content-type", "application/json");
 		if let Some(origin) = origin {
 			request = request.header("origin", origin);
 		}
-		let request = request.body(Body::from(r#"{"pay_from":"main","idempotency_key":"k-1"}"#)).expect("build the request");
+		let request = request.body(Body::from(body)).expect("build the request");
 		let response = app().oneshot(request).await.expect("the router responds");
 		let status = response.status();
 		let body = to_bytes(response.into_body(), 1 << 16).await.expect("read the body");
@@ -420,5 +501,22 @@ mod invoice_gate_tests {
 		// Past the gate the next refusal is the missing session — the gate let it through.
 		let (status, _) = pay_from(Some(FIRST_PARTY)).await;
 		assert_eq!(status, StatusCode::UNAUTHORIZED);
+	}
+
+	/// Granting or revoking a mandate moves who may draw on the user's money: like paying, only
+	/// a page on evinvest.ltd may do it, never a scope's own host.
+	#[tokio::test]
+	async fn only_evinvest_ltd_may_grant_or_revoke_a_mandate() {
+		const GRANT: &str = r#"{"scope":"invest","client_id":"invest","cap_per_op":"1","cap_24h":"1","operations":["reserve"],"idempotency_key":"k-1"}"#;
+		let routes = [("/api/wallet/mandates", GRANT), ("/api/wallet/mandates/4f0c2d1e-0000-4000-8000-0123456789ab/revoke", "")];
+		for (uri, body) in routes {
+			for origin in [Some("https://sa.evinvest.ltd"), Some("https://evil.example"), None] {
+				let (status, response) = post_from(uri, body, origin).await;
+				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} from {origin:?}: {response}");
+				assert!(response.contains("csrf"), "{uri} from {origin:?}: {response}");
+			}
+			let (status, _) = post_from(uri, body, Some(FIRST_PARTY)).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}: past the gate the next refusal is the missing session");
+		}
 	}
 }

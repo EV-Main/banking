@@ -353,6 +353,62 @@ impl From<bk::PayableInvoice> for PayableInvoice {
 	}
 }
 
+/// One of the caller's mandates: what a scope's service may draw on their compartment there.
+/// Caps and usage are decimal USDT strings; `operations` are `reserve`, `charge`, `book_fill`.
+#[derive(Serialize)]
+pub struct Mandate {
+	pub mandate_id: String,
+	pub scope: String,
+	pub client_id: String,
+	pub client_display_name: String,
+	pub cap_per_op: String,
+	pub cap_24h: String,
+	pub cap_outstanding: String,
+	pub cap_book_fill_24h: String,
+	pub operations: Vec<&'static str>,
+	/// Unix seconds as strings; `"0"` = none.
+	pub expires_at: String,
+	pub created_at: String,
+	pub revoked_at: String,
+	pub used_24h: String,
+	pub outstanding: String,
+	pub book_filled_24h: String,
+}
+
+/// The wire name of a mandate operation, as the page sends it back on a grant.
+pub fn mandate_operation_name(raw: i32) -> &'static str {
+	match bk::MandateOperation::try_from(raw) {
+		Ok(bk::MandateOperation::Reserve) => "reserve",
+		Ok(bk::MandateOperation::Charge) => "charge",
+		Ok(bk::MandateOperation::BookFill) => "book_fill",
+		Ok(bk::MandateOperation::Unspecified) | Err(_) => "unspecified",
+	}
+}
+
+impl From<bk::Mandate> for Mandate {
+	fn from(m: bk::Mandate) -> Self {
+		Self {
+			mandate_id: m.mandate_id,
+			scope: m.scope,
+			client_id: m.client_id,
+			client_display_name: m.client_display_name,
+			cap_per_op: m.cap_per_op,
+			cap_24h: m.cap_24h,
+			cap_outstanding: m.cap_outstanding,
+			cap_book_fill_24h: m.cap_book_fill_24h,
+			operations: m.operations.into_iter().map(mandate_operation_name).collect(),
+			expires_at: m.expires_at.to_string(),
+			created_at: m.created_at.to_string(),
+			revoked_at: m.revoked_at.to_string(),
+			used_24h: m.used_24h,
+			outstanding: m.outstanding,
+			book_filled_24h: m.book_filled_24h,
+		}
+	}
+}
+
+list_dto! { MandateList from bk::MandateList { mandates: Vec<Mandate> } }
+
 // ── piggybank: operations (the unified activity timeline) ────────────────────
 
 /// One row of the caller's activity timeline. `kind` is the discriminator: it decides
