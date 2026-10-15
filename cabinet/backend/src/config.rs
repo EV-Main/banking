@@ -47,7 +47,9 @@ ev::settings! {
 		/// cross-site page could open the live consilium feed as the signed-in user; the
 		/// handshake rejects any other `Origin`. Unset ⇒ not enforced, which is right for
 		/// local dev (the frontend runs on some `http://localhost:PORT`) and never right in
-		/// production — where a missing value fails the boot rather than failing open.
+		/// production — where a missing value fails the boot rather than failing open. The
+		/// same origin is the first-party gate of the mutating wallet routes
+		/// (`routes::first_party_origin`).
 		#[required_in("production")]
 		cabinet_ws_origin: Option<String>,
 		app_env: String,
