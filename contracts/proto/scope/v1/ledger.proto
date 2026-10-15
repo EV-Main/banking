@@ -100,7 +100,8 @@ syntax = "proto3";
 //
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
-// `hold_not_active`, `scope_frozen`, `user_frozen`, `not_account_owner`, `not_granted`);
+// `hold_not_active`, `invoice_not_open`, `scope_frozen`, `user_frozen`, `not_account_owner`,
+// `not_granted`);
 // clients branch on (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
@@ -111,7 +112,8 @@ syntax = "proto3";
 // digests are computed over canonical amounts.
 //
 // IDEMPOTENCY. Every mutating request carries an `idempotency_key` (1..128 chars,
-// opaque to banking), REQUIRED — empty is INVALID_ARGUMENT. Keys are unique per
+// opaque to banking), REQUIRED — empty is INVALID_ARGUMENT. (`InvoiceService.CancelInvoice`
+// alone carries none: it asks for one end state of one invoice, so a retry is a repeat.) Keys are unique per
 // (calling client, scope, RPC). A repeat with the same key and the same terms returns
 // the ORIGINAL result, even if the world moved since (a frozen scope, a prefix taken
 // away); the same key with different terms is ALREADY_EXISTS. The one exception: a

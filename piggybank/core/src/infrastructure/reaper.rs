@@ -37,7 +37,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{compartments, scope_holds, scope_ledger},
+	infrastructure::{compartments, scope_holds, scope_invoices, scope_ledger},
 	ports::{RedemptionRepository, WithdrawalRepository},
 };
 
@@ -71,6 +71,10 @@ pub struct ReaperReport {
 	pub redriven_scope_transfers: usize,
 	/// Active scope holds past their TTL, released back to their users.
 	pub expired_scope_holds: usize,
+	/// Open scope invoices past their expiry, recorded expired.
+	pub expired_scope_invoices: usize,
+	/// `pending` invoice payments whose lost event was put back on the outbox.
+	pub redriven_invoice_payments: usize,
 }
 
 /// The reaper job: sweep on an interval until the process exits.
@@ -195,6 +199,14 @@ impl Reaper {
 			);
 		}
 
+		report.redriven_invoice_payments = scope_invoices::redrive_stale_payments(&self.pool, self.move_redrive_after).await?;
+		if report.redriven_invoice_payments > 0 {
+			warn!(
+				count = report.redriven_invoice_payments,
+				"reaper: re-enqueued pending invoice payments whose event was dispatched without posting them"
+			);
+		}
+
 		// A TTL is the client's own word on how long a hold may stand, so releasing it is
 		// routine: logged at INFO, not a finding.
 		report.expired_scope_holds = scope_holds::expire_due_holds(&self.pool).await?;
@@ -202,10 +214,18 @@ impl Reaper {
 			info!(count = report.expired_scope_holds, "reaper: released scope holds past their TTL");
 		}
 
+		// Like a hold's TTL, the expiry is the client's own word; nothing to relay either, an
+		// expiry moves no money, so the relay is not nudged for it.
+		report.expired_scope_invoices = scope_invoices::expire_due_invoices(&self.pool).await?;
+		if report.expired_scope_invoices > 0 {
+			info!(count = report.expired_scope_invoices, "reaper: expired scope invoices past their expiry");
+		}
+
 		if report.reaped_queued_withdrawals > 0
 			|| report.reaped_queued_redemptions > 0
 			|| report.redriven_compartment_moves > 0
 			|| report.redriven_scope_transfers > 0
+			|| report.redriven_invoice_payments > 0
 			|| report.expired_scope_holds > 0
 		{
 			self.notify.notify_one();

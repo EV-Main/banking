@@ -247,6 +247,8 @@ pub enum LedgerRefusal {
 	UserFrozen,
 	/// No live mandate of the user covers this for the caller (FAILED_PRECONDITION).
 	MandateRequired,
+	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
+	InvoiceNotOpen,
 }
 
 impl LedgerRefusal {
@@ -260,6 +262,7 @@ impl LedgerRefusal {
 			Self::HoldNotActive => "hold_not_active",
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
+			Self::InvoiceNotOpen => "invoice_not_open",
 		}
 	}
 
@@ -267,7 +270,7 @@ impl LedgerRefusal {
 	pub const fn is_permission(self) -> bool {
 		match self {
 			Self::NotGranted | Self::NotAccountOwner => true,
-			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired => false,
+			Self::ScopeFrozen | Self::InsufficientFunds | Self::ApprovalRequired | Self::HoldNotActive | Self::UserFrozen | Self::MandateRequired | Self::InvoiceNotOpen => false,
 		}
 	}
 }
@@ -334,13 +337,45 @@ pub fn validate_memo(memo: &str) -> Result<(), DomainError> {
 	if memo.chars().count() > MAX_MEMO_CHARS {
 		return Err(DomainError::Validation(format!("memo is longer than {MAX_MEMO_CHARS} characters")));
 	}
-	if memo.chars().any(char::is_control) {
-		return Err(DomainError::Validation("memo must be plain text without control characters".into()));
+	if memo.chars().any(|c| c.is_control() || is_format(c)) {
+		return Err(DomainError::Validation("memo must be plain text without control or format characters".into()));
 	}
 	if contains_url(memo) {
 		return Err(DomainError::Validation("memo must not carry a link".into()));
 	}
 	Ok(())
+}
+
+/// Unicode general category `Cf` (Format), as of Unicode 15.1 — the invisible characters that
+/// change how the rest of a line renders: bidi overrides and isolates (U+202A–202E,
+/// U+2066–2069) can make a memo shown to a payer read as something else, and zero-width ones
+/// hide text. Spelled out because `std` exposes no general category and `domain` stays free of
+/// a Unicode-tables dependency.
+fn is_format(c: char) -> bool {
+	matches!(
+		c,
+		'\u{00AD}'
+			| '\u{0600}'..='\u{0605}'
+			| '\u{061C}'
+			| '\u{06DD}'
+			| '\u{070F}'
+			| '\u{0890}'..='\u{0891}'
+			| '\u{08E2}'
+			| '\u{180E}'
+			| '\u{200B}'..='\u{200F}'
+			| '\u{202A}'..='\u{202E}'
+			| '\u{2060}'..='\u{2064}'
+			| '\u{2066}'..='\u{206F}'
+			| '\u{FEFF}'
+			| '\u{FFF9}'..='\u{FFFB}'
+			| '\u{110BD}'
+			| '\u{110CD}'
+			| '\u{13430}'..='\u{1343F}'
+			| '\u{1BCA0}'..='\u{1BCA3}'
+			| '\u{1D173}'..='\u{1D17A}'
+			| '\u{E0001}'
+			| '\u{E0020}'..='\u{E007F}'
+	)
 }
 
 /// Why money moves between scope accounts without an approval (`TransferReason`).
@@ -898,6 +933,10 @@ pub enum MoneyEventKind {
 	HoldVoided,
 	HoldExpired,
 	Transferred,
+	InvoiceCreated,
+	InvoicePaid,
+	InvoiceCancelled,
+	InvoiceExpired,
 }
 
 impl MoneyEventKind {
@@ -909,6 +948,10 @@ impl MoneyEventKind {
 			Self::HoldVoided => "hold_voided",
 			Self::HoldExpired => "hold_expired",
 			Self::Transferred => "transferred",
+			Self::InvoiceCreated => "invoice_created",
+			Self::InvoicePaid => "invoice_paid",
+			Self::InvoiceCancelled => "invoice_cancelled",
+			Self::InvoiceExpired => "invoice_expired",
 		}
 	}
 
@@ -920,6 +963,10 @@ impl MoneyEventKind {
 			"hold_voided" => Ok(Self::HoldVoided),
 			"hold_expired" => Ok(Self::HoldExpired),
 			"transferred" => Ok(Self::Transferred),
+			"invoice_created" => Ok(Self::InvoiceCreated),
+			"invoice_paid" => Ok(Self::InvoicePaid),
+			"invoice_cancelled" => Ok(Self::InvoiceCancelled),
+			"invoice_expired" => Ok(Self::InvoiceExpired),
 			other => Err(DomainError::Validation(format!("unknown money event kind: {other}"))),
 		}
 	}
@@ -1034,6 +1081,9 @@ mod tests {
 		assert!(validate_memo("see https://x").is_err());
 		assert!(validate_memo("www.example").is_err());
 		assert!(validate_memo("line\nbreak").is_err());
+		assert!(validate_memo("pay \u{202E}evil").is_err(), "a bidi override can make a memo read as something else");
+		assert!(validate_memo("zero\u{200B}width").is_err());
+		assert!(validate_memo("tag \u{E0041}").is_err());
 	}
 
 	#[test]

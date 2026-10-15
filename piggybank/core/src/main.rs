@@ -525,6 +525,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let (auth_service, authorizer) = AuthService::try_new(auth_config, provisioner).await.context("failed to build the auth service")?;
 
 	let compartments: Arc<dyn CompartmentStore> = Arc::new(PgCompartments::new(pool.clone()));
+	let scope_ledger_store = Arc::new(PgScopeLedger::new(pool.clone()));
 	let state = AppState::new(
 		pool,
 		ledger,
@@ -557,10 +558,11 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		rails.ton.as_ref().is_some_and(|ton| ton.is_testnet),
 		outflow,
 		compartments,
+		scope_ledger_store.clone(),
 	);
 
 	let scope_ledger = scope_ledger_settings.map(|settings| {
-		let store = Arc::new(PgScopeLedger::new(state.pool.clone()));
+		let store = scope_ledger_store;
 		ScopeLedgerListener::new(
 			settings,
 			ScopeLedgerDeps {
@@ -568,7 +570,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 				holds: store.clone(),
 				// Users cannot grant mandates yet; every hold is refused until they can.
 				mandates: Arc::new(NoMandates),
-				events: store,
+				events: store.clone(),
+				invoices: store,
 				scopes: state.compartments.clone(),
 				ledger: state.ledger.clone(),
 				relay: state.relay_notify.clone(),

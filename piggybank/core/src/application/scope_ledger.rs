@@ -76,7 +76,7 @@ pub struct TransferRequest {
 	pub idempotency_key: String,
 }
 
-fn check_key(key: &str) -> Result<(), DomainError> {
+pub(crate) fn check_key(key: &str) -> Result<(), DomainError> {
 	let chars = key.chars().count();
 	if chars == 0 || chars > MAX_IDEMPOTENCY_KEY {
 		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} characters")));
@@ -93,10 +93,15 @@ fn check_key(key: &str) -> Result<(), DomainError> {
 /// is not its business — refused alike, so a client cannot probe which scopes exist — and a
 /// granted scope banking has not heard of from concierge is NOT_FOUND.
 async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
-	if scope.is_main() || ports.grants.in_scope(client, scope).next().is_none() {
+	granted_in(ports.grants, ports.scopes, client, scope).await
+}
+
+/// [`granted_scope`] over the two ports it reads, for the use cases that borrow other ports.
+pub(crate) async fn granted_in(grants: &Grants, scopes: &dyn CompartmentStore, client: &ClientId, scope: &ScopeId) -> Result<ScopeRecord, TransferError> {
+	if scope.is_main() || grants.in_scope(client, scope).next().is_none() {
 		return Err(TransferError::Refused(LedgerRefusal::NotGranted));
 	}
-	Ok(ports.scopes.scope(scope).await?.ok_or_else(|| DomainError::NotFound {
+	Ok(scopes.scope(scope).await?.ok_or_else(|| DomainError::NotFound {
 		entity: "scope",
 		id: scope.to_string(),
 	})?)
@@ -104,7 +109,7 @@ async fn granted_scope(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &
 
 /// What an earlier call under the same key did, when it asked for the same thing; a conflict
 /// when it did not.
-fn same_terms(stored: &StoredRequest, terms: &str) -> Result<(), DomainError> {
+pub(crate) fn same_terms(stored: &StoredRequest, terms: &str) -> Result<(), DomainError> {
 	if stored.terms == terms {
 		Ok(())
 	} else {
@@ -333,7 +338,7 @@ pub struct ReserveRequest {
 /// Longest `auth_subject` accepted, in bytes — what `users.auth_subject` was ever given.
 const MAX_AUTH_SUBJECT: usize = 255;
 
-fn check_subject(raw: &str) -> Result<(), DomainError> {
+pub(crate) fn check_subject(raw: &str) -> Result<(), DomainError> {
 	if raw.is_empty() || raw.len() > MAX_AUTH_SUBJECT || raw.chars().any(char::is_control) {
 		return Err(DomainError::Validation(format!("auth_subject must be 1..{MAX_AUTH_SUBJECT} bytes of plain text")));
 	}

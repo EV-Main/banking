@@ -73,6 +73,10 @@ impl Grpc {
 		bk::wallet_service_client::WalletServiceClient::new(self.piggybank.clone())
 	}
 
+	fn invoice_payments(&self) -> bk::invoice_payment_service_client::InvoicePaymentServiceClient<Channel> {
+		bk::invoice_payment_service_client::InvoicePaymentServiceClient::new(self.piggybank.clone())
+	}
+
 	fn operations(&self) -> bk::operations_service_client::OperationsServiceClient<Channel> {
 		bk::operations_service_client::OperationsServiceClient::new(self.piggybank.clone())
 	}
@@ -196,6 +200,15 @@ impl Grpc {
 			withdrawal_id: withdrawal_id.to_string(),
 		};
 		Ok(self.wallet().cancel_withdrawal(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn get_payable_invoice(&self, token: &str, invoice_id: &str) -> Result<bk::PayableInvoice, Status> {
+		let req = bk::GetPayableInvoiceRequest { invoice_id: invoice_id.to_string() };
+		Ok(self.invoice_payments().get_payable_invoice(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn pay_invoice(&self, token: &str, req: bk::PayInvoiceRequest) -> Result<bk::PayableInvoice, Status> {
+		Ok(self.invoice_payments().pay_invoice(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn list_withdrawals(&self, token: &str) -> Result<bk::WithdrawalList, Status> {

@@ -1,7 +1,7 @@
 use axum::{
 	Json,
 	body::Bytes,
-	extract::{Query, State},
+	extract::{Path, Query, State},
 	http::HeaderMap,
 };
 use axum_extra::extract::cookie::CookieJar;
@@ -12,7 +12,7 @@ use tonic::{Code, Status};
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{parse_body, require_money_token, required, verify_csrf},
+	routes::{first_party_origin, parse_body, require_money_token, required, verify_csrf},
 	state::AppState,
 };
 
@@ -129,6 +129,36 @@ pub async fn cancel_withdrawal(State(st): State<AppState>, jar: CookieJar, heade
 		return Err(ApiError::BadRequest("withdrawal_id is required".into()));
 	};
 	Ok(Json(st.grpc.cancel_withdrawal(&token, &withdrawal_id).await?.into()))
+}
+
+// ── invoices (a scope asking the caller to pay) ──────────────────────────────
+
+/// `GET /api/wallet/invoices/{id}` — a scope's invoice as the caller, its would-be payer, sees
+/// it. An unknown id and one restricted to another payer are the same 404.
+pub async fn get_payable_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>) -> Result<Json<dto::PayableInvoice>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let invoice = st.grpc.get_payable_invoice(&token, &id).await.map_err(|s| ApiError::read(s, "invoice unavailable"))?;
+	Ok(Json(invoice.into()))
+}
+
+/// `POST /api/wallet/invoices/{id}/pay` — first-party and CSRF-checked: pay the invoice from
+/// `main` or from the caller's compartment in its scope. The body names only the source and the
+/// click's idempotency key; what is paid, how much and to whom is the server's invoice.
+pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::PayableInvoice>, ApiError> {
+	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
+		return Err(ApiError::Csrf);
+	}
+	let token = require_money_token(&st, &jar).await?;
+	let v = parse_body(&body);
+	let (Some(pay_from), Some(idempotency_key)) = (required(&v, "pay_from"), required(&v, "idempotency_key")) else {
+		return Err(ApiError::BadRequest("pay_from and idempotency_key are required".into()));
+	};
+	let req = bk::PayInvoiceRequest {
+		invoice_id: id,
+		pay_from,
+		idempotency_key,
+	};
+	Ok(Json(st.grpc.pay_invoice(&token, req).await?.into()))
 }
 
 // ── allocations (the catalog of investable products) ─────────────────────────
@@ -302,5 +332,93 @@ mod tests {
 			let (_, message) = render(deposit_address_error(hub)).await;
 			assert_eq!(message, "deposit address unavailable", "{code:?}");
 		}
+	}
+}
+
+/// `PayInvoice` through the real router, every plane unreachable: the first-party gate answers
+/// before anything is dialled.
+#[cfg(test)]
+mod invoice_gate_tests {
+	use std::{collections::HashMap, sync::Arc};
+
+	use axum::{
+		body::{Body, to_bytes},
+		http::{Request, StatusCode},
+	};
+	use evconcierge_auth::{TokenType, Verifier, VerifierConfig};
+	use tower::ServiceExt;
+
+	use crate::{
+		config::AppConfig,
+		cookies::CookieNames,
+		routes::{approval::AttemptLimiter, router},
+		session::BankingTokens,
+		state::{AppState, Grpc},
+	};
+
+	const BLACK_HOLE: &str = "http://127.0.0.1:1";
+	const FIRST_PARTY: &str = "https://evinvest.ltd";
+	const CSRF: &str = "csrf-token";
+
+	fn app() -> axum::Router {
+		let env = HashMap::from([
+			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE),
+			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE),
+			("CONCIERGE_GRPC_ADDR", BLACK_HOLE),
+			("BANKING_ISSUANCE_TOKEN", "test-issuance"),
+			("AUTH_ISSUER", "https://auth.test"),
+			("AUTH_CLIENT_AUDIENCE", "concierge"),
+			("MFE_REGISTRY_PATH", "/mfe-registry.json"),
+			("CABINET_WS_ORIGIN", FIRST_PARTY),
+			("APP_ENV", "development"),
+		]);
+		let config = AppConfig::from_source(|var| env.get(var).map(|value| (*value).to_string())).expect("the test env loads");
+		let verifier = Verifier::try_new(VerifierConfig {
+			issuer: config.auth_issuer.clone(),
+			audiences: vec![config.auth_client_audience.clone()],
+			allowed_types: vec![TokenType::Access],
+			jwks_grpc_endpoint: BLACK_HOLE.into(),
+		})
+		.expect("build the verifier");
+		router(AppState {
+			cookies: Arc::new(CookieNames::new(config.cookie_secure())),
+			banking: Arc::new(BankingTokens::new()),
+			approvals: Arc::new(AttemptLimiter::default()),
+			verifier,
+			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, BLACK_HOLE, Some("test-issuance".into())).expect("build the lazy channels"),
+			config: Arc::new(config),
+		})
+	}
+
+	/// A pay request with a valid CSRF pair and no session, from `origin`.
+	async fn pay_from(origin: Option<&str>) -> (StatusCode, String) {
+		let mut request = Request::builder()
+			.method("POST")
+			.uri("/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay")
+			.header("cookie", format!("ev_csrf={CSRF}"))
+			.header("x-ev-csrf", CSRF)
+			.header("content-type", "application/json");
+		if let Some(origin) = origin {
+			request = request.header("origin", origin);
+		}
+		let request = request.body(Body::from(r#"{"pay_from":"main","idempotency_key":"k-1"}"#)).expect("build the request");
+		let response = app().oneshot(request).await.expect("the router responds");
+		let status = response.status();
+		let body = to_bytes(response.into_body(), 1 << 16).await.expect("read the body");
+		(status, String::from_utf8_lossy(&body).into_owned())
+	}
+
+	/// A scope's own host may read the wallet but never pay from it, and a request that does
+	/// not say where it comes from is not first-party either.
+	#[tokio::test]
+	async fn only_evinvest_ltd_may_pay_an_invoice() {
+		for origin in [Some("https://sa.evinvest.ltd"), Some("https://evil.example"), None] {
+			let (status, body) = pay_from(origin).await;
+			assert_eq!(status, StatusCode::FORBIDDEN, "{origin:?}: {body}");
+			assert!(body.contains("csrf"), "{origin:?}: {body}");
+		}
+		// Past the gate the next refusal is the missing session — the gate let it through.
+		let (status, _) = pay_from(Some(FIRST_PARTY)).await;
+		assert_eq!(status, StatusCode::UNAUTHORIZED);
 	}
 }

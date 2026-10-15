@@ -92,6 +92,8 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/withdrawals", get(money::list_withdrawals).post(money::request_withdrawal))
 		.route("/api/wallet/withdrawals/cancel", post(money::cancel_withdrawal))
 		.route("/api/wallet/deposits", get(money::list_deposits))
+		.route("/api/wallet/invoices/{id}", get(money::get_payable_invoice))
+		.route("/api/wallet/invoices/{id}/pay", post(money::pay_invoice))
 		.route("/api/allocations", get(money::list_allocations))
 		.route("/api/allocations/detail", get(money::get_allocation))
 		.route("/api/operations", get(money::list_operations))
@@ -293,6 +295,16 @@ pub async fn require_permission(state: &AppState, jar: &CookieJar, permission: i
 		return Err(ApiError::Grpc(Status::permission_denied(format!("requires {}", permission.as_str()))));
 	}
 	Ok(())
+}
+
+/// The first-party gate of a mutating wallet route (`wallet.proto`, FIRST-PARTY ONLY): the
+/// request must come from a page on evinvest.ltd itself, so a scope's own host — which may
+/// read the wallet cross-origin — can only send the user there, never move their money. The
+/// origin is the one the websockets admit (`CABINET_WS_ORIGIN`, `https://evinvest.ltd` in
+/// production and required there); unset, as in local development, the gate is off. A
+/// request without `Origin` is refused: every browser sends it on a POST.
+pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
+	ws::origin_allowed(state, headers)
 }
 
 /// CSRF double-submit: the `x-ev-csrf` header must equal the readable `ev_csrf` cookie.

@@ -46,6 +46,7 @@ pub mod outflow;
 pub mod payments;
 pub mod positions;
 pub mod redemptions;
+pub mod scope_invoices;
 pub mod scope_ledger;
 pub mod subscriptions;
 pub mod withdrawals;
