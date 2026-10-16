@@ -134,7 +134,8 @@ async fn current(conn: &mut PgConnection, user: UserId, scope: &ScopeId, client:
 /// What `client` has drawn on `user`'s compartment in `scope`, under any of the user's mandates,
 /// on the database's clock (one `now()` for the whole statement). Exact sums in `numeric`: the
 /// amounts are 18-dp base units, past what a float holds. Only active holds and those placed in
-/// the window are read, so a long-lived client's history costs nothing.
+/// the window are read, so a long-lived client's history costs nothing. A charge counts in full
+/// from the moment it is recorded until the ledger refuses it (`failed` gave nothing).
 pub(crate) async fn usage(conn: &mut PgConnection, user: UserId, scope: &ScopeId, client: &ClientId) -> Result<MandateUsage, DomainError> {
 	let (drawn, outstanding, filled): (String, String, String) = sqlx::query_as(
 		"SELECT \
@@ -142,7 +143,9 @@ pub(crate) async fn usage(conn: &mut PgConnection, user: UserId, scope: &ScopeId
 		      FILTER (WHERE created_at > now() - interval '24 hours'), 0) \
 		    + (SELECT COALESCE(sum(c.amount::numeric), 0) FROM scope_hold_captures c JOIN scope_holds old ON old.id = c.hold_id \
 		       WHERE c.user_id = $1 AND c.scope = $2 AND c.client_id = $3 AND c.created_at > now() - interval '24 hours' \
-		         AND old.created_at <= now() - interval '24 hours'))::text, \
+		         AND old.created_at <= now() - interval '24 hours') \
+		    + (SELECT COALESCE(sum(ch.amount::numeric), 0) FROM scope_charges ch WHERE ch.user_id = $1 AND ch.scope = $2 AND ch.client_id = $3 \
+		       AND ch.state <> 'failed' AND ch.created_at > now() - interval '24 hours'))::text, \
 		   COALESCE(sum(amount::numeric - captured::numeric) FILTER (WHERE state = 'active'), 0)::text, \
 		   (SELECT COALESCE(sum(amount::numeric), 0)::text FROM scope_book_fills \
 		     WHERE user_id = $1 AND scope = $2 AND client_id = $3 AND created_at > now() - interval '24 hours') \

@@ -365,12 +365,13 @@ pub async fn redrive_stale_payouts(pool: &PgPool, older_than: Duration) -> Resul
 }
 
 /// Scope money recorded and not yet on the ledger for longer than `older_than`: `pending`
-/// transfers and payouts the relay should have posted within seconds. Reconciliation's
+/// transfers, payouts and charges the relay should have posted within seconds. Reconciliation's
 /// in-flight gauge.
 pub async fn stale_postings(pool: &PgPool, older_than: Duration) -> Result<i64, sqlx::Error> {
 	sqlx::query_scalar(
 		"SELECT (SELECT COUNT(*) FROM scope_transfers WHERE state = 'pending' AND created_at < now() - make_interval(secs => $1)) \
-		 + (SELECT COUNT(*) FROM scope_payouts WHERE state = 'pending' AND created_at < now() - make_interval(secs => $1))",
+		 + (SELECT COUNT(*) FROM scope_payouts WHERE state = 'pending' AND created_at < now() - make_interval(secs => $1)) \
+		 + (SELECT COUNT(*) FROM scope_charges WHERE state = 'pending' AND created_at < now() - make_interval(secs => $1))",
 	)
 	.bind(older_than.as_secs_f64())
 	.fetch_one(pool)

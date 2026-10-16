@@ -983,6 +983,8 @@ pub enum MoneyEventKind {
 	HoldVoided,
 	HoldExpired,
 	Transferred,
+	/// A one-off charge of a user's compartment, posted by the relay.
+	Charged,
 	/// One line of a payout.
 	PaidOut,
 	/// A `Request*` was stored and its approval opened.
@@ -1006,6 +1008,7 @@ impl MoneyEventKind {
 			Self::HoldVoided => "hold_voided",
 			Self::HoldExpired => "hold_expired",
 			Self::Transferred => "transferred",
+			Self::Charged => "charged",
 			Self::PaidOut => "paid_out",
 			Self::OperationRequested => "operation_requested",
 			Self::OperationRejected => "operation_rejected",
@@ -1027,6 +1030,7 @@ impl MoneyEventKind {
 			"hold_voided" => Ok(Self::HoldVoided),
 			"hold_expired" => Ok(Self::HoldExpired),
 			"transferred" => Ok(Self::Transferred),
+			"charged" => Ok(Self::Charged),
 			"paid_out" => Ok(Self::PaidOut),
 			"operation_requested" => Ok(Self::OperationRequested),
 			"operation_rejected" => Ok(Self::OperationRejected),
@@ -1366,6 +1370,7 @@ mod tests {
 			MoneyEventKind::HoldVoided,
 			MoneyEventKind::HoldExpired,
 			MoneyEventKind::Transferred,
+			MoneyEventKind::Charged,
 			MoneyEventKind::PaidOut,
 			MoneyEventKind::OperationRequested,
 			MoneyEventKind::OperationRejected,

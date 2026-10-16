@@ -14,6 +14,7 @@ use domain::{
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::Usdt,
+	scope_charges::ChargeEvent,
 	scope_invoices::{Invoice, InvoiceEvent, InvoiceState},
 	scope_ledger::{ClientId, HoldDestination, HoldEvent, MoneyEventKind, ScopeLedgerEvent},
 	scope_operations::ScopePayoutEvent,
@@ -273,6 +274,9 @@ pub async fn record_relayed(pool: &PgPool, ledger: &dyn Ledger, row: &OutboxRow)
 			Some(event) => vec![event],
 			None => return Ok(()),
 		}
+	} else if row.kind == ChargeEvent::KIND {
+		let event: ChargeEvent = serde_json::from_str(&row.payload).map_err(|e| MoneyEventError::corrupt(format!("{} payload: {e}", row.kind)))?;
+		vec![charged(pool, ledger, event).await?]
 	} else {
 		return Ok(());
 	};
@@ -582,6 +586,43 @@ async fn invoice_paid(pool: &PgPool, ledger: &dyn Ledger, event: InvoiceEvent) -
 		paid_from: from.as_str().to_owned(),
 		audience,
 	}))
+}
+
+/// KIND_CHARGED for a charge the ledger just took: the charging client is told, with the
+/// credited account's balance after it (the client owns that account). The user's compartment
+/// never appears; the client named the user, so `auth_subject` is theirs to know.
+async fn charged(pool: &PgPool, ledger: &dyn Ledger, event: ChargeEvent) -> Result<NewMoneyEvent, MoneyEventError> {
+	let ChargeEvent::Charged {
+		charge_id, scope, to_label, amount, ..
+	} = event;
+	let (client, subject_ref, auth_subject): (String, String, String) = sqlx::query_as("SELECT client_id, subject_ref, auth_subject FROM scope_charges WHERE id = $1")
+		.bind(charge_id.raw())
+		.fetch_one(pool)
+		.await
+		.map_err(|e| MoneyEventError::db(format!("scope charge {charge_id}"), e))?;
+	let initiator = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope charge {charge_id}: {e}")))?;
+	let balances: Vec<EventBalance> = balance_of(pool, ledger, &scope, &to_label).await?.into_iter().collect();
+	let mut audience = vec![initiator.clone()];
+	audience.extend(balances.iter().map(|entry| entry.owner.clone()));
+	Ok(NewMoneyEvent {
+		event_id: event_id(&format!("charged:{charge_id}")),
+		scope,
+		kind: MoneyEventKind::Charged,
+		ref_id: charge_id.to_string(),
+		aggregate_version: 1,
+		auth_subject,
+		amount: Some(amount),
+		from: None,
+		to: Some(EventAccount::Account(to_label)),
+		subject_ref,
+		initiator_client: initiator.as_str().to_owned(),
+		balances,
+		hold_remaining: None,
+		counterparty_scope: String::new(),
+		failure_reason: String::new(),
+		paid_from: String::new(),
+		audience,
+	})
 }
 
 fn amount_column(raw: &str, what: &str) -> Result<Option<Usdt>, DomainError> {

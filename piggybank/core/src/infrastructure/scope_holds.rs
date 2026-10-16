@@ -87,7 +87,7 @@ macro_rules! user_standing {
 	};
 }
 
-async fn user_by_subject(conn: &mut PgConnection, auth_subject: &str) -> Result<Option<HoldUser>, DomainError> {
+pub(crate) async fn user_by_subject(conn: &mut PgConnection, auth_subject: &str) -> Result<Option<HoldUser>, DomainError> {
 	let row: Option<(Uuid, bool)> = sqlx::query_as(user_standing!("WHERE auth_subject = $1"))
 		.bind(auth_subject)
 		.fetch_optional(conn)

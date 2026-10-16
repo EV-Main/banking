@@ -37,7 +37,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{compartments, scope_holds, scope_invoices, scope_ledger, scope_payouts},
+	infrastructure::{compartments, scope_charges, scope_holds, scope_invoices, scope_ledger, scope_payouts},
 	ports::{RedemptionRepository, WithdrawalRepository},
 };
 
@@ -77,6 +77,8 @@ pub struct ReaperReport {
 	pub expired_scope_invoices: usize,
 	/// `pending` invoice payments whose lost event was put back on the outbox.
 	pub redriven_invoice_payments: usize,
+	/// `pending` scope charges whose lost event was put back on the outbox.
+	pub redriven_scope_charges: usize,
 }
 
 /// The reaper job: sweep on an interval until the process exits.
@@ -217,6 +219,14 @@ impl Reaper {
 			);
 		}
 
+		report.redriven_scope_charges = scope_charges::redrive_stale_charges(&self.pool, self.move_redrive_after).await?;
+		if report.redriven_scope_charges > 0 {
+			warn!(
+				count = report.redriven_scope_charges,
+				"reaper: re-enqueued pending scope charges whose event was dispatched without posting them"
+			);
+		}
+
 		// A TTL is the client's own word on how long a hold may stand, so releasing it is
 		// routine: logged at INFO, not a finding.
 		report.expired_scope_holds = scope_holds::expire_due_holds(&self.pool).await?;
@@ -237,6 +247,7 @@ impl Reaper {
 			|| report.redriven_scope_transfers > 0
 			|| report.redriven_scope_payouts > 0
 			|| report.redriven_invoice_payments > 0
+			|| report.redriven_scope_charges > 0
 			|| report.expired_scope_holds > 0
 		{
 			self.notify.notify_one();

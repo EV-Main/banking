@@ -43,6 +43,7 @@ use domain::{
 	money::Usdt,
 	payments::PaymentEvent,
 	redemptions::RedemptionEvent,
+	scope_charges::ChargeEvent,
 	scope_invoices::{InvoiceEvent, InvoiceRefusal},
 	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
 	scope_operations::ScopePayoutEvent,
@@ -63,7 +64,7 @@ use crate::{
 		money_events::{self, MoneyEventError},
 		outbox::{self, OutboxRow},
 		rails::now_unix_i64,
-		scope_holds, scope_invoices, scope_ledger, scope_payouts,
+		scope_charges, scope_holds, scope_invoices, scope_ledger, scope_payouts,
 	},
 	ports::{
 		custody::{BroadcastRequest, Custody, CustodyError},
@@ -170,9 +171,13 @@ const SCOPE_PAYOUT: &str = "scope:payout:";
 /// share its id — nor may a replay of the refused one ever post as the later one. FROZEN.
 const INVOICE_PAY: &str = "scope:invoice:pay:";
 
+/// Salt of a charge's one posted leg, derived from the CHARGE id so an operator reconciling a
+/// `scope_charges` row recomputes its transfer id from the row alone. FROZEN.
+const SCOPE_CHARGE: &[u8] = b"scope:charge";
+
 /// An event whose ledger move is recorded on a control-plane row of its own — `pending` until
 /// the relay posts it, then `posted`, or `failed` for good when the ledger refuses it. A
-/// compartment move, a scope transfer, a payout and an invoice payment are the four; all
+/// compartment move, a scope transfer, a payout, an invoice payment and a charge are the five; all
 /// follow one discipline (see `dispatch`), so it is spelled once. A payout's legs are one
 /// linked chain, which applies whole or not at all, so for this discipline it is one posting
 /// too. An invoice payment is the one whose "failed" is not terminal for the invoice: the
@@ -184,6 +189,7 @@ enum Posting {
 	ScopeTransfer,
 	ScopePayout,
 	InvoicePayment,
+	ScopeCharge,
 }
 
 impl Posting {
@@ -196,6 +202,8 @@ impl Posting {
 			Some(Self::ScopePayout)
 		} else if kind == InvoiceEvent::KIND {
 			Some(Self::InvoicePayment)
+		} else if kind == ChargeEvent::KIND {
+			Some(Self::ScopeCharge)
 		} else {
 			None
 		}
@@ -207,6 +215,7 @@ impl Posting {
 			Self::ScopeTransfer => "scope transfer",
 			Self::ScopePayout => "scope payout",
 			Self::InvoicePayment => "invoice payment",
+			Self::ScopeCharge => "scope charge",
 		}
 	}
 
@@ -214,7 +223,7 @@ impl Posting {
 	const fn insufficient_funds(self) -> &'static str {
 		match self {
 			Self::Move => MoveRefusal::InsufficientFunds.reason(),
-			Self::ScopeTransfer | Self::ScopePayout => LedgerRefusal::InsufficientFunds.reason(),
+			Self::ScopeTransfer | Self::ScopePayout | Self::ScopeCharge => LedgerRefusal::InsufficientFunds.reason(),
 			Self::InvoicePayment => InvoiceRefusal::InsufficientFunds.reason(),
 		}
 	}
@@ -225,6 +234,7 @@ impl Posting {
 			Self::ScopeTransfer => scope_ledger::transfer_state(pool, row.aggregate_id).await,
 			Self::ScopePayout => scope_payouts::payout_state(pool, row.aggregate_id).await,
 			Self::InvoicePayment => scope_invoices::payment_state(pool, row.aggregate_id, &row.payload).await,
+			Self::ScopeCharge => scope_charges::charge_state(pool, row.aggregate_id).await,
 		}
 	}
 
@@ -234,6 +244,7 @@ impl Posting {
 			Self::ScopeTransfer => scope_ledger::mark_posted(pool, row.aggregate_id).await,
 			Self::ScopePayout => scope_payouts::mark_posted(pool, row.aggregate_id).await,
 			Self::InvoicePayment => scope_invoices::mark_payment_posted(pool, row.aggregate_id, &row.payload).await,
+			Self::ScopeCharge => scope_charges::mark_posted(pool, row.aggregate_id).await,
 		}
 	}
 
@@ -243,6 +254,7 @@ impl Posting {
 			Self::ScopeTransfer => scope_ledger::mark_failed(pool, row.aggregate_id, reason).await,
 			Self::ScopePayout => scope_payouts::mark_failed(pool, row.aggregate_id, reason).await,
 			Self::InvoicePayment => scope_invoices::fail_payment(pool, row.aggregate_id, &row.payload, reason).await,
+			Self::ScopeCharge => scope_charges::mark_failed(pool, row.aggregate_id, reason).await,
 		}
 	}
 }
@@ -1185,6 +1197,10 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: InvoiceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(plan_invoice(event, row.aggregate_id, reference).into_iter().collect())
 		}
+		"scope_charges" => {
+			let event: ChargeEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
+			Ok(vec![plan_charge(event, row.aggregate_id, reference)])
+		}
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
 	}
@@ -1195,7 +1211,11 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 fn park_kind(reason: &str) -> &'static str {
 	if reason.starts_with("ledger conflict") {
 		"conflict"
-	} else if reason.starts_with("compartment move applied check") || reason.starts_with("scope transfer applied check") || reason.starts_with("scope payout applied check") {
+	} else if reason.starts_with("compartment move applied check")
+		|| reason.starts_with("scope transfer applied check")
+		|| reason.starts_with("scope payout applied check")
+		|| reason.starts_with("scope charge applied check")
+	{
 		"applied_check"
 	} else if reason.starts_with("unplannable") {
 		"unplannable"
@@ -1374,6 +1394,27 @@ fn plan_hold(event: HoldEvent, hold_id: Uuid, reference: u128) -> PlannedOp {
 				action: LedgerAction::Linked(vec![leg]),
 			}
 		}
+	}
+}
+
+/// A charge: one posted transfer out of the user's compartment straight into the scope account
+/// the client named. A compartment that cannot cover it after all — another flow's reservation
+/// landed first — is refused by the claim's non-negative flag, and the charge is stamped `failed`
+/// with nothing moved (see `dispatch`).
+fn plan_charge(event: ChargeEvent, charge_id: Uuid, reference: u128) -> PlannedOp {
+	let ChargeEvent::Charged { scope, user, to_label, amount, .. } = event;
+	let id = tid(charge_id, SCOPE_CHARGE);
+	PlannedOp {
+		role: "scope_charge",
+		transfer_id: id,
+		action: LedgerAction::Post(LedgerTransfer {
+			id,
+			debit: LedgerAccountKey::ScopeClaim(user, scope.clone()),
+			credit: LedgerAccountKey::ScopeAccount(scope, to_label),
+			amount: amount.base_units(),
+			code: TransferCode::ScopeCharge,
+			reference,
+		}),
 	}
 }
 
@@ -2540,6 +2581,44 @@ mod tests {
 			version: 2,
 		});
 		assert!(plan(&cancelled).unwrap().is_empty(), "only a payment moves money");
+	}
+
+	// A charge is one posted leg out of the user's compartment into the client's account, and an
+	// undispatched one counts against that compartment — and only that one — in every spend check.
+	#[test]
+	fn a_charge_posts_once_out_of_the_compartment() {
+		let (charge, user) = (Uuid::new_v4(), UserId::new());
+		let scope = domain::scopes::ScopeId::parse("sa").unwrap();
+		let to = domain::scopes::ScopeAccountLabel::parse("sales").unwrap();
+		let event = ChargeEvent::Charged {
+			charge_id: domain::scope_charges::ChargeId::from_raw(charge),
+			scope: scope.clone(),
+			user,
+			to_label: to.clone(),
+			amount: Usdt::parse_decimal("25").unwrap(),
+		};
+		let row = OutboxRow {
+			seq: 1,
+			event_id: Uuid::new_v4(),
+			aggregate: "scope_charge".into(),
+			aggregate_id: charge,
+			kind: "scope_charges".into(),
+			payload: serde_json::to_string(&event).unwrap(),
+			attempts: 0,
+		};
+		assert!(matches!(Posting::of(&row.kind), Some(Posting::ScopeCharge)));
+		let ops = plan(&row).unwrap();
+		let [op] = ops.as_slice() else { panic!("one leg") };
+		let LedgerAction::Post(leg) = &op.action else { panic!("a posted transfer") };
+		assert_eq!((leg.id, leg.code), (tid(charge, SCOPE_CHARGE), TransferCode::ScopeCharge));
+		assert_eq!(leg.credit, LedgerAccountKey::ScopeAccount(scope.clone(), to));
+		let amount = Usdt::parse_decimal("25").unwrap().base_units();
+		assert_eq!(planned_debit(&row, &LedgerAccountKey::ScopeClaim(user, scope.clone())).unwrap(), amount);
+		assert_eq!(planned_debit(&row, &LedgerAccountKey::UserClaim(user)).unwrap(), 0, "main is untouched");
+		assert_eq!(
+			planned_debit(&row, &LedgerAccountKey::ScopeClaim(user, domain::scopes::ScopeId::parse("other").unwrap())).unwrap(),
+			0
+		);
 	}
 
 	// A capture voids the standing reservation and takes the captured part and the rest out of
