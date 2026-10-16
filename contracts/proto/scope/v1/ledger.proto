@@ -118,8 +118,19 @@ syntax = "proto3";
 // alone carries none: it asks for one end state of one invoice, so a retry is a repeat.) Keys are unique per
 // (calling client, scope, RPC). A repeat with the same key and the same terms returns
 // the ORIGINAL result, even if the world moved since (a frozen scope, a prefix taken
-// away); the same key with different terms is ALREADY_EXISTS. The one exception: a
-// caller that no longer holds ANY grant in the scope gets `not_granted`, repeat or not. A saga retries with the key it stored before the first try.
+// away); the same key with different terms is ALREADY_EXISTS `idempotency_conflict` (that
+// is the whole message, which tells it from the other ALREADY_EXISTS, a label another
+// client owns), and nothing is done. This holds for EVERY mutating RPC that carries a key
+// (OpenAccount, Reserve, Capture, Void, Charge, Payout, Transfer, RequestPayout,
+// RequestTransfer, `InvoiceService.CreateInvoice`), so a retry can never sit on an earlier,
+// smaller or otherwise different result. The terms compared are everything the request
+// asks besides the key: the user, the amount, `ttl_seconds`, the hold, the accounts
+// (`to`, `from_label`, `to_label`, `to_scope`), `subject_ref`, `memo`, `reason`, a payout's
+// lines (as a set: their order is not a term), … The scope is part of the key's identity
+// (see above), so the same key in another scope is a new request, not a conflict. A
+// concurrent repeat waits for the first call and answers with its result. The one
+// exception: a caller that no longer holds ANY grant in the scope gets `not_granted`,
+// repeat or not. A saga retries with the key it stored before the first try.
 package scope.v1;
 
 service ScopeLedgerService {

@@ -33,9 +33,10 @@ use std::{
 };
 
 use domain::{
+	error::DomainError,
 	money::Usdt,
 	scope_invoices::InvoiceState,
-	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, MoneyEventKind, SubjectRef, TransferReason},
+	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, MoneyEventKind, SubjectRef, TransferReason},
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
@@ -322,6 +323,8 @@ fn refused(rpc: &'static str, client: &ClientId, err: TransferError) -> Status {
 			tracing::error!(rpc, %client, "scope ledger: {why}");
 			return Status::internal("internal error");
 		}
+		// The whole message is the reason, like a refusal's: `map_err` would prefix it.
+		TransferError::Domain(DomainError::Conflict(why)) if why == IDEMPOTENCY_CONFLICT => Status::already_exists(IDEMPOTENCY_CONFLICT),
 		TransferError::Domain(err) => map_err(err),
 		TransferError::Exhausted(why) => Status::resource_exhausted(why),
 	};
@@ -856,5 +859,21 @@ fn operation_to_proto(recorded: &RecordedOperation) -> pb::PendingOperation {
 		decided_at: recorded.decided_at.unwrap_or(0),
 		result_id: progress.result_id.clone().unwrap_or_default(),
 		failure_reason: progress.failure_reason.clone().unwrap_or_default(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_reused_key_is_already_exists_with_the_reason_alone_as_the_message() {
+		let client = ClientId::parse("invest").unwrap();
+		let status = refused("Reserve", &client, TransferError::Domain(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into())));
+		assert_eq!((status.code(), status.message()), (Code::AlreadyExists, "idempotency_conflict"));
+		// The other ALREADY_EXISTS (a label another client owns) keeps its own words.
+		let taken = refused("OpenAccount", &client, TransferError::Domain(DomainError::Conflict("label taken".into())));
+		assert_eq!(taken.code(), Code::AlreadyExists);
+		assert_ne!(taken.message(), "idempotency_conflict");
 	}
 }

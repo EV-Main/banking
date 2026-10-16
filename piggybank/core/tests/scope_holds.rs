@@ -13,7 +13,7 @@ use domain::{
 	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
 	money::{Network, Usdt},
-	scope_ledger::{ClientId, Grant, Grants, HoldState, LedgerRefusal, MandateOperation, MoneyEventKind, SubjectRef, TransferReason},
+	scope_ledger::{ClientId, Grant, Grants, HoldState, IDEMPOTENCY_CONFLICT, LedgerRefusal, MandateOperation, MoneyEventKind, SubjectRef, TransferReason},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
 	users::UserId,
 };
@@ -287,6 +287,82 @@ async fn a_hold_needs_the_compartments_grant_a_known_scope_and_a_mandate() {
 			.await
 			.unwrap() == 0
 	);
+}
+
+/// `idempotency_conflict`: the same key under another term refuses, whichever call it is, and
+/// leaves the hold as the first call made it.
+#[tokio::test]
+async fn a_key_reused_with_other_terms_is_refused_by_reserve_capture_and_void() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = holder(&h).await;
+	let (user_id, user) = user_with(&h, &scope, "10").await;
+	let (_, neighbour) = user_with(&h, &scope, "10").await;
+	consent(&h, &grants, &client, &scope, user_id, false).await;
+	let p = ports(&h, &grants);
+	let conflict = |result: Result<RecordedHold, TransferError>| match domain_err(result) {
+		DomainError::Conflict(why) => assert_eq!(why, IDEMPOTENCY_CONFLICT),
+		other => panic!("expected the idempotency conflict, got {other:?}"),
+	};
+
+	let k = key();
+	let asked = reserve_request(&scope, &user, "6", &k);
+	let hold = ledger_app::reserve(&p, &client, asked.clone()).await.unwrap();
+	for other in [
+		ReserveRequest { amount: usdt("5"), ..asked.clone() },
+		ReserveRequest { ttl_seconds: 60, ..asked.clone() },
+		ReserveRequest {
+			auth_subject: neighbour.clone(),
+			..asked.clone()
+		},
+		ReserveRequest {
+			subject_ref: subject(),
+			..asked.clone()
+		},
+	] {
+		conflict(ledger_app::reserve(&p, &client, other).await);
+	}
+	assert_eq!(ledger_app::reserve(&p, &client, asked).await.unwrap().hold.id(), hold.hold.id());
+
+	let capture = capture_request(&scope, &hold, CaptureTarget::Account(label("alloc:x")), Some("2"));
+	let captured = ledger_app::capture(&p, &client, capture.clone()).await.unwrap();
+	for other in [
+		CaptureRequest {
+			amount: Some(usdt("3")),
+			..capture.clone()
+		},
+		CaptureRequest { amount: None, ..capture.clone() },
+		CaptureRequest {
+			to: CaptureTarget::User(neighbour.clone()),
+			..capture.clone()
+		},
+		CaptureRequest {
+			subject_ref: subject(),
+			..capture.clone()
+		},
+	] {
+		conflict(ledger_app::capture(&p, &client, other).await);
+	}
+	let repeat = ledger_app::capture(&p, &client, capture).await.unwrap();
+	assert_eq!(repeat.hold.progress().captured, captured.hold.progress().captured, "a repeat is the original capture");
+
+	let release = void_request(&scope, &hold);
+	ledger_app::void(&p, &client, release.clone()).await.unwrap();
+	conflict(
+		ledger_app::void(
+			&p,
+			&client,
+			VoidRequest {
+				subject_ref: subject(),
+				..release.clone()
+			},
+		)
+		.await,
+	);
+	ledger_app::void(&p, &client, release).await.expect("the same void again is a repeat");
+
+	let held = ledger_app::get_hold(&p, &client, &scope, hold.hold.id().raw()).await.unwrap();
+	assert_eq!(held.hold.progress().captured, usdt("2"), "none of the refused calls captured anything");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
 #[tokio::test]

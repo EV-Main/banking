@@ -17,8 +17,8 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_ledger::{
-		AutoTransferFacts, ClientId, Grants, Hold, HoldDestination, HoldError, HoldId, HoldTerms, LedgerRefusal, MandateOperation, ScopeTransfer, ScopeTransferId, SubjectRef,
-		TransferReason, TransferTerms, canonical,
+		AutoTransferFacts, ClientId, Grants, Hold, HoldDestination, HoldError, HoldId, HoldTerms, IDEMPOTENCY_CONFLICT, LedgerRefusal, MandateOperation, ScopeTransfer, ScopeTransferId,
+		SubjectRef, TransferReason, TransferTerms, canonical,
 	},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
 };
@@ -110,7 +110,7 @@ pub(crate) fn same_terms(stored: &StoredRequest, terms: &str) -> Result<(), Doma
 	if stored.terms == terms {
 		Ok(())
 	} else {
-		Err(DomainError::Conflict("idempotency_key was used for a different request".into()))
+		Err(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into()))
 	}
 }
 

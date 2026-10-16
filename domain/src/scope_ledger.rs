@@ -501,6 +501,12 @@ impl TransferTerms {
 	}
 }
 
+/// The whole message of the ALREADY_EXISTS a scope-ledger call answers when its idempotency key
+/// was used before for other terms. A client branches on it, so it is a reason like the
+/// refusals' — and tells this conflict apart from the other ALREADY_EXISTS (a label another
+/// client owns).
+pub const IDEMPOTENCY_CONFLICT: &str = "idempotency_conflict";
+
 /// `len:value` per field, joined by `|`.
 pub fn canonical(fields: &[&str]) -> String {
 	fields.iter().map(|field| format!("{}:{field}", field.len())).collect::<Vec<_>>().join("|")
