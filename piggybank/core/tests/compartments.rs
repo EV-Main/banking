@@ -173,6 +173,21 @@ async fn the_seeded_scopes_list_after_main_with_the_default_ceilings() {
 }
 
 #[tokio::test]
+async fn one_compartment_reads_alone_and_an_unknown_scope_is_not_found() {
+	let Some(h) = harness().await else { return };
+	let user = funded_user(&h, "100").await;
+	move_funds(&h, user, "main", "sa", "30", &key()).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+
+	let (sa, _) = compartments_app::get_compartment(&ports(&h), user, &side("sa")).await.unwrap();
+	assert_eq!((sa.compartment.as_str(), sa.total), ("sa", usdt("30")));
+	let (main, _) = compartments_app::get_compartment(&ports(&h), user, &Compartment::Main).await.unwrap();
+	assert_eq!(main.total, usdt("70"), "main is its own balance, not the sum over compartments");
+	let unknown = compartments_app::get_compartment(&ports(&h), user, &side("nowhere")).await;
+	assert!(matches!(unknown, Err(DomainError::NotFound { .. })), "got {unknown:?}");
+}
+
+#[tokio::test]
 async fn money_moves_into_a_compartment_and_back_on_the_ledger() {
 	let Some(h) = harness().await else { return };
 	let user = funded_user(&h, "100").await;

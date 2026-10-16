@@ -2953,6 +2953,65 @@
       }
     },
     "/banking.v1.BookService/WatchBook": {},
+    "/banking.v1.CompartmentService/GetCompartment": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "GetCompartment",
+        "description": "The caller's balance in ONE scope (`main` included), for a client that shows a single\n compartment and must not read the sum over all of them. An unknown scope is NOT_FOUND.",
+        "operationId": "banking.v1.CompartmentService.GetCompartment",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetCompartmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.Compartment"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.CompartmentService/GetScopePolicy": {
       "post": {
         "tags": [
@@ -10542,6 +10601,18 @@
         "title": "GetBookRequest",
         "additionalProperties": false
       },
+      "banking.v1.GetCompartmentRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "scope",
+            "description": "`main` or a scope"
+          }
+        },
+        "title": "GetCompartmentRequest",
+        "additionalProperties": false
+      },
       "banking.v1.GetConsentInvitationRequest": {
         "type": "object",
         "properties": {
@@ -11609,6 +11680,11 @@
           "performance": {
             "type": "string",
             "title": "performance"
+          },
+          "scope": {
+            "type": "string",
+            "title": "scope",
+            "description": "The wallet compartment the row belongs to: `main` for every kind this feed carries\n today (deposits and withdrawals are main's; fund subscriptions, redemptions and fees\n settle against main's balance). A client in scope mode keeps only the rows whose\n `scope` is its own; compartment moves and scope payouts are not in this feed yet."
           }
         },
         "title": "Operation",

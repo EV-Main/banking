@@ -70,6 +70,13 @@ impl CompartmentService for CompartmentSvc {
 		}))
 	}
 
+	async fn get_compartment(&self, request: Request<pb::GetCompartmentRequest>) -> Result<Response<pb::Compartment>, Status> {
+		let user = caller_id(&request)?;
+		let scope = Compartment::parse(&request.get_ref().scope).map_err(map_err)?;
+		let (view, kyc_level) = compartments_app::get_compartment(&self.ports(), user, &scope).await.map_err(map_err)?;
+		Ok(Response::new(compartment_to_proto(&view, kyc_level)))
+	}
+
 	async fn move_funds(&self, request: Request<pb::MoveFundsRequest>) -> Result<Response<pb::CompartmentMove>, Status> {
 		let from = Compartment::parse(&request.get_ref().from_scope).map_err(map_err)?;
 		let to = Compartment::parse(&request.get_ref().to_scope).map_err(map_err)?;

@@ -27,6 +27,11 @@ pub struct NetworkQuery {
 }
 
 #[derive(Deserialize)]
+pub struct ScopeQuery {
+	scope: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct LimitQuery {
 	limit: Option<u32>,
 }
@@ -98,6 +103,16 @@ pub async fn list_compartments(State(st): State<AppState>, jar: CookieJar) -> Re
 	let token = require_money_token(&st, &jar).await?;
 	let list = st.grpc.list_compartments(&token).await.map_err(|s| ApiError::read(s, "compartments unavailable"))?;
 	Ok(Json(list.into()))
+}
+
+/// `GET /api/wallet/compartment?scope=` — the caller's balance in one compartment, for a
+/// scope host that must show its own balance and not the sum over all of them. Readable from
+/// the scope hosts like the list (`routes::cors`).
+pub async fn get_compartment(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ScopeQuery>) -> Result<Json<dto::Compartment>, ApiError> {
+	let scope = q.scope.filter(|scope| !scope.is_empty()).ok_or_else(|| ApiError::BadRequest("scope is required".into()))?;
+	let token = require_money_token(&st, &jar).await?;
+	let compartment = st.grpc.get_compartment(&token, &scope).await.map_err(|s| ApiError::read(s, "compartment unavailable"))?;
+	Ok(Json(compartment.into()))
 }
 
 /// `POST /api/wallet/compartments/move` — first-party, CSRF-checked and rate-limited: move money

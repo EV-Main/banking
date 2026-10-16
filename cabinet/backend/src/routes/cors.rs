@@ -4,7 +4,7 @@
 //! and history, so it has to read them with the user's cookies. It must never act: every
 //! mutating wallet route is first-party only (`wallet.proto`, plan §3.9), and the way to
 //! keep that true is that no mutating route ever answers a cross-origin request in a way
-//! a browser will let the caller see. So CORS is opted into per route, here, on three
+//! a browser will let the caller see. So CORS is opted into per route, here, on a few
 //! reads — never as a router-wide layer that a new POST would silently inherit.
 //!
 //! Only simple requests are served: a `GET` with cookies needs no preflight, so `OPTIONS`
