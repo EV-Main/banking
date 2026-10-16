@@ -1154,7 +1154,9 @@ scope needs that scope active. The approval names the requesting `service` (in i
 `lines_digest` and `payload_hash` (concierge's encoding, `scope_operations::approval_payload`),
 its source owned by the caller (a label grant is not needed — the approvers decide), a
 transfer's destination the caller's own too. A requested payout carries `over_scope_budget`,
-decided under the budget lock. Nothing is opened on the request path: the **approval
+decided under the budget lock; its `max_line` field feeds the catalog's `per_line` escalation
+(1000 USDT), and an automatic `Payout` with a line past `MAX_PAYOUT_LINE` is `approval_required`
+(banking#525). Nothing is opened on the request path: the **approval
 executor** (`application::scope_operations::ApprovalExecutor`, every 30 s and on a nudge, only
 when the listener is on) first publishes banking's `bank:*` catalog
 (`scope_operations::BANK_CATALOG`, versioned by `BANK_CATALOG_VERSION` — bump it with every

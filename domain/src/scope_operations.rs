@@ -28,6 +28,13 @@ pub const MAX_PAYOUT_LINES: usize = 1000;
 /// Longest `auth_subject` accepted, in bytes — what `users.auth_subject` was ever given.
 pub const MAX_AUTH_SUBJECT: usize = 255;
 
+/// The largest single line a payout may carry without the platform owners deciding it
+/// (banking#525, 1000 USDT in 18-decimal base units). A fixed floor rather than a policy
+/// column: it is what concierge's `per_line` escalation defaults to, and an operator cannot
+/// raise one scope's line past it by editing a row. One recipient must not be able to take a
+/// whole operation that stays under the per-operation ceiling.
+pub const MAX_PAYOUT_LINE: Usdt = Usdt::from_base_units(1_000_000_000_000_000_000_000);
+
 /// The currency every amount on a `bank:*` approval is denominated in.
 pub const APPROVAL_CURRENCY: &str = "USDT";
 
@@ -290,6 +297,8 @@ impl EmitsEvents for ScopePayout {
 #[derive(Clone, Copy, Debug)]
 pub struct AutoPayoutFacts {
 	pub total: Usdt,
+	/// The largest single line of the payout.
+	pub max_line: Usdt,
 	/// What the client paid out automatically in this scope over the last 24 h, `pending` and
 	/// `posted`, this one excluded.
 	pub paid_24h: Usdt,
@@ -303,7 +312,7 @@ impl ScopePolicy {
 	/// rolling 24 h for `(client, scope)` — and inside the scope's own daily budget (D24(4)),
 	/// which every client of the scope draws on. All inclusive.
 	pub fn admit_auto_payout(&self, facts: AutoPayoutFacts) -> Result<(), LedgerRefusal> {
-		if facts.total > self.auto_payout_per_op {
+		if facts.total > self.auto_payout_per_op || facts.max_line > MAX_PAYOUT_LINE {
 			return Err(LedgerRefusal::ApprovalRequired);
 		}
 		// An overflowing sum is past any ceiling a u128 can express.
@@ -555,7 +564,7 @@ pub struct KindSpec {
 /// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
 /// every change to the catalog — concierge refuses a catalog of the version it stores with
 /// other content, and one more than a day ahead of its clock.
-pub const BANK_CATALOG_VERSION: u64 = 1_792_051_200;
+pub const BANK_CATALOG_VERSION: u64 = 1_792_108_800;
 
 /// [`BANK_CATALOG`] rendered field by field, one line per item — what a test pins, beside
 /// [`BANK_CATALOG_VERSION`], so the catalog cannot change without the version moving.
@@ -612,6 +621,15 @@ pub const BANK_CATALOG: &[KindSpec] = &[
 			EscalationSpec {
 				parameter: "per_operation",
 				field_key: "total",
+				test: EscalationTest::AmountAbove,
+				default_threshold: "1000",
+				currency: APPROVAL_CURRENCY,
+			},
+			// banking#525: one recipient's share, whatever the total. `max_line` is already on
+			// every approval, so concierge evaluates this without a new field.
+			EscalationSpec {
+				parameter: "per_line",
+				field_key: "max_line",
 				test: EscalationTest::AmountAbove,
 				default_threshold: "1000",
 				currency: APPROVAL_CURRENCY,
@@ -996,6 +1014,7 @@ mod tests {
 	fn an_automatic_payout_stays_inside_the_client_ceilings_and_the_scope_budget() {
 		let facts = |total: &str, paid: &str, out: &str| AutoPayoutFacts {
 			total: usdt(total),
+			max_line: usdt(total),
 			paid_24h: usdt(paid),
 			scope_out_24h: usdt(out),
 		};
@@ -1008,6 +1027,14 @@ mod tests {
 			Err(LedgerRefusal::ApprovalRequired),
 			"the scope's budget binds every client"
 		);
+		// One line past the ceiling needs the owners although the total is inside every other one.
+		let wide = AutoPayoutFacts {
+			total: usdt("1000"),
+			max_line: usdt("1000.000000000000000001"),
+			paid_24h: usdt("0"),
+			scope_out_24h: usdt("0"),
+		};
+		assert_eq!(p.admit_auto_payout(wide), Err(LedgerRefusal::ApprovalRequired));
 		assert!(p.over_scope_budget(Usdt::from_base_units(u128::MAX), usdt("1")), "an overflowing sum is over budget");
 		assert!(!p.over_scope_budget(usdt("7999"), usdt("1")));
 	}
