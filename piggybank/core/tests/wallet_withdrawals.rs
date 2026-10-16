@@ -218,6 +218,87 @@ async fn withdraw_reserves_then_settles_and_retains_fee() {
 	assert!(bal(&h, &fee_account).await.posted.checked_sub(fee_before).unwrap() >= usdt("1"), "the fee was retained");
 }
 
+#[tokio::test]
+async fn a_repeated_withdrawal_key_returns_the_first_and_reserves_once() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	let claim = LedgerAccountKey::UserClaim(user);
+	deposit(&h, user, network, "100").await;
+	let key = format!("page-load-{}", Uuid::new_v4());
+	let ask = |amount: &str, network: Network, key: &str| {
+		let amount = usdt(amount);
+		let key = key.to_owned();
+		let h = &h;
+		async move {
+			withdrawal_app::request_withdrawal_keyed(
+				&withdrawal_ports(h, &StubCustody),
+				&admission(h, KycGate::ENFORCED),
+				user,
+				network,
+				destination(network),
+				amount,
+				&key,
+			)
+			.await
+		}
+	};
+
+	let first = ask("30", network, &key).await.unwrap();
+	h.relay.drain().await;
+	let again = ask("30", network, &key).await.unwrap();
+	assert_eq!(again.id(), first.id(), "a retry returns the first withdrawal");
+	h.relay.drain().await;
+	assert_eq!(bal(&h, &claim).await.locked, usdt("30"), "the gross is reserved once");
+	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+
+	// The same key for other terms is a conflict, not a second withdrawal.
+	let other_amount = ask("31", network, &key).await;
+	assert!(matches!(other_amount, Err(DomainError::Conflict(_))), "{other_amount:?}");
+	let other_rail = ask("30", Network::Polygon, &key).await;
+	assert!(matches!(other_rail, Err(DomainError::Conflict(_))), "{other_rail:?}");
+
+	// Keys are per user: another user's identical key is their own request.
+	let other = active_user(&h).await;
+	deposit(&h, other, network, "100").await;
+	let theirs = withdrawal_app::request_withdrawal_keyed(
+		&withdrawal_ports(&h, &StubCustody),
+		&admission(&h, KycGate::ENFORCED),
+		other,
+		network,
+		destination(network),
+		usdt("30"),
+		&key,
+	)
+	.await
+	.unwrap();
+	assert_ne!(theirs.id(), first.id());
+
+	// A key outside 1..=128 bytes is refused before anything is read.
+	let empty = ask("30", network, "").await;
+	assert!(matches!(empty, Err(DomainError::Validation(_))), "{empty:?}");
+	let long = ask("30", network, &"k".repeat(129)).await;
+	assert!(matches!(long, Err(DomainError::Validation(_))), "{long:?}");
+}
+
+/// Two twins of one request racing: the claim lock serializes them, one records, the other
+/// gets that one back.
+#[tokio::test]
+async fn racing_withdrawals_under_one_key_record_one() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "100").await;
+	let key = format!("race-{}", Uuid::new_v4());
+	let ports = withdrawal_ports(&h, &StubCustody);
+	let gates = admission(&h, KycGate::ENFORCED);
+	let one = withdrawal_app::request_withdrawal_keyed(&ports, &gates, user, network, destination(network), usdt("30"), &key);
+	let two = withdrawal_app::request_withdrawal_keyed(&ports, &gates, user, network, destination(network), usdt("30"), &key);
+	let (a, b) = tokio::join!(one, two);
+	assert_eq!(a.unwrap().id(), b.unwrap().id());
+	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+}
+
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this
 /// exercises the whole reserve → settle flow across the 6-dp `to_onchain(Polygon)` edge — the
 /// withdrawal net must be representable at 6 decimals, and the ledger legs still move canonical

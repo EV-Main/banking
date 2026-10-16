@@ -4182,6 +4182,15 @@ export type BankingV1RequestWithdrawalRequest = {
      * gross decimal USDT to debit (the fee is taken from this)
      */
     amount?: string;
+    /**
+     * idempotency_key
+     *
+     * Client-minted, 1..128 bytes, unique per user (the withdraw page mints one per load). A
+     * repeat with the same network, address and amount returns the first withdrawal and opens
+     * no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates
+     * the field) = no deduplication.
+     */
+    idempotency_key?: string;
 };
 
 /**

@@ -158,7 +158,15 @@ pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, head
 	let (Some(network), Some(address), Some(amount)) = (required(&v, "network"), required(&v, "address"), required(&v, "amount")) else {
 		return Err(ApiError::BadRequest("network, address and amount are required".into()));
 	};
-	let req = bk::RequestWithdrawalRequest { network, address, amount };
+	// Minted by the withdraw page on load; absent from older clients, which keep the earlier
+	// no-dedupe behaviour at the hub.
+	let idempotency_key = required(&v, "idempotency_key").unwrap_or_default();
+	let req = bk::RequestWithdrawalRequest {
+		network,
+		address,
+		amount,
+		idempotency_key,
+	};
 	Ok(Json(st.grpc.request_withdrawal(&token, req).await?.into()))
 }
 

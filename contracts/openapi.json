@@ -12830,6 +12830,11 @@
             "type": "string",
             "title": "amount",
             "description": "gross decimal USDT to debit (the fee is taken from this)"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "idempotency_key",
+            "description": "Client-minted, 1..128 bytes, unique per user (the withdraw page mints one per load). A\n repeat with the same network, address and amount returns the first withdrawal and opens\n no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates\n the field) = no deduplication."
           }
         },
         "title": "RequestWithdrawalRequest",

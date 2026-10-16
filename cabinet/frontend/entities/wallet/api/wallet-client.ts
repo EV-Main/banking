@@ -22,7 +22,7 @@ export function fetchDeposits(): Promise<DepositList> {
   return getJson<DepositList>("/api/wallet/deposits");
 }
 
-export function submitWithdrawal(body: { network: string; address: string; amount: string }): Promise<Withdrawal> {
+export function submitWithdrawal(body: { network: string; address: string; amount: string; idempotency_key: string }): Promise<Withdrawal> {
   return postJson<Withdrawal>("/api/wallet/withdrawals", body);
 }
 
