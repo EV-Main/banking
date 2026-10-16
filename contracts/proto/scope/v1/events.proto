@@ -35,7 +35,13 @@ import "scope/v1/ledger.proto";
 // client owns. A movement between two scopes (an approved scope transfer, or banking's
 // sweep of a non-invest scope's fees into `(main, treasury)`) appears once per side,
 // `counterparty_scope` naming the other, each side delivered by the same rules; `main`
-// has no client, so the sweep shows on the scope's side alone.
+// has no client, so the sweep shows on the scope's side alone. banking's own route of swept
+// fees (`ledger.proto`, the fee route) is a TRANSFERRED too, `initiator_client` empty and
+// `subject_ref` `fee_route:<id of the sweep it routes>`; banking owns both its ends when the
+// scope is not invest, so the scope's side is delivered to the client whose FEE_SWEEP it
+// routes — with no `balance_after`, as neither account is its — and in invest, where the
+// destination `alloc:fee` is the invest client's, to that client as well, naming both
+// accounts in one event.
 //
 // Kinds will be added. A consumer that meets an unknown `kind` must park that event
 // and keep its cursor moving, not stop: banking may ship a kind before every consumer

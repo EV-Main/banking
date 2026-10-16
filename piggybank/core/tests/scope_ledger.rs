@@ -25,7 +25,7 @@ use piggybank_core::{
 	},
 	ports::{
 		ledger::{Ledger, LedgerTransfer},
-		scope_ledger::RecordedTransfer,
+		scope_ledger::{EventAccount, RecordedTransfer},
 	},
 };
 use sqlx::PgPool;
@@ -184,6 +184,19 @@ fn domain_err<T: std::fmt::Debug>(result: Result<T, TransferError>) -> DomainErr
 	}
 }
 
+/// What banking has routed out of `scope`'s fee collector so far, posted.
+async fn routed(h: &Harness, scope: &ScopeId) -> Usdt {
+	let amounts: Vec<String> = sqlx::query_scalar("SELECT amount FROM scope_transfers WHERE scope = $1 AND reason = 'fee_route' AND state = 'posted'")
+		.bind(scope.as_str())
+		.fetch_all(&h.pool)
+		.await
+		.unwrap();
+	amounts
+		.iter()
+		.map(|raw| Usdt::from_base_units(raw.parse().unwrap()))
+		.fold(Usdt::ZERO, |sum, next| sum.checked_add(next).unwrap())
+}
+
 async fn transfer_state(h: &Harness, recorded: &RecordedTransfer) -> (String, Option<String>) {
 	sqlx::query_as("SELECT state, failure_reason FROM scope_transfers WHERE id = $1")
 		.bind(recorded.transfer.id().raw())
@@ -334,7 +347,181 @@ async fn a_fee_sweep_records_at_once_and_the_relay_moves_the_money() {
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(transfer_state(&h, &recorded).await, ("posted".to_owned(), None));
 	assert_eq!(posted(&h, &scope, "alloc:one").await, usdt("60"));
-	assert_eq!(posted(&h, &scope, "fee").await, usdt("40"));
+	// Swept on to the treasury (this scope is not invest): `fee` is a pass-through.
+	assert_eq!(posted(&h, &scope, "fee").await, Usdt::ZERO);
+	assert_eq!(routed(&h, &scope).await, usdt("40"));
+}
+
+/// The route rows banking made for the sweeps of `scope`: (id, state, failure_reason, the sweep it
+/// routes, the client on the row).
+async fn route_rows(h: &Harness, scope: &ScopeId) -> Vec<(Uuid, String, Option<String>, Uuid, String)> {
+	sqlx::query_as("SELECT id, state, failure_reason, fee_route_of, client_id FROM scope_transfers WHERE scope = $1 AND reason = 'fee_route' ORDER BY created_at")
+		.bind(scope.as_str())
+		.fetch_all(&h.pool)
+		.await
+		.unwrap()
+}
+
+/// A scope account's posted balance, by `(scope, label)`, for the accounts several tests share
+/// (invest's, the treasury's): each test asserts its own delta.
+async fn balance_of(h: &Harness, scope: &ScopeId, account: &str) -> Usdt {
+	posted(h, scope, account).await
+}
+
+fn sum_of(parts: &[Usdt]) -> Usdt {
+	parts.iter().fold(Usdt::ZERO, |sum, next| sum.checked_add(*next).unwrap())
+}
+
+/// (invest, fee) → (invest, alloc:fee): the cash of the `fee` allocation, an ordinary account of
+/// the invest client. A route needs its destination to exist: one made before `alloc:fee` was
+/// opened is recorded `failed` with nothing posted and leaves the money on `fee`, and the next
+/// sweep, once it exists, routes only its own amount.
+#[tokio::test]
+async fn invest_fees_route_to_alloc_fee_and_a_missing_destination_leaves_them_on_fee() {
+	let Some(h) = harness().await else { return };
+	let invest = ScopeId::parse("invest").unwrap();
+	let client = fresh_client();
+	let grants = Grants::new(vec![grant(&client, &invest, "alloc:")]).unwrap();
+	let p = ports(&h, &grants);
+	ledger_app::open_account(&p, &client, &invest, &label("alloc:src"), &key()).await.unwrap();
+	fund(&h, &invest, "alloc:src", "100").await;
+	let fee_before = balance_of(&h, &invest, "fee").await;
+	let alloc_fee_before = balance_of(&h, &invest, "alloc:fee").await;
+
+	// No `alloc:fee` yet (this client never opened it, and nobody else of this run has).
+	let early = ledger_app::transfer(&p, &client, sweep(&invest, "alloc:src", "10", &key())).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let mine: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == early.transfer.id().raw()).collect();
+	assert_eq!(mine.len(), 1);
+	assert_eq!((mine[0].1.as_str(), mine[0].2.as_deref(), mine[0].4.as_str()), ("failed", Some("destination_missing"), "banking"));
+	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]), "the fee stays where it was swept to");
+	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, alloc_fee_before);
+
+	ledger_app::open_account(&p, &client, &invest, &label("alloc:fee"), &key()).await.unwrap();
+	let sweep_key = key();
+	let request = sweep(&invest, "alloc:src", "25", &sweep_key);
+	let swept = ledger_app::transfer(&p, &client, request.clone()).await.unwrap();
+	// A retry of the sweep is the same sweep, and routes nothing more.
+	assert_eq!(ledger_app::transfer(&p, &client, request).await.unwrap().transfer.id(), swept.transfer.id());
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+
+	let route: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == swept.transfer.id().raw()).collect();
+	assert_eq!(route.len(), 1, "one route per sweep");
+	assert_eq!((route[0].1.as_str(), route[0].2.clone(), route[0].4.as_str()), ("posted", None, "banking"));
+	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, sum_of(&[alloc_fee_before, usdt("25")]));
+	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]), "only the failed route's 10 is left");
+	assert_eq!(balance_of(&h, &invest, "alloc:src").await, usdt("65"));
+
+	// Both legs are money events to the invest client: its sweep into fee, banking's route out
+	// of it into the account the client owns (inside the scope, so one event naming both).
+	let events = ledger_app::pull(&p, &client, Some(&invest), 0, 500).await.unwrap().events;
+	let sweep_event = events.iter().find(|e| e.ref_id == swept.transfer.id().to_string()).expect("the sweep's event");
+	assert_eq!(sweep_event.to, Some(EventAccount::Account(ScopeAccountLabel::fee())));
+	let route_event = events.iter().find(|e| e.ref_id == route[0].0.to_string()).expect("the route's event");
+	assert_eq!(
+		(route_event.from.clone(), route_event.to.clone(), route_event.amount, route_event.counterparty_scope.as_str()),
+		(
+			Some(EventAccount::Account(ScopeAccountLabel::fee())),
+			Some(EventAccount::Account(label("alloc:fee"))),
+			Some(usdt("25")),
+			""
+		)
+	);
+	assert_eq!(route_event.initiator_client, "", "banking moved it");
+	assert_eq!(route_event.subject_ref, format!("fee_route:{}", swept.transfer.id()));
+	let own: Vec<_> = route_event.balances.iter().map(|b| (b.label.to_string(), b.balance)).collect();
+	assert_eq!(
+		own,
+		[("alloc:fee".to_owned(), sum_of(&[alloc_fee_before, usdt("25")]))],
+		"only the account the client owns shows a balance"
+	);
+}
+
+/// (any other scope, fee) → (main, treasury), banking's own, and never into another scope: the
+/// fees of a direction other than invest are the platform's.
+#[tokio::test]
+async fn other_scopes_fees_route_to_the_treasury_and_the_sweeping_client_sees_it() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = client_with_account(&h, "alloc:", "alloc:src").await;
+	let p = ports(&h, &grants);
+	fund(&h, &scope, "alloc:src", "100").await;
+	let treasury = ScopeId::main();
+	let treasury_before = balance_of(&h, &treasury, "treasury").await;
+
+	let first = ledger_app::transfer(&p, &client, sweep(&scope, "alloc:src", "30", &key())).await.unwrap();
+	let second = ledger_app::transfer(&p, &client, sweep(&scope, "alloc:src", "12.5", &key())).await.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+
+	assert_eq!(balance_of(&h, &scope, "fee").await, Usdt::ZERO, "nothing stays on the collector");
+	assert_eq!(balance_of(&h, &treasury, "treasury").await, sum_of(&[treasury_before, usdt("42.5")]));
+	assert_eq!(balance_of(&h, &scope, "alloc:src").await, usdt("57.5"));
+	let rows = route_rows(&h, &scope).await;
+	assert_eq!(rows.len(), 2);
+	let mut routes_of: Vec<Uuid> = rows.iter().map(|row| row.3).collect();
+	routes_of.sort_unstable();
+	let mut sweeps = vec![first.transfer.id().raw(), second.transfer.id().raw()];
+	sweeps.sort_unstable();
+	assert_eq!(routes_of, sweeps);
+	assert!(rows.iter().all(|row| row.1 == "posted" && row.4 == "banking"));
+	let (to_scope, to_label): (String, String) = sqlx::query_as("SELECT to_scope, to_label FROM scope_transfers WHERE id = $1")
+		.bind(rows[0].0)
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!((to_scope.as_str(), to_label.as_str()), ("main", "treasury"));
+
+	// The scope's side of each route reaches the client that swept; `main` has no client, so
+	// there is no other side to deliver, and no balance of banking's accounts is shown.
+	let events = ledger_app::pull(&p, &client, Some(&scope), 0, 500).await.unwrap().events;
+	for row in &rows {
+		let event = events.iter().find(|e| e.ref_id == row.0.to_string()).expect("the route's event");
+		assert_eq!(
+			(event.from.clone(), event.to.clone(), event.counterparty_scope.as_str(), event.initiator_client.as_str()),
+			(
+				Some(EventAccount::Account(ScopeAccountLabel::fee())),
+				Some(EventAccount::Account(ScopeAccountLabel::treasury())),
+				"main",
+				""
+			)
+		);
+		assert!(event.balances.is_empty());
+	}
+	let in_main: i64 = sqlx::query_scalar("SELECT count(*) FROM money_events WHERE scope = 'main' AND ref_id = ANY($1)")
+		.bind(rows.iter().map(|row| row.0.to_string()).collect::<Vec<_>>())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(in_main, 2, "the other side is on the log, for no client");
+}
+
+/// banking's `fee` and `treasury` are not a client's to debit — the route is the only way out of
+/// `fee`, and the table says so as well as the domain.
+#[tokio::test]
+async fn no_client_debits_fee_or_treasury_and_only_banking_routes_out_of_fee() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = client_with_account(&h, "alloc:", "alloc:src").await;
+	let p = ports(&h, &grants);
+	fund(&h, &scope, "fee", "5").await;
+	for from in ["fee", "treasury"] {
+		assert_eq!(
+			refusal(ledger_app::transfer(&p, &client, sweep(&scope, from, "1", &key())).await),
+			LedgerRefusal::NotAccountOwner,
+			"{from}"
+		);
+	}
+	// The CHECKs: a hand-written row out of `fee` that is not banking's route is refused.
+	for (client_id, reason) in [("banking", "fee_sweep"), (client.as_str(), "fee_route")] {
+		let attempt = sqlx::query(
+			"INSERT INTO scope_transfers (id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref) VALUES ($1, $2, $3, 'fee', 'main', 'treasury', '1', $4, 'fee_route:x')",
+		)
+		.bind(Uuid::new_v4())
+		.bind(client_id)
+		.bind(scope.as_str())
+		.bind(reason)
+		.execute(&h.pool)
+		.await;
+		assert!(attempt.is_err(), "{client_id} / {reason}");
+	}
 }
 
 #[tokio::test]
@@ -401,7 +588,7 @@ async fn the_automatic_ceilings_hold_per_operation_and_per_client_over_24_hours(
 	);
 	ledger_app::transfer(&p, &client, sweep(&scope, "alloc:two", "1", &key())).await.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
-	assert_eq!(posted(&h, &scope, "fee").await, usdt("5000"));
+	assert_eq!(routed(&h, &scope).await, usdt("5000"), "every swept unit left fee for the treasury");
 
 	// A transfer older than 24 h is out of the window.
 	sqlx::query("UPDATE scope_transfers SET created_at = now() - interval '25 hours' WHERE scope = $1 AND from_label = 'alloc:one'")
@@ -664,7 +851,7 @@ async fn a_transfer_an_older_relay_dropped_is_replayed_once() {
 	assert_eq!(reaper.sweep().await.unwrap().redriven_scope_transfers, 0, "a replay waits for its own event");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(transfer_state(&h, &recorded).await.0, "posted");
-	assert_eq!(posted(&h, &scope, "fee").await, usdt("3"));
+	assert_eq!(routed(&h, &scope).await, usdt("3"));
 	// Replaying a posted transfer again cannot post it twice: the ledger id is the transfer's.
 	sqlx::query("UPDATE scope_transfers SET state = 'pending', updated_at = now() - interval '1 hour' WHERE id = $1")
 		.bind(id)
@@ -674,7 +861,8 @@ async fn a_transfer_an_older_relay_dropped_is_replayed_once() {
 	assert!(reaper.sweep().await.unwrap().redriven_scope_transfers >= 1);
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(transfer_state(&h, &recorded).await.0, "posted");
-	assert_eq!(posted(&h, &scope, "fee").await, usdt("3"));
+	assert_eq!(routed(&h, &scope).await, usdt("3"), "the replayed stamp routed nothing twice");
+	assert_eq!(posted(&h, &scope, "fee").await, Usdt::ZERO);
 }
 
 #[tokio::test]

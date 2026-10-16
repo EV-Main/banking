@@ -1059,6 +1059,18 @@ scope_account:<s>:fee` (`TransferCode::ScopeTransfer`, id `uuid_v5(transfer_id,
 single-leg discipline as a compartment move (`relay::Posting`), the same reaper replay of a
 `pending` row an older relay dispatched without posting.
 
+**The fee route** empties every `fee` collector: `scope_ledger::mark_posted` — the relay's
+`posted` stamp of a `fee_sweep` — inserts, in the SAME transaction, a `scope_transfers` row of
+reason `fee_route` (client `banking`, `from fee`, `fee_route_of` = the sweep, unique) and its
+outbox event; invest's goes to `(invest, alloc:fee)`, every other scope's to `(main, treasury)`
+(`domain::scope_ledger::fee_route`). The relay posts it as any scope transfer, so it is one
+ledger leg: atomic, replay-safe (`ON CONFLICT (fee_route_of) DO NOTHING`; the ledger id derives
+from the row's id), with the usual money events. No admission, ceiling or mandate applies — it
+is banking's, not a client's. An invest route whose `alloc:fee` is not open is inserted already
+`failed` (`destination_missing`) with no event, so a missing account cannot wedge the relay;
+the fee stays on `fee`. Fees swept before migration 0059 (or by an older relay) are not routed
+retroactively.
+
 **Idempotency** (`scope_ledger_requests`): a key (1..128 characters, no control characters)
 is unique per `(client, scope, rpc)` and
 stored with the canonical rendering of every term the call named (length-prefixed fields:

@@ -64,6 +64,17 @@ syntax = "proto3";
 //         fees ever reach it;
 //       - `(<any other scope>, fee)` → `(main, treasury)`, banking's own — the only
 //         movement out of a scope without an approval, and never into another scope.
+//     The route runs once per FEE_SWEEP, right after the sweep posts: banking records it
+//     in the same step that marks the sweep posted (so a sweep never stands posted without
+//     its route), as ONE transfer of its own — it moves whole or not at all — keyed by the
+//     sweep, so a replay routes nothing twice. It is banking's call, not a client's, so it
+//     needs no grant, counts against no ceiling and no mandate, and a frozen scope does not
+//     stop it. Its money events are TRANSFERRED, `initiator_client` empty, `subject_ref`
+//     `fee_route:<the sweep's transfer id>`, and reach the client that made the sweep (see
+//     `events.proto`). `(invest, alloc:fee)` must exist for invest's route: when the invest
+//     client has not opened it, the route is recorded failed (`destination_missing`), nothing
+//     moves, and the swept amount stays on `(invest, fee)` until banking re-routes it. The
+//     labels `fee` and `treasury` are never debited by a client, whatever a grant says.
 //     A client's call never addresses two scopes; every other movement between scopes
 //     is a `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,

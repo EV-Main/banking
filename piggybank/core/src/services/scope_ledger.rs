@@ -809,7 +809,8 @@ fn transfer_to_proto(recorded: &RecordedTransfer) -> pb::ScopeTransfer {
 		subject_ref: transfer.subject_ref().as_str().to_owned(),
 		memo: transfer.memo().to_owned(),
 		reason: match transfer.reason() {
-			TransferReason::FeeSweep => pb::TransferReason::FeeSweep as i32,
+			// banking's route of the swept fees carries the sweep's reason (`ledger.proto`).
+			TransferReason::FeeSweep | TransferReason::FeeRoute => pb::TransferReason::FeeSweep as i32,
 			// An approved transfer has no automatic reason; its operation says why.
 			TransferReason::Approved => pb::TransferReason::Unspecified as i32,
 		},

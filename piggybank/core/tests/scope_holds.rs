@@ -759,11 +759,13 @@ async fn money_events_show_each_client_its_own_by_cursor() {
 			MoneyEventKind::MandateGranted,
 			MoneyEventKind::HoldPlaced,
 			MoneyEventKind::HoldCaptured,
+			MoneyEventKind::Transferred,
+			// banking's route of the swept fee out of `fee`, shown to the client that swept it.
 			MoneyEventKind::Transferred
 		]
 	);
 	assert!(all.events.windows(2).all(|pair| pair[0].position < pair[1].position));
-	assert_eq!(all.next_position, all.events[4].position);
+	assert_eq!(all.next_position, all.events[5].position);
 	let granted = &all.events[1];
 	assert_eq!(
 		(granted.ref_id.as_str(), granted.auth_subject.as_str(), granted.initiator_client.as_str()),
@@ -779,6 +781,12 @@ async fn money_events_show_each_client_its_own_by_cursor() {
 	let shown: Vec<&str> = transferred.balances.iter().map(|entry| entry.label.as_str()).collect();
 	assert_eq!(shown, ["alloc:x"], "banking's fee collector never shows in a client's balances");
 	assert_eq!(transferred.balances[0].balance, usdt("2"));
+	let routed = &all.events[5];
+	assert_eq!(
+		(routed.initiator_client.as_str(), routed.from.clone(), routed.counterparty_scope.as_str()),
+		("", Some(EventAccount::Account(ScopeAccountLabel::fee())), "main")
+	);
+	assert!(routed.balances.is_empty(), "both ends are banking's");
 
 	let page = ledger_app::pull(&p, &client, None, all.events[1].position, 2).await.unwrap();
 	assert_eq!(
@@ -787,7 +795,7 @@ async fn money_events_show_each_client_its_own_by_cursor() {
 	);
 	assert_eq!(page.next_position, all.events[3].position);
 	let rest = ledger_app::pull(&p, &client, None, page.next_position, 10).await.unwrap();
-	assert_eq!(rest.events.len(), 1);
+	assert_eq!(rest.events.len(), 2, "the sweep and its route");
 	let past_end = ledger_app::pull(&p, &client, None, rest.next_position, 10).await.unwrap();
 	assert!(past_end.events.is_empty());
 	assert_eq!(past_end.next_position, rest.next_position, "nothing scanned: the cursor stays");
