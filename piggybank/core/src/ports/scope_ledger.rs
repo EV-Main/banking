@@ -221,6 +221,11 @@ pub trait HoldStore: Send + Sync {
 	/// that does not exist.
 	async fn hold(&self, client: &ClientId, scope: &ScopeId, id: Uuid) -> Result<Option<RecordedHold>, DomainError>;
 
+	/// The ACTIVE holds `client` placed in any of `scopes` whose `subject_ref` starts with
+	/// `subject_prefix` (empty = all), by hold id ascending, those past `after` only, at most
+	/// `limit`.
+	async fn active_holds(&self, client: &ClientId, scopes: &[ScopeId], subject_prefix: &str, after: Option<Uuid>, limit: u32) -> Result<Vec<RecordedHold>, DomainError>;
+
 	/// Place a hold on `auth_subject`'s compartment. Under a lock on the key it answers a key
 	/// already used with what that call recorded; otherwise, under the compartment's write
 	/// lock, it asks `admission` and records the hold it returns, with its event, in one

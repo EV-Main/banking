@@ -1095,6 +1095,13 @@ voiding it expires it; the reaper releases due holds (`scope_holds::expire_due_h
 refused parks like any refused reserve; the relay parks a later capture or release of that
 hold at once rather than retrying a void of nothing.
 
+`ListHolds` is the saga's recovery read for a `Reserve` whose answer was lost: the caller's
+own `active` holds (the store filters by `client_id`, so a neighbour's are never read), by
+scope and `subject_ref` prefix (`starts_with`, no `LIKE` escaping), keyset-paged by hold id
+(`scope_holds_client_active_idx`). A page asks for one row more than it returns, so the last
+page needs no second query. Ordering by id, not by time, is deliberate: a time cursor would
+need microsecond tokens, and the reaper that walks it runs again anyway.
+
 **Money events** (`MoneyEvents.Pull`, `money_events` + `money_event_deliveries`). Written
 once: an account's opening in its own transaction, a movement by the relay right after the
 ledger took it (single writer, so the balances read then are the balances right after the

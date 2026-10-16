@@ -598,6 +598,62 @@ pub async fn get_hold(ports: &ScopeLedgerPorts<'_>, client: &ClientId, scope: &S
 	})?)
 }
 
+/// Holds per `ListHolds` page when the client asks for none in particular, and the most it may ask.
+pub const DEFAULT_LIST_LIMIT: u32 = 100;
+pub const MAX_LIST_LIMIT: u32 = 500;
+
+/// Longest `subject_ref` prefix accepted, in bytes — a `subject_ref` itself is at most that long.
+const MAX_SUBJECT_PREFIX: usize = 128;
+
+/// What a client asks of `ListHolds`, parsed.
+#[derive(Clone, Debug)]
+pub struct ListHoldsRequest {
+	/// `None` = every scope the caller holds a grant in.
+	pub scope: Option<ScopeId>,
+	pub subject_prefix: String,
+	/// 0 = the default.
+	pub page_size: u32,
+	/// The last hold of the previous page.
+	pub after: Option<Uuid>,
+}
+
+/// A page of the caller's active holds; `next` is the hold id to continue after, `None` on the
+/// last page.
+#[derive(Debug)]
+pub struct HoldPage {
+	pub holds: Vec<RecordedHold>,
+	pub next: Option<Uuid>,
+}
+
+/// The active holds the caller placed, never anyone else's: the store filters by the caller's
+/// client id, so a hold of another client is not even read. A scope outside the caller's grants
+/// is refused like everywhere, and the empty scope means the scopes it holds a grant in now.
+pub async fn list_holds(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: ListHoldsRequest) -> Result<HoldPage, TransferError> {
+	if request.subject_prefix.len() > MAX_SUBJECT_PREFIX || request.subject_prefix.chars().any(char::is_control) {
+		return Err(DomainError::Validation(format!("subject_ref_prefix must be at most {MAX_SUBJECT_PREFIX} bytes of plain text")).into());
+	}
+	let scopes = match &request.scope {
+		Some(scope) => {
+			granted_scope(ports, client, scope).await?;
+			vec![scope.clone()]
+		}
+		None => ports.grants.scopes_of(client),
+	};
+	let limit = match request.page_size {
+		0 => DEFAULT_LIST_LIMIT,
+		asked => asked.min(MAX_LIST_LIMIT),
+	};
+	if scopes.is_empty() {
+		return Ok(HoldPage { holds: Vec::new(), next: None });
+	}
+	// One more than the page, to know whether another page exists without a second query.
+	let mut holds = ports.holds.active_holds(client, &scopes, &request.subject_prefix, request.after, limit + 1).await?;
+	let more = holds.len() > limit as usize;
+	holds.truncate(limit as usize);
+	let next = if more { holds.last().map(|held| held.hold.id().raw()) } else { None };
+	Ok(HoldPage { holds, next })
+}
+
 /// Events per `Pull` when the client asks for none in particular, and the most it may ask.
 pub const DEFAULT_PULL_LIMIT: u32 = 100;
 pub const MAX_PULL_LIMIT: u32 = 500;

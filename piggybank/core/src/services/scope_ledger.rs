@@ -65,7 +65,7 @@ use uuid::Uuid;
 use crate::{
 	application::{
 		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts},
-		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ListHoldsRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
 	config::ScopeLedgerSettings,
@@ -373,6 +373,14 @@ fn optional_amount(raw: &str) -> Result<Option<Usdt>, Status> {
 	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
 }
 
+/// A page token is the last hold id of the page before, as banking wrote it.
+fn page_token_of(raw: &str) -> Result<Uuid, Status> {
+	Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::invalid_argument("page_token is not one this service issued"))
+}
+
 fn operation_id_of(raw: &str) -> Result<Uuid, Status> {
 	Uuid::parse_str(raw)
 		.ok()
@@ -585,6 +593,22 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 			.await
 			.map_err(|err| refused("GetHold", &client, err))?;
 		Ok(Response::new(hold_to_proto(&recorded)))
+	}
+
+	async fn list_holds(&self, request: Request<pb::ListHoldsRequest>) -> Result<Response<pb::ListHoldsResponse>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = ListHoldsRequest {
+			scope: if req.scope.is_empty() { None } else { Some(scope_of(&req.scope)?) },
+			subject_prefix: req.subject_ref_prefix,
+			page_size: req.page_size,
+			after: if req.page_token.is_empty() { None } else { Some(page_token_of(&req.page_token)?) },
+		};
+		let page = ledger_app::list_holds(&self.ports(), &client, parsed).await.map_err(|err| refused("ListHolds", &client, err))?;
+		Ok(Response::new(pb::ListHoldsResponse {
+			holds: page.holds.iter().map(hold_to_proto).collect(),
+			next_page_token: page.next.map(|id| id.to_string()).unwrap_or_default(),
+		}))
 	}
 }
 

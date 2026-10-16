@@ -19,7 +19,7 @@ use domain::{
 };
 use piggybank_core::{
 	application::{
-		scope_ledger::{self as ledger_app, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_ledger::{self as ledger_app, CaptureRequest, ListHoldsRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 		scope_mandates::{self as mandates_app, GrantRequest, MandatePorts},
 	},
 	infrastructure::{compartments::PgCompartments, relay::Relay, scope_holds, scope_ledger::PgScopeLedger},
@@ -362,6 +362,157 @@ async fn a_key_reused_with_other_terms_is_refused_by_reserve_capture_and_void() 
 
 	let held = ledger_app::get_hold(&p, &client, &scope, hold.hold.id().raw()).await.unwrap();
 	assert_eq!(held.hold.progress().captured, usdt("2"), "none of the refused calls captured anything");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+async fn place(h: &Harness, grants: &Grants, client: &ClientId, scope: &ScopeId, auth_subject: &str, subject_ref: SubjectRef) -> RecordedHold {
+	let request = ReserveRequest {
+		subject_ref,
+		..reserve_request(scope, auth_subject, "1", &key())
+	};
+	ledger_app::reserve(&ports(h, grants), client, request).await.unwrap()
+}
+
+fn order_ref() -> SubjectRef {
+	SubjectRef::parse(&format!("order:{}", Uuid::new_v4())).unwrap()
+}
+
+fn list_request(scope: Option<&ScopeId>, prefix: &str, page_size: u32, after: Option<Uuid>) -> ListHoldsRequest {
+	ListHoldsRequest {
+		scope: scope.cloned(),
+		subject_prefix: prefix.to_owned(),
+		page_size,
+		after,
+	}
+}
+
+/// The orphan the listing exists for: a hold whose answer was lost. Every query of the listing
+/// runs here — the scope filter, the `subject_ref` prefix, the keyset page and the active-only
+/// filter — and a neighbouring client's holds must never show.
+#[tokio::test]
+async fn a_client_lists_only_its_own_active_holds_filtered_and_paged() {
+	let Some(h) = harness().await else { return };
+	let (client, first, _) = holder(&h).await;
+	let second = own_scope(&h).await;
+	let neighbour = fresh_client();
+	let grants = Grants::new(vec![
+		Grant {
+			client: client.clone(),
+			scope: first.clone(),
+			label_prefix: "alloc:".into(),
+			compartments: true,
+		},
+		Grant {
+			client: client.clone(),
+			scope: second.clone(),
+			label_prefix: "alloc:".into(),
+			compartments: true,
+		},
+		Grant {
+			client: neighbour.clone(),
+			scope: first.clone(),
+			label_prefix: "panel:".into(),
+			compartments: true,
+		},
+	])
+	.unwrap();
+	let p = ports(&h, &grants);
+	let (user_id, user) = user_with(&h, &first, "100").await;
+	let (other_id, other) = user_with(&h, &second, "100").await;
+	consent(&h, &grants, &client, &first, user_id, false).await;
+	consent(&h, &grants, &client, &second, other_id, false).await;
+	consent(&h, &grants, &neighbour, &first, user_id, false).await;
+
+	let mut orders = Vec::new();
+	for _ in 0..3 {
+		orders.push(place(&h, &grants, &client, &first, &user, order_ref()).await);
+	}
+	let elsewhere = place(&h, &grants, &client, &second, &other, order_ref()).await;
+	let subscription = place(&h, &grants, &client, &first, &user, subject()).await;
+	let voided = place(&h, &grants, &client, &first, &user, order_ref()).await;
+	ledger_app::void(&p, &client, void_request(&first, &voided)).await.unwrap();
+	let theirs = place(&h, &grants, &neighbour, &first, &user, order_ref()).await;
+	let captured = place(&h, &grants, &client, &first, &user, order_ref()).await;
+	ledger_app::capture(&p, &client, capture_request(&first, &captured, CaptureTarget::Account(label("alloc:x")), None))
+		.await
+		.unwrap();
+
+	let ids = |page: &ledger_app::HoldPage| {
+		let mut ids: Vec<Uuid> = page.holds.iter().map(|held| held.hold.id().raw()).collect();
+		ids.sort_unstable();
+		ids
+	};
+	let sorted = |holds: &[&RecordedHold]| {
+		let mut ids: Vec<Uuid> = holds.iter().map(|held| held.hold.id().raw()).collect();
+		ids.sort_unstable();
+		ids
+	};
+	let order_refs: Vec<&RecordedHold> = orders.iter().collect();
+
+	// Across every granted scope: the three orders, the other scope's, the subscription — and
+	// neither the voided and the captured, nor the neighbour's.
+	let everything = ledger_app::list_holds(&p, &client, list_request(None, "", 0, None)).await.unwrap();
+	let mut expected = order_refs.clone();
+	expected.extend([&elsewhere, &subscription]);
+	assert_eq!(ids(&everything), sorted(&expected));
+	assert!(everything.next.is_none());
+	assert!(everything.holds.iter().all(|held| held.hold.state() == HoldState::Active && held.hold.terms().client == client));
+	assert!(!ids(&everything).contains(&theirs.hold.id().raw()), "another client's hold is not in the list");
+
+	// One scope, then a prefix inside it.
+	let in_first = ledger_app::list_holds(&p, &client, list_request(Some(&first), "", 0, None)).await.unwrap();
+	let mut expected = order_refs.clone();
+	expected.push(&subscription);
+	assert_eq!(ids(&in_first), sorted(&expected));
+	let only_orders = ledger_app::list_holds(&p, &client, list_request(Some(&first), "order:", 0, None)).await.unwrap();
+	assert_eq!(ids(&only_orders), sorted(&order_refs));
+	let one_order = ledger_app::list_holds(&p, &client, list_request(Some(&first), orders[1].hold.terms().subject_ref.as_str(), 0, None))
+		.await
+		.unwrap();
+	assert_eq!(ids(&one_order), sorted(&[&orders[1]]));
+	assert!(
+		ledger_app::list_holds(&p, &client, list_request(Some(&first), "invoice:", 0, None))
+			.await
+			.unwrap()
+			.holds
+			.is_empty(),
+		"no hold of that kind"
+	);
+
+	// Pages walk the whole set once, in hold id order, and the last one has no successor.
+	let mut walked = Vec::new();
+	let mut after = None;
+	let mut pages = 0;
+	loop {
+		let page = ledger_app::list_holds(&p, &client, list_request(None, "", 2, after)).await.unwrap();
+		pages += 1;
+		assert!(page.holds.len() <= 2);
+		walked.extend(page.holds.iter().map(|held| held.hold.id().raw()));
+		match page.next {
+			Some(next) => after = Some(next),
+			None => break,
+		}
+	}
+	assert_eq!(pages, 3, "five holds, two to a page");
+	assert!(walked.windows(2).all(|pair| pair[0] < pair[1]), "ascending by hold id, no repeats");
+	assert_eq!(walked, ids(&everything));
+
+	// The neighbour sees its own and nothing of the client's.
+	let own = ledger_app::list_holds(&p, &neighbour, list_request(None, "", 0, None)).await.unwrap();
+	assert_eq!(ids(&own), sorted(&[&theirs]));
+
+	// Scopes outside the grants are refused like everywhere; a client with none lists nothing.
+	for elsewhere_scope in [ScopeId::main(), own_scope(&h).await] {
+		assert_eq!(
+			refusal(ledger_app::list_holds(&p, &client, list_request(Some(&elsewhere_scope), "", 0, None)).await),
+			LedgerRefusal::NotGranted
+		);
+	}
+	assert!(ledger_app::list_holds(&p, &fresh_client(), list_request(None, "", 0, None)).await.unwrap().holds.is_empty());
+	assert!(matches!(
+		domain_err(ledger_app::list_holds(&p, &client, list_request(None, &"x".repeat(129), 0, None)).await),
+		DomainError::Validation(_)
+	));
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
