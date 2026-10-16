@@ -222,6 +222,11 @@ impl Grpc {
 		Ok(self.compartments().list_compartments(bearer(token, bk::ListCompartmentsRequest {})?).await?.into_inner())
 	}
 
+	pub async fn get_compartment(&self, token: &str, scope: &str) -> Result<bk::Compartment, Status> {
+		let req = bk::GetCompartmentRequest { scope: scope.to_string() };
+		Ok(self.compartments().get_compartment(bearer(token, req)?).await?.into_inner())
+	}
+
 	pub async fn move_funds(&self, token: &str, req: bk::MoveFundsRequest) -> Result<bk::CompartmentMove, Status> {
 		Ok(self.compartments().move_funds(bearer(token, req)?).await?.into_inner())
 	}

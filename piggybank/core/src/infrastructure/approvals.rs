@@ -12,7 +12,7 @@ use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, 
 use evconcierge_contracts::concierge::v1::{
 	Approval, ApprovalAmount, ApprovalEscalation, ApprovalFieldSpec, ApprovalFieldType, ApprovalFieldValue, ApprovalKindSpec, ApprovalLevel as WireLevel, ApprovalOutcome as WireOutcome,
 	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
-	approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value, scope_catalog_service_client::ScopeCatalogServiceClient,
+	WithdrawProposalRequest, approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value, scope_catalog_service_client::ScopeCatalogServiceClient,
 };
 use tonic::{Code, Request, Status, metadata::MetadataValue, transport::Channel};
 
@@ -209,6 +209,15 @@ impl Approvals for ConciergeApprovals {
 			detail: detail.to_owned(),
 		})?;
 		self.client().report_outcome(request).await.map_err(|status| classify("ReportOutcome", status))?;
+		Ok(())
+	}
+
+	async fn withdraw(&self, approval_id: &str, reason: &str) -> Result<(), ApprovalsError> {
+		let request = self.request(WithdrawProposalRequest {
+			approval_id: approval_id.to_owned(),
+			reason: reason.to_owned(),
+		})?;
+		self.client().withdraw_proposal(request).await.map_err(|status| classify("WithdrawProposal", status))?;
 		Ok(())
 	}
 

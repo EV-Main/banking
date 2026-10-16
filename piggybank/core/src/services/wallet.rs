@@ -107,25 +107,23 @@ impl WalletService for WalletSvc {
 		let network = Network::parse(&req.network).map_err(map_err)?;
 		let address = WalletAddress::parse(network, &req.address).map_err(map_err)?;
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
-		let withdrawal = withdrawal_app::request_withdrawal(
-			&withdrawal_app::WithdrawalPorts {
-				withdrawals: self.state.withdrawals.as_ref(),
-				ledger: self.state.ledger.as_ref(),
-				custody: self.state.custody.as_ref(),
-				relay: &self.state.relay_notify,
-			},
-			&withdrawal_app::AdmissionGates {
-				policy: self.state.outflow.as_ref(),
-				configured: &self.state.configured_networks,
-				kyc: self.state.kyc_gate,
-			},
-			WithdrawalId::new(),
-			user,
-			network,
-			address,
-			amount,
-		)
-		.await
+		let ports = withdrawal_app::WithdrawalPorts {
+			withdrawals: self.state.withdrawals.as_ref(),
+			ledger: self.state.ledger.as_ref(),
+			custody: self.state.custody.as_ref(),
+			relay: &self.state.relay_notify,
+		};
+		let gates = withdrawal_app::AdmissionGates {
+			policy: self.state.outflow.as_ref(),
+			configured: &self.state.configured_networks,
+			kyc: self.state.kyc_gate,
+		};
+		// An empty key is a client that predates the field: the earlier behaviour, no dedupe.
+		let withdrawal = if req.idempotency_key.is_empty() {
+			withdrawal_app::request_withdrawal(&ports, &gates, WithdrawalId::new(), user, network, address, amount).await
+		} else {
+			withdrawal_app::request_withdrawal_keyed(&ports, &gates, user, network, address, amount, &req.idempotency_key).await
+		}
 		.map_err(map_err)?;
 		Ok(Response::new(withdrawal_to_proto(&withdrawal)))
 	}

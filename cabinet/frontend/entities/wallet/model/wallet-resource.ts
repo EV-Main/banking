@@ -40,7 +40,7 @@ export const depositAddressResource = defineResource({
 });
 
 /** Request a withdrawal. Moves the balance, the queue, and the timeline. */
-export async function submitWithdrawal(body: { network: string; address: string; amount: string }): Promise<Withdrawal> {
+export async function submitWithdrawal(body: { network: string; address: string; amount: string; idempotency_key: string }): Promise<Withdrawal> {
   const created = await submitWithdrawalRequest(body);
   revalidateTag(TAG.wallet, TAG.withdrawals, TAG.operations);
   return created;

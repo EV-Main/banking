@@ -88,9 +88,10 @@ fn requests(state: AppState) -> Router {
 		.route("/api/notifications/settings", get(notifications::settings))
 		.route("/api/notifications/settings/channel", post(notifications::set_channel))
 		.route("/api/notifications/settings/topic", post(notifications::set_topic))
-		// The three reads a scope host shows; see `cors` for why nothing else is listed.
+		// The reads a scope host shows; see `cors` for why nothing else is listed.
 		.route("/api/wallet", cors::scope_readable(&state, get(money::get_wallet)))
 		.route("/api/wallet/compartments", cors::scope_readable(&state, get(money::list_compartments)))
+		.route("/api/wallet/compartment", cors::scope_readable(&state, get(money::get_compartment)))
 		.route("/api/wallet/compartments/move", post(money::move_funds))
 		.route("/api/wallet/deposit-address", get(money::deposit_address))
 		.route("/api/wallet/withdrawals", get(money::list_withdrawals).post(money::request_withdrawal))

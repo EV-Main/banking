@@ -26,6 +26,15 @@ pub trait WithdrawalRepository: Repository<Aggregate = Withdrawal> + Reader<Aggr
 	/// runs under the source claim's lock, before anything is written.
 	async fn open(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard) -> Result<(), DomainError>;
 
+	/// [`open`](Self::open) for a request that carries an idempotency key (per user). Under the
+	/// claim's lock, before the guard runs, a withdrawal already recorded for `(user, key)` is
+	/// returned as `Some` and nothing is written — the caller compares its terms; `None` means
+	/// this one was recorded.
+	async fn open_keyed(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError>;
+
+	/// The user's withdrawal recorded under `key`, if any.
+	async fn find_by_key(&self, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError>;
+
 	/// Dispatch a queued withdrawal whose rail now has liquidity (the treasury worker):
 	/// apply [`Withdrawal::dispatch`] under the row lock, persist + drain the
 	/// `Dispatched` event (the relay broadcasts). Idempotent; returns the aggregate.
