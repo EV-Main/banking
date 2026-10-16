@@ -15,7 +15,9 @@ While the scope is closed:
 - Moving money **out** of the scope back to `main` is never checked against the policy,
   so it keeps working.
 
-The seeded scopes `invest` and `sa` (0052) have their own rows and are not affected.
+The seeded scopes `invest` and `sa` have their own rows and are not affected. Migration 0061
+(banking#523) set them to level 1, 1000 USDT per move and 5000 USDT per rolling 24 h, with no
+balance cap, and only where the row still held the 0052 defaults.
 
 There is no RPC for this yet. Until there is, an operator writes the row by hand with the
 SQL below.
