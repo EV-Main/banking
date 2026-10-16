@@ -670,6 +670,12 @@ async fn propose_one(ports: &ExecutorPorts<'_>, recorded: &RecordedOperation, ro
 			if ports.operations.close(id, OperationEnd::Rejected, "approval_mismatch").await? {
 				round.rejected += 1;
 			}
+			// Best effort, after the operation is ended: owners must not keep voting on it (up to
+			// 72 h) nor should it hold a slot of the scope's live-proposal limit. A failure is
+			// not retried: the proposal then lapses on concierge's side by itself.
+			if let Err(err) = ports.approvals.withdraw(&view.id, "the opened approval does not match the requested operation").await {
+				warn!(operation_id = %id, approval_id = %view.id, "scope operations: could not withdraw the mismatched proposal: {err}");
+			}
 		}
 		Ok(view) => {
 			ports.operations.opened(id, &view.id, view.level).await?;

@@ -332,6 +332,11 @@ pub trait Approvals: Send + Sync {
 
 	async fn report(&self, approval_id: &str, outcome: ApprovalOutcome, detail: &str) -> Result<(), ApprovalsError>;
 
+	/// Withdraw a proposal banking opened (`WithdrawProposal`), so owners stop voting on an
+	/// operation that is dead and its slot in the scope's live-proposal limit is freed.
+	/// Concierge allows it only while the proposal is OPEN, or PASSED before `executable_at`.
+	async fn withdraw(&self, approval_id: &str, reason: &str) -> Result<(), ApprovalsError>;
+
 	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole:
 	/// the same version with the same kinds is a no-op on concierge's side.
 	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError>;

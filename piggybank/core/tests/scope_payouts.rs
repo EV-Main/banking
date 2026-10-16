@@ -67,6 +67,10 @@ struct FakeState {
 	/// Serve passed decisions on every pull, reported or not.
 	serve_reported: bool,
 	reports: Vec<(String, ApprovalOutcome, String)>,
+	/// Approval ids withdrawn through `WithdrawProposal`.
+	withdrawn: Vec<String>,
+	/// Every `WithdrawProposal` fails as unavailable.
+	withdraw_down: bool,
 	/// The catalog stored for `bank`: its version and its kinds by name; `None` before the
 	/// first publication.
 	catalog: Option<(u64, Vec<String>)>,
@@ -249,6 +253,22 @@ impl Approvals for FakeConcierge {
 					Ok(())
 				}
 			}
+		})
+	}
+
+	async fn withdraw(&self, approval_id: &str, _reason: &str) -> Result<(), ApprovalsError> {
+		self.with(|s| {
+			if s.down || s.withdraw_down {
+				return Err(ApprovalsError::Unavailable("down".into()));
+			}
+			let held = s.approvals.get_mut(approval_id).ok_or_else(|| ApprovalsError::Refused("not found".into()))?;
+			// concierge's window: only while the proposal is still OPEN here.
+			if held.view.state != ApprovalState::Open {
+				return Err(ApprovalsError::Refused("not withdrawable".into()));
+			}
+			held.view.state = ApprovalState::Cancelled;
+			s.withdrawn.push(approval_id.to_owned());
+			Ok(())
 		})
 	}
 
@@ -882,6 +902,22 @@ async fn a_decision_that_is_not_the_stored_operations_is_refused() {
 		.unwrap();
 	round(&h, &grants).await;
 	assert_eq!(reload(&h, &misopened).await.operation.progress().failure_reason.as_deref(), Some("approval_mismatch"));
+	// ...and the proposal it opened is withdrawn, so no owner votes on a dead operation.
+	assert_eq!(h.concierge.with(|s| s.withdrawn.len()), 1);
+	assert!(h.concierge.with(|s| s.approvals.values().any(|held| held.view.state == ApprovalState::Cancelled)));
+
+	// A withdrawal concierge cannot take does not undo the operation's end.
+	h.concierge.with(|s| {
+		s.tamper_open = Some("e".repeat(64));
+		s.withdraw_down = true;
+	});
+	let unwithdrawn = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1350")], &key()))
+		.await
+		.unwrap();
+	round(&h, &grants).await;
+	assert_eq!(reload(&h, &unwithdrawn).await.operation.progress().failure_reason.as_deref(), Some("approval_mismatch"));
+	assert_eq!(h.concierge.with(|s| s.withdrawn.len()), 1);
+	h.concierge.with(|s| s.withdraw_down = false);
 
 	// Pulled as passed, but VOID by the time banking re-reads it: not executed.
 	let raced = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1400")], &key()))
