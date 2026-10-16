@@ -167,15 +167,29 @@ impl ChargeStore for PgScopeLedger {
 /// from this table rather than the outbox, so a charge whose event an older relay dispatched
 /// without posting is still counted until the reaper replays it.
 pub async fn pending_charges(conn: &mut PgConnection, user: UserId, scope: &ScopeId) -> Result<Usdt, DomainError> {
-	let amounts: Vec<String> = sqlx::query_scalar("SELECT amount FROM scope_charges WHERE user_id = $1 AND scope = $2 AND state = 'pending'")
+	// Summed in `numeric` (18-dp base units are past what a float holds), one row back whatever
+	// the backlog.
+	let total: String = sqlx::query_scalar("SELECT COALESCE(sum(amount::numeric), 0)::text FROM scope_charges WHERE user_id = $1 AND scope = $2 AND state = 'pending'")
 		.bind(user.raw())
 		.bind(scope.as_str())
-		.fetch_all(conn)
+		.fetch_one(conn)
 		.await
 		.map_err(repo_err)?;
-	amounts.iter().try_fold(Usdt::ZERO, |total, raw| {
-		total.checked_add(base_units(raw)?).ok_or_else(|| DomainError::Repository("pending charges overflow".into()))
-	})
+	base_units(&total)
+}
+
+/// How long a charge may wait for the relay before it is no longer carried out: the user
+/// consented to it at the time of the call, not to a posting an outage delays for days.
+pub const CHARGE_POSTING_WINDOW_SECS: f64 = 3600.0;
+
+/// Whether charge `id` was recorded more than [`CHARGE_POSTING_WINDOW_SECS`] ago.
+pub async fn past_posting_window(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+	let past: Option<bool> = sqlx::query_scalar("SELECT created_at < now() - make_interval(secs => $2) FROM scope_charges WHERE id = $1")
+		.bind(id)
+		.bind(CHARGE_POSTING_WINDOW_SECS)
+		.fetch_optional(pool)
+		.await?;
+	Ok(past.unwrap_or(false))
 }
 
 /// Where charge `id` stands, `None` when no row holds it. The relay reads it before posting:

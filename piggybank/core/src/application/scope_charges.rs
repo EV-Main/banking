@@ -29,6 +29,9 @@ use crate::{
 	},
 };
 
+/// The smallest charge: 0.000001 USDT (10^12 of the ledger's 18-dp base units).
+const MIN_CHARGE: Usdt = Usdt::from_base_units(1_000_000_000_000);
+
 /// What a client asks of `Charge`, parsed.
 #[derive(Clone, Debug)]
 pub struct ChargeRequest {
@@ -51,6 +54,11 @@ pub async fn charge(ports: &ScopeLedgerPorts<'_>, client: &ClientId, request: Ch
 	validate_memo(&request.memo)?;
 	if request.amount.is_zero() {
 		return Err(DomainError::Validation("amount must be positive".into()).into());
+	}
+	// Below this a charge is dust: it costs a ledger transfer, a row and an event for nothing
+	// a user could see in their history.
+	if request.amount < MIN_CHARGE {
+		return Err(DomainError::Validation("amount must be at least 0.000001".into()).into());
 	}
 	granted_scope(ports, client, &request.scope).await?;
 	// By the label, before anything is read: no client credits banking's own accounts, whatever

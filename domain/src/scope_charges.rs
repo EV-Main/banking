@@ -111,7 +111,9 @@ impl AggregateRoot for ScopeCharge {
 }
 
 /// Facts raised by a charge; internally tagged so the stored JSON describes itself. The event
-/// names the user, so a scan of unapplied debits of their compartment finds it.
+/// names the user and the amount for the relay's plan; a pending charge is counted against the
+/// compartment from the `scope_charges` row (its kind is left out of the outbox scan), not from
+/// this event.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChargeEvent {

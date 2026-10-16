@@ -544,6 +544,7 @@ impl Relay {
 		// and an operator's unpark replays an event whose attempt is over — a no-op (see
 		// `dispatch`). Nothing of it applies before its one leg.
 		if let Some(posting) = Posting::of(&row.kind)
+			&& !(matches!(posting, Posting::ScopeCharge) && charge_stays_pending_on_park(reason))
 			&& let Err(err) = posting.mark_failed(&self.pool, row, &format!("parked:{}", park_kind(reason))).await
 		{
 			error!(seq = row.seq, aggregate_id = %row.aggregate_id, "relay: failed to mark the parked {} failed: {err}", posting.name());
@@ -627,6 +628,21 @@ impl Relay {
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
 				Err(err) => return Outcome::park(format!("{name} applied check: {err}")),
+			}
+			// The leg is not on the ledger and the charge has waited past its window (a long
+			// outage, a parked row unparked days later): the user consented to a charge at the
+			// time of the call, so it is refused rather than carried out now.
+			if matches!(posting, Posting::ScopeCharge) {
+				match scope_charges::past_posting_window(&self.pool, row.aggregate_id).await {
+					Ok(true) => {
+						return match posting.mark_failed(&self.pool, row, "expired").await {
+							Ok(()) => Outcome::Done,
+							Err(err) => Outcome::Retry(format!("{name} failed stamp: {err}")),
+						};
+					}
+					Ok(false) => {}
+					Err(err) => return Outcome::Retry(format!("{name} age read: {err}")),
+				}
 			}
 		}
 		// Settle-time liquidity pre-check. The relay is single-worker and sequential, so a
@@ -1097,7 +1113,9 @@ enum LedgerAction {
 /// Σ what `row`'s legs will take out of `key` once the relay applies them — the event's
 /// share of [`claims::unapplied_debits`](super::claims::unapplied_debits). Read off the
 /// same plan the relay executes, so a new kind of event is counted the moment it can be
-/// relayed. Only new outflows count: a posted or reserved leg debiting `key`. Completing a
+/// relayed. (A move, transfer, payout, invoice payment or charge is counted from its own row by
+/// `claims::unapplied_debits` and its kind is left out of the outbox scan that calls this.) Only
+/// new outflows count: a posted or reserved leg debiting `key`. Completing a
 /// pending takes nothing more than its reserve already locked, and a void gives back.
 pub(crate) fn planned_debit(row: &OutboxRow, key: &LedgerAccountKey) -> Result<u128, String> {
 	let mut total: u128 = 0;
@@ -1204,6 +1222,14 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
 		_ => Ok(Vec::new()),
 	}
+}
+
+/// A parked charge is left `pending` when the ledger's answer is unknown — the applied check
+/// failed or the retries ran out: the leg may have posted, so failing the charge could release
+/// money the ledger already took. Its amount keeps counting against the compartment until an
+/// operator settles it by hand (PATTERNS.md, Charges).
+fn charge_stays_pending_on_park(reason: &str) -> bool {
+	matches!(park_kind(reason), "applied_check" | "retry_exhausted")
 }
 
 /// The kind of a park, for a parked move's `failure_reason` (`parked:<kind>`): what the user
@@ -2619,6 +2645,15 @@ mod tests {
 			planned_debit(&row, &LedgerAccountKey::ScopeClaim(user, domain::scopes::ScopeId::parse("other").unwrap())).unwrap(),
 			0
 		);
+	}
+
+	#[test]
+	fn a_parked_charge_whose_fate_is_unknown_stays_pending() {
+		assert!(charge_stays_pending_on_park("scope charge applied check: unreachable"));
+		assert!(charge_stays_pending_on_park("retryable exhausted after 25 attempts: busy"));
+		assert!(!charge_stays_pending_on_park("ledger conflict: exists with other terms"));
+		assert!(!charge_stays_pending_on_park("unplannable event: bad"));
+		assert!(!charge_stays_pending_on_park("insufficient funds"));
 	}
 
 	// A capture voids the standing reservation and takes the captured part and the rest out of
