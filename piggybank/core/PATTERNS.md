@@ -1174,6 +1174,15 @@ order), and the admission checks in order: the `compartments` grant, the credite
 `posted` one, in the mandate's rolling 24 h usage; a `failed` one (ledger refusal or park) counts
 for neither. KIND_CHARGED is written by the relay after the posting, for the charging client
 only. The reaper replays a `pending` charge whose event was lost.
+A charge not on the ledger an hour after it was recorded is failed (`expired`) by the relay
+before it posts, so an outage or a late unpark never carries out a stale consent; a revoke does
+not cancel a charge already recorded. The smallest charge is 0.000001 USDT. A Closed scope
+refuses a Charge (`scope_closed`); Reserve admits one.
+RUNBOOK — a parked `scope_charges` row whose park is an `applied check` or `retry exhausted`
+is deliberately left `pending` (the leg may have posted; its amount keeps counting against the
+compartment). Settle it by hand: look the transfer id (`uuid_v5(charge_id, "scope:charge")`) up
+on the ledger — present: `UPDATE scope_charges SET state='posted'` and unpark; absent: unpark
+(it posts, or expires after the hour) or `UPDATE ... SET state='failed', failure_reason='manual'`.
 
 **Invoices** (`scope.v1.InvoiceService` on the scope listener, `banking.v1.InvoicePaymentService`
 on the client one; `domain::scope_invoices`, `scope_invoices`, migration 0056). A client issues

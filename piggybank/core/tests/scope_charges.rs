@@ -290,7 +290,7 @@ async fn every_cap_and_every_missing_consent_is_mandate_required() {
 	charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "20")).await.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	assert_eq!(
-		refusal(charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "0.000000000000000001")).await),
+		refusal(charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "0.000001")).await),
 		LedgerRefusal::MandateRequired,
 		"the day is spent, posted or not"
 	);
@@ -577,4 +577,65 @@ async fn a_charge_the_ledger_refuses_leaves_nothing_behind() {
 
 async fn events_of(h: &Harness, client: &ClientId, grants: &Grants, scope: &ScopeId) -> Vec<piggybank_core::ports::scope_ledger::MoneyEventRecord> {
 	ledger_app::pull(&ports(h, grants), client, Some(scope), 0, 500).await.unwrap().events
+}
+
+#[tokio::test]
+async fn dust_is_refused_and_a_pending_charge_shrinks_what_others_may_spend() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants) = holder(&h).await;
+	let (user, subject) = user_with(&h, &scope, "100").await;
+	grant_mandate(
+		&h,
+		&grants,
+		user,
+		mandate_request(&client, &scope, "100", "200", vec![MandateOperation::Charge, MandateOperation::Reserve]),
+	)
+	.await;
+	let p = ports(&h, &grants);
+
+	match charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "0.000000999999999999")).await {
+		Err(TransferError::Domain(DomainError::Validation(_))) => {}
+		other => panic!("dust is invalid: {other:?}"),
+	}
+	charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "0.000001"))
+		.await
+		.expect("the minimum is a charge");
+
+	// 70 pending, not yet posted: a Reserve of 40 no longer fits the 30 left.
+	charges_app::charge(&p, &client, charge_request(&scope, &subject, "alloc:x", "70")).await.unwrap();
+	let reserve = ledger_app::ReserveRequest {
+		scope: scope.clone(),
+		auth_subject: subject.clone(),
+		amount: usdt("40"),
+		ttl_seconds: 0,
+		subject_ref: subject_ref(),
+		idempotency_key: key(),
+	};
+	assert_eq!(refusal(ledger_app::reserve(&p, &client, reserve).await), LedgerRefusal::InsufficientFunds);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
+#[tokio::test]
+async fn a_charge_waiting_past_its_window_is_refused_not_carried_out() {
+	let Some(h) = harness().await else { return };
+	let (client, scope, grants, user, subject) = charging(&h, "50", "50", "100").await;
+	let p = ports(&h, &grants);
+	let request = charge_request(&scope, &subject, "alloc:x", "20");
+	let stale = charges_app::charge(&p, &client, request.clone()).await.unwrap();
+	sqlx::query("UPDATE scope_charges SET created_at = now() - interval '2 hours' WHERE id = $1")
+		.bind(stale.charge.id().raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+
+	let (state, reason) = charge_row(&h, &stale).await;
+	assert_eq!((state.as_str(), reason.as_deref()), ("failed", Some("expired")));
+	assert_eq!(compartment(&h, user, &scope).await.posted, usdt("50").base_units(), "nothing moved");
+	assert!(events_of(&h, &client, &grants, &scope).await.iter().all(|e| e.kind != MoneyEventKind::Charged));
+
+	// The key still answers the original charge, not a second one.
+	let again = charges_app::charge(&p, &client, request).await.unwrap();
+	assert_eq!(again.charge.id(), stale.charge.id());
+	assert_eq!(again.state, MoveState::Failed);
 }
