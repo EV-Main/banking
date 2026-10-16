@@ -615,6 +615,56 @@ async fn a_payout_past_a_ceiling_or_the_scope_budget_is_approval_required() {
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
+/// banking#525: one recipient cannot take a whole operation that fits every other ceiling.
+/// An automatic payout with a line past 1000 USDT needs the owners; a requested one is
+/// escalated by the `per_line` rule on the `max_line` field every approval carries.
+#[tokio::test]
+async fn a_line_past_the_per_line_ceiling_needs_the_owners() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "5000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "5000").await;
+	let (_, alice) = user(&h).await;
+	let (_, bob) = user(&h).await;
+	let b = base(&h, &grants);
+	let p = ops_ports(&h, &b);
+
+	assert_eq!(
+		refusal(
+			ops::payout(
+				&p,
+				&client,
+				payout_request(&scope, "alloc:x", vec![line(&alice, "1000.000000000000000001"), line(&bob, "1")], &key())
+			)
+			.await
+		),
+		LedgerRefusal::ApprovalRequired,
+		"the total is inside every ceiling, the line is not"
+	);
+	ops::payout(&p, &client, payout_request(&scope, "alloc:x", vec![line(&alice, "1000"), line(&bob, "1000")], &key()))
+		.await
+		.expect("the ceiling is inclusive, and a total of 2000 is under the per-operation one here");
+
+	let asked = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1500"), line(&bob, "1")], &key()))
+		.await
+		.unwrap();
+	round(&h, &grants).await;
+	let asked = reload(&h, &asked).await;
+	let proposal = h.concierge.proposal(&approval_id(&asked));
+	assert!(
+		proposal.fields.iter().any(|f| f.key == "max_line" && f.value == ApprovalValue::Amount(usdt("1500"))),
+		"the approvers and the escalation rule see the largest line"
+	);
+	let spec = BANK_CATALOG.iter().find(|k| k.kind == OperationKind::ScopePayout).unwrap();
+	assert!(
+		spec.escalations
+			.iter()
+			.any(|e| e.parameter == "per_line" && e.field_key == "max_line" && e.default_threshold == "1000"),
+		"the published catalog escalates a line past 1000 to the owners"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
 /// Ten payouts at once under one client's 24 h ceiling of three: each holds the scope's
 /// lock while it counts, so exactly three get through, whoever wins.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
