@@ -284,6 +284,11 @@ impl TransferAdmission for Admission<'_> {
 		if !facts.destination_owner.as_ref().is_some_and(ClientId::is_banking) {
 			return Err(TransferError::Internal(format!("scope {} has no fee collector owned by banking", transfer.scope())));
 		}
+		// Banking routes the swept fee on right after it posts; with nowhere to route it the
+		// fee would sit on the collector, so the sweep waits until the account exists.
+		if !facts.route_open {
+			return Err(TransferError::Refused(LedgerRefusal::FeeRouteUnavailable));
+		}
 		// A freeze stops new debits; a closed scope still lets its accounts be swept.
 		match scope.state {
 			ScopeState::Frozen => return Err(TransferError::Refused(LedgerRefusal::ScopeFrozen)),

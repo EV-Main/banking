@@ -252,6 +252,10 @@ pub enum LedgerRefusal {
 	MandateRequired,
 	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
 	InvoiceNotOpen,
+	/// A fee sweep would land where banking cannot route it on: the scope's route destination
+	/// (invest's `alloc:fee`) is not open yet (FAILED_PRECONDITION). Nothing is moved, so the
+	/// fee never gets stuck on a collector; retry once the account exists.
+	FeeRouteUnavailable,
 }
 
 impl LedgerRefusal {
@@ -267,6 +271,7 @@ impl LedgerRefusal {
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
 			Self::InvoiceNotOpen => "invoice_not_open",
+			Self::FeeRouteUnavailable => "fee_route_unavailable",
 		}
 	}
 
@@ -281,7 +286,8 @@ impl LedgerRefusal {
 			| Self::HoldNotActive
 			| Self::UserFrozen
 			| Self::MandateRequired
-			| Self::InvoiceNotOpen => false,
+			| Self::InvoiceNotOpen
+			| Self::FeeRouteUnavailable => false,
 		}
 	}
 }
@@ -585,7 +591,7 @@ impl ScopeTransfer {
 		// The domain's own floor under the use case's checks: no client transfer debits one
 		// of banking's labels, a fee sweep only ever lands in its own scope's fee collector,
 		// and only an approved operation moves money anywhere else. The fee route is the one
-		// transfer out of a `fee` collector, and goes only where [`fee_route`] says.
+		// transfer out of a `fee` collector.
 		if terms.from.is_reserved() && !routed {
 			return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.from)));
 		}
@@ -598,11 +604,11 @@ impl ScopeTransfer {
 			TransferReason::Approved if terms.operation_id.is_none() => return Err(DomainError::Validation("an approved transfer names its operation".into())),
 			TransferReason::Approved if terms.to.is_reserved() => return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.to))),
 			TransferReason::Approved => {}
+			// Only the form is checked on a reload; where a route goes is decided once, when
+			// [`ScopeTransfer::route_fee`] makes it, so a later change of the rule cannot make
+			// a stored route unreadable.
 			TransferReason::FeeRoute if !terms.client.is_banking() || terms.operation_id.is_some() || terms.from != ScopeAccountLabel::fee() => {
 				return Err(DomainError::Forbidden("a fee route is banking's own, out of the scope's fee collector".into()));
-			}
-			TransferReason::FeeRoute if (terms.to_scope.clone(), terms.to.clone()) != fee_route(&terms.scope) => {
-				return Err(DomainError::Validation("a fee route goes where the scope's route says".into()));
 			}
 			TransferReason::FeeRoute => {}
 		}
@@ -1349,16 +1355,8 @@ mod tests {
 			"a client's route"
 		);
 		assert!(
-			ScopeTransfer::request(ScopeTransferId::new(), route_terms("banking", "sa", "alloc:fee", "fee")).is_err(),
-			"sa's fees do not stay"
-		);
-		assert!(
 			ScopeTransfer::request(ScopeTransferId::new(), route_terms("banking", "main", "treasury", "alloc:x")).is_err(),
 			"only out of fee"
-		);
-		assert!(
-			ScopeTransfer::request(ScopeTransferId::new(), route_terms("banking", "invest", "alloc:fee", "fee")).is_err(),
-			"not invest's destination for sa"
 		);
 		// A client's sweep still cannot reach main or leave fee.
 		let into_main = TransferTerms {

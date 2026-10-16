@@ -20,7 +20,13 @@ use domain::{
 use piggybank_core::{
 	application::scope_ledger::{self as ledger_app, ScopeLedgerPorts, TransferError, TransferRequest},
 	infrastructure::{
-		allocations::PgAllocations, compartments::PgCompartments, reaper::Reaper, reconciliation::Reconciliation, redemptions::PgRedemptions, relay::Relay, scope_ledger::PgScopeLedger,
+		allocations::PgAllocations,
+		compartments::PgCompartments,
+		reaper::Reaper,
+		reconciliation::Reconciliation,
+		redemptions::PgRedemptions,
+		relay::Relay,
+		scope_ledger::{self, PgScopeLedger},
 		withdrawals::PgWithdrawals,
 	},
 	ports::{
@@ -373,29 +379,34 @@ fn sum_of(parts: &[Usdt]) -> Usdt {
 }
 
 /// (invest, fee) → (invest, alloc:fee): the cash of the `fee` allocation, an ordinary account of
-/// the invest client. A route needs its destination to exist: one made before `alloc:fee` was
-/// opened is recorded `failed` with nothing posted and leaves the money on `fee`, and the next
-/// sweep, once it exists, routes only its own amount.
+/// the invest client. The route needs its destination: a sweep is refused while `alloc:fee` is
+/// not open (so a fee never lands where banking cannot move it on), and if the account is lost
+/// after the sweep was admitted the route is recorded `failed` and the reaper delivers it, once,
+/// when the account is back.
 #[tokio::test]
-async fn invest_fees_route_to_alloc_fee_and_a_missing_destination_leaves_them_on_fee() {
+async fn invest_fees_route_to_alloc_fee_and_the_reaper_delivers_what_found_no_destination() {
 	let Some(h) = harness().await else { return };
 	let invest = ScopeId::parse("invest").unwrap();
 	let client = fresh_client();
 	let grants = Grants::new(vec![grant(&client, &invest, "alloc:")]).unwrap();
 	let p = ports(&h, &grants);
+	// This test is the only one that touches invest's `alloc:fee`, and the tests of a binary run
+	// one at a time, so it starts from "never opened".
+	sqlx::query("DELETE FROM scope_accounts WHERE scope = 'invest' AND label = 'alloc:fee'")
+		.execute(&h.pool)
+		.await
+		.unwrap();
 	ledger_app::open_account(&p, &client, &invest, &label("alloc:src"), &key()).await.unwrap();
 	fund(&h, &invest, "alloc:src", "100").await;
 	let fee_before = balance_of(&h, &invest, "fee").await;
 	let alloc_fee_before = balance_of(&h, &invest, "alloc:fee").await;
 
-	// No `alloc:fee` yet (this client never opened it, and nobody else of this run has).
-	let early = ledger_app::transfer(&p, &client, sweep(&invest, "alloc:src", "10", &key())).await.unwrap();
-	common::drain_to_quiescence(&h.relay, &h.pool).await;
-	let mine: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == early.transfer.id().raw()).collect();
-	assert_eq!(mine.len(), 1);
-	assert_eq!((mine[0].1.as_str(), mine[0].2.as_deref(), mine[0].4.as_str()), ("failed", Some("destination_missing"), "banking"));
-	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]), "the fee stays where it was swept to");
-	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, alloc_fee_before);
+	assert_eq!(
+		refusal(ledger_app::transfer(&p, &client, sweep(&invest, "alloc:src", "10", &key())).await),
+		LedgerRefusal::FeeRouteUnavailable,
+		"no alloc:fee, no sweep"
+	);
+	assert_eq!(balance_of(&h, &invest, "alloc:src").await, usdt("100"), "a refusal moves nothing");
 
 	ledger_app::open_account(&p, &client, &invest, &label("alloc:fee"), &key()).await.unwrap();
 	let sweep_key = key();
@@ -409,8 +420,8 @@ async fn invest_fees_route_to_alloc_fee_and_a_missing_destination_leaves_them_on
 	assert_eq!(route.len(), 1, "one route per sweep");
 	assert_eq!((route[0].1.as_str(), route[0].2.clone(), route[0].4.as_str()), ("posted", None, "banking"));
 	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, sum_of(&[alloc_fee_before, usdt("25")]));
-	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]), "only the failed route's 10 is left");
-	assert_eq!(balance_of(&h, &invest, "alloc:src").await, usdt("65"));
+	assert_eq!(balance_of(&h, &invest, "fee").await, fee_before);
+	assert_eq!(balance_of(&h, &invest, "alloc:src").await, usdt("75"));
 
 	// Both legs are money events to the invest client: its sweep into fee, banking's route out
 	// of it into the account the client owns (inside the scope, so one event naming both).
@@ -435,6 +446,72 @@ async fn invest_fees_route_to_alloc_fee_and_a_missing_destination_leaves_them_on
 		[("alloc:fee".to_owned(), sum_of(&[alloc_fee_before, usdt("25")]))],
 		"only the account the client owns shows a balance"
 	);
+
+	// The stamp twice (the relay restarted between the ledger and the stamp) routes nothing twice.
+	sqlx::query("UPDATE scope_transfers SET state = 'pending' WHERE id = $1")
+		.bind(swept.transfer.id().raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	scope_ledger::mark_posted(&h.pool, swept.transfer.id().raw()).await.unwrap();
+	assert_eq!(route_rows(&h, &invest).await.iter().filter(|row| row.3 == swept.transfer.id().raw()).count(), 1);
+
+	// The destination is lost after a sweep was admitted: the route is recorded failed, nothing
+	// moves, the fee stays on `fee`...
+	let second = ledger_app::transfer(&p, &client, sweep(&invest, "alloc:src", "10", &key())).await.unwrap();
+	sqlx::query("DELETE FROM scope_accounts WHERE scope = 'invest' AND label = 'alloc:fee'")
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let lost: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == second.transfer.id().raw()).collect();
+	assert_eq!((lost.len(), lost[0].1.as_str(), lost[0].2.as_deref()), (1, "failed", Some("destination_missing")));
+	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]));
+	let reaper = Reaper::new(
+		h.pool.clone(),
+		Arc::new(PgWithdrawals::new(h.pool.clone())),
+		Arc::new(PgRedemptions::new(h.pool.clone())),
+		h.notify.clone(),
+	);
+	let still = scope_ledger::redrive_fee_routes(&h.pool).await.unwrap();
+	assert_eq!((still.revived, still.stuck >= 1), (0, true), "no account, nothing to deliver, and it is alerted");
+
+	// ...and when the account is back the reaper delivers it, exactly once.
+	sqlx::query("INSERT INTO scope_accounts (scope, label, owner_client) VALUES ('invest', 'alloc:fee', $1)")
+		.bind(client.as_str())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	assert!(reaper.sweep().await.unwrap().repaired_fee_routes >= 1);
+	assert_eq!(reaper.sweep().await.unwrap().repaired_fee_routes, 0, "delivered once");
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let delivered: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == second.transfer.id().raw()).collect();
+	assert_eq!((delivered.len(), delivered[0].1.as_str(), delivered[0].2.clone()), (1, "posted", None));
+	assert_eq!(balance_of(&h, &invest, "fee").await, fee_before);
+	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, sum_of(&[alloc_fee_before, usdt("35")]));
+
+	// A posted sweep whose route a relay without routes never made gets one from the reaper — one.
+	// Simulated: the sweep is stamped posted by hand with its event gone, the money on `fee`.
+	let third = ledger_app::transfer(&p, &client, sweep(&invest, "alloc:src", "5", &key())).await.unwrap();
+	let third_id = third.transfer.id().raw();
+	sqlx::query("UPDATE scope_transfers SET state = 'posted', updated_at = now() WHERE id = $1")
+		.bind(third_id)
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	sqlx::query("DELETE FROM outbox WHERE aggregate_id = $1").bind(third_id).execute(&h.pool).await.unwrap();
+	fund(&h, &invest, "fee", "5").await;
+	assert!(reaper.sweep().await.unwrap().repaired_fee_routes >= 1);
+	assert_eq!(
+		scope_ledger::redrive_fee_routes(&h.pool).await.unwrap().routed,
+		0,
+		"one route per sweep, however often the reaper looks"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	let rebuilt: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == third_id).collect();
+	assert_eq!((rebuilt.len(), rebuilt[0].1.as_str()), (1, "posted"));
+	assert_eq!(balance_of(&h, &invest, "fee").await, fee_before);
+	assert_eq!(balance_of(&h, &invest, "alloc:fee").await, sum_of(&[alloc_fee_before, usdt("40")]));
 }
 
 /// (any other scope, fee) → (main, treasury), banking's own, and never into another scope: the

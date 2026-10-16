@@ -1066,9 +1066,12 @@ outbox event; invest's goes to `(invest, alloc:fee)`, every other scope's to `(m
 (`domain::scope_ledger::fee_route`). The relay posts it as any scope transfer, so it is one
 ledger leg: atomic, replay-safe (`ON CONFLICT (fee_route_of) DO NOTHING`; the ledger id derives
 from the row's id), with the usual money events. No admission, ceiling or mandate applies — it
-is banking's, not a client's. An invest route whose `alloc:fee` is not open is inserted already
+is banking's, not a client's. `Transfer` refuses a sweep (`fee_route_unavailable`) while the route's destination is not open,
+read under the same locks. Should it vanish after admission, the route is inserted already
 `failed` (`destination_missing`) with no event, so a missing account cannot wedge the relay;
-the fee stays on `fee`. Fees swept before migration 0059 (or by an older relay) are not routed
+the reaper (`redrive_fee_routes`) revives it when the account exists and also routes posted
+sweeps that have no route (newer than migration 0059). A route that cannot be recorded does
+not block the sweep's `posted` stamp (a savepoint rolls back only the route, `error!`). Fees swept before migration 0059 (or by an older relay) are not routed
 retroactively.
 
 **Idempotency** (`scope_ledger_requests`): a key (1..128 characters, no control characters)

@@ -41,13 +41,30 @@ SET LOCAL lock_timeout = '3s';
 ALTER TABLE scope_transfers ADD COLUMN IF NOT EXISTS fee_route_of UUID REFERENCES scope_transfers (id);
 CREATE UNIQUE INDEX IF NOT EXISTS scope_transfers_fee_route_idx ON scope_transfers (fee_route_of);
 
+-- banking's own labels are never a client's source. That CHECK was written inline on the column
+-- (0054), so its name is Postgres's to choose (`scope_transfers_from_label_check1` where this was
+-- checked); drop it by what it says rather than by a name this file guesses, and leave the
+-- replacement below alone on a re-run.
+DO $$
+DECLARE
+	old_check TEXT;
+BEGIN
+	FOR old_check IN
+		SELECT conname FROM pg_constraint
+		WHERE conrelid = 'scope_transfers'::regclass AND contype = 'c' AND conname NOT IN ('scope_transfers_reserved_source', 'scope_transfers_reason_check')
+		  AND pg_get_constraintdef(oid) LIKE '%from_label <> ALL%' AND pg_get_constraintdef(oid) LIKE '%fee%' AND pg_get_constraintdef(oid) LIKE '%treasury%'
+	LOOP
+		EXECUTE format('ALTER TABLE scope_transfers DROP CONSTRAINT %I', old_check);
+	END LOOP;
+END
+$$;
+
 -- The table is days old and small, so the re-added CHECKs scan nothing worth a NOT VALID step.
 ALTER TABLE scope_transfers
 	DROP CONSTRAINT IF EXISTS scope_transfers_reason_check,
 	ADD CONSTRAINT scope_transfers_reason_check CHECK (reason IN ('fee_sweep', 'approved', 'fee_route')),
 	-- banking's own labels are never a client's source; the one row that leaves `fee` is banking's
 	-- own route (`scope_transfers_fee_route_shape` pins it to `fee`).
-	DROP CONSTRAINT IF EXISTS scope_transfers_from_label_check1,
 	DROP CONSTRAINT IF EXISTS scope_transfers_reserved_source,
 	ADD CONSTRAINT scope_transfers_reserved_source CHECK (reason = 'fee_route' OR from_label NOT IN ('fee', 'treasury')),
 	DROP CONSTRAINT IF EXISTS scope_transfers_crosses_only_approved,

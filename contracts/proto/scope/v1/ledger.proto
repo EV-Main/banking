@@ -71,10 +71,13 @@ syntax = "proto3";
 //     needs no grant, counts against no ceiling and no mandate, and a frozen scope does not
 //     stop it. Its money events are TRANSFERRED, `initiator_client` empty, `subject_ref`
 //     `fee_route:<the sweep's transfer id>`, and reach the client that made the sweep (see
-//     `events.proto`). `(invest, alloc:fee)` must exist for invest's route: when the invest
-//     client has not opened it, the route is recorded failed (`destination_missing`), nothing
-//     moves, and the swept amount stays on `(invest, fee)` until banking re-routes it. The
-//     labels `fee` and `treasury` are never debited by a client, whatever a grant says.
+//     `events.proto`). The route needs its destination: a FEE_SWEEP while `(invest, alloc:fee)`
+//     is not open is FAILED_PRECONDITION `fee_route_unavailable` and nothing moves, so the
+//     invest client opens `alloc:fee` before it sweeps. Should the account be gone after a
+//     sweep was admitted, the route is recorded failed (`destination_missing`) and the amount
+//     waits on `(invest, fee)` — banking alerts, and its reaper delivers the route, once, when
+//     the account exists again. The labels `fee` and `treasury` are never debited by a client,
+//     whatever a grant says.
 //     A client's call never addresses two scopes; every other movement between scopes
 //     is a `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,
@@ -115,7 +118,7 @@ syntax = "proto3";
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
 // `hold_not_active`, `invoice_not_open`, `scope_frozen`, `scope_closed`, `user_frozen`,
-// `not_account_owner`, `not_granted`); clients branch on (code, message) and nothing else.
+// `not_account_owner`, `not_granted`, `fee_route_unavailable`); clients branch on (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
 // positive, at most the ledger's precision. Banking reads any plain decimal and always

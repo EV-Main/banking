@@ -101,6 +101,9 @@ pub struct TransferFacts {
 	pub source_owner: Option<ClientId>,
 	/// Who owns the destination account; `None` when it does not exist.
 	pub destination_owner: Option<ClientId>,
+	/// Whether the account banking routes the swept fee on to (`fee_route` of the scope) is
+	/// open: a sweep admitted without it would leave the fee stuck on the collector.
+	pub route_open: bool,
 	/// Σ the client's transfers in the scope over the last 24 h, `pending` and `posted`.
 	pub transferred_24h: Usdt,
 }
