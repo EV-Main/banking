@@ -12,7 +12,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_invoices::{Invoice, InvoiceEvent, InvoicePayment, InvoiceRefusal, InvoiceState, InvoiceTerms},
-	scope_ledger::{ClientId, LedgerRefusal, SubjectRef},
+	scope_ledger::{ClientId, IDEMPOTENCY_CONFLICT, LedgerRefusal, SubjectRef},
 	scopes::{Compartment, MoveState, ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
@@ -298,7 +298,7 @@ impl InvoiceStore for PgScopeLedger {
 			Ok(_) => {}
 			// The key lock above makes this unreachable; should it ever not, the payer is told
 			// the key is taken, never an internal error.
-			Err(sqlx::Error::Database(err)) if err.is_unique_violation() => return Err(DomainError::Conflict("idempotency_key was used for a different payment".into()).into()),
+			Err(sqlx::Error::Database(err)) if err.is_unique_violation() => return Err(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into()).into()),
 			Err(err) => return Err(repo_err(err).into()),
 		}
 		outbox::drain_to_outbox_by(&mut tx, &mut recorded.invoice, InvoiceEvent::moves_money).await?;

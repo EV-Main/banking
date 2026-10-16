@@ -13,10 +13,10 @@ use domain::{
 	balance::LedgerAccountKey,
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, ScopeLedgerEvent, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms},
+	scope_ledger::{ClientId, ScopeLedgerEvent, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, fee_route},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
 };
-use sqlx::{PgConnection, PgPool};
+use sqlx::{Connection, PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
@@ -270,6 +270,10 @@ impl ScopeLedgerStore for PgScopeLedger {
 		let scope_record = compartments::scope_for_share(&mut tx, &scope).await?;
 		let source_owner = owner_on(&mut tx, &scope, transfer.from()).await?;
 		let destination_owner = owner_on(&mut tx, &scope, transfer.to()).await?;
+		// Read in the same transaction as the sweep is recorded in, so the account cannot be
+		// found open here and gone by the time the route is made.
+		let (route_scope, route_label) = fee_route(&scope);
+		let route_open = owner_on(&mut tx, &route_scope, &route_label).await?.is_some();
 		// The lock every spender of this account takes, so the spendable read below cannot be
 		// raced by another debit of it.
 		outbox::lock_claim(&mut tx, &LedgerAccountKey::ScopeAccount(scope.clone(), transfer.from().clone())).await?;
@@ -287,6 +291,7 @@ impl ScopeLedgerStore for PgScopeLedger {
 			scope: scope_record,
 			source_owner,
 			destination_owner,
+			route_open,
 			transferred_24h: sum(&recent, "transfers in 24 h")?,
 		};
 		// The refusal rolls the transaction back with nothing written.
@@ -371,13 +376,76 @@ pub async fn transfer_state(pool: &PgPool, id: Uuid) -> Result<Option<MoveState>
 	state.map(|raw| MoveState::parse(&raw).map_err(|e| sqlx::Error::Decode(Box::new(e)))).transpose()
 }
 
-/// The ledger took the transfer. Only a `pending` row moves; a repeat is a no-op.
+/// The ledger took the transfer. Only a `pending` row moves; a repeat is a no-op. A client's fee
+/// sweep, posted into `(scope, fee)`, takes banking's route out of it with the same stamp, in
+/// the same transaction: the sweep is never `posted` without its route recorded, and a replay
+/// of the stamp records nothing twice.
 pub async fn mark_posted(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
-	sqlx::query("UPDATE scope_transfers SET state = 'posted', updated_at = now() WHERE id = $1 AND state = 'pending'")
-		.bind(id)
-		.execute(pool)
-		.await?;
-	Ok(())
+	let mut tx = pool.begin().await?;
+	let stamped: Option<(String, String, String)> =
+		sqlx::query_as("UPDATE scope_transfers SET state = 'posted', updated_at = now() WHERE id = $1 AND state = 'pending' RETURNING reason, scope, amount")
+			.bind(id)
+			.fetch_optional(&mut *tx)
+			.await?;
+	if let Some((reason, scope, raw_amount)) = stamped
+		&& reason == TransferReason::FeeSweep.as_str()
+	{
+		// The sweep IS on the ledger, so a route that cannot be made must not keep the stamp from
+		// committing: retrying forever would wedge the relay, and parking would mark a sweep that
+		// moved money `failed`. A savepoint rolls back only the route; the error is alerted and the
+		// reaper routes the posted sweep ([`redrive_fee_routes`]).
+		let mut route = Connection::begin(&mut *tx).await?;
+		match route_swept_fee(&mut route, id, &scope, &raw_amount).await {
+			Ok(()) => route.commit().await?,
+			Err(err) => {
+				route.rollback().await?;
+				tracing::error!(sweep_id = %id, "scope ledger: fee route not recorded, left to the reaper: {err}");
+			}
+		}
+	}
+	tx.commit().await
+}
+
+/// Record banking's route of a posted fee sweep: `(scope, fee)` to wherever the scope's fees
+/// go (`domain::scope_ledger::fee_route`), as one transfer the relay posts like any other, so
+/// the route is atomic — it moves whole or not at all — and has its own money events. The
+/// unique `fee_route_of` is its idempotency key.
+///
+/// A destination account that does not exist (invest has not opened `alloc:fee`) is recorded
+/// as a `failed` route with nothing posted: a missing account must not poison the relay's
+/// queue, and the fees stay on `fee`, visible, for an operator to re-route once it exists.
+async fn route_swept_fee(conn: &mut PgConnection, sweep: Uuid, scope: &str, raw_amount: &str) -> Result<(), DomainError> {
+	let scope = ScopeId::parse(scope)?;
+	let mut route = ScopeTransfer::route_fee(ScopeTransferId::new(), ScopeTransferId::from_raw(sweep), scope, amount(raw_amount)?)?;
+	let destination_open = owner_on(conn, route.to_scope(), route.to()).await?.is_some();
+	let (state, failure) = if destination_open { ("pending", None) } else { ("failed", Some("destination_missing")) };
+	let inserted: Option<Uuid> = sqlx::query_scalar(
+		"INSERT INTO scope_transfers (id, client_id, scope, from_label, to_scope, to_label, amount, reason, subject_ref, memo, fee_route_of, state, failure_reason) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '', $10, $11, $12) ON CONFLICT (fee_route_of) DO NOTHING RETURNING id",
+	)
+	.bind(route.id().raw())
+	.bind(route.client().as_str())
+	.bind(route.scope().as_str())
+	.bind(route.from().as_str())
+	.bind(route.to_scope().as_str())
+	.bind(route.to().as_str())
+	.bind(route.amount().base_units().to_string())
+	.bind(route.reason().as_str())
+	.bind(route.subject_ref().as_str())
+	.bind(sweep)
+	.bind(state)
+	.bind(failure)
+	.fetch_optional(&mut *conn)
+	.await
+	.map_err(repo_err)?;
+	if inserted.is_none() {
+		return Ok(());
+	}
+	if let Some(why) = failure {
+		tracing::error!(sweep_id = %sweep, scope = %route.scope(), to = %format!("{}:{}", route.to_scope(), route.to()), "scope ledger: fee route not made: {why}; the swept fee stays on `fee` until the account exists and the reaper revives the route");
+		return Ok(());
+	}
+	outbox::drain_to_outbox(conn, &mut route, true).await
 }
 
 /// The ledger refused the transfer: terminal, nothing moved, never executed later.
@@ -400,6 +468,13 @@ async fn redrive_one(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
 		.await?;
 	let Some(row) = row else { return Ok(false) };
 	let recorded = recorded_transfer(row).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+	enqueue_event(&mut tx, id, &recorded).await?;
+	tx.commit().await?;
+	Ok(true)
+}
+
+/// Put a `pending` transfer's ledger event on the outbox and restart its reaper clock.
+async fn enqueue_event(tx: &mut PgConnection, id: Uuid, recorded: &RecordedTransfer) -> Result<(), sqlx::Error> {
 	let transfer = &recorded.transfer;
 	let event = ScopeLedgerEvent::Transferred {
 		transfer_id: transfer.id(),
@@ -410,10 +485,94 @@ async fn redrive_one(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
 		amount: transfer.amount(),
 	};
 	let payload = serde_json::to_string(&event).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-	outbox::insert_event(&mut tx, Uuid::new_v4(), ScopeTransfer::NAME, id, ScopeLedgerEvent::KIND, &payload, true)
+	outbox::insert_event(&mut *tx, Uuid::new_v4(), ScopeTransfer::NAME, id, ScopeLedgerEvent::KIND, &payload, true)
 		.await
 		.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 	sqlx::query("UPDATE scope_transfers SET updated_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+	Ok(())
+}
+
+/// What one pass of [`redrive_fee_routes`] did.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FeeRouteRepair {
+	/// Posted sweeps that had no route and got one.
+	pub routed: usize,
+	/// Routes that had failed `destination_missing` and are `pending` again.
+	pub revived: usize,
+	/// Routes still failed `destination_missing`: swept fees waiting on an account that is
+	/// not there.
+	pub stuck: usize,
+}
+
+/// Make good what the route's own step could not: a `fee_sweep` posted with no route (the
+/// relay that stamped it did not know routes — a rolling deploy), and a route recorded
+/// `failed` for a destination that has since been opened. Both are idempotent: a route is unique
+/// per sweep (`fee_route_of`), and a revived one leaves `failed` under its row lock exactly
+/// once. Sweeps posted before migration 0059 are left alone: routing what already sits on `fee`
+/// is an owner's decision, not the reaper's.
+pub async fn redrive_fee_routes(pool: &PgPool) -> Result<FeeRouteRepair, sqlx::Error> {
+	let mut repair = FeeRouteRepair::default();
+	let unrouted: Vec<(Uuid, String, String)> = sqlx::query_as(
+		"SELECT s.id, s.scope, s.amount FROM scope_transfers s WHERE s.reason = 'fee_sweep' AND s.state = 'posted' \
+		 AND s.updated_at >= (SELECT installed_on FROM _sqlx_migrations WHERE version = 59) \
+		 AND NOT EXISTS (SELECT 1 FROM scope_transfers r WHERE r.fee_route_of = s.id) ORDER BY s.updated_at LIMIT 100",
+	)
+	.fetch_all(pool)
+	.await?;
+	for (sweep, scope, raw_amount) in unrouted {
+		let routed = async {
+			let mut tx = pool.begin().await?;
+			route_swept_fee(&mut tx, sweep, &scope, &raw_amount).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+			tx.commit().await
+		}
+		.await;
+		match routed {
+			Ok(()) => repair.routed += 1,
+			Err(err) => tracing::warn!(sweep_id = %sweep, "reaper: could not route a posted fee sweep: {err}"),
+		}
+	}
+	let failed: Vec<Uuid> =
+		sqlx::query_scalar("SELECT id FROM scope_transfers WHERE reason = 'fee_route' AND state = 'failed' AND failure_reason = 'destination_missing' ORDER BY created_at LIMIT 100")
+			.fetch_all(pool)
+			.await?;
+	for id in failed {
+		match revive_route(pool, id).await {
+			Ok(true) => repair.revived += 1,
+			Ok(false) => repair.stuck += 1,
+			Err(err) => tracing::warn!(route_id = %id, "reaper: could not revive a failed fee route: {err}"),
+		}
+	}
+	if repair.stuck > 0 {
+		// An alert, not a log line: swept fees sit on `fee` until someone opens the account.
+		tracing::error!(
+			count = repair.stuck,
+			"reaper: fee routes failed destination_missing and still have no destination account; the swept fees stay on their `fee` collectors"
+		);
+	}
+	Ok(repair)
+}
+
+/// `pending` again, with its event on the outbox, when the destination now exists; `false`
+/// when it still does not, or the route was revived by someone else meanwhile.
+async fn revive_route(pool: &PgPool, id: Uuid) -> Result<bool, sqlx::Error> {
+	let mut tx = pool.begin().await?;
+	let row = sqlx::query_as::<_, TransferRow>(select_transfer!(" AND state = 'failed' AND failure_reason = 'destination_missing' FOR UPDATE"))
+		.bind(id)
+		.fetch_optional(&mut *tx)
+		.await?;
+	let Some(row) = row else { return Ok(false) };
+	let recorded = recorded_transfer(row).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+	let open = owner_on(&mut tx, &recorded.to_scope, recorded.transfer.to())
+		.await
+		.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+	if open.is_none() {
+		return Ok(false);
+	}
+	sqlx::query("UPDATE scope_transfers SET state = 'pending', failure_reason = NULL, updated_at = now() WHERE id = $1")
+		.bind(id)
+		.execute(&mut *tx)
+		.await?;
+	enqueue_event(&mut tx, id, &recorded).await?;
 	tx.commit().await?;
 	Ok(true)
 }

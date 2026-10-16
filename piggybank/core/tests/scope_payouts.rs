@@ -18,7 +18,7 @@ use domain::{
 	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
 	money::{Network, Usdt},
-	scope_ledger::{ClientId, Grant, Grants, LedgerRefusal, MoneyEventKind, SubjectRef},
+	scope_ledger::{ClientId, Grant, Grants, IDEMPOTENCY_CONFLICT, LedgerRefusal, MoneyEventKind, SubjectRef},
 	scope_operations::{ApprovalValue, BANK_CATALOG, BANK_CATALOG_VERSION, KindSpec, OperationKind, OperationState, PayoutReason, RequestedLine},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId, ScopeState},
 	users::UserId,
@@ -730,6 +730,57 @@ async fn a_payout_is_refused_outside_the_callers_scope_and_accounts() {
 }
 
 // ── operations decided by an approval ────────────────────────────────────────
+
+/// A requested payout is stored whole under its key, so a key reused for other lines, another
+/// kind (a distribution) or another memo must not hand back the first request as if it were the
+/// second — the approvers would decide something the caller no longer means.
+#[tokio::test]
+async fn a_requested_payout_key_reused_with_other_terms_is_refused() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "1000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "3000").await;
+	let (_, alice) = user(&h).await;
+	let (_, bob) = user(&h).await;
+	let b = base(&h, &grants);
+	let p = ops_ports(&h, &b);
+
+	let k = key();
+	let asked = request_payout(&scope, "alloc:x", vec![line(&alice, "1500"), line(&bob, "100")], &k);
+	let first = ops::request_payout(&p, &client, asked.clone()).await.unwrap();
+	for other in [
+		RequestPayoutRequest {
+			lines: vec![line(&alice, "1500")],
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			lines: vec![line(&alice, "1501"), line(&bob, "100")],
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			distribution: true,
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			memo: "Another".into(),
+			..asked.clone()
+		},
+	] {
+		match domain_err(ops::request_payout(&p, &client, other).await) {
+			DomainError::Conflict(why) => assert_eq!(why, IDEMPOTENCY_CONFLICT),
+			other => panic!("expected the idempotency conflict, got {other:?}"),
+		}
+	}
+	let reordered = RequestPayoutRequest {
+		lines: vec![line(&bob, "100"), line(&alice, "1500")],
+		..asked
+	};
+	assert_eq!(
+		ops::request_payout(&p, &client, reordered).await.unwrap().operation.id(),
+		first.operation.id(),
+		"the same lines in another order are one request"
+	);
+}
 
 #[tokio::test]
 async fn a_requested_payout_executes_once_and_only_after_its_approval_passes() {

@@ -1059,6 +1059,21 @@ scope_account:<s>:fee` (`TransferCode::ScopeTransfer`, id `uuid_v5(transfer_id,
 single-leg discipline as a compartment move (`relay::Posting`), the same reaper replay of a
 `pending` row an older relay dispatched without posting.
 
+**The fee route** empties every `fee` collector: `scope_ledger::mark_posted` — the relay's
+`posted` stamp of a `fee_sweep` — inserts, in the SAME transaction, a `scope_transfers` row of
+reason `fee_route` (client `banking`, `from fee`, `fee_route_of` = the sweep, unique) and its
+outbox event; invest's goes to `(invest, alloc:fee)`, every other scope's to `(main, treasury)`
+(`domain::scope_ledger::fee_route`). The relay posts it as any scope transfer, so it is one
+ledger leg: atomic, replay-safe (`ON CONFLICT (fee_route_of) DO NOTHING`; the ledger id derives
+from the row's id), with the usual money events. No admission, ceiling or mandate applies — it
+is banking's, not a client's. `Transfer` refuses a sweep (`fee_route_unavailable`) while the route's destination is not open,
+read under the same locks. Should it vanish after admission, the route is inserted already
+`failed` (`destination_missing`) with no event, so a missing account cannot wedge the relay;
+the reaper (`redrive_fee_routes`) revives it when the account exists and also routes posted
+sweeps that have no route (newer than migration 0059). A route that cannot be recorded does
+not block the sweep's `posted` stamp (a savepoint rolls back only the route, `error!`). Fees swept before migration 0059 (or by an older relay) are not routed
+retroactively.
+
 **Idempotency** (`scope_ledger_requests`): a key (1..128 characters, no control characters)
 is unique per `(client, scope, rpc)` and
 stored with the canonical rendering of every term the call named (length-prefixed fields:
@@ -1094,6 +1109,13 @@ voiding it expires it; the reaper releases due holds (`scope_holds::expire_due_h
 `cap_outstanding`) are that part's, under the mandate row's lock. A reservation the ledger
 refused parks like any refused reserve; the relay parks a later capture or release of that
 hold at once rather than retrying a void of nothing.
+
+`ListHolds` is the saga's recovery read for a `Reserve` whose answer was lost: the caller's
+own `active` holds (the store filters by `client_id`, so a neighbour's are never read), by
+scope and `subject_ref` prefix (`starts_with`, no `LIKE` escaping), keyset-paged by hold id
+(`scope_holds_client_active_idx`). A page asks for one row more than it returns, so the last
+page needs no second query. Ordering by id, not by time, is deliberate: a time cursor would
+need microsecond tokens, and the reaper that walks it runs again anyway.
 
 **Money events** (`MoneyEvents.Pull`, `money_events` + `money_event_deliveries`). Written
 once: an account's opening in its own transaction, a movement by the relay right after the
