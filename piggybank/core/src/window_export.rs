@@ -6,7 +6,7 @@
 //! ```
 //!
 //! The file (JSON Lines, schema in `docs/WINDOW-EXPORT.md`) goes to `--out`, which must not
-//! exist yet, or to stdout; the Σ of units per allocation goes to stderr. The exit code is
+//! exist yet (a run that fails removes the file it made), or to stdout; the Σ of units per allocation goes to stderr. The exit code is
 //! non-zero when the export is not clean (a supply that its holders do not add up to, or
 //! an outbox that was not drained), so a script cannot carry on past a bad cut.
 
@@ -55,7 +55,19 @@ async fn main() -> Result<ExitCode> {
 			#[cfg(unix)]
 			std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
 			let file = options.open(&path).wrap_err_with(|| format!("create {path}"))?;
-			window_export::export(&pool, &ledger, &cluster_id, allow_live, BufWriter::new(file)).await?
+			match window_export::export(&pool, &ledger, &cluster_id, allow_live, BufWriter::new(file)).await {
+				Ok(summary) => summary,
+				Err(err) => {
+					// A refusal (hub not in maintenance) or a failure mid-write leaves a file with no
+					// trailer. It is no evidence of a cut, and `create_new` would turn the operator's
+					// rerun into "File exists". `create_new` also means this run made the file, so
+					// removing it takes nothing that was not ours.
+					if let Err(rm) = std::fs::remove_file(&path) {
+						eprintln!("could not remove the unfinished export {path}: {rm}");
+					}
+					return Err(err);
+				}
+			}
 		}
 		None => window_export::export(&pool, &ledger, &cluster_id, allow_live, BufWriter::new(std::io::stdout().lock())).await?,
 	};

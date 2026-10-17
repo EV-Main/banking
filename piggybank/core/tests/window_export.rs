@@ -133,3 +133,27 @@ async fn the_service_arb_shape_is_exported_exactly_and_nothing_is_written() {
 	assert_ne!(pending.trailer.pending_or_locked, "0");
 	assert_eq!(trailer.pending_or_locked, "0", "the earlier cut had nothing in flight");
 }
+
+/// The refusal must not leave the `--out` file behind: `create_new` would turn the operator's
+/// rerun, after maintenance is on, into "File exists".
+#[tokio::test]
+async fn a_refused_export_leaves_no_file_behind() {
+	let Some(url) = common::database_url().await else { return };
+	let dir = std::env::temp_dir().join(format!("window-export-{}", Uuid::new_v4()));
+	std::fs::create_dir_all(&dir).unwrap();
+	let out = dir.join("export.jsonl");
+	// The shared test database is never in maintenance, so this run is refused before it reads
+	// anything; TigerBeetle is not dialled that far, the address only has to parse.
+	let status = std::process::Command::new(env!("CARGO_BIN_EXE_window-export"))
+		.arg("--out")
+		.arg(&out)
+		.env("DATABASE_URL", url)
+		.env("TIGERBEETLE_ADDRESS", "127.0.0.1:3033")
+		.env("TIGERBEETLE_CLUSTER_ID", "0")
+		.output()
+		.unwrap();
+	let stderr = String::from_utf8_lossy(&status.stderr);
+	assert!(!status.status.success() && stderr.contains("not in maintenance"), "{stderr}");
+	assert!(!out.exists(), "a refused export must not leave {} behind", out.display());
+	std::fs::remove_dir_all(&dir).unwrap();
+}
