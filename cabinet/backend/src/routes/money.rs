@@ -12,8 +12,9 @@ use tonic::{Code, Status};
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{first_party_origin, money_mutation, parse_body, require_money_token, required, verify_csrf},
+	routes::{first_party_origin, money_gate, money_mutation, money_token_for, parse_body, require_fresh_login, require_money_token, required, verify_csrf},
 	state::AppState,
+	util::now_secs,
 };
 
 /// The machine-readable body the cabinet keys on to offer verification instead of reporting
@@ -223,7 +224,9 @@ pub async fn list_mandates(State(st): State<AppState>, jar: CookieJar) -> Result
 /// caller's compartment within the caps the body names. Consent to future debits, so only a
 /// page on evinvest.ltd may ask for it — never a scope's own host.
 pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
-	let token = money_mutation(&st, &jar, &headers).await?;
+	let claims = money_gate(&st, &jar, &headers).await?;
+	require_fresh_login(&claims, now_secs().max(0) as u64)?;
+	let token = money_token_for(&st, &claims).await?;
 	let v = parse_body(&body);
 	let (Some(scope), Some(client_id), Some(cap_per_op), Some(cap_24h), Some(idempotency_key)) = (
 		required(&v, "scope"),
@@ -473,7 +476,7 @@ mod wallet_gate_tests {
 		routes::{
 			approval::AttemptLimiter,
 			first_party_origin, router,
-			test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token},
+			test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token, access_token_at},
 			ws,
 		},
 		session::BankingTokens,
@@ -569,8 +572,12 @@ mod wallet_gate_tests {
 	}
 
 	fn request(method: &str, uri: &str, body: &str, origin: Option<&str>, session: bool) -> Request<Body> {
-		let cookie = if session {
-			format!("ev_access={}; ev_csrf={CSRF}", access_token())
+		request_with(method, uri, body, origin, session.then(access_token))
+	}
+
+	fn request_with(method: &str, uri: &str, body: &str, origin: Option<&str>, token: Option<String>) -> Request<Body> {
+		let cookie = if let Some(token) = token {
+			format!("ev_access={token}; ev_csrf={CSRF}")
 		} else {
 			format!("ev_csrf={CSRF}")
 		};
@@ -615,6 +622,33 @@ mod wallet_gate_tests {
 			let (status, _) = post_from(uri, body, Some(FIRST_PARTY)).await;
 			assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}: past the gate the next refusal is the missing session");
 		}
+	}
+
+	/// Consent to future debits needs a recent interactive sign-in. A session with a stale or
+	/// absent `auth_time` is refused with the code the page keys on, before any money RPC is
+	/// reached; revoking, which only ends a consent, is not held to it.
+	#[tokio::test]
+	async fn granting_a_mandate_needs_a_fresh_login_but_revoking_does_not() {
+		let concierge = jwks().await;
+		let app = router(state(Env {
+			concierge: format!("http://{concierge}"),
+			..Env::default()
+		}));
+		let now = jsonwebtoken::get_current_timestamp();
+		let revoke = "/api/wallet/mandates/m-1/revoke";
+		for stale in [Some(now - crate::routes::STEP_UP_MAX_AGE_SECS - 60), None] {
+			let grant = request_with("POST", "/api/wallet/mandates", MANDATE, Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (status, _, response) = send(&app, grant).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "auth_time {stale:?}: {response}");
+			assert!(response.contains("step_up_required"), "auth_time {stale:?}: {response}");
+
+			let revoke = request_with("POST", revoke, "", Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (_, _, response) = send(&app, revoke).await;
+			assert!(!response.contains("step_up_required"), "auth_time {stale:?}: {response}");
+		}
+		let fresh = request_with("POST", "/api/wallet/mandates", MANDATE, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+		let (_, _, response) = send(&app, fresh).await;
+		assert!(!response.contains("step_up_required"), "a fresh login passes the gate: {response}");
 	}
 
 	/// With no first-party origin configured the money gate refuses everything, even the

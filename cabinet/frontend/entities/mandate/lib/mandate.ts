@@ -26,9 +26,10 @@ export function visibleMandates<T extends MandateStamps>(list: readonly T[], url
 }
 
 /**
- * The step-up gate (#524) answers a money mutation with 401 `step_up_required` once it
- * lands. Until then nothing sends it, but the page must already read it as "sign in again"
- * and not as a broken request.
+ * The BFF's grant gate (#524) answers 401 `step_up_required` when the session's last
+ * interactive sign-in is older than five minutes; the page reads it as "sign in again", not
+ * as a broken request. `requestJson` replays a 401 once after refreshing the session, which
+ * cannot clear this verdict, so the error that arrives here is the replay's.
  */
 export function isStepUpRequired(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
