@@ -1319,6 +1319,10 @@
     "en": "Open the consilium",
     "t": "Ouvrir le consilium"
   },
+  "admin.payments.openedApprovalBody": {
+    "en": "The payment is proposed to the platform owners as an approval. Nothing moves until more than half of them approve it and its veto delay has passed.",
+    "t": "Le paiement est proposé aux propriétaires de la plateforme sous forme d'approbation. Rien ne bouge tant que plus de la moitié d'entre eux ne l'ont pas approuvé et que le délai de veto n'est pas écoulé."
+  },
   "admin.payments.openedConsentBody": {
     "en": "{email} has been emailed a link and a code. Nothing moves until they agree — this is their money, and only they can say so.",
     "t": "{email} a reçu un lien et un code par e-mail. Rien ne bouge tant que cette personne n'a pas accepté — c'est son argent, et elle seule peut le dire."
@@ -1330,6 +1334,10 @@
   "admin.payments.openedExpires": {
     "en": "Expires {at} · {left}",
     "t": "Expire le {at} · {left}"
+  },
+  "admin.payments.openedSessionBody": {
+    "en": "The investor has been told in their cabinet. Nothing moves until they confirm it there — this is their money, and only they can say so.",
+    "t": "L'investisseur a été prévenu dans son cabinet. Rien ne bouge tant qu'il ne l'a pas confirmé là-bas — c'est son argent, et lui seul peut en décider."
   },
   "admin.payments.openedTitle": {
     "en": "Opened — no money has moved",
@@ -5122,6 +5130,94 @@
   "payment.tier.service": {
     "en": "To a product",
     "t": "Vers un produit"
+  },
+  "paymentConfirm.approve": {
+    "en": "Approve this payment",
+    "t": "Approuver ce paiement"
+  },
+  "paymentConfirm.approved.fresh": {
+    "en": "Your answer has been recorded and the payment goes ahead.",
+    "t": "Votre réponse est enregistrée et le paiement va être effectué."
+  },
+  "paymentConfirm.approved.title": {
+    "en": "You approved this payment",
+    "t": "Vous avez approuvé ce paiement"
+  },
+  "paymentConfirm.cancelled.body": {
+    "en": "Whoever asked took the request back. Nothing moved.",
+    "t": "La personne qui l'avait demandé a retiré sa demande. Aucun fonds n'a bougé."
+  },
+  "paymentConfirm.cancelled.title": {
+    "en": "This payment was withdrawn",
+    "t": "Ce paiement a été retiré"
+  },
+  "paymentConfirm.declined.fresh": {
+    "en": "Your answer has been recorded. Your money stays where it is.",
+    "t": "Votre réponse est enregistrée. Votre argent reste où il est."
+  },
+  "paymentConfirm.declined.title": {
+    "en": "You declined this payment",
+    "t": "Vous avez refusé ce paiement"
+  },
+  "paymentConfirm.expired.body": {
+    "en": "Nobody answered in time, so it lapsed. Nothing moved.",
+    "t": "Personne n'a répondu à temps, la demande a donc expiré. Aucun fonds n'a bougé."
+  },
+  "paymentConfirm.expired.title": {
+    "en": "This payment ran out of time",
+    "t": "Ce paiement a expiré"
+  },
+  "paymentConfirm.failed.body": {
+    "en": "Your answer stands, but the payment did not go through. Nothing was taken from your account.",
+    "t": "Votre réponse est maintenue, mais le paiement n'a pas abouti. Rien n'a été prélevé sur votre compte."
+  },
+  "paymentConfirm.failed.title": {
+    "en": "The payment could not be carried out",
+    "t": "Le paiement n'a pas pu être effectué"
+  },
+  "paymentConfirm.lead": {
+    "en": "{initiator} has asked for it to be moved as set out below. Nothing happens unless you agree.",
+    "t": "{initiator} a demandé que cet argent soit déplacé comme indiqué ci-dessous. Rien ne se passe sans votre accord."
+  },
+  "paymentConfirm.leadOwn": {
+    "en": "This is your money.",
+    "t": "C'est votre argent."
+  },
+  "paymentConfirm.missing.body": {
+    "en": "It may have been answered, withdrawn or have expired, or it was not made for this account. Nothing was approved.",
+    "t": "Il a peut-être déjà reçu une réponse, été retiré ou avoir expiré, ou n'a pas été créé pour ce compte. Rien n'a été approuvé."
+  },
+  "paymentConfirm.missing.title": {
+    "en": "This payment is not available",
+    "t": "Ce paiement n'est pas disponible"
+  },
+  "paymentConfirm.reasonLabel": {
+    "en": "Reason given by {initiator}",
+    "t": "Motif indiqué par {initiator}"
+  },
+  "paymentConfirm.reject": {
+    "en": "Decline",
+    "t": "Refuser"
+  },
+  "paymentConfirm.title": {
+    "en": "A payment out of your account",
+    "t": "Un paiement depuis votre compte"
+  },
+  "paymentConfirm.unrenderable.body": {
+    "en": "There is nothing here to agree to, so no answer is offered. This is a problem on our side. Try again in a moment.",
+    "t": "Il n'y a rien à accepter ici, aucune réponse n'est donc proposée. Le problème vient de notre côté. Réessayez dans un instant."
+  },
+  "paymentConfirm.unrenderable.title": {
+    "en": "The terms did not arrive",
+    "t": "Les conditions ne sont pas arrivées"
+  },
+  "paymentConfirm.void.body": {
+    "en": "Your sign-in sessions were revoked or your address changed after it was opened, so it can no longer be approved. Nothing moved.",
+    "t": "Vos sessions ont été révoquées ou votre adresse e-mail a changé après l'ouverture du paiement, il ne peut donc plus être approuvé. Aucun fonds n'a bougé."
+  },
+  "paymentConfirm.void.title": {
+    "en": "This payment was stopped",
+    "t": "Ce paiement a été arrêté"
   },
   "profile.activeSince": {
     "en": "Active since {date}",

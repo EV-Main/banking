@@ -128,6 +128,10 @@ impl Grpc {
 		bk::payments_service_client::PaymentsServiceClient::new(self.piggybank.clone())
 	}
 
+	fn payment_confirmations(&self) -> bk::payment_confirmation_service_client::PaymentConfirmationServiceClient<Channel> {
+		bk::payment_confirmation_service_client::PaymentConfirmationServiceClient::new(self.piggybank.clone())
+	}
+
 	fn payment_consent(&self) -> bk::payment_consent_service_client::PaymentConsentServiceClient<Channel> {
 		bk::payment_consent_service_client::PaymentConsentServiceClient::new(self.piggybank.clone())
 	}
@@ -246,6 +250,23 @@ impl Grpc {
 
 	pub async fn move_funds(&self, token: &str, req: bk::MoveFundsRequest) -> Result<bk::CompartmentMove, Status> {
 		Ok(self.compartments().move_funds(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn list_payment_confirmations(&self, token: &str) -> Result<bk::PaymentConfirmationList, Status> {
+		Ok(self
+			.payment_confirmations()
+			.list_payment_confirmations(bearer(token, bk::ListPaymentConfirmationsRequest {})?)
+			.await?
+			.into_inner())
+	}
+
+	pub async fn get_payment_confirmation(&self, token: &str, payment_id: &str) -> Result<bk::PaymentConfirmation, Status> {
+		let req = bk::GetPaymentConfirmationRequest { payment_id: payment_id.to_string() };
+		Ok(self.payment_confirmations().get_payment_confirmation(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn answer_payment_confirmation(&self, token: &str, req: bk::AnswerPaymentConfirmationRequest) -> Result<bk::PaymentConfirmation, Status> {
+		Ok(self.payment_confirmations().answer_payment_confirmation(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn list_mandates(&self, token: &str) -> Result<bk::MandateList, Status> {

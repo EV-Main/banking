@@ -184,6 +184,13 @@ impl<S: Send + Sync> FromRequestParts<S> for Peer {
 	}
 }
 
+/// The audit fields of a signed-in answer: where it came from and with what. Recorded beside
+/// the decision, never an authorization input.
+pub fn audit_fields(headers: &HeaderMap, Peer(peer): Peer) -> (String, String) {
+	let user_agent = clamp(headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default(), MAX_USER_AGENT);
+	(client_ip(headers, peer), user_agent)
+}
+
 /// The preamble both POSTs share: the per-IP bound, then the ballot, then the audit
 /// fields. Returns the finished refusal response when either check fails.
 // A `Response` is a large error type; boxing it at two call sites buys nothing, and the
