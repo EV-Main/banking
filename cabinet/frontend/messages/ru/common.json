@@ -7551,6 +7551,18 @@
     "en": "Cancelled",
     "t": "Отменено"
   },
+  "walletAction.cap24h": {
+    "en": "Per 24 hours",
+    "t": "За 24 часа"
+  },
+  "walletAction.capOutstanding": {
+    "en": "Held at once",
+    "t": "Удерживается одновременно"
+  },
+  "walletAction.capPerOp": {
+    "en": "Per operation",
+    "t": "За одну операцию"
+  },
   "walletAction.close": {
     "en": "Close window",
     "t": "Закрыть окно"
@@ -7567,21 +7579,133 @@
     "en": "Done",
     "t": "Готово"
   },
+  "walletAction.expires": {
+    "en": "Valid until",
+    "t": "Действует до"
+  },
   "walletAction.failed": {
     "en": "That did not go through",
     "t": "Не получилось"
   },
-  "walletAction.mandateTitle": {
-    "en": "Allow a service to charge you",
-    "t": "Разрешить сервису списания"
+  "walletAction.fromMain": {
+    "en": "Main balance",
+    "t": "Основной баланс"
+  },
+  "walletAction.fromScope": {
+    "en": "{scope} balance",
+    "t": "Баланс {scope}"
+  },
+  "walletAction.invoiceClosed": {
+    "en": "This invoice can no longer be paid. Nothing has been charged.",
+    "t": "Этот счёт больше нельзя оплатить. Ничего не списано."
+  },
+  "walletAction.invoiceMissing": {
+    "en": "This link does not name an invoice.",
+    "t": "В ссылке не указан счёт."
+  },
+  "walletAction.invoicePaid": {
+    "en": "This invoice is paid.",
+    "t": "Этот счёт оплачен."
+  },
+  "walletAction.mandateListTitle": {
+    "en": "Services allowed to charge you",
+    "t": "Сервисы, которым разрешено списывать с вас"
+  },
+  "walletAction.mandateNone": {
+    "en": "No service is allowed to charge you right now.",
+    "t": "Сейчас ни одному сервису не разрешено списывать с вас средства."
+  },
+  "walletAction.mandateService": {
+    "en": "Service in {scope}",
+    "t": "Сервис в {scope}"
+  },
+  "walletAction.moveAmount": {
+    "en": "Amount, USDT",
+    "t": "Сумма, USDT"
+  },
+  "walletAction.moveAvailable": {
+    "en": "Available: {amount}",
+    "t": "Доступно: {amount}"
+  },
+  "walletAction.moveDirection": {
+    "en": "Direction",
+    "t": "Направление"
+  },
+  "walletAction.moveExceeds": {
+    "en": "That is more than is available.",
+    "t": "Это больше, чем доступно."
+  },
+  "walletAction.moveFailed": {
+    "en": "The move did not go through. Nothing was moved — you can try again.",
+    "t": "Перевод не прошёл. Деньги не перемещены — можно попробовать снова."
+  },
+  "walletAction.moveIn": {
+    "en": "Main → {scope}",
+    "t": "Основной → {scope}"
+  },
+  "walletAction.moveNoScopes": {
+    "en": "There is no balance to move to or from yet.",
+    "t": "Пока нет баланса, куда или откуда можно переводить."
+  },
+  "walletAction.moveNow": {
+    "en": "Move",
+    "t": "Перевести"
+  },
+  "walletAction.moveOut": {
+    "en": "{scope} → Main",
+    "t": "{scope} → Основной"
+  },
+  "walletAction.moveScope": {
+    "en": "Balance",
+    "t": "Баланс"
   },
   "walletAction.moveTitle": {
     "en": "Move funds",
     "t": "Перевести средства"
   },
-  "walletAction.unavailable": {
-    "en": "This is not available yet. Nothing has been charged or moved.",
-    "t": "Пока недоступно. Ничего не списано и не перемещено."
+  "walletAction.opBookFill": {
+    "en": "Settle trades with other users",
+    "t": "Рассчитывать сделки с другими пользователями"
+  },
+  "walletAction.opCharge": {
+    "en": "Charge directly",
+    "t": "Списывать напрямую"
+  },
+  "walletAction.opReserve": {
+    "en": "Hold funds for orders and subscriptions",
+    "t": "Резервировать средства под ордера и подписки"
+  },
+  "walletAction.payFrom": {
+    "en": "Pay from",
+    "t": "Оплатить с"
+  },
+  "walletAction.payNow": {
+    "en": "Pay",
+    "t": "Оплатить"
+  },
+  "walletAction.payRefused": {
+    "en": "The payment did not go through. Nothing was charged — you can try again.",
+    "t": "Платёж не прошёл. Ничего не списано — можно попробовать снова."
+  },
+  "walletAction.processing": {
+    "en": "Processing your payment…",
+    "t": "Платёж обрабатывается…"
+  },
+  "walletAction.processingSlow": {
+    "en": "Still processing. You can close this window — the payment is not lost, and the service is told once it completes.",
+    "t": "Платёж ещё обрабатывается. Окно можно закрыть — платёж не потерян, сервис узнает о нём, как только он завершится."
+  },
+  "walletAction.revoke": {
+    "en": "End this permission",
+    "t": "Отозвать разрешение"
+  },
+  "walletAction.stepUp": {
+    "en": "For your safety, sign in again to continue.",
+    "t": "Для вашей безопасности войдите снова, чтобы продолжить."
+  },
+  "walletAction.untilRevoked": {
+    "en": "Until you end it",
+    "t": "Пока вы не отзовёте"
   },
   "walletMfe.available": {
     "en": "Available",
@@ -7670,45 +7794,5 @@
   "walletMfe.allActivity": {
     "en": "See all activity",
     "t": "Все операции"
-  },
-  "walletAction.fromMain": {
-    "en": "Main balance",
-    "t": "Основной баланс"
-  },
-  "walletAction.fromScope": {
-    "en": "{scope} balance",
-    "t": "Баланс {scope}"
-  },
-  "walletAction.invoiceClosed": {
-    "en": "This invoice can no longer be paid. Nothing has been charged.",
-    "t": "Этот счёт больше нельзя оплатить. Ничего не списано."
-  },
-  "walletAction.invoiceMissing": {
-    "en": "This link does not name an invoice.",
-    "t": "В ссылке не указан счёт."
-  },
-  "walletAction.invoicePaid": {
-    "en": "This invoice is paid.",
-    "t": "Этот счёт оплачен."
-  },
-  "walletAction.payFrom": {
-    "en": "Pay from",
-    "t": "Оплатить с"
-  },
-  "walletAction.payNow": {
-    "en": "Pay",
-    "t": "Оплатить"
-  },
-  "walletAction.payRefused": {
-    "en": "The payment did not go through. Nothing was charged — you can try again.",
-    "t": "Платёж не прошёл. Ничего не списано — можно попробовать снова."
-  },
-  "walletAction.processing": {
-    "en": "Processing your payment…",
-    "t": "Платёж обрабатывается…"
-  },
-  "walletAction.processingSlow": {
-    "en": "Still processing. You can close this window — the payment is not lost, and the service is told once it completes.",
-    "t": "Платёж ещё обрабатывается. Окно можно закрыть — платёж не потерян, сервис узнает о нём, как только он завершится."
   }
 }
