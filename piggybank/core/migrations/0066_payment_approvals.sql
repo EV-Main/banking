@@ -9,11 +9,11 @@
 -- banking-run consilium (`payment_approval`) and the second an emailed token
 -- (`payment_consent`). The first becomes a `bank:payment` approval in concierge, the second
 -- the investor's own answer inside the cabinet. The old seats stay for the orders already
--- open and for the rollback switch (`PAYMENT_APPROVALS=consilium`); a payment has at most
+-- open and for the switches (`PAYMENT_APPROVALS_FUND` / `PAYMENT_APPROVALS_SESSION`, `consilium`); a payment has at most
 -- one seat of the four, which the application checks and the composite keys below make
 -- unrepresentable for the wrong source.
 --
--- REVERSIBILITY. The way back is the FLAG, not the image: set `PAYMENT_APPROVALS=consilium`
+-- REVERSIBILITY. The way back is the FLAG, not the image: set `PAYMENT_APPROVALS_FUND=consilium` and `PAYMENT_APPROVALS_SESSION=consilium`
 -- (new orders then use the old path), wait until every order seated on these tables has ended
 -- (`SELECT count(*) FROM payments p WHERE p.state IN ('pending', 'approved') AND (EXISTS (SELECT
 -- 1 FROM payment_concierge_approval WHERE payment_id = p.id) OR EXISTS (SELECT 1 FROM

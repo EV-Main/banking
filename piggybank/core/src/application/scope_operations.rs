@@ -533,7 +533,7 @@ impl CatalogGate {
 	/// published the newer) is the one refusal that does not hold: it is logged at error and
 	/// proposing goes on, because concierge checks every proposal's kind and fields against the
 	/// catalog it holds, and execution is bound to the `payload_hash` stored with the operation.
-	/// Rolling the image back is still wrong — the way back is `PAYMENT_APPROVALS=consilium` —
+	/// Rolling the image back is still wrong — the way back is the `PAYMENT_APPROVALS_*=consilium` flags —
 	/// but it must not stop every `bank:*` proposal on top of that.
 	pub(crate) async fn ensure(&self, approvals: &dyn Approvals) -> bool {
 		{

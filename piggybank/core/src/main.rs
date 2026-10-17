@@ -149,11 +149,20 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// applied. Announced at boot for the same reason the signer's spend policy is: a gate
 	// that is off is visible in a pod's first log lines, not only in whoever's memory of
 	// the environment.
-	let payment_approval_mode = config::PaymentApprovalMode::from_env();
-	tracing::info!(mode = ?payment_approval_mode, "new payment orders are decided over {}", match payment_approval_mode {
-		config::PaymentApprovalMode::Concierge => "concierge approvals and the investor's answer in the cabinet",
-		config::PaymentApprovalMode::Consilium => "banking's consilium and emailed consent (rollback)",
-	});
+	let payment_approval_mode = config::PaymentApprovalModes::from_env();
+	tracing::info!(
+		fund = ?payment_approval_mode.fund,
+		session = ?payment_approval_mode.session,
+		"new payment orders: fund money is decided by {}, an investor's by {}",
+		match payment_approval_mode.fund {
+			config::PaymentApprovalMode::Concierge => "a concierge approval proposed in the initiator's name",
+			config::PaymentApprovalMode::Consilium => "banking's consilium",
+		},
+		match payment_approval_mode.session {
+			config::PaymentApprovalMode::Concierge => "their own answer in the cabinet",
+			config::PaymentApprovalMode::Consilium => "the emailed token",
+		},
+	);
 	let kyc_gate = config::KycGate::from_env();
 	if kyc_gate.is_enforced() {
 		tracing::info!("kyc gate enforced — deposit addresses and withdrawals require a verified tier");

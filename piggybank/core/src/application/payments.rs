@@ -33,7 +33,7 @@ use crate::{
 		credentials::{self, token_digest},
 		withdrawals::{self as withdrawal_app, AdmissionGates, WithdrawalPorts, require_outflows_enabled},
 	},
-	config::{KycGate, PaymentApprovalMode},
+	config::{KycGate, PaymentApprovalMode, PaymentApprovalModes},
 	infrastructure::{consilium::digest, relay::payment_reserve_id},
 	ports::{
 		AllocationRegistry, Custody, OutflowPolicy, UserRepository, WithdrawalRepository,
@@ -77,7 +77,7 @@ pub struct PaymentPorts<'a> {
 	/// approvals no governance mail is sent.
 	pub governance_mail_wired: bool,
 	/// How a NEW order is seated. Orders already open keep the seat they were opened with.
-	pub approvals: PaymentApprovalMode,
+	pub approvals: PaymentApprovalModes,
 }
 
 impl PaymentPorts<'_> {
@@ -128,7 +128,7 @@ pub struct SweepReport {
 /// cannot pay out from at all. Solvency is a pre-check, not a guarantee — the claim can
 /// still fall between here and execution, which is what `execution_failed` exists for.
 pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTerms, now: i64) -> Result<PaymentView, DomainError> {
-	let mode = ports.approvals;
+	let mode = ports.approvals.of(terms.requirement());
 	if mode == PaymentApprovalMode::Consilium {
 		require_governance_mail(ports.governance_mail_wired)?;
 	}

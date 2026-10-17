@@ -560,17 +560,24 @@ each of these makes it safe to reach more than once:
 `execution_failed` is terminal and retried by nothing: the reason is what the initiator (and,
 for a consilium, every owner) reads.
 
-### Decided over concierge's approvals (the default)
+### Decided over concierge's approvals
 
-Org restructure plan §4.4 moves the decision out of this plane. `PAYMENT_APPROVALS`
-(`config::PaymentApprovalMode`, read once at boot) says how a NEW order is seated; unset or
-`concierge` is the default, `consilium` is the rollback. An order keeps the seat it was opened
-with, and every part of the old path keeps running in both modes.
+Org restructure plan §4.4 moves the decision out of this plane. Two switches, read once at boot,
+say how a NEW order is seated; an order keeps the seat it was opened with, and every part of the
+old path keeps running in all modes.
 
-| source | seat (default) | seat (`PAYMENT_APPROVALS=consilium`) |
-| --- | --- | --- |
-| fund-owned | a `bank:payment` approval in scope `main`, decided by the platform owners (`payment_concierge_approval`) | banking's consilium (`payment_approval`) |
-| an investor's claim | that investor's own answer, signed in (`payment_session_consent`) | the emailed token and code (`payment_consent`) |
+| source | switch | `concierge` | `consilium` |
+| --- | --- | --- | --- |
+| fund-owned | `PAYMENT_APPROVALS_FUND`, default **`consilium`** | a `bank:payment` approval in scope `main`, decided by the platform owners, proposed in the initiator's name (`payment_concierge_approval`) | banking's consilium (`payment_approval`) |
+| an investor's claim | `PAYMENT_APPROVALS_SESSION`, default **`concierge`** | that investor's own answer, signed in (`payment_session_consent`) | the emailed token and code (`payment_consent`) |
+
+`PAYMENT_APPROVALS` (the first, single name) still works: when set it is the default of both,
+and either specific variable overrides it. A value that is neither `concierge` nor `consilium`
+is the side's default, with a WARN.
+
+Fund money defaults to the old path because the new one needs a proof the console cannot give
+yet (below). An investor's payment needs no token of the initiator's, so it is on the new path
+from the first deploy.
 
 **Fund money.** The request that opens the order proposes the approval in the same breath,
 WITH THE PROOF of who asked (D24(1)): the initiator's own concierge access token in
@@ -596,11 +603,14 @@ closed (`TREASURY_SPENDING_CLOSED`).
 **The proof's freshness.** Concierge accepts the token only if minted within 120 seconds. The
 cabinet session renews its access token (15-minute TTL) only when it is about to expire, so the
 console cannot make one fresh on demand: until the identity plane offers a forced renewal, an
-open with an older token fails with that reason. That is why the first rollout sets
-`PAYMENT_APPROVALS=consilium` and switches only once a fresh-token path exists.
+open with an older token fails with that reason. That is why
+`PAYMENT_APPROVALS_FUND` defaults to `consilium`. To turn the fund path on, the identity plane
+(concierge, with site_conductor's session endpoint) must give the console a way to obtain a
+FRESH (≤120 s) access token of the signed-in session on demand — a forced renewal — so that the
+BFF can hand it to banking as the proof of who asked.
 
-**Rolling back.** The way back is the flag, never the image. Set `PAYMENT_APPROVALS=consilium`
-(new orders use the old path), wait until every order seated on `payment_concierge_approval` /
+**Rolling back.** The way back is the flag, never the image. Set `PAYMENT_APPROVALS_FUND=consilium`
+and/or `PAYMENT_APPROVALS_SESSION=consilium` (new orders use the old path), wait until every order seated on `payment_concierge_approval` /
 `payment_session_consent` has ended (the query is in migration 0066's header; they end by
 themselves within 7 days), and only then consider anything else. An image older than this
 release cannot propose: concierge already holds a newer catalog. (The catalog gate logs that

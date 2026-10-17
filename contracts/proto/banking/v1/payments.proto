@@ -22,13 +22,14 @@ package banking.v1;
 // by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is
 // FAILED_PRECONDITION `treasury spending waits for scope approvals`.
 //
-// HOW THE APPROVAL IS SEATED. By default (`PAYMENT_APPROVALS`, unset or `concierge`) the
-// owners decide a fund-owned order over a concierge approval of kind `bank:payment` — banking
-// proposes it, pulls it once passed and reports the outcome — and an investor's order is
-// answered by that investor, signed in, over PaymentConfirmationService; no token and no
-// mail are involved. `PAYMENT_APPROVALS=consilium` is the rollback: new orders are seated on
-// banking's consilium and the emailed token as before. An order keeps the seat it was opened
-// with. See `Payment.seat`.
+// HOW THE APPROVAL IS SEATED. Two switches (`PAYMENT_APPROVALS_FUND`, default `consilium`;
+// `PAYMENT_APPROVALS_SESSION`, default `concierge`) decide how a NEW order is seated. With
+// `concierge`, the owners decide a fund-owned order over a concierge approval of kind
+// `bank:payment` — proposed in the initiator's name, which needs their access token of the
+// last two minutes in `x-ev-user-token` — and an investor's order is answered by that
+// investor, signed in, over PaymentConfirmationService; no token and no mail are involved.
+// With `consilium` new orders are seated on banking's consilium and the emailed token. An
+// order keeps the seat it was opened with. See `Payment.seat`.
 //
 // IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms
 // shown in the mail; changing anything means cancel and reopen.

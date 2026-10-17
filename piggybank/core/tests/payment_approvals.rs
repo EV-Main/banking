@@ -31,7 +31,7 @@ use piggybank_core::{
 		payments as payments_app,
 		scope_operations::CatalogGate,
 	},
-	config::{KycGate, PaymentApprovalMode},
+	config::{KycGate, PaymentApprovalModes},
 	infrastructure::{
 		allocations::PgAllocations, consilium::PgConsilia, custody::StubCustody, operations, outflow::PgOutflowPolicy, payments::PgPayments, relay::Relay,
 		scope_notifications::ScopeNotificationWorker, users::PgUsers, withdrawals::PgWithdrawals,
@@ -359,7 +359,7 @@ fn ports(a: &App) -> payments_app::PaymentPorts<'_> {
 		consent_url_base: "https://example.test/consent",
 		// Unwired on purpose: the new path must not need the governance mailer at all.
 		governance_mail_wired: false,
-		approvals: PaymentApprovalMode::Concierge,
+		approvals: PaymentApprovalModes::ALL_CONCIERGE,
 	}
 }
 
@@ -975,7 +975,7 @@ async fn the_consilium_mode_still_routes_a_fund_payment_to_the_old_path() {
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
 	let rollback = payments_app::PaymentPorts {
-		approvals: PaymentApprovalMode::Consilium,
+		approvals: PaymentApprovalModes::ALL_CONSILIUM,
 		..ports(&a)
 	};
 	let refused = payments_app::open(&rollback, initiator, fund_to_fee("5"), now()).await;
@@ -987,6 +987,38 @@ async fn the_consilium_mode_still_routes_a_fund_payment_to_the_old_path() {
 		.await
 		.expect("the default path needs no governance mailer");
 	assert!(seated.concierge.is_some() && seated.consilium_id.is_none());
+
+	reset(&a.pool).await;
+}
+
+/// The defaults: fund money stays on the old path (no proof of who asked is needed or asked
+/// for), an investor's goes to their own answer in the cabinet.
+#[tokio::test]
+async fn by_default_fund_money_stays_on_the_consilium_and_an_investors_is_answered_in_the_cabinet() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals defaults").await else { return };
+	reset(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	fund(&a, LedgerAccountKey::UserClaim(investor), "100").await;
+	let defaults = payments_app::PaymentPorts {
+		approvals: PaymentApprovalModes::DEFAULT,
+		..ports(&a)
+	};
+	let round_ports = ApprovalRoundPorts {
+		payments: &defaults,
+		store: &a.payments,
+		approvals: &a.concierge,
+		catalog: &a.catalog,
+	};
+
+	// Fund money: the old path, even with no token — and nothing is proposed to concierge.
+	let fund_order = open_with_proof(&round_ports, investor, fund_to_fee("5"), None, now()).await;
+	assert!(matches!(fund_order, Err(DomainError::Conflict(ref why)) if why.contains("governance mail")), "{fund_order:?}");
+	assert!(a.concierge.with(|s| s.approvals.is_empty()));
+
+	// An investor's money: their own answer, with no token of anyone's.
+	let own = open_with_proof(&round_ports, investor, investor_payment(investor, "5"), None, now()).await.unwrap();
+	assert!(own.session.is_some() && own.consent.is_none() && own.concierge.is_none());
 
 	reset(&a.pool).await;
 }
