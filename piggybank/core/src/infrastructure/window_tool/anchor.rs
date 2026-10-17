@@ -31,6 +31,9 @@ pub struct Anchor {
 	service: ServiceId,
 	/// Ascending, so two shapes compare as multisets.
 	amounts: Vec<u128>,
+	/// The people the amounts belong to: concierge user id (lowercase) and units. Empty only
+	/// for a read; a write refuses without them ([`Self::ensure_people`]).
+	people: Vec<(String, u128)>,
 }
 
 impl Anchor {
@@ -41,7 +44,58 @@ impl Anchor {
 
 	pub fn new(service: ServiceId, mut amounts: Vec<u128>) -> Self {
 		amounts.sort_unstable();
-		Self { service, amounts }
+		Self {
+			service,
+			amounts,
+			people: Vec::new(),
+		}
+	}
+
+	/// Name the people behind the amounts. The units they are given must be the amounts the
+	/// anchor already has, so the two flags cannot contradict the built-in figures.
+	pub fn with_people(mut self, mut people: Vec<(String, u128)>) -> Result<Self> {
+		for (id, _) in &mut people {
+			*id = Uuid::parse_str(id).wrap_err_with(|| format!("`{id}` is not a concierge user id"))?.to_string();
+		}
+		people.sort_by_key(|(_, units)| *units);
+		let named: Vec<u128> = people.iter().map(|(_, units)| *units).collect();
+		if named != self.amounts {
+			bail!(
+				"the --anchor-holder units {:?} are not the anchor's {:?}",
+				named.iter().map(|v| units(*v)).collect::<Vec<_>>(),
+				self.amounts.iter().map(|v| units(*v)).collect::<Vec<_>>()
+			);
+		}
+		if people.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+			bail!("--anchor-holder names one person twice");
+		}
+		self.people = people;
+		Ok(self)
+	}
+
+	/// `<concierge user id>:<whole units>`, the shape of `--anchor-holder`.
+	pub fn parse_holder(raw: &str) -> Result<(String, u128)> {
+		let (id, amount) = raw.split_once(':').ok_or_else(|| eyre!("--anchor-holder wants <concierge user id>:<units>, got `{raw}`"))?;
+		let amount = domain::money::Shares::parse_decimal(amount)
+			.map_err(|e| eyre!("--anchor-holder units `{amount}`: {e}"))?
+			.base_units();
+		Ok((id.to_owned(), amount))
+	}
+
+	/// A write is refused unless the two people are named.
+	pub fn ensure_people(&self) -> Result<()> {
+		if self.people.len() != self.amounts.len() {
+			bail!(
+				"a write needs --anchor-holder <concierge user id>:<units> for each of the {} {} holders",
+				self.amounts.len(),
+				self.service
+			);
+		}
+		Ok(())
+	}
+
+	pub fn people(&self) -> &[(String, u128)] {
+		&self.people
 	}
 
 	pub fn service(&self) -> &ServiceId {
@@ -99,6 +153,37 @@ impl Reading {
 		}
 		Ok(())
 	}
+}
+
+/// The people behind the reading, when the anchor names them: each banking holder is mapped to
+/// their concierge id through `users`, and the result must be exactly the named people with
+/// exactly their units. The amounts alone would pass a swap of two holders' ids.
+pub async fn check_people(pool: &PgPool, reading: &Reading, anchor: &Anchor) -> Result<()> {
+	if anchor.people.is_empty() {
+		return Ok(());
+	}
+	let holders: Vec<Uuid> = reading.by_holder.iter().filter(|(_, v)| **v != 0).map(|(k, _)| *k).collect();
+	let rows: Vec<(Uuid, Option<String>)> = sqlx::query_as("SELECT id, concierge_user_id::text FROM users WHERE id = ANY($1)")
+		.bind(&holders)
+		.fetch_all(pool)
+		.await
+		.wrap_err("map the anchor holders to their concierge ids")?;
+	let mut found: Vec<(String, u128)> = Vec::new();
+	for holder in &holders {
+		let concierge = rows
+			.iter()
+			.find(|(id, _)| id == holder)
+			.and_then(|(_, concierge)| concierge.clone())
+			.ok_or_else(|| eyre!("ANCHOR BROKEN: holder {holder} has no concierge id on record"))?;
+		found.push((concierge.to_lowercase(), reading.by_holder[holder]));
+	}
+	found.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+	let mut expected = anchor.people.clone();
+	expected.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+	if found != expected {
+		bail!("ANCHOR BROKEN: the {} holders are {found:?}, expected {expected:?} (concierge id, base units)", anchor.service);
+	}
+	Ok(())
 }
 
 /// Read the anchor allocation's holders. Read-only.

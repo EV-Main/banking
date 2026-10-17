@@ -99,7 +99,7 @@ pub async fn run(w: &Window, mode: Mode, wait: Duration) -> Result<Outcome> {
 			holder: UnitHolder::Allocation(ServiceId::fee()),
 			units: Shares::from_base_units(*burn),
 			cost_basis: None,
-			idempotency_key: IdempotencyKey::parse(&format!("window-burn-fee-shares:{service}")).map_err(|e| eyre!("{e}"))?,
+			idempotency_key: IdempotencyKey::parse(&format!("window-burn-fee-shares:{service}:{burn}")).map_err(|e| eyre!("{e}"))?,
 			force: true,
 		};
 		let record = retire_units(&ports, &issuances, &users, request, now_unix())

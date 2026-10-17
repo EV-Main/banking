@@ -56,27 +56,29 @@ pub struct Remaining {
 impl Remaining {
 	/// Whether nothing the window depends on is left.
 	pub fn drained(&self) -> bool {
-		self.open_orders == 0 && self.queued_redemptions == 0 && self.open_consilia == 0 && self.approved_consilia == 0 && self.outbox_undispatched == 0
+		self.open_orders == 0
+			&& self.queued_redemptions == 0
+			&& self.open_consilia == 0
+			&& self.approved_consilia == 0
+			&& self.outbox_undispatched == 0
+			&& self.withdrawals_in_flight == 0
+			&& self.compartment_moves_pending == 0
 	}
 
 	pub fn render(&self) -> String {
 		let mut out = String::new();
 		say!(
 			out,
-			"left: open orders {}, queued redemptions {}, open consilia {}, approved-not-executed consilia {}, outbox undispatched {}",
+			"left: open orders {}, queued redemptions {}, open consilia {}, approved-not-executed consilia {}, outbox undispatched {}, withdrawals in flight {}, compartment moves pending {}",
 			self.open_orders,
 			self.queued_redemptions,
 			self.open_consilia,
 			self.approved_consilia,
-			self.outbox_undispatched
-		);
-		say!(
-			out,
-			"info: outbox parked {}, withdrawals in flight {}, compartment moves pending {}",
-			self.outbox_parked,
+			self.outbox_undispatched,
 			self.withdrawals_in_flight,
 			self.compartment_moves_pending
 		);
+		say!(out, "info: outbox parked {}", self.outbox_parked);
 		out
 	}
 }

@@ -39,9 +39,10 @@ use domain::{
 	users::UserId,
 	window_export::{HoldingKind, Record, SCHEMA_VERSION, ShareHolding},
 };
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::{Mode, Outcome, Window, balanced_cash, require_maintenance, require_quiet_outbox, say, tb_id, tool_id, units};
+use super::{Anchor, Mode, Outcome, Window, balanced_cash, require_drained, require_maintenance, say, tb_id, tool_id, units};
 use crate::ports::ledger::{HoldingScope, LedgerTransfer};
 
 /// A chain is one TigerBeetle batch; the client caps a request well above this.
@@ -50,6 +51,10 @@ const MAX_CHAIN: usize = 4000;
 /// What the tool takes from a window-export file.
 #[derive(Debug)]
 pub struct Export {
+	/// SHA-256 of the file's bytes, lowercase hex: the name invest imported the file by.
+	pub digest: String,
+	/// Banking user id -> concierge id, from the file's `user` records.
+	pub users: BTreeMap<String, Option<String>>,
 	pub holdings: Vec<ShareHolding>,
 	/// Every allocation the cut covers, holdings or not.
 	pub services: BTreeSet<String>,
@@ -90,6 +95,13 @@ pub fn parse_export(text: &str) -> Result<Export> {
 	if trailer.counts.values().sum::<u64>() as usize != records.len() {
 		bail!("the export's trailer counts {} lines, the file has {}", trailer.counts.values().sum::<u64>(), records.len());
 	}
+	let users = records
+		.iter()
+		.filter_map(|r| match r {
+			Record::User(u) => Some((u.user_id.clone(), u.concierge_user_id.clone())),
+			_ => None,
+		})
+		.collect();
 	let holdings = records
 		.iter()
 		.filter_map(|r| match r {
@@ -98,7 +110,44 @@ pub fn parse_export(text: &str) -> Result<Export> {
 		})
 		.collect();
 	let services = trailer.allocations.iter().map(|a| a.service.clone()).collect();
-	Ok(Export { holdings, services })
+	Ok(Export {
+		digest: hex::encode(Sha256::digest(text.as_bytes())),
+		users,
+		holdings,
+		services,
+	})
+}
+
+impl Export {
+	/// The anchor allocation in the file belongs to the people the operator named, with their
+	/// units: the file is checked against the owners' word, not against itself.
+	pub fn check_anchor(&self, anchor: &Anchor) -> Result<()> {
+		if anchor.people().is_empty() {
+			return Ok(());
+		}
+		let mut per_person: BTreeMap<String, u128> = BTreeMap::new();
+		for h in self.holdings.iter().filter(|h| h.service == anchor.service().as_str() && h.kind != HoldingKind::FeeShares) {
+			let user = h.user_id.as_deref().ok_or_else(|| eyre!("a {} holding of {} has no holder", h.units, h.service))?;
+			let concierge = self
+				.users
+				.get(user)
+				.and_then(Clone::clone)
+				.ok_or_else(|| eyre!("the export has no concierge id for holder {user} of {}", h.service))?;
+			let units: u128 = h.units.parse().wrap_err_with(|| format!("export units `{}`", h.units))?;
+			*per_person.entry(concierge.to_lowercase()).or_default() += units;
+		}
+		let mut found: Vec<(String, u128)> = per_person.into_iter().collect();
+		found.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+		let mut expected = anchor.people().to_vec();
+		expected.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+		if found != expected {
+			bail!(
+				"the export's {} holders are {found:?}, the operator named {expected:?} (concierge id, base units)",
+				anchor.service()
+			);
+		}
+		Ok(())
+	}
 }
 
 /// One account to close, as the export names it.
@@ -177,11 +226,25 @@ async fn classify(w: &Window, item: &Item) -> Result<State> {
 	}
 }
 
-pub async fn run(w: &Window, mode: Mode, export: &Export) -> Result<Outcome> {
+pub async fn run(w: &Window, mode: Mode, export: &Export, import_digest: Option<&str>) -> Result<Outcome> {
 	let mut out = String::new();
+	say!(out, "export sha256: {}", export.digest);
+	export.check_anchor(&w.anchor)?;
+	if mode.applies() {
+		// The digest is what ties this file to the import invest reconciled: the operator
+		// copies it from invest's own output, so `--yes` is backed by invest having seen
+		// these exact bytes and not by the operator's word alone.
+		let given = import_digest.ok_or_else(|| eyre!("--yes needs --import-digest <sha256 hex of the file invest imported>; this file is {}", export.digest))?;
+		if given.len() != 64 || !given.bytes().all(|b| b.is_ascii_hexdigit()) {
+			bail!("--import-digest must be 64 hex characters, got `{given}`");
+		}
+		if given.to_ascii_lowercase() != export.digest {
+			bail!("--import-digest {given} is not this file's sha256 {}: invest imported a different file", export.digest);
+		}
+	}
 	require_maintenance(&w.pool).await?;
-	require_quiet_outbox(&w.pool).await?;
-	let cash_before = balanced_cash(w.ledger.as_ref(), "before closing").await?;
+	require_drained(&w.pool).await?;
+	balanced_cash(w.ledger.as_ref(), "before closing").await?;
 
 	let mut items = items(export)?;
 	for item in &mut items {
@@ -311,16 +374,9 @@ pub async fn run(w: &Window, mode: Mode, export: &Export) -> Result<Outcome> {
 			bail!("after closing, {service} still has holdings {left:?} and supply {}", units(supply));
 		}
 	}
-	let cash_after = balanced_cash(w.ledger.as_ref(), "after closing").await?;
-	if cash_after.custody != cash_before.custody || cash_after.claims != cash_before.claims {
-		bail!(
-			"closing share accounts moved cash: custody {} -> {}, claims {} -> {}",
-			units(cash_before.custody),
-			units(cash_after.custody),
-			units(cash_before.claims),
-			units(cash_after.claims)
-		);
-	}
+	// Only the invariant is a post-condition: deposits keep landing in maintenance, so the
+	// totals may legitimately differ from before, and this step moves no cash.
+	balanced_cash(w.ledger.as_ref(), "after closing").await?;
 	say!(
 		out,
 		"closed: every share account of {} allocation(s) at zero, supplies at zero, cash untouched",
@@ -418,6 +474,8 @@ mod tests {
 	#[test]
 	fn resting_sell_units_in_the_file_mean_the_drain_was_skipped() {
 		let export = Export {
+			digest: String::new(),
+			users: BTreeMap::new(),
 			holdings: vec![ShareHolding {
 				service: "svc".into(),
 				kind: HoldingKind::BookShares,
@@ -433,6 +491,8 @@ mod tests {
 	fn a_holding_maps_to_its_account() {
 		let user = Uuid::from_u128(7);
 		let export = Export {
+			digest: String::new(),
+			users: BTreeMap::new(),
 			holdings: vec![
 				ShareHolding {
 					service: "svc".into(),
@@ -466,11 +526,15 @@ mod tests {
 			units: units.into(),
 		};
 		let zero = Export {
+			digest: String::new(),
+			users: BTreeMap::new(),
 			holdings: vec![holding("0")],
 			services: BTreeSet::new(),
 		};
 		assert!(items(&zero).is_err());
 		let twice = Export {
+			digest: String::new(),
+			users: BTreeMap::new(),
 			holdings: vec![holding("1"), holding("2")],
 			services: BTreeSet::new(),
 		};

@@ -5,12 +5,14 @@
 //! ```text
 //! DATABASE_URL=… TIGERBEETLE_ADDRESS=… TIGERBEETLE_CLUSTER_ID=… window-tool <command>
 //!
-//!   maintenance on|status
+//!   maintenance on [--yes] | status
 //!   drain [--yes] [--wait-secs N] [--release-queued-redemptions]
 //!   burn-fee-shares [--yes] [--wait-secs N]
 //!   remap [--yes] [--treasury-from-fee <usdt>]
-//!   close-share-accounts --export <file> [--yes]
+//!   close-share-accounts --export <file> [--yes --import-digest <sha256>]
 //!   reconcile [--final]
+//!
+//! every write (--yes): --expect-cluster-id <id> --anchor-holder <concierge id>:<units> (twice)
 //! ```
 //!
 //! Every command reads the `service_arb` anchor first and last and fails (exit 1) when it is
@@ -29,12 +31,13 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use tracing_subscriber::EnvFilter;
 
 const USAGE: &str = "usage: window-tool <command>
-  maintenance on|status
+  maintenance on [--yes] | status
   drain [--yes] [--wait-secs N] [--release-queued-redemptions]
   burn-fee-shares [--yes] [--wait-secs N]
   remap [--yes] [--treasury-from-fee <usdt>]
-  close-share-accounts --export <file> [--yes]
-  reconcile [--final]";
+  close-share-accounts --export <file> [--yes --import-digest <sha256 hex>]
+  reconcile [--final]
+every write (--yes) also needs: --expect-cluster-id <id>  --anchor-holder <concierge user id>:<units> (twice)";
 
 fn env(name: &str) -> Result<String> {
 	std::env::var(name).wrap_err_with(|| format!("{name} is not set"))
@@ -66,6 +69,14 @@ impl Args {
 		Ok(Some(self.0.remove(i)))
 	}
 
+	fn values(&mut self, name: &str) -> Result<Vec<String>> {
+		let mut out = Vec::new();
+		while let Some(v) = self.value(name)? {
+			out.push(v);
+		}
+		Ok(out)
+	}
+
 	fn seconds(&mut self, name: &str, default: u64) -> Result<Duration> {
 		match self.value(name)? {
 			Some(raw) => Ok(Duration::from_secs(raw.parse().wrap_err_with(|| format!("{name} must be a whole number of seconds"))?)),
@@ -87,23 +98,41 @@ async fn main() -> Result<ExitCode> {
 		.init();
 	let mut argv = std::env::args().skip(1);
 	let Some(command) = argv.next() else { bail!("{USAGE}") };
-	let args = Args(argv.collect());
+	let mut args = Args(argv.collect());
+	let expect_cluster_id = args.value("--expect-cluster-id")?;
+	let holders = args.values("--anchor-holder")?;
 
-	let options = PgConnectOptions::from_str(&env("DATABASE_URL")?).wrap_err("DATABASE_URL is not a Postgres URL")?;
+	let url = env("DATABASE_URL")?;
+	let options = PgConnectOptions::from_str(&url).wrap_err("DATABASE_URL is not a Postgres URL")?;
+	let cluster_id = env("TIGERBEETLE_CLUSTER_ID")?;
+	let tigerbeetle_address = env("TIGERBEETLE_ADDRESS")?;
+	// What this run is about to talk to, before it talks: the first line of every command, so
+	// a stale environment is seen while it is still harmless. No credentials in it.
+	eprintln!(
+		"window-tool: postgres {}:{}/{}  tigerbeetle {tigerbeetle_address} cluster {cluster_id}",
+		options.get_host(),
+		options.get_port(),
+		options.get_database().unwrap_or("(default)")
+	);
 	// One connection for the single-run lock, one for a command's transaction, the rest for
 	// the ledger's account-map reads while that transaction is open.
 	let pool = PgPoolOptions::new().max_connections(4).connect_with(options).await.wrap_err("connect to Postgres")?;
 	let tigerbeetle = Arc::new(TigerBeetle::connect(
-		env("TIGERBEETLE_CLUSTER_ID")?.parse().wrap_err("TIGERBEETLE_CLUSTER_ID must be an integer")?,
-		&env("TIGERBEETLE_ADDRESS")?,
+		cluster_id.parse().wrap_err("TIGERBEETLE_CLUSTER_ID must be an integer")?,
+		&tigerbeetle_address,
 	)?);
+	let mut anchor = Anchor::service_arb()?;
+	if !holders.is_empty() {
+		anchor = anchor.with_people(holders.iter().map(|raw| Anchor::parse_holder(raw)).collect::<Result<_>>()?)?;
+	}
 	let window = Window {
 		pool: pool.clone(),
 		ledger: Arc::new(TbLedger::new(tigerbeetle, pool)),
-		anchor: Anchor::service_arb()?,
+		anchor,
 	};
+	let gate = Gate { cluster_id, expect_cluster_id };
 
-	match dispatch(&window, &command, args).await {
+	match dispatch(&window, &gate, &command, args).await {
 		Ok(outcome) => {
 			print!("{}", outcome.text);
 			Ok(if outcome.ok { ExitCode::SUCCESS } else { ExitCode::FAILURE })
@@ -121,15 +150,36 @@ async fn main() -> Result<ExitCode> {
 	}
 }
 
-async fn dispatch(w: &Window, command: &str, mut args: Args) -> Result<Outcome> {
+/// The environment the operator said they mean ([`window_tool::write_gate`]).
+struct Gate {
+	cluster_id: String,
+	expect_cluster_id: Option<String>,
+}
+
+impl Gate {
+	fn check(&self, w: &Window) -> Result<()> {
+		window_tool::write_gate(&w.anchor, &self.cluster_id, self.expect_cluster_id.as_deref())
+	}
+}
+
+async fn dispatch(w: &Window, gate: &Gate, command: &str, mut args: Args) -> Result<Outcome> {
 	match command {
 		"maintenance" => {
 			let sub = args.0.first().cloned().ok_or_else(|| eyre!("maintenance needs `on` or `status`\n{USAGE}"))?;
 			args.0.remove(0);
-			args.finish()?;
 			match sub.as_str() {
-				"on" => maintenance::on(w).await,
-				"status" => maintenance::status(w).await,
+				"on" => {
+					let mode = Mode::from_yes(args.flag("--yes"));
+					args.finish()?;
+					if mode.applies() {
+						gate.check(w)?;
+					}
+					maintenance::on(w, mode).await
+				}
+				"status" => {
+					args.finish()?;
+					maintenance::status(w).await
+				}
 				other => bail!("unknown maintenance subcommand `{other}`\n{USAGE}"),
 			}
 		}
@@ -140,14 +190,14 @@ async fn dispatch(w: &Window, command: &str, mut args: Args) -> Result<Outcome> 
 				wait: args.seconds("--wait-secs", 120)?,
 			};
 			args.finish()?;
-			let _run = lock_if(w, mode).await?;
+			let _run = lock_if(w, gate, mode).await?;
 			drain::run(w, mode, options).await
 		}
 		"burn-fee-shares" => {
 			let mode = Mode::from_yes(args.flag("--yes"));
 			let wait = args.seconds("--wait-secs", 120)?;
 			args.finish()?;
-			let _run = lock_if(w, mode).await?;
+			let _run = lock_if(w, gate, mode).await?;
 			burn::run(w, mode, wait).await
 		}
 		"remap" => {
@@ -156,17 +206,18 @@ async fn dispatch(w: &Window, command: &str, mut args: Args) -> Result<Outcome> 
 				treasury_from_fee: args.value("--treasury-from-fee")?.map_or(Ok(0), |raw| remap::Options::parse_treasury(&raw))?,
 			};
 			args.finish()?;
-			let _run = lock_if(w, mode).await?;
+			let _run = lock_if(w, gate, mode).await?;
 			remap::run(w, mode, options).await
 		}
 		"close-share-accounts" => {
 			let mode = Mode::from_yes(args.flag("--yes"));
 			let path = args.value("--export")?.ok_or_else(|| eyre!("close-share-accounts needs --export <file>\n{USAGE}"))?;
+			let import_digest = args.value("--import-digest")?;
 			args.finish()?;
 			let text = std::fs::read_to_string(&path).wrap_err_with(|| format!("read {path}"))?;
 			let export = close::parse_export(&text).wrap_err_with(|| format!("export file {path}"))?;
-			let _run = lock_if(w, mode).await?;
-			close::run(w, mode, &export).await
+			let _run = lock_if(w, gate, mode).await?;
+			close::run(w, mode, &export, import_digest.as_deref()).await
 		}
 		"reconcile" => {
 			let finalize = args.flag("--final");
@@ -177,9 +228,10 @@ async fn dispatch(w: &Window, command: &str, mut args: Args) -> Result<Outcome> 
 	}
 }
 
-/// The single-run lock, taken only by a run that writes.
-async fn lock_if(w: &Window, mode: Mode) -> Result<Option<SingleRun>> {
+/// The write gate and the single-run lock, taken only by a run that writes.
+async fn lock_if(w: &Window, gate: &Gate, mode: Mode) -> Result<Option<SingleRun>> {
 	if mode.applies() {
+		gate.check(w)?;
 		Ok(Some(window_tool::SingleRun::acquire(&w.pool).await?))
 	} else {
 		Ok(None)

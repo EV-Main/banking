@@ -33,6 +33,8 @@
 //! Reconciliation attributes value on a scope account to its registry row; a row-less account
 //! would be an alert.
 
+use std::collections::BTreeMap;
+
 use color_eyre::eyre::{Result, WrapErr, bail, eyre};
 use domain::{
 	balance::{LedgerAccountKey, ServiceId, TransferCode},
@@ -42,7 +44,7 @@ use domain::{
 };
 use sqlx::PgConnection;
 
-use super::{Mode, Outcome, Window, balanced_cash, now_unix, require_maintenance, require_quiet_outbox, say, tb_id, tool_id, units};
+use super::{Mode, Outcome, Window, balanced_cash, now_unix, require_drained, require_maintenance, say, tb_id, tool_id, units};
 use crate::{
 	infrastructure::{money_events, outbox},
 	ports::{ledger::LedgerTransfer, scope_ledger::OwnedAccount},
@@ -97,6 +99,11 @@ impl Step {
 		LedgerAccountKey::ScopeAccount(self.destination.0.clone(), self.destination.1.clone())
 	}
 
+	/// Where this step's cash lands and how much on each account.
+	fn credits(&self) -> Vec<(LedgerAccountKey, u128)> {
+		self.legs().into_iter().map(|leg| (leg.credit, leg.amount)).collect()
+	}
+
 	/// The chain: the treasury leg first (if any), then the rest to the destination.
 	fn legs(&self) -> Vec<LedgerTransfer> {
 		let reference = tool_id(&format!("window:remap:{}", self.service));
@@ -124,7 +131,7 @@ pub async fn run(w: &Window, mode: Mode, options: Options) -> Result<Outcome> {
 	let before = w.read_anchor().await?;
 	say!(out, "{}", before.render(&w.anchor));
 	require_maintenance(&w.pool).await?;
-	require_quiet_outbox(&w.pool).await?;
+	require_drained(&w.pool).await?;
 	let cash_before = balanced_cash(w.ledger.as_ref(), "before the remap").await?;
 	if cash_before.retired_claims != 0 {
 		say!(
@@ -157,6 +164,23 @@ pub async fn run(w: &Window, mode: Mode, options: Options) -> Result<Outcome> {
 		return Ok(Outcome { text: out, ok: true });
 	}
 
+	// What every account that receives cash must read afterwards: what it read now plus what
+	// this run moves onto it. Per account, because the hub keeps taking deposits in
+	// maintenance and a global total would flag those as the remap's doing.
+	let mut expected: BTreeMap<String, (LedgerAccountKey, u128)> = BTreeMap::new();
+	for step in &steps {
+		for (key, add) in step.credits() {
+			let entry = match expected.entry(key.logical_key()) {
+				std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+				std::collections::btree_map::Entry::Vacant(e) => {
+					let now = w.ledger.balance(&key).await.wrap_err("read a destination before the remap")?.posted;
+					e.insert((key, now))
+				}
+			};
+			entry.1 += add;
+		}
+	}
+
 	for step in &steps {
 		apply(w, step).await.wrap_err_with(|| format!("remap {}", step.service))?;
 	}
@@ -164,35 +188,19 @@ pub async fn run(w: &Window, mode: Mode, options: Options) -> Result<Outcome> {
 	// Verify against the ledger, not against what the steps believe they did.
 	for step in &steps {
 		let claim = w.ledger.balance(&step.source).await.wrap_err("re-read a claim")?;
-		if claim.posted != 0 || claim.pending != 0 || claim.locked != 0 {
+		if claim.pending != 0 || claim.locked != 0 || claim.posted != 0 {
 			bail!("service:{} still holds {} after the remap", step.service, units(claim.posted));
 		}
 	}
+	for (key, want) in expected.values() {
+		let got = w.ledger.balance(key).await.wrap_err("re-read a destination")?.posted;
+		if got != *want {
+			bail!("{} reads {} after the remap, expected {}", key.logical_key(), units(got), units(*want));
+		}
+	}
+	// The invariant is the only global post-condition; the totals themselves move with deposits.
 	let cash_after = balanced_cash(w.ledger.as_ref(), "after the remap").await?;
-	if cash_after.custody != cash_before.custody || cash_after.claims != cash_before.claims {
-		bail!(
-			"the remap changed the cash totals: custody {} -> {}, claims {} -> {}",
-			units(cash_before.custody),
-			units(cash_after.custody),
-			units(cash_before.claims),
-			units(cash_after.claims)
-		);
-	}
-	if cash_before.service_claims - cash_after.service_claims != total || cash_after.scope_accounts - cash_before.scope_accounts != total {
-		bail!(
-			"the remap moved {} off service claims and {} onto scope accounts, expected {} both ways",
-			units(cash_before.service_claims - cash_after.service_claims),
-			units(cash_after.scope_accounts - cash_before.scope_accounts),
-			units(total)
-		);
-	}
-	say!(
-		out,
-		"moved {}; custody {} == claims {} (unchanged)",
-		units(total),
-		units(cash_after.custody),
-		units(cash_after.claims)
-	);
+	say!(out, "moved {}; custody {} == claims {}", units(total), units(cash_after.custody), units(cash_after.claims));
 	let after = w.read_anchor().await?;
 	after.same_holders_as(&before)?;
 	say!(out, "{}", after.render(&w.anchor));

@@ -64,6 +64,7 @@ impl Window {
 	pub async fn read_anchor(&self) -> Result<anchor::Reading> {
 		let reading = anchor::read(&self.pool, self.ledger.as_ref(), &self.anchor).await?;
 		reading.matches(&self.anchor)?;
+		anchor::check_people(&self.pool, &reading, &self.anchor).await?;
 		Ok(reading)
 	}
 }
@@ -162,6 +163,29 @@ pub async fn outbox_undispatched(pool: &PgPool) -> Result<i64> {
 		.wrap_err("count the undispatched outbox")
 }
 
+/// Refuse unless the window is drained: nothing in flight that the next step would have to
+/// guess about. Same verdict `drain` ends on, so the two cannot disagree.
+pub async fn require_drained(pool: &PgPool) -> Result<()> {
+	let left = drain::remaining(pool).await?;
+	if !left.drained() {
+		bail!("the window is not drained, run `window-tool drain` first:\n{}", left.render());
+	}
+	Ok(())
+}
+
+/// The refusals every write of the binary starts with, kept apart from the commands so a test
+/// can pin them: a write needs the operator to have named the TigerBeetle cluster they mean
+/// (the environment decides which one the tool talks to, and a stale shell is how a rehearsal
+/// ends up on the primary) and the two people the anchor stands for.
+pub fn write_gate(anchor: &Anchor, cluster_id: &str, expect_cluster_id: Option<&str>) -> Result<()> {
+	match expect_cluster_id {
+		None => bail!("a write needs --expect-cluster-id <id> (this run talks to TigerBeetle cluster {cluster_id})"),
+		Some(expected) if expected != cluster_id => bail!("--expect-cluster-id {expected} but TIGERBEETLE_CLUSTER_ID is {cluster_id}: wrong environment, nothing was written"),
+		Some(_) => {}
+	}
+	anchor.ensure_people()
+}
+
 /// Refuse while the relay still has work: a step that moves money on top of an unfinished
 /// saga would compute from balances that are about to change.
 pub async fn require_quiet_outbox(pool: &PgPool) -> Result<()> {
@@ -226,6 +250,21 @@ mod tests {
 	fn tool_ids_are_stable_and_distinct() {
 		assert_eq!(tool_id("window:close:a"), tool_id("window:close:a"));
 		assert_ne!(tool_id("window:close:a"), tool_id("window:close:b"));
+	}
+
+	#[test]
+	fn a_write_needs_the_cluster_it_expects_and_the_anchor_people() {
+		let bare = Anchor::service_arb().unwrap();
+		assert!(write_gate(&bare, "0", Some("0")).unwrap_err().to_string().contains("anchor-holder"), "no people named");
+		let named = bare
+			.with_people(vec![
+				("00000000-0000-0000-0000-00000000000a".into(), 13_000 * 10u128.pow(18)),
+				("00000000-0000-0000-0000-00000000000b".into(), 3_250 * 10u128.pow(18)),
+			])
+			.unwrap();
+		assert!(write_gate(&named, "0", None).unwrap_err().to_string().contains("--expect-cluster-id"));
+		assert!(write_gate(&named, "0", Some("7")).unwrap_err().to_string().contains("wrong environment"));
+		write_gate(&named, "0", Some("0")).unwrap();
 	}
 
 	#[test]

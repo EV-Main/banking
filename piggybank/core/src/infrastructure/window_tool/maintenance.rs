@@ -12,11 +12,16 @@
 use color_eyre::eyre::{Result, WrapErr};
 use domain::balance::{LedgerAccountKey, ServiceId};
 
-use super::{Outcome, Window, balanced_cash, drain, say, units};
+use super::{Mode, Outcome, Window, balanced_cash, drain, say, units};
 use crate::infrastructure::operations;
 
-pub async fn on(w: &Window) -> Result<Outcome> {
+pub async fn on(w: &Window, mode: Mode) -> Result<Outcome> {
 	let mut out = String::new();
+	if !mode.applies() {
+		let was = operations::is_read_only(&w.pool).await.wrap_err("read operations_mode")?;
+		say!(out, "maintenance: read_only is {was}; dry run, nothing written (pass --yes to set it)");
+		return Ok(Outcome { text: out, ok: true });
+	}
 	// The kill-switch goes first and does not wait on the anchor: a hub with a wrong anchor
 	// is the one that most needs its money mutations paused. The anchor is checked after, and
 	// a broken one fails the command with maintenance already on.
