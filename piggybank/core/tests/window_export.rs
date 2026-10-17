@@ -19,10 +19,7 @@ use domain::{
 use piggybank_core::{
 	application::{funds as funds_app, issuance as issuance_app},
 	infrastructure::{allocations::PgAllocations, custody::StubCustody, issuance::PgUnitIssuances, nav::PgNav, relay::Relay, users::PgUsers, window_export},
-	ports::{
-		AllocationRegistry, UserRepository,
-		ledger::{Ledger, LedgerTransfer},
-	},
+	ports::{AllocationRegistry, UserRepository, ledger::LedgerTransfer},
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
