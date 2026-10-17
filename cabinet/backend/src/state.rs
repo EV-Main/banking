@@ -128,6 +128,10 @@ impl Grpc {
 		bk::payments_service_client::PaymentsServiceClient::new(self.piggybank.clone())
 	}
 
+	fn payment_confirmations(&self) -> bk::payment_confirmation_service_client::PaymentConfirmationServiceClient<Channel> {
+		bk::payment_confirmation_service_client::PaymentConfirmationServiceClient::new(self.piggybank.clone())
+	}
+
 	fn payment_consent(&self) -> bk::payment_consent_service_client::PaymentConsentServiceClient<Channel> {
 		bk::payment_consent_service_client::PaymentConsentServiceClient::new(self.piggybank.clone())
 	}
@@ -246,6 +250,23 @@ impl Grpc {
 
 	pub async fn move_funds(&self, token: &str, req: bk::MoveFundsRequest) -> Result<bk::CompartmentMove, Status> {
 		Ok(self.compartments().move_funds(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn list_payment_confirmations(&self, token: &str) -> Result<bk::PaymentConfirmationList, Status> {
+		Ok(self
+			.payment_confirmations()
+			.list_payment_confirmations(bearer(token, bk::ListPaymentConfirmationsRequest {})?)
+			.await?
+			.into_inner())
+	}
+
+	pub async fn get_payment_confirmation(&self, token: &str, payment_id: &str) -> Result<bk::PaymentConfirmation, Status> {
+		let req = bk::GetPaymentConfirmationRequest { payment_id: payment_id.to_string() };
+		Ok(self.payment_confirmations().get_payment_confirmation(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn answer_payment_confirmation(&self, token: &str, req: bk::AnswerPaymentConfirmationRequest) -> Result<bk::PaymentConfirmation, Status> {
+		Ok(self.payment_confirmations().answer_payment_confirmation(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn list_mandates(&self, token: &str) -> Result<bk::MandateList, Status> {
@@ -984,8 +1005,15 @@ impl Grpc {
 		Ok(self.payments().get_payment(bearer(token, req)?).await?.into_inner())
 	}
 
-	pub async fn open_payment(&self, token: &str, req: bk::OpenPaymentRequest) -> Result<bk::Payment, Status> {
-		Ok(self.payments().open_payment(bearer(token, req)?).await?.into_inner())
+	/// `proof` is the caller's own concierge access token, relayed so the money plane can prove
+	/// to concierge who asked for a payment the owners decide (D24(1)): concierge accepts it only
+	/// minted within the last 120 seconds, so it travels once and is kept nowhere.
+	pub async fn open_payment(&self, token: &str, proof: &str, req: bk::OpenPaymentRequest) -> Result<bk::Payment, Status> {
+		let mut request = bearer(token, req)?;
+		request
+			.metadata_mut()
+			.insert("x-ev-user-token", proof.parse().map_err(|_| Status::unauthenticated("invalid user token"))?);
+		Ok(self.payments().open_payment(request).await?.into_inner())
 	}
 
 	pub async fn cancel_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {

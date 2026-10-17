@@ -22,6 +22,8 @@ pub mod keys {
 	pub const CONSILIUM_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64;
 	/// ASCII `EVBKCML_` — the consilium mailer.
 	pub const CONSILIUM_MAILER: i64 = 0x4556_424b_434d_4c5f_u64 as i64;
+	/// ASCII `EVBKSCN_` — the scope-inbox notification worker.
+	pub const SCOPE_NOTIFICATIONS: i64 = 0x4556_424b_5343_4e5f_u64 as i64;
 	/// ASCII `EVBKSCE_` — the consumer of concierge's scope stream.
 	pub const SCOPE_EVENTS: i64 = 0x4556_424b_5343_455f_u64 as i64;
 }

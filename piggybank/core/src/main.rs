@@ -20,6 +20,7 @@ use piggybank_core::{
 	application::{
 		auth_sync,
 		book::BookFeed,
+		payment_approvals::PaymentProposer,
 		scope_operations::{ApprovalExecutor, CatalogGate},
 	},
 	config::{self, Rails},
@@ -57,6 +58,7 @@ use piggybank_core::{
 		relay::Relay,
 		scope_events::ScopeEventsConsumer,
 		scope_ledger::PgScopeLedger,
+		scope_notifications::{ConciergeScopeNotifier, ScopeNotificationWorker},
 		signer_addresses::SignerDepositAddresses,
 		subscriptions::PgSubscriptions,
 		sweep::Sweep,
@@ -147,6 +149,20 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// applied. Announced at boot for the same reason the signer's spend policy is: a gate
 	// that is off is visible in a pod's first log lines, not only in whoever's memory of
 	// the environment.
+	let payment_approval_mode = config::PaymentApprovalModes::from_env();
+	tracing::info!(
+		fund = ?payment_approval_mode.fund,
+		session = ?payment_approval_mode.session,
+		"new payment orders: fund money is decided by {}, an investor's by {}",
+		match payment_approval_mode.fund {
+			config::PaymentApprovalMode::Concierge => "a concierge approval proposed in the initiator's name",
+			config::PaymentApprovalMode::Consilium => "banking's consilium",
+		},
+		match payment_approval_mode.session {
+			config::PaymentApprovalMode::Concierge => "their own answer in the cabinet",
+			config::PaymentApprovalMode::Consilium => "the emailed token",
+		},
+	);
 	let kyc_gate = config::KycGate::from_env();
 	if kyc_gate.is_enforced() {
 		tracing::info!("kyc gate enforced — deposit addresses and withdrawals require a verified tier");
@@ -255,11 +271,17 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let users: Arc<dyn UserRepository> = Arc::new(PgUsers::new(pool.clone()));
 	let withdrawals: Arc<dyn WithdrawalRepository> = Arc::new(PgWithdrawals::new(pool.clone()));
 	let consilia: Arc<dyn ConsiliumRepository> = Arc::new(PgConsilia::new(pool.clone()));
-	// ONE adapter behind two ports: `PgPayments` implements the write repository and the
-	// admin read model, and they are handed out separately so a surface can be granted the
+	// ONE adapter behind three ports: `PgPayments` implements the write repository, the
+	// executor's bookkeeping and the admin read model, and they are handed out separately so a surface can be granted the
 	// history without the surface that opens orders.
 	let pg_payments = Arc::new(PgPayments::new(pool.clone()));
 	let payments: Arc<dyn PaymentRepository> = pg_payments.clone();
+	let payment_approval_store: Arc<dyn piggybank_core::ports::payments::PaymentApprovalStore> = pg_payments.clone();
+	let payment_proposer = Arc::new(PaymentProposer {
+		store: payment_approval_store,
+		approvals: Arc::new(ConciergeApprovals::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
+		catalog: Arc::new(CatalogGate::new()),
+	});
 	let payment_feed: Arc<dyn PaymentFeed> = pg_payments;
 	let allocations: Arc<dyn AllocationRegistry> = Arc::new(PgAllocations::new(pool.clone()));
 	let subscriptions: Arc<dyn SubscriptionRepository> = Arc::new(PgSubscriptions::new(pool.clone()));
@@ -519,7 +541,16 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		kyc: kyc_gate,
 		approval_url_base: config.consilium_approval_url_base.clone(),
 		consent_url_base: config.payment_consent_url_base.clone(),
+		// Always wired, whichever way new payments are seated: orders already seated on a
+		// concierge approval are finished by it, and with none open a round is a few cheap reads.
+		payment_approvals: Some(payment_proposer.clone()),
 	};
+	// Notices to people about their money go through concierge's scope inbox, from a queue
+	// written beside the fact they announce.
+	let scope_notifications = ScopeNotificationWorker::new(
+		pool.clone(),
+		Arc::new(ConciergeScopeNotifier::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
+	);
 	// The mail worker exists only when the seam is compiled in — see
 	// `infrastructure::governance_mail`. Unwired, the queue still fills (nothing is lost)
 	// and the boot line below says so loudly, because an approval mail that never goes out
@@ -566,7 +597,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		compartments,
 		scope_ledger_store.clone(),
 	)
-	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default());
+	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default())
+	.with_payment_approvals(payment_approval_mode, payment_proposer);
 
 	// Operations are only ever requested over the scope ledger's listener, so their executor
 	// runs exactly when the listener does: a hub without it neither opens nor pulls banking's
@@ -652,6 +684,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		treasury_resolve_done,
 		consilium_sweeper_done,
 		consilium_mailer_done,
+		scope_notifications_done,
 		settings_drift_done,
 	) = tokio::join!(
 		await_signal(shutdown.clone()),
@@ -751,6 +784,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 			"consilium mailer",
 			infallible(run_or_idle(shutdown.clone(), consilium_mailer.map(|mailer| mailer.run(shutdown.clone()))))
 		),
+		branch(&shutdown, "scope notifications", infallible(scope_notifications.run(shutdown.clone()))),
 		branch(
 			&shutdown,
 			"settings drift watch",
@@ -791,6 +825,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		.and(treasury_resolve_done)
 		.and(consilium_sweeper_done)
 		.and(consilium_mailer_done)
+		.and(scope_notifications_done)
 		.and(settings_drift_done)
 }
 

@@ -8,15 +8,15 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, EscalationTest, FieldType, KindLevel, KindSpec};
+use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, EscalationTest, FieldType, KindLevel, KindSpec, TopicSpec};
 use evconcierge_contracts::concierge::v1::{
 	Approval, ApprovalAmount, ApprovalEscalation, ApprovalFieldSpec, ApprovalFieldType, ApprovalFieldValue, ApprovalKindSpec, ApprovalLevel as WireLevel, ApprovalOutcome as WireOutcome,
-	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
+	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, NotificationTopicSpec, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
 	WithdrawProposalRequest, approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value, scope_catalog_service_client::ScopeCatalogServiceClient,
 };
 use tonic::{Code, Request, Status, metadata::MetadataValue, transport::Channel};
 
-use crate::ports::scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal};
+use crate::ports::scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof};
 
 /// A call that has not answered by then is treated as concierge being unavailable; the
 /// executor retries on its next round.
@@ -89,7 +89,7 @@ fn field(field: &ApprovalField) -> ApprovalFieldValue {
 
 fn kind_spec(spec: &KindSpec) -> ApprovalKindSpec {
 	ApprovalKindSpec {
-		name: spec.kind.as_str().to_owned(),
+		name: spec.kind.to_owned(),
 		label: spec.label.to_owned(),
 		description: spec.description.to_owned(),
 		level: match spec.level {
@@ -132,6 +132,15 @@ fn kind_spec(spec: &KindSpec) -> ApprovalKindSpec {
 	}
 }
 
+fn topic_spec(spec: &TopicSpec) -> NotificationTopicSpec {
+	NotificationTopicSpec {
+		topic: spec.topic.to_owned(),
+		label: spec.label.to_owned(),
+		description: spec.description.to_owned(),
+		default_subscribed: spec.default_subscribed,
+	}
+}
+
 fn view(approval: Approval) -> Result<ApprovalView, ApprovalsError> {
 	let state = match WireState::try_from(approval.state) {
 		Ok(WireState::Open) => ApprovalState::Open,
@@ -163,22 +172,32 @@ fn view(approval: Approval) -> Result<ApprovalView, ApprovalsError> {
 		state,
 		level,
 		payload_hash: approval.payload_hash,
+		execute_by: approval.execute_by,
 	})
 }
 
 #[async_trait]
 impl Approvals for ConciergeApprovals {
 	async fn propose(&self, proposal: &Proposal) -> Result<ApprovalView, ApprovalsError> {
-		let request = self.request(ProposeRequest {
+		self.propose_for(proposal, None).await
+	}
+
+	async fn propose_for(&self, proposal: &Proposal, proof: Option<&UserProof>) -> Result<ApprovalView, ApprovalsError> {
+		let mut request = self.request(ProposeRequest {
 			kind: proposal.kind.clone(),
 			scope: proposal.scope.clone(),
 			subject_ref: proposal.subject_ref.clone(),
-			// banking acts for a service, which cannot prove which person asked it.
-			requested_by: String::new(),
+			// Without a proof banking acts for a service, which cannot prove which person asked.
+			requested_by: proof.map(|proof| proof.requested_by.clone()).unwrap_or_default(),
 			reason: proposal.reason.clone(),
 			fields: proposal.fields.iter().map(field).collect(),
 			dedupe_key: proposal.dedupe_key.clone(),
 		})?;
+		if let Some(proof) = proof {
+			// The person's own token, raw and without `Bearer`, as the scope inbox takes it too.
+			let token: MetadataValue<_> = proof.token.parse().map_err(|_| ApprovalsError::Refused("the user token is not a valid header value".into()))?;
+			request.metadata_mut().insert("x-ev-user-token", token);
+		}
 		let approval = self.client().propose(request).await.map_err(|status| classify("Propose", status))?.into_inner();
 		view(approval)
 	}
@@ -221,12 +240,11 @@ impl Approvals for ConciergeApprovals {
 		Ok(())
 	}
 
-	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError> {
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec], topics: &[TopicSpec]) -> Result<(), ApprovalsError> {
 		let request = self.request(PublishScopeCatalogRequest {
 			version,
 			approval_kinds: kinds.iter().map(kind_spec).collect(),
-			// banking publishes no notification topics; its mails go through the relay.
-			notification_topics: Vec::new(),
+			notification_topics: topics.iter().map(topic_spec).collect(),
 		})?;
 		ScopeCatalogServiceClient::new(self.channel.clone())
 			.publish_scope_catalog(request)

@@ -308,6 +308,32 @@ export type BankingV1AllocationTreasury = {
 };
 
 /**
+ * AnswerPaymentConfirmationRequest
+ */
+export type BankingV1AnswerPaymentConfirmationRequest = {
+    /**
+     * payment_id
+     */
+    payment_id?: string;
+    /**
+     * decision
+     *
+     * APPROVE or REJECT. PENDING is rejected as an invalid argument.
+     */
+    decision?: BankingV1ConsentDecision;
+    /**
+     * client_ip
+     *
+     * Audit only — the edge supplies these; they are never trusted for authorization.
+     */
+    client_ip?: string;
+    /**
+     * user_agent
+     */
+    user_agent?: string;
+};
+
+/**
  * Balance
  *
  * The user's single, network-agnostic balance, segmented by lifecycle. Every figure is
@@ -1973,6 +1999,16 @@ export type BankingV1GetPayableInvoiceRequest = {
 };
 
 /**
+ * GetPaymentConfirmationRequest
+ */
+export type BankingV1GetPaymentConfirmationRequest = {
+    /**
+     * payment_id
+     */
+    payment_id?: string;
+};
+
+/**
  * GetPaymentRequest
  */
 export type BankingV1GetPaymentRequest = {
@@ -2416,6 +2452,13 @@ export type BankingV1ListOrderHistoryRequest = {
  * ListParkedEventsRequest
  */
 export type BankingV1ListParkedEventsRequest = {
+    [key: string]: never;
+};
+
+/**
+ * ListPaymentConfirmationsRequest
+ */
+export type BankingV1ListPaymentConfirmationsRequest = {
     [key: string]: never;
 };
 
@@ -3523,6 +3566,106 @@ export type BankingV1Payment = {
      * Monotonic per order.
      */
     version?: number | string;
+    /**
+     * seat
+     *
+     * The seat that decides the order: `consilium`, `consent` (the emailed token),
+     * `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
+     * the cabinet). Empty only for a row written before seats were recorded.
+     */
+    seat?: string;
+    /**
+     * approval_id
+     *
+     * Concierge's id of the approval, once banking has opened it; set for `concierge_approval`.
+     */
+    approval_id?: string;
+    /**
+     * session_decision
+     *
+     * The investor's own answer, set for `session`.
+     */
+    session_decision?: BankingV1ConsentDecision;
+};
+
+/**
+ * PaymentConfirmation
+ *
+ * One order as the investor it spends is shown it: the terms they answer and nothing about
+ * the operator beyond a masked address.
+ */
+export type BankingV1PaymentConfirmation = {
+    /**
+     * payment_id
+     */
+    payment_id?: string;
+    /**
+     * state
+     */
+    state?: BankingV1PaymentState;
+    /**
+     * tier
+     */
+    tier?: string;
+    /**
+     * source
+     */
+    source?: BankingV1PaymentEnd;
+    /**
+     * destination
+     */
+    destination?: BankingV1PaymentEnd;
+    /**
+     * amount
+     */
+    amount?: string;
+    /**
+     * reason
+     */
+    reason?: string;
+    /**
+     * payload_hash
+     *
+     * Hex SHA-256 over the canonical terms the answer binds to.
+     */
+    payload_hash?: string;
+    /**
+     * initiator_email
+     *
+     * Who opened it, masked.
+     */
+    initiator_email?: string;
+    /**
+     * expires_at
+     */
+    expires_at?: number | string;
+    /**
+     * decision
+     *
+     * This seat's own answer; PENDING until they give one.
+     */
+    decision?: BankingV1ConsentDecision;
+    /**
+     * invalidated
+     *
+     * True when one of the pins recorded at open has moved: the order can no longer be
+     * answered or executed.
+     */
+    invalidated?: boolean;
+    /**
+     * failure_reason
+     */
+    failure_reason?: string;
+};
+
+/**
+ * PaymentConfirmationList
+ */
+export type BankingV1PaymentConfirmationList = {
+    /**
+     * items
+     */
+    items?: Array<BankingV1PaymentConfirmation>;
 };
 
 /**
@@ -11164,6 +11307,93 @@ export type BankingV1OperationsServiceListOperationsResponses = {
 };
 
 export type BankingV1OperationsServiceListOperationsResponse = BankingV1OperationsServiceListOperationsResponses[keyof BankingV1OperationsServiceListOperationsResponses];
+
+export type BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationData = {
+    body: BankingV1AnswerPaymentConfirmationRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.PaymentConfirmationService/AnswerPaymentConfirmation';
+};
+
+export type BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationError = BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationErrors[keyof BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationErrors];
+
+export type BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PaymentConfirmation;
+};
+
+export type BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationResponse = BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationResponses[keyof BankingV1PaymentConfirmationServiceAnswerPaymentConfirmationResponses];
+
+export type BankingV1PaymentConfirmationServiceGetPaymentConfirmationData = {
+    body: BankingV1GetPaymentConfirmationRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.PaymentConfirmationService/GetPaymentConfirmation';
+};
+
+export type BankingV1PaymentConfirmationServiceGetPaymentConfirmationErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1PaymentConfirmationServiceGetPaymentConfirmationError = BankingV1PaymentConfirmationServiceGetPaymentConfirmationErrors[keyof BankingV1PaymentConfirmationServiceGetPaymentConfirmationErrors];
+
+export type BankingV1PaymentConfirmationServiceGetPaymentConfirmationResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PaymentConfirmation;
+};
+
+export type BankingV1PaymentConfirmationServiceGetPaymentConfirmationResponse = BankingV1PaymentConfirmationServiceGetPaymentConfirmationResponses[keyof BankingV1PaymentConfirmationServiceGetPaymentConfirmationResponses];
+
+export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsData = {
+    body: BankingV1ListPaymentConfirmationsRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.PaymentConfirmationService/ListPaymentConfirmations';
+};
+
+export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsError = BankingV1PaymentConfirmationServiceListPaymentConfirmationsErrors[keyof BankingV1PaymentConfirmationServiceListPaymentConfirmationsErrors];
+
+export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PaymentConfirmationList;
+};
+
+export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponse = BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses[keyof BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses];
 
 export type BankingV1PaymentConsentServiceGetConsentInvitationData = {
     body: BankingV1GetConsentInvitationRequest;

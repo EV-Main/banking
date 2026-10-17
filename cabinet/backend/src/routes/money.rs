@@ -12,7 +12,10 @@ use tonic::{Code, Status};
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{first_party_origin, money_gate, money_mutation, money_token_for, parse_body, require_fresh_login, require_money_token, required, verify_csrf},
+	routes::{
+		approval::{Peer, audit_fields},
+		first_party_origin, money_gate, money_mutation, money_token_for, parse_body, require_fresh_login, require_money_token, required, verify_csrf,
+	},
 	state::AppState,
 	util::now_secs,
 };
@@ -251,6 +254,59 @@ pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id)
 	Ok(Json(st.grpc.revoke_mandate(&token, &id).await?.into()))
 }
 
+// ── payments out of the caller's own claim (their say-so, signed in) ──────────
+
+/// `GET /api/wallet/payments` — the payments out of the caller's claim that wait for their
+/// answer, newest first.
+pub async fn list_payment_confirmations(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::PaymentConfirmationList>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let list = st.grpc.list_payment_confirmations(&token).await.map_err(|s| ApiError::read(s, "payments unavailable"))?;
+	Ok(Json(list.into()))
+}
+
+/// `GET /api/wallet/payments/{id}` — one such payment, in whatever state it is. An order that
+/// is not the caller's, is not answered in the cabinet, or does not exist is the same 404.
+pub async fn get_payment_confirmation(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>) -> Result<Json<dto::PaymentConfirmation>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let payment = st.grpc.get_payment_confirmation(&token, &id).await.map_err(|s| ApiError::read(s, "payment unavailable"))?;
+	Ok(Json(payment.into()))
+}
+
+/// `POST /api/wallet/payments/{id}/answer` — first-party, CSRF-checked and rate-limited: the
+/// caller's answer, `{"decision": "approve" | "reject"}`, on a payment out of their claim. The
+/// body names only the decision: the terms are the stored order's, so a page cannot approve
+/// more than the user was shown. An approval lets money leave, so it needs a fresh login like
+/// granting a mandate does; a decline needs none — it is the way to stop an order they did
+/// not mean, and must work from a stale session.
+pub async fn answer_payment_confirmation(
+	State(st): State<AppState>,
+	jar: CookieJar,
+	Path(id): Path<String>,
+	peer: Peer,
+	headers: HeaderMap,
+	body: Bytes,
+) -> Result<Json<dto::PaymentConfirmation>, ApiError> {
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_body(&body);
+	let decision = match required(&v, "decision").as_deref() {
+		Some("approve") => bk::ConsentDecision::Approve,
+		Some("reject") => bk::ConsentDecision::Reject,
+		_ => return Err(ApiError::BadRequest("decision must be approve or reject".into())),
+	};
+	if decision == bk::ConsentDecision::Approve {
+		require_fresh_login(&claims, now_secs().max(0) as u64)?;
+	}
+	let token = money_token_for(&st, &claims).await?;
+	let (client_ip, user_agent) = audit_fields(&headers, peer);
+	let req = bk::AnswerPaymentConfirmationRequest {
+		payment_id: id,
+		decision: decision as i32,
+		client_ip,
+		user_agent,
+	};
+	Ok(Json(st.grpc.answer_payment_confirmation(&token, req).await?.into()))
+}
+
 // ── allocations (the catalog of investable products) ─────────────────────────
 
 /// `GET /api/allocations` — the investor-facing catalog: the `open` allocations the caller
@@ -466,12 +522,13 @@ mod wallet_gate_tests {
 
 	/// Every route that moves money or consents to it being drawn, with a body that passes
 	/// the BFF's own field checks.
-	const MONEY_MUTATIONS: [(&str, &str); 5] = [
+	const MONEY_MUTATIONS: [(&str, &str); 6] = [
 		("/api/wallet/compartments/move", MOVE),
 		("/api/wallet/withdrawals", r#"{"network":"bep20","address":"0xabc","amount":"1"}"#),
 		("/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay", r#"{"pay_from":"main","idempotency_key":"k-1"}"#),
 		("/api/wallet/mandates", MANDATE),
 		("/api/wallet/mandates/4f0c2d1e-0000-4000-8000-0123456789ab/revoke", ""),
+		("/api/wallet/payments/4f0c2d1e-0000-4000-8000-0123456789ab/answer", r#"{"decision":"reject"}"#),
 	];
 
 	struct Env {
@@ -620,6 +677,37 @@ mod wallet_gate_tests {
 			assert!(!response.contains("step_up_required"), "auth_time {stale:?}: {response}");
 		}
 		let fresh = request_with("POST", "/api/wallet/mandates", MANDATE, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+		let (_, _, response) = send(&app, fresh).await;
+		assert!(!response.contains("step_up_required"), "a fresh login passes the gate: {response}");
+	}
+
+	/// Approving a payment out of the caller's own claim needs a recent interactive sign-in, as
+	/// granting a mandate does; declining one — the way to stop an order they did not mean — and
+	/// a body that names no decision are not held to it.
+	#[tokio::test]
+	async fn approving_a_payment_needs_a_fresh_login_but_declining_does_not() {
+		let concierge = jwks().await;
+		let app = router(state(Env {
+			concierge: format!("http://{concierge}"),
+			..Env::default()
+		}));
+		let now = jsonwebtoken::get_current_timestamp();
+		let uri = "/api/wallet/payments/4f0c2d1e-0000-4000-8000-0123456789ab/answer";
+		for stale in [Some(now - crate::routes::STEP_UP_MAX_AGE_SECS - 60), None] {
+			let approve = request_with("POST", uri, r#"{"decision":"approve"}"#, Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (status, _, response) = send(&app, approve).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "auth_time {stale:?}: {response}");
+			assert!(response.contains("step_up_required"), "auth_time {stale:?}: {response}");
+
+			let decline = request_with("POST", uri, r#"{"decision":"reject"}"#, Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (_, _, response) = send(&app, decline).await;
+			assert!(!response.contains("step_up_required"), "declining asks for no fresh login, auth_time {stale:?}: {response}");
+
+			let nothing = request_with("POST", uri, "{}", Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (status, _, response) = send(&app, nothing).await;
+			assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
+		}
+		let fresh = request_with("POST", uri, r#"{"decision":"approve"}"#, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
 		let (_, _, response) = send(&app, fresh).await;
 		assert!(!response.contains("step_up_required"), "a fresh login passes the gate: {response}");
 	}

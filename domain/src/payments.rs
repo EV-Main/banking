@@ -58,9 +58,20 @@ use crate::{
 	hex32,
 	money::{Network, Usdt, WalletAddress},
 	push_field,
+	scope_operations::{ApprovalField, ApprovalValue, PAYMENT_APPROVAL_SCOPE, PAYMENT_KIND, approval_payload},
 	users::UserId,
 	withdrawals::WithdrawalId,
 };
+
+/// The longest a TEXT field of an approval may be, in bytes (concierge's `ApprovalFieldType`).
+pub const APPROVAL_TEXT_MAX_BYTES: usize = 200;
+
+/// Whether a text is one the approval — and the notices built on the same words — would carry:
+/// within [`APPROVAL_TEXT_MAX_BYTES`], no control character, no link.
+pub fn is_plain_text(value: &str) -> bool {
+	let lowered = value.to_lowercase();
+	value.len() <= APPROVAL_TEXT_MAX_BYTES && !value.chars().any(char::is_control) && !lowered.contains("://") && !lowered.contains("www.")
+}
 
 /// A unique payment-order id (UUID). Minted by the application layer.
 pub type PaymentId = Id<PaymentTag>;
@@ -70,6 +81,20 @@ pub struct PaymentTag;
 /// How long an unapproved payment order stays open (72h) — the same window an approval
 /// token lives for, because they close the same gap: a human has to read a mail and act.
 pub const TTL_SECS: i64 = 72 * 60 * 60;
+
+/// How long an order stays open while a concierge approval decides it (7 days). The approval
+/// is open for up to 72 hours, a passed one waits out its veto delay (24 hours by default, up
+/// to 72 by policy), and is then executable for 72 hours; the order must outlive the part of
+/// that which comes before its execution. What ends the order earlier is the approval's own end.
+pub const CONCIERGE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// What a decision needs before it can be carried out at the default policy: 72 hours open and
+/// a 24-hour veto delay. An order proposed with less window left than this plus
+/// [`DECISION_MARGIN_SECS`] could pass and then find itself expired.
+pub const DECISION_WINDOW_SECS: i64 = 96 * 60 * 60;
+
+/// Room on top of [`DECISION_WINDOW_SECS`] for the executor's own cadence.
+pub const DECISION_MARGIN_SECS: i64 = 2 * 60 * 60;
 
 /// The longest reason an initiator may attach, **in bytes**. Bytes, not characters, because the limit exists to
 /// bound what a mail and a column carry, and both count bytes.
@@ -427,6 +452,38 @@ impl PaymentTerms {
 		}
 	}
 
+	/// What the platform owners are shown of this payment on its `bank:payment` approval, field
+	/// for field as the catalog declares them (`BANK_CATALOG`). `destination` is the end as a
+	/// person recognises it — the label plus whatever [`PaymentTerms::destination_label`] leaves
+	/// out — and is passed in because the recognisable detail is the adapter's to look up.
+	///
+	/// Refused, not shortened, when a text would not be accepted by the approval — more than
+	/// [`APPROVAL_TEXT_MAX_BYTES`], a control character, a link: the approvers must read the
+	/// sentence the order carries, and a reason cut to fit would approve something else.
+	pub fn approval_fields(&self, destination: &str) -> Result<Vec<ApprovalField>, DomainError> {
+		let text = |key: &'static str, value: &str| -> Result<ApprovalField, DomainError> {
+			if !is_plain_text(value) {
+				return Err(DomainError::Validation(format!(
+					"the {key} of a payment decided by the platform owners is at most {APPROVAL_TEXT_MAX_BYTES} bytes of plain text without a link"
+				)));
+			}
+			Ok(ApprovalField {
+				key,
+				value: ApprovalValue::Text(value.to_owned()),
+			})
+		};
+		Ok(vec![
+			text("tier", self.tier().as_str())?,
+			text("source", &self.source_label())?,
+			text("destination", destination)?,
+			ApprovalField {
+				key: "amount",
+				value: ApprovalValue::Amount(self.amount),
+			},
+			text("reason", self.reason.as_str())?,
+		])
+	}
+
 	/// The bytes the payload hash is taken over: a fixed field order with every
 	/// variable-length part length-prefixed, so no two distinct terms can encode alike.
 	///
@@ -500,6 +557,20 @@ impl PaymentSubject {
 	}
 }
 
+/// The `subject_ref` of the `bank:payment` approval over an order: `payment:<lowercase uuid>`,
+/// the pattern concierge holds a reference to. Resolved by banking alone.
+pub fn approval_subject_ref(id: PaymentId) -> String {
+	format!("payment:{}", id.raw())
+}
+
+/// The order a `subject_ref` names — only banking's own lowercase spelling, so one order has
+/// one reference.
+pub fn parse_approval_subject_ref(subject_ref: &str) -> Option<PaymentId> {
+	let raw = subject_ref.strip_prefix("payment:")?;
+	let id = uuid::Uuid::parse_str(raw).ok().filter(|id| id.to_string() == raw)?;
+	Some(PaymentId::from_raw(id))
+}
+
 /// The payment-order aggregate. Construct via [`PaymentOrder::open`] (raises
 /// [`PaymentEvent::Opened`]) or [`PaymentOrder::rehydrate`] (load from the store, no
 /// events).
@@ -527,13 +598,21 @@ impl PaymentOrder {
 	/// tier is: two statements of one fact are two things that can disagree, and the
 	/// disagreement here would be a payment approved by the wrong party.
 	pub fn open(id: PaymentId, terms: PaymentTerms, payload_hash: [u8; 32], initiator: UserId, created_at: i64) -> Self {
+		Self::open_for(id, terms, payload_hash, initiator, created_at, TTL_SECS)
+	}
+
+	/// [`Self::open`] with a window of its own. An order the owners decide over a concierge
+	/// approval lives [`CONCIERGE_TTL_SECS`]: the approval's own clock (72 hours open, then its
+	/// veto delay) is what ends it, and the order's must not run out first, or owners would
+	/// vote an approval that the order has already expired under.
+	pub fn open_for(id: PaymentId, terms: PaymentTerms, payload_hash: [u8; 32], initiator: UserId, created_at: i64, ttl_secs: i64) -> Self {
 		let mut order = Self {
 			id,
 			payload_hash,
 			initiator,
 			state: PaymentState::Pending,
 			created_at,
-			expires_at: created_at.saturating_add(TTL_SECS),
+			expires_at: created_at.saturating_add(ttl_secs),
 			decided_at: None,
 			executed: None,
 			failure_reason: None,
@@ -754,6 +833,14 @@ impl PaymentOrder {
 
 	pub fn id(&self) -> PaymentId {
 		self.id
+	}
+
+	/// The bytes concierge's `payload_hash` for this order's `bank:payment` approval is the
+	/// SHA-256 of (`scope_operations::approval_payload`), over fields rendered with
+	/// `destination`. The application layer takes the digest, the domain stays free of crypto.
+	pub fn approval_payload(&self, destination: &str) -> Result<String, DomainError> {
+		let fields = self.terms.approval_fields(destination)?;
+		Ok(approval_payload(PAYMENT_KIND, PAYMENT_APPROVAL_SCOPE, &approval_subject_ref(self.id), &fields))
 	}
 
 	pub fn terms(&self) -> &PaymentTerms {
@@ -1444,5 +1531,45 @@ mod tests {
 			// agree about what a round trip preserves.
 			assert_eq!(back.canonical_bytes(), subject.canonical_bytes());
 		}
+	}
+	/// The approval carries exactly the fields `bank:payment` declares, with the types it
+	/// declares them in — else concierge refuses the proposal and no payment is ever decided.
+	#[test]
+	fn a_payment_approval_carries_what_the_catalog_declares() {
+		use crate::scope_operations::{BANK_CATALOG, FieldType, PAYMENT_KIND};
+		let spec = BANK_CATALOG.iter().find(|spec| spec.kind == PAYMENT_KIND).expect("bank:payment is published");
+		let fields = terms(fund(), external()).approval_fields("0x5290 on bep20").unwrap();
+		for sent in &fields {
+			let declared = spec.fields.iter().find(|field| field.key == sent.key).unwrap_or_else(|| panic!("{} undeclared", sent.key));
+			assert_eq!(declared.field_type, sent.value.field_type(), "{}", sent.key);
+		}
+		for required in spec.fields.iter().filter(|field| field.required) {
+			assert!(fields.iter().any(|sent| sent.key == required.key), "{} not sent", required.key);
+		}
+		assert_eq!(spec.fields.iter().find(|field| field.key == "amount").unwrap().field_type, FieldType::Amount);
+	}
+
+	/// A reason the approval would not carry is refused when the order opens, not silently cut:
+	/// the owners decide over the whole sentence.
+	#[test]
+	fn a_text_the_approval_cannot_carry_is_refused_not_shortened() {
+		let long = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES + 1)).unwrap()).unwrap();
+		assert!(matches!(long.approval_fields("a place"), Err(DomainError::Validation(_))));
+		let exact = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES)).unwrap()).unwrap();
+		assert!(exact.approval_fields("a place").is_ok());
+		for reason in ["see https://example.test/invoice", "pay via WWW.example.test"] {
+			let linked = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new(reason).unwrap()).unwrap();
+			assert!(linked.approval_fields("a place").is_err(), "{reason}");
+		}
+		assert!(terms(fund(), external()).approval_fields("a\nplace").is_err(), "a control character in a destination");
+	}
+
+	#[test]
+	fn the_approval_subject_ref_is_the_lowercase_form_and_nothing_else() {
+		let id = PaymentId::new();
+		assert_eq!(parse_approval_subject_ref(&approval_subject_ref(id)), Some(id));
+		assert_eq!(parse_approval_subject_ref(&format!("payment:{}", id.raw().to_string().to_uppercase())), None);
+		assert_eq!(parse_approval_subject_ref(&format!("pending_operation:{}", id.raw())), None);
+		assert_eq!(parse_approval_subject_ref("payment:nope"), None);
 	}
 }

@@ -5252,6 +5252,183 @@
         }
       }
     },
+    "/banking.v1.PaymentConfirmationService/AnswerPaymentConfirmation": {
+      "post": {
+        "tags": [
+          "banking.v1.PaymentConfirmationService"
+        ],
+        "summary": "AnswerPaymentConfirmation",
+        "description": "Answer: APPROVE or REJECT. Idempotent for the same answer; a different one after an\n answer is ALREADY_EXISTS. An approval is gated like any money the caller moves (revoked\n tokens, the operator's pause, a frozen account) and executed at once; a failure in the\n execution is the order's to record and does not undo the answer. A seat whose pins have\n moved (the caller's sessions were revoked, or their mailbox changed, since the order\n opened) fails the order closed and answers ALREADY_EXISTS with the reason.",
+        "operationId": "banking.v1.PaymentConfirmationService.AnswerPaymentConfirmation",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.AnswerPaymentConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PaymentConfirmation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.PaymentConfirmationService/GetPaymentConfirmation": {
+      "post": {
+        "tags": [
+          "banking.v1.PaymentConfirmationService"
+        ],
+        "summary": "GetPaymentConfirmation",
+        "description": "One order as its subject may see it, whatever state it is in.",
+        "operationId": "banking.v1.PaymentConfirmationService.GetPaymentConfirmation",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetPaymentConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PaymentConfirmation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.PaymentConfirmationService/ListPaymentConfirmations": {
+      "post": {
+        "tags": [
+          "banking.v1.PaymentConfirmationService"
+        ],
+        "summary": "ListPaymentConfirmations",
+        "description": "The caller's orders waiting for their answer, newest first.",
+        "operationId": "banking.v1.PaymentConfirmationService.ListPaymentConfirmations",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.ListPaymentConfirmationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PaymentConfirmationList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.PaymentConsentService/GetConsentInvitation": {
       "post": {
         "tags": [
@@ -9305,6 +9482,31 @@
         "additionalProperties": false,
         "description": "One allocation as the treasury shows it (#245): the registry's name for it, its cash,\n its supply, its price and who holds it — the same shape for a product and for the\n reserved `fee` / `fund` allocations, whose `access` is `hidden`. `nav` is a product's\n posted mark, or the computed value of a reserved allocation (its cash plus every fee\n class it holds at that product's NAV) over its supply; `nav_posted_at_unix` is 0\n while nothing under it has been marked (seed-priced). `holders` are largest first —\n people, or the `fee` allocation holding a product's fee class."
       },
+      "banking.v1.AnswerPaymentConfirmationRequest": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "title": "payment_id"
+          },
+          "decision": {
+            "title": "decision",
+            "description": "APPROVE or REJECT. PENDING is rejected as an invalid argument.",
+            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
+          },
+          "client_ip": {
+            "type": "string",
+            "title": "client_ip",
+            "description": "Audit only — the edge supplies these; they are never trusted for authorization."
+          },
+          "user_agent": {
+            "type": "string",
+            "title": "user_agent"
+          }
+        },
+        "title": "AnswerPaymentConfirmationRequest",
+        "additionalProperties": false
+      },
       "banking.v1.Balance": {
         "type": "object",
         "properties": {
@@ -10966,6 +11168,17 @@
         "title": "GetPayableInvoiceRequest",
         "additionalProperties": false
       },
+      "banking.v1.GetPaymentConfirmationRequest": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "title": "payment_id"
+          }
+        },
+        "title": "GetPaymentConfirmationRequest",
+        "additionalProperties": false
+      },
       "banking.v1.GetPaymentRequest": {
         "type": "object",
         "properties": {
@@ -11379,6 +11592,11 @@
       "banking.v1.ListParkedEventsRequest": {
         "type": "object",
         "title": "ListParkedEventsRequest",
+        "additionalProperties": false
+      },
+      "banking.v1.ListPaymentConfirmationsRequest": {
+        "type": "object",
+        "title": "ListPaymentConfirmationsRequest",
         "additionalProperties": false
       },
       "banking.v1.ListPaymentsRequest": {
@@ -12437,9 +12655,106 @@
             "title": "version",
             "format": "int64",
             "description": "Monotonic per order."
+          },
+          "seat": {
+            "type": "string",
+            "title": "seat",
+            "description": "The seat that decides the order: `consilium`, `consent` (the emailed token),\n `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in\n the cabinet). Empty only for a row written before seats were recorded."
+          },
+          "approval_id": {
+            "type": "string",
+            "title": "approval_id",
+            "description": "Concierge's id of the approval, once banking has opened it; set for `concierge_approval`."
+          },
+          "session_decision": {
+            "title": "session_decision",
+            "description": "The investor's own answer, set for `session`.",
+            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
           }
         },
         "title": "Payment",
+        "additionalProperties": false
+      },
+      "banking.v1.PaymentConfirmation": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "title": "payment_id"
+          },
+          "state": {
+            "title": "state",
+            "$ref": "#/components/schemas/banking.v1.PaymentState"
+          },
+          "tier": {
+            "type": "string",
+            "title": "tier"
+          },
+          "source": {
+            "title": "source",
+            "$ref": "#/components/schemas/banking.v1.PaymentEnd"
+          },
+          "destination": {
+            "title": "destination",
+            "$ref": "#/components/schemas/banking.v1.PaymentEnd"
+          },
+          "amount": {
+            "type": "string",
+            "title": "amount"
+          },
+          "reason": {
+            "type": "string",
+            "title": "reason"
+          },
+          "payload_hash": {
+            "type": "string",
+            "title": "payload_hash",
+            "description": "Hex SHA-256 over the canonical terms the answer binds to."
+          },
+          "initiator_email": {
+            "type": "string",
+            "title": "initiator_email",
+            "description": "Who opened it, masked."
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "expires_at",
+            "format": "int64"
+          },
+          "decision": {
+            "title": "decision",
+            "description": "This seat's own answer; PENDING until they give one.",
+            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
+          },
+          "invalidated": {
+            "type": "boolean",
+            "title": "invalidated",
+            "description": "True when one of the pins recorded at open has moved: the order can no longer be\n answered or executed."
+          },
+          "failure_reason": {
+            "type": "string",
+            "title": "failure_reason"
+          }
+        },
+        "title": "PaymentConfirmation",
+        "additionalProperties": false,
+        "description": "One order as the investor it spends is shown it: the terms they answer and nothing about\n the operator beyond a masked address."
+      },
+      "banking.v1.PaymentConfirmationList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.PaymentConfirmation"
+            },
+            "title": "items"
+          }
+        },
+        "title": "PaymentConfirmationList",
         "additionalProperties": false
       },
       "banking.v1.PaymentConsent": {
@@ -17484,11 +17799,15 @@
     },
     {
       "name": "banking.v1.PaymentsService",
-      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments\n for the policy.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e` — a product's, or the platform's own `fee` / `fund`) needs the\n owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is\n no separate RPC. A payment out of an investor's own claim (`user:\u003cid\u003e`) needs THAT\n investor's emailed consent at every tier. There is deliberately no cell in which one\n admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are\n retired (#245) and a request naming them is refused. banking's treasury (`treasury`,\n D17) is the one source beside them that is not an allocation. It collects the withdrawal\n fees and is never a destination; as a source it is CLOSED until its spending is decided\n by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is\n FAILED_PRECONDITION `treasury spending waits for scope approvals`.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown in the mail; changing anything means cancel and reopen."
+      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments\n for the policy.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e` — a product's, or the platform's own `fee` / `fund`) needs the\n owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is\n no separate RPC. A payment out of an investor's own claim (`user:\u003cid\u003e`) needs THAT\n investor's emailed consent at every tier. There is deliberately no cell in which one\n admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are\n retired (#245) and a request naming them is refused. banking's treasury (`treasury`,\n D17) is the one source beside them that is not an allocation. It collects the withdrawal\n fees and is never a destination; as a source it is CLOSED until its spending is decided\n by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is\n FAILED_PRECONDITION `treasury spending waits for scope approvals`.\n\n HOW THE APPROVAL IS SEATED. Two switches (`PAYMENT_APPROVALS_FUND`, default `consilium`;\n `PAYMENT_APPROVALS_SESSION`, default `concierge`) decide how a NEW order is seated. With\n `concierge`, the owners decide a fund-owned order over a concierge approval of kind\n `bank:payment` — proposed in the initiator's name, which needs their access token of the\n last two minutes in `x-ev-user-token` — and an investor's order is answered by that\n investor, signed in, over PaymentConfirmationService; no token and no mail are involved.\n With `consilium` new orders are seated on banking's consilium and the emailed token. An\n order keeps the seat it was opened with. See `Payment.seat`.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown in the mail; changing anything means cancel and reopen."
     },
     {
       "name": "banking.v1.PaymentConsentService",
       "description": "PaymentConsentService — the surface an emailed investor reaches. Mounted OUTSIDE the\n user-auth layer, exactly as ConsiliumApprovalService is: the emailed token IS the\n credential, and the investor clicking it may not be signed in.\n\n The GET is strictly read-only because mail scanners issue automatic requests for every\n URL in a message. The consent is a separate call carrying the secret code from the same\n mail — that is what turns a scanned link into a deliberate human act."
+    },
+    {
+      "name": "banking.v1.PaymentConfirmationService",
+      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and\n code: the session is the credential, and the cabinet's gate asks for a fresh login before\n an approval (a decline asks for none)."
     },
     {
       "name": "banking.v1.PayoutReviewService",

@@ -1319,6 +1319,10 @@
     "en": "Open the consilium",
     "t": "Открыть консилиум"
   },
+  "admin.payments.openedApprovalBody": {
+    "en": "The payment is proposed to the platform owners as an approval. Nothing moves until more than half of them approve it and its veto delay has passed.",
+    "t": "Платёж предложен владельцам платформы как одобрение. Деньги не двигаются, пока больше половины из них не одобрят его и не истечёт задержка на вето."
+  },
   "admin.payments.openedConsentBody": {
     "en": "{email} has been emailed a link and a code. Nothing moves until they agree — this is their money, and only they can say so.",
     "t": "{email} отправлены ссылка и код. Ничего не двигается, пока инвестор не согласится — это его деньги, и решить может только он."
@@ -1330,6 +1334,10 @@
   "admin.payments.openedExpires": {
     "en": "Expires {at} · {left}",
     "t": "Истекает {at} · {left}"
+  },
+  "admin.payments.openedSessionBody": {
+    "en": "The investor has been told in their cabinet. Nothing moves until they confirm it there — this is their money, and only they can say so.",
+    "t": "Инвестор уведомлён в своём кабинете. Деньги не двигаются, пока он не подтвердит платёж там — это его деньги, и сказать об этом может только он."
   },
   "admin.payments.openedTitle": {
     "en": "Opened — no money has moved",
@@ -5122,6 +5130,94 @@
   "payment.tier.service": {
     "en": "To a product",
     "t": "В продукт"
+  },
+  "paymentConfirm.approve": {
+    "en": "Approve this payment",
+    "t": "Одобрить платёж"
+  },
+  "paymentConfirm.approved.fresh": {
+    "en": "Your answer has been recorded and the payment goes ahead.",
+    "t": "Ваш ответ записан, платёж проводится."
+  },
+  "paymentConfirm.approved.title": {
+    "en": "You approved this payment",
+    "t": "Вы одобрили этот платёж"
+  },
+  "paymentConfirm.cancelled.body": {
+    "en": "Whoever asked took the request back. Nothing moved.",
+    "t": "Тот, кто просил, отозвал запрос. Деньги не двигались."
+  },
+  "paymentConfirm.cancelled.title": {
+    "en": "This payment was withdrawn",
+    "t": "Этот платёж отозван"
+  },
+  "paymentConfirm.declined.fresh": {
+    "en": "Your answer has been recorded. Your money stays where it is.",
+    "t": "Ваш ответ записан. Деньги остаются на месте."
+  },
+  "paymentConfirm.declined.title": {
+    "en": "You declined this payment",
+    "t": "Вы отклонили этот платёж"
+  },
+  "paymentConfirm.expired.body": {
+    "en": "Nobody answered in time, so it lapsed. Nothing moved.",
+    "t": "Никто не ответил вовремя, и срок истёк. Деньги не двигались."
+  },
+  "paymentConfirm.expired.title": {
+    "en": "This payment ran out of time",
+    "t": "Время платежа вышло"
+  },
+  "paymentConfirm.failed.body": {
+    "en": "Your answer stands, but the payment did not go through. Nothing was taken from your account.",
+    "t": "Ваш ответ в силе, но платёж не прошёл. С вашего счёта ничего не списано."
+  },
+  "paymentConfirm.failed.title": {
+    "en": "The payment could not be carried out",
+    "t": "Платёж не удалось выполнить"
+  },
+  "paymentConfirm.lead": {
+    "en": "{initiator} has asked for it to be moved as set out below. Nothing happens unless you agree.",
+    "t": "{initiator} просит перевести их так, как указано ниже. Без вашего согласия ничего не произойдёт."
+  },
+  "paymentConfirm.leadOwn": {
+    "en": "This is your money.",
+    "t": "Это ваши деньги."
+  },
+  "paymentConfirm.missing.body": {
+    "en": "It may have been answered, withdrawn or have expired, or it was not made for this account. Nothing was approved.",
+    "t": "Возможно, на него уже ответили, его отозвали или срок истёк, либо он создан не для этого аккаунта. Ничего не одобрено."
+  },
+  "paymentConfirm.missing.title": {
+    "en": "This payment is not available",
+    "t": "Этот платёж недоступен"
+  },
+  "paymentConfirm.reasonLabel": {
+    "en": "Reason given by {initiator}",
+    "t": "Причина, указанная {initiator}"
+  },
+  "paymentConfirm.reject": {
+    "en": "Decline",
+    "t": "Отклонить"
+  },
+  "paymentConfirm.title": {
+    "en": "A payment out of your account",
+    "t": "Платёж с вашего счёта"
+  },
+  "paymentConfirm.unrenderable.body": {
+    "en": "There is nothing here to agree to, so no answer is offered. This is a problem on our side. Try again in a moment.",
+    "t": "Здесь нечего одобрять, поэтому ответ не предлагается. Это проблема на нашей стороне. Попробуйте ещё раз через минуту."
+  },
+  "paymentConfirm.unrenderable.title": {
+    "en": "The terms did not arrive",
+    "t": "Условия не загрузились"
+  },
+  "paymentConfirm.void.body": {
+    "en": "Your sign-in sessions were revoked or your address changed after it was opened, so it can no longer be approved. Nothing moved.",
+    "t": "После открытия платежа ваши сессии были отозваны или изменился адрес почты, поэтому его больше нельзя одобрить. Деньги не двигались."
+  },
+  "paymentConfirm.void.title": {
+    "en": "This payment was stopped",
+    "t": "Этот платёж остановлен"
   },
   "profile.activeSince": {
     "en": "Active since {date}",

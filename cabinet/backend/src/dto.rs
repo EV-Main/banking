@@ -2399,11 +2399,18 @@ pub struct Payment {
 	pub failure_reason: Option<String>,
 	/// Monotonic per order.
 	pub version: u64,
+	/// `consilium` | `consent` | `concierge_approval` | `session` — the seat that decides it.
+	pub seat: Option<String>,
+	/// Concierge's id of the `bank:payment` approval, once opened.
+	pub approval_id: Option<String>,
+	/// The investor's own answer in the cabinet, for a `session` seat.
+	pub session_decision: Option<String>,
 }
 
 impl From<bk::Payment> for Payment {
 	fn from(p: bk::Payment) -> Self {
 		let state = enum_label(p.state().as_str_name(), "PAYMENT_STATE_");
+		let session_decision = (p.seat == "session").then(|| enum_label(p.session_decision().as_str_name(), "CONSENT_DECISION_"));
 		Self {
 			id: p.id,
 			state,
@@ -2423,9 +2430,56 @@ impl From<bk::Payment> for Payment {
 			executed_withdrawal_id: non_empty(p.executed_withdrawal_id),
 			failure_reason: non_empty(p.failure_reason),
 			version: p.version,
+			seat: non_empty(p.seat),
+			approval_id: non_empty(p.approval_id),
+			session_decision,
 		}
 	}
 }
+
+/// A payment out of the caller's own claim, as they are shown it to answer: the terms and
+/// nothing about the operator beyond a masked address. `decision` is `pending` until they
+/// answer; `invalidated` means the order can no longer be answered or executed.
+#[derive(Default, Serialize)]
+pub struct PaymentConfirmation {
+	pub payment_id: String,
+	pub state: String,
+	pub tier: String,
+	pub source: PaymentEnd,
+	pub destination: PaymentEnd,
+	pub amount: String,
+	pub reason: String,
+	pub payload_hash: String,
+	pub initiator_email: String,
+	pub expires_at: String,
+	pub decision: String,
+	pub invalidated: bool,
+	pub failure_reason: Option<String>,
+}
+
+impl From<bk::PaymentConfirmation> for PaymentConfirmation {
+	fn from(c: bk::PaymentConfirmation) -> Self {
+		let state = enum_label(c.state().as_str_name(), "PAYMENT_STATE_");
+		let decision = enum_label(c.decision().as_str_name(), "CONSENT_DECISION_");
+		Self {
+			payment_id: c.payment_id,
+			state,
+			tier: c.tier,
+			source: c.source.map(PaymentEnd::from).unwrap_or_default(),
+			destination: c.destination.map(PaymentEnd::from).unwrap_or_default(),
+			amount: c.amount,
+			reason: c.reason,
+			payload_hash: c.payload_hash,
+			initiator_email: mask_email(&c.initiator_email),
+			expires_at: rfc3339(c.expires_at),
+			decision,
+			invalidated: c.invalidated,
+			failure_reason: non_empty(c.failure_reason),
+		}
+	}
+}
+
+list_dto! { PaymentConfirmationList from bk::PaymentConfirmationList { items: Vec<PaymentConfirmation> } }
 
 list_dto! { PaymentList from bk::PaymentList { items: Vec<Payment> } }
 

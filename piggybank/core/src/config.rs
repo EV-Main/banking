@@ -142,6 +142,104 @@ impl KycGate {
 	}
 }
 
+/// Which way a NEW payment order is decided: over concierge's approvals, or by the old
+/// banking-run consilium and emailed consent.
+///
+/// `Consilium` is the old path, kept for the rollback and, for fund money, as the default
+/// until the console can prove who asked (see [`PaymentApprovalModes`]). It changes how orders
+/// OPENED from then on are seated and nothing else. An order already seated keeps the seat it
+/// was opened with — the sweeper, the old consilium and consent surfaces and the concierge
+/// executor all stay running in every mode — so flipping a switch strands nothing in flight.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaymentApprovalMode {
+	Concierge,
+	Consilium,
+}
+
+impl PaymentApprovalMode {
+	/// One switch's reading. Unset or empty is `default`; an unrecognised word is `default`
+	/// too, with a WARN naming the variable — a typo never moves a payment path by itself.
+	fn parse(variable: &str, raw: Option<&str>, default: Self) -> Self {
+		match raw.map(str::trim) {
+			None | Some("") => default,
+			Some(value) if value.eq_ignore_ascii_case("concierge") => Self::Concierge,
+			Some(value) if value.eq_ignore_ascii_case("consilium") => Self::Consilium,
+			Some(value) => {
+				tracing::warn!("{variable}={value:?} is neither `concierge` nor `consilium` — the default ({default:?}) applies");
+				default
+			}
+		}
+	}
+}
+
+/// The two switches, one per kind of source, read once at boot.
+///
+/// | variable | decides | default |
+/// | --- | --- | --- |
+/// | `PAYMENT_APPROVALS_FUND` | a payment out of fund money: `concierge` = a `bank:payment` approval of the platform owners, proposed in the initiator's name (the proof of who asked); `consilium` = banking's consilium | `consilium` |
+/// | `PAYMENT_APPROVALS_SESSION` | a payment out of an investor's claim: `concierge` = the investor's own answer in the cabinet; `consilium` = the emailed token | `concierge` |
+/// | `PAYMENT_APPROVALS` | the old single name: when set, the default of BOTH above; either specific variable overrides it | — |
+///
+/// Fund money defaults to the old path because the `concierge` path needs the initiator's
+/// access token minted within the last 120 seconds, and the console cannot get one on demand
+/// (the session renews its token only near expiry): opened under `concierge`, such a payment
+/// would mostly be refused. An investor's payment needs no token of the initiator's — the
+/// investor answers signed in — so it moves to the new path at once.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PaymentApprovalModes {
+	pub fund: PaymentApprovalMode,
+	pub session: PaymentApprovalMode,
+}
+
+impl PaymentApprovalModes {
+	pub const ALL_CONCIERGE: Self = Self {
+		fund: PaymentApprovalMode::Concierge,
+		session: PaymentApprovalMode::Concierge,
+	};
+	pub const ALL_CONSILIUM: Self = Self {
+		fund: PaymentApprovalMode::Consilium,
+		session: PaymentApprovalMode::Consilium,
+	};
+	pub const DEFAULT: Self = Self {
+		fund: PaymentApprovalMode::Consilium,
+		session: PaymentApprovalMode::Concierge,
+	};
+
+	pub fn from_env() -> Self {
+		let var = |name: &str| env::var(name).ok();
+		Self::read(
+			var("PAYMENT_APPROVALS").as_deref(),
+			var("PAYMENT_APPROVALS_FUND").as_deref(),
+			var("PAYMENT_APPROVALS_SESSION").as_deref(),
+		)
+	}
+
+	fn read(legacy: Option<&str>, fund: Option<&str>, session: Option<&str>) -> Self {
+		// A legacy value that is set (and valid) is the default of both sides; the specific
+		// variables then override it.
+		let legacy_set = legacy.is_some_and(|raw| !raw.trim().is_empty());
+		let (fund_default, session_default) = if legacy_set {
+			let both = PaymentApprovalMode::parse("PAYMENT_APPROVALS", legacy, PaymentApprovalMode::Concierge);
+			let invalid = !matches!(legacy.map(|raw| raw.trim().to_ascii_lowercase()).as_deref(), Some("concierge" | "consilium"));
+			if invalid { (Self::DEFAULT.fund, Self::DEFAULT.session) } else { (both, both) }
+		} else {
+			(Self::DEFAULT.fund, Self::DEFAULT.session)
+		};
+		Self {
+			fund: PaymentApprovalMode::parse("PAYMENT_APPROVALS_FUND", fund, fund_default),
+			session: PaymentApprovalMode::parse("PAYMENT_APPROVALS_SESSION", session, session_default),
+		}
+	}
+
+	/// The mode that seats an order with this requirement.
+	pub fn of(self, requirement: domain::payments::PaymentApproval) -> PaymentApprovalMode {
+		match requirement {
+			domain::payments::PaymentApproval::OwnerConsilium => self.fund,
+			domain::payments::PaymentApproval::SubjectConsent(_) => self.session,
+		}
+	}
+}
+
 /// The on-chain rail configs, kept on their original env-based conditional
 /// construction (a rail runs only when its endpoint var is set), so they are
 /// NOT part of the boot-asserted [`AppConfig`] — production instead asserts
@@ -1202,6 +1300,59 @@ mod tests {
 		for raw in [Some("false"), Some("False"), Some("0"), Some(" false ")] {
 			assert_eq!(KycGate::read(raw), KycGate::LIFTED, "{raw:?} must lift the gate");
 		}
+	}
+
+	/// Each switch resolves to its default on every reading but the two explicit words, and a
+	/// typo never moves a payment path by itself.
+	#[test]
+	fn the_payment_switches_read_their_words_and_default_on_anything_else() {
+		use PaymentApprovalMode::{Concierge, Consilium};
+		let read = |legacy, fund, session| PaymentApprovalModes::read(legacy, fund, session);
+		// Fund money stays on the old path and investors' on the new, with nothing set.
+		assert_eq!(
+			read(None, None, None),
+			PaymentApprovalModes {
+				fund: Consilium,
+				session: Concierge
+			}
+		);
+		assert_eq!(read(Some(""), Some("  "), Some("")), PaymentApprovalModes::DEFAULT);
+		// Each side has its own word, case and spaces aside.
+		assert_eq!(read(None, Some("concierge"), None).fund, Concierge);
+		assert_eq!(read(None, Some(" CONSILIUM "), None).fund, Consilium);
+		assert_eq!(read(None, None, Some("Consilium")).session, Consilium);
+		// A typo is the side's default, not the other word.
+		for typo in ["consilum", "old", "true"] {
+			assert_eq!(read(None, Some(typo), Some(typo)), PaymentApprovalModes::DEFAULT, "{typo}");
+		}
+		// The old single name sets both when it is set; the specific names override it.
+		assert_eq!(read(Some("concierge"), None, None), PaymentApprovalModes::ALL_CONCIERGE);
+		assert_eq!(read(Some("consilium"), None, None), PaymentApprovalModes::ALL_CONSILIUM);
+		assert_eq!(
+			read(Some("concierge"), Some("consilium"), None),
+			PaymentApprovalModes {
+				fund: Consilium,
+				session: Concierge
+			}
+		);
+		assert_eq!(
+			read(Some("consilium"), None, Some("concierge")),
+			PaymentApprovalModes {
+				fund: Consilium,
+				session: Concierge
+			}
+		);
+		// A bad old name is the defaults, not a half-reading.
+		assert_eq!(read(Some("nonsense"), None, None), PaymentApprovalModes::DEFAULT);
+	}
+
+	/// The requirement picks the switch: fund money by `FUND`, an investor's by `SESSION`.
+	#[test]
+	fn the_requirement_picks_its_switch() {
+		use domain::{payments::PaymentApproval, users::UserId};
+		let modes = PaymentApprovalModes::DEFAULT;
+		assert_eq!(modes.of(PaymentApproval::OwnerConsilium), PaymentApprovalMode::Consilium);
+		assert_eq!(modes.of(PaymentApproval::SubjectConsent(UserId::new())), PaymentApprovalMode::Concierge);
 	}
 
 	/// The classification decides whether production says anything at all about the seam

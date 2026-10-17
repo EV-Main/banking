@@ -29,7 +29,11 @@ export function OpenedReceipt({ payment, onDismiss }: { payment: Payment; onDism
         <p className="leading-relaxed">
           {consent
             ? t("admin.payments.openedConsentBody", "{email} has been emailed a link and a code. Nothing moves until they agree — this is their money, and only they can say so.", { email: consent.subject_email })
-            : t("admin.payments.openedConsiliumBody", "The owners have each been emailed a link. Nothing moves until more than half of them confirm from their own mailboxes; the live tally is in the consilium.")}
+            : payment.seat === "session"
+              ? t("admin.payments.openedSessionBody", "The investor has been told in their cabinet. Nothing moves until they confirm it there — this is their money, and only they can say so.")
+              : payment.seat === "concierge_approval"
+                ? t("admin.payments.openedApprovalBody", "The payment is proposed to the platform owners as an approval. Nothing moves until more than half of them approve it and its veto delay has passed.")
+                : t("admin.payments.openedConsiliumBody", "The owners have each been emailed a link. Nothing moves until more than half of them confirm from their own mailboxes; the live tally is in the consilium.")}
         </p>
         <p className="text-xs tabular-nums text-ink-soft">
           {t("admin.payments.openedExpires", "Expires {at} · {left}", { at: formatMoment(payment.expires_at, locale), left: expiresIn(payment.expires_at, t) })}

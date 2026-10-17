@@ -133,8 +133,16 @@ export interface Payment {
   initiator_email: string;
   /** Set for an `owner_consilium` order — the room where the tally lives. */
   consilium_id: string | null;
-  /** Set for a `subject_consent` order. */
+  /** Set for a `subject_consent` order seated on the emailed token. */
   consent: PaymentConsent | null;
+  /** The seat that decides the order: `consilium` · `consent` · `concierge_approval` (a
+   *  `bank:payment` approval of the platform owners) · `session` (the investor's own answer
+   *  in the cabinet). Null for a row older than seats. */
+  seat: string | null;
+  /** Concierge's id of the approval, once opened; `concierge_approval` only. */
+  approval_id: string | null;
+  /** The investor's answer, `session` only; wire spelling, read through `settledConsent`. */
+  session_decision: string | null;
   created_at: Timestamp;
   expires_at: Timestamp;
   decided_at: Timestamp | null;
@@ -180,6 +188,38 @@ export interface PaymentConsentInvitation {
 export interface PaymentConsentResult {
   invitation: PaymentConsentInvitation;
   decided: boolean;
+}
+
+// ── The investor's own answer, signed in ───────────────────────────────────────
+
+/**
+ * A payment out of the caller's own claim, as `GET /api/wallet/payments/:id` shows it — the
+ * terms the caller answers and nothing about the operator beyond a masked address. It
+ * replaces the emailed token and code: the session is the credential, and approving asks
+ * for a fresh sign-in (`step_up_required`) while declining never does.
+ *
+ * `decision` is the wire's spelling and goes through `settledConsent`; `invalidated` is a
+ * pin moving (sessions revoked, mailbox changed) — the order can no longer be answered.
+ */
+export interface PaymentConfirmation {
+  payment_id: string;
+  state: string;
+  tier: PaymentTier | string;
+  source: PaymentEnd;
+  destination: PaymentEnd;
+  amount: Decimal;
+  reason: string;
+  payload_hash: string;
+  /** Masked by the plane. */
+  initiator_email: string;
+  expires_at: Timestamp;
+  decision: string;
+  invalidated: boolean;
+  failure_reason: string | null;
+}
+
+export interface PaymentConfirmationList {
+  items: PaymentConfirmation[];
 }
 
 // ── The terms as a consilium carries them ──────────────────────────────────────

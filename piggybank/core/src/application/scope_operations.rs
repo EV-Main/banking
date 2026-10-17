@@ -24,7 +24,7 @@ use domain::{
 	money::Usdt,
 	scope_ledger::{ClientId, Grants, LedgerRefusal, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, canonical},
 	scope_operations::{
-		AutoPayoutFacts, BANK_CATALOG, BANK_CATALOG_VERSION, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms,
+		AutoPayoutFacts, BANK_CATALOG, BANK_CATALOG_VERSION, BANK_TOPICS, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms,
 		PendingOperation, RequestedLine, ScopePayout, ScopePayoutId, canonical_lines, check_lines, max_line,
 	},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
@@ -56,7 +56,7 @@ pub struct OperationPorts<'a> {
 	pub executor: &'a Notify,
 }
 
-fn sha256_hex(input: &str) -> String {
+pub(crate) fn sha256_hex(input: &str) -> String {
 	hex::encode(Sha256::digest(input.as_bytes()))
 }
 
@@ -492,7 +492,7 @@ const CHECK_EVERY_SECS: u32 = 60;
 const ANOMALY_RETRY_SECS: u32 = 3600;
 
 /// The wait after `attempts` failures to reach concierge: doubling from 30 s, at most 15 min.
-fn backoff(attempts: u32) -> u32 {
+pub(crate) fn backoff(attempts: u32) -> u32 {
 	30u32.saturating_mul(1u32 << attempts.min(5)).min(900)
 }
 
@@ -524,11 +524,18 @@ impl CatalogGate {
 	}
 
 	/// Publish the catalog unless this process already did; `true` once proposing may go on.
-	/// A transient failure is retried with a doubling backoff. A refusal — an older version
-	/// than concierge stores, the same version with other kinds, a catalog concierge's floor
-	/// rejects — holds proposals too, retried hourly: proposing against a catalog this build
-	/// did not publish would put kinds in front of the voters that this build does not mean.
-	async fn ensure(&self, approvals: &dyn Approvals) -> bool {
+	/// A transient failure is retried with a doubling backoff. A refusal — the same version
+	/// with other kinds, a catalog concierge's floor rejects — holds proposals too, retried
+	/// hourly: proposing against a catalog this build did not publish would put kinds in front
+	/// of the voters that this build does not mean.
+	///
+	/// A catalog OLDER than the stored one (an image rolled back below the release that
+	/// published the newer) is the one refusal that does not hold: it is logged at error and
+	/// proposing goes on, because concierge checks every proposal's kind and fields against the
+	/// catalog it holds, and execution is bound to the `payload_hash` stored with the operation.
+	/// Rolling the image back is still wrong — the way back is the `PAYMENT_APPROVALS_*=consilium` flags —
+	/// but it must not stop every `bank:*` proposal on top of that.
+	pub(crate) async fn ensure(&self, approvals: &dyn Approvals) -> bool {
 		{
 			let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 			if state.settled {
@@ -538,11 +545,19 @@ impl CatalogGate {
 				return false;
 			}
 		}
-		let outcome = approvals.publish_catalog(BANK_CATALOG_VERSION, BANK_CATALOG).await;
+		let outcome = approvals.publish_catalog(BANK_CATALOG_VERSION, BANK_CATALOG, BANK_TOPICS).await;
 		let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
 		match outcome {
 			Ok(()) => {
 				info!(version = BANK_CATALOG_VERSION, "scope operations: bank:* approval catalog published");
+				state.settled = true;
+			}
+			Err(ApprovalsError::Refused(why)) if why.contains("does not supersede") => {
+				let total = self.refusals.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+				error!(
+					version = BANK_CATALOG_VERSION,
+					total, "scope operations: concierge holds a newer bank:* catalog than this build's — an image older than the release that published it is running; proposing on: {why}"
+				);
 				state.settled = true;
 			}
 			Err(ApprovalsError::Refused(why)) => {
@@ -1057,12 +1072,12 @@ impl ApprovalExecutor {
 mod tests {
 	use super::*;
 
-	/// The catalog banking publishes, pinned to its version: change a kind, a field or an
-	/// escalation and this fails until BANK_CATALOG_VERSION moves with it — concierge refuses
+	/// The catalog banking publishes, pinned to its version: change a kind, a field, an
+	/// escalation or a notification topic and this fails until BANK_CATALOG_VERSION moves with it — concierge refuses
 	/// the same version with other content, which would hold every proposal back in prod.
 	#[test]
 	fn the_published_catalog_is_pinned_to_its_version() {
-		const PINNED: (u64, &str) = (1_792_108_800, "c808a2bc27d98db605b6693ec465af8cd31e3391fc786932e2c2317195c3560d");
+		const PINNED: (u64, &str) = (1_792_281_600, "3dfe43cf768e47ec7c7060188602bf699fc5620b8c7cec3acf0c4ca04c6e1791");
 		let digest = sha256_hex(&domain::scope_operations::bank_catalog_canonical());
 		assert_eq!(
 			(BANK_CATALOG_VERSION, digest.as_str()),

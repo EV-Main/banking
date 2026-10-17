@@ -40,7 +40,7 @@ use domain::{
 };
 use piggybank_core::{
 	application::{balance as balance_app, payments as payments_app, wallet as wallet_app, withdrawals as withdrawal_app},
-	config::KycGate,
+	config::{KycGate, PaymentApprovalModes},
 	infrastructure::{
 		allocations::PgAllocations, consilium::PgConsilia, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, payments::PgPayments,
 		positions::PgFundPositions, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
@@ -376,6 +376,7 @@ async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 		approval_url_base: "https://example.test/consilium",
 		consent_url_base: "https://example.test/consent",
 		governance_mail_wired: true,
+		approvals: PaymentApprovalModes::ALL_CONSILIUM,
 	};
 	let terms = PaymentTerms::new(
 		Party::Service(ServiceId::fee()),

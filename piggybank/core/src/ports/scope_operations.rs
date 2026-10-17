@@ -7,7 +7,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_ledger::{ClientId, ScopeTransfer},
-	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout},
+	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout, TopicSpec},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
@@ -279,6 +279,9 @@ pub struct ApprovalView {
 	pub state: ApprovalState,
 	pub level: Option<ApprovalLevel>,
 	pub payload_hash: String,
+	/// Unix seconds: when a passed decision lapses to VOID unexecuted; 0 while it has not
+	/// passed.
+	pub execute_by: i64,
 }
 
 /// A proposal banking opens for an operation.
@@ -292,6 +295,17 @@ pub struct Proposal {
 	pub fields: Vec<ApprovalField>,
 	/// Idempotency key on concierge's side.
 	pub dedupe_key: String,
+}
+
+/// The proof that a named person asked for a proposal (D24(1)): their own access token of the
+/// identity plane, minted for this request, and the `auth_subject` it speaks for. With it
+/// concierge keeps that person off a PLATFORM roster; without it the name is information
+/// and its holder votes like anyone.
+#[derive(Clone, Debug)]
+pub struct UserProof {
+	pub requested_by: String,
+	/// The raw token. Never logged, never stored.
+	pub token: String,
 }
 
 /// How banking reports an approval it was pulled for (`ApprovalOutcome`).
@@ -325,6 +339,16 @@ pub enum ApprovalsError {
 pub trait Approvals: Send + Sync {
 	async fn propose(&self, proposal: &Proposal) -> Result<ApprovalView, ApprovalsError>;
 
+	/// [`Self::propose`] with the proof of who asked. A seam that cannot carry a proof refuses
+	/// one rather than dropping it: a proposal the initiator may vote on is not the one the
+	/// caller meant to open.
+	async fn propose_for(&self, proposal: &Proposal, proof: Option<&UserProof>) -> Result<ApprovalView, ApprovalsError> {
+		match proof {
+			None => self.propose(proposal).await,
+			Some(_) => Err(ApprovalsError::Refused("this approvals seam cannot carry a proof of who asked".into())),
+		}
+	}
+
 	async fn get(&self, approval_id: &str) -> Result<ApprovalView, ApprovalsError>;
 
 	/// Passed decisions of banking's namespace due for execution, oldest first.
@@ -337,7 +361,8 @@ pub trait Approvals: Send + Sync {
 	/// Concierge allows it only while the proposal is OPEN, or PASSED before `executable_at`.
 	async fn withdraw(&self, approval_id: &str, reason: &str) -> Result<(), ApprovalsError>;
 
-	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole:
-	/// the same version with the same kinds is a no-op on concierge's side.
-	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError>;
+	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole —
+	/// the approval kinds and the notification topics together, as concierge stores them as
+	/// one: the same version with the same content is a no-op on concierge's side.
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec], topics: &[TopicSpec]) -> Result<(), ApprovalsError>;
 }
