@@ -591,6 +591,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 					holds: store.clone(),
 					events: store.clone(),
 					invoices: store.clone(),
+					mandate_requests: store.clone(),
 					scopes: state.compartments.clone(),
 					ledger: state.ledger.clone(),
 					relay: state.relay_notify.clone(),

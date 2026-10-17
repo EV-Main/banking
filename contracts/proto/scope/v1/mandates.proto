@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package scope.v1;
+
+// MandateRequestService — a scope's service asks a user for a mandate (the consent its
+// holds and charges stand on, `banking.v1.CompartmentService.GrantMandate`). Banking stores
+// the terms and answers with `grant_url`; the user opens it on evinvest.ltd, sees exactly
+// these terms, and grants them after a fresh login. The terms never travel in the URL, so
+// nobody can alter what the user is shown.
+//
+// Granting is the user's act and may never happen: a request does not itself let the
+// service draw, and one not granted within `expires_at` simply stops existing. The grant
+// shows up as `KIND_MANDATE_GRANTED` in `MoneyEvents`.
+//
+// The caller is the client its certificate names, and must hold a grant that lets it draw
+// on users' compartments in the scope (else INVALID_ARGUMENT, as a user granting to it
+// would get). The same limits as a grant hold: caps positive, `cap_24h` and
+// `cap_outstanding` at least `cap_per_op`, operations non-empty and unique, a
+// `cap_book_fill_24h` exactly with BOOK_FILL, `mandate_expires_at` in the future and
+// within 5 years.
+service MandateRequestService {
+  // Ask for a mandate. `idempotency_key` is per client: a repeat with the same terms returns
+  // the original request, other terms are ALREADY_EXISTS `idempotency_conflict`. An unknown
+  // scope is NOT_FOUND.
+  rpc CreateMandateRequest(CreateMandateRequestRequest) returns (MandateRequest);
+}
+
+// What the mandate lets the client do; the same three as `banking.v1.MandateOperation`.
+enum MandateOperation {
+  MANDATE_OPERATION_UNSPECIFIED = 0;
+  MANDATE_OPERATION_RESERVE = 1;
+  MANDATE_OPERATION_CHARGE = 2;
+  MANDATE_OPERATION_BOOK_FILL = 3;
+}
+
+message CreateMandateRequestRequest {
+  string scope = 1;
+  repeated MandateOperation operations = 2;
+  // Decimal USDT, as in `GrantMandate`.
+  string cap_per_op = 3;
+  string cap_24h = 4;
+  string cap_outstanding = 5;     // empty = cap_24h
+  string cap_book_fill_24h = 6;   // required exactly with BOOK_FILL
+  int64 mandate_expires_at = 7;   // unix seconds for the mandate itself; 0 = until revoked
+  string idempotency_key = 8;
+}
+
+message MandateRequest {
+  string request_id = 1;
+  string scope = 2;
+  repeated MandateOperation operations = 3;
+  string cap_per_op = 4;
+  string cap_24h = 5;
+  string cap_outstanding = 6;     // as stored: cap_24h when the request left it empty
+  string cap_book_fill_24h = 7;
+  int64 mandate_expires_at = 8;
+  // Unix seconds: until when the user can grant it. Fixed by banking, not the client.
+  int64 expires_at = 9;
+  int64 created_at = 10;
+  // The page on https://evinvest.ltd where the user grants it — the link to hand them.
+  string grant_url = 11;
+}

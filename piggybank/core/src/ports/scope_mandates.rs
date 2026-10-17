@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use domain::{
 	error::DomainError,
-	scope_mandates::{Mandate, MandateTerms, MandateUsage},
+	scope_mandates::{Mandate, MandateRequest, MandateRequestTerms, MandateTerms, MandateUsage},
 	users::UserId,
 };
 use uuid::Uuid;
@@ -45,4 +45,28 @@ pub trait MandateStore: Send + Sync {
 
 	/// The user's live mandates (neither revoked, replaced nor expired), newest first.
 	async fn live(&self, user: UserId) -> Result<Vec<RecordedMandate>, DomainError>;
+}
+
+/// What recording a request did.
+#[derive(Debug)]
+pub enum Requested {
+	New(MandateRequest),
+	/// The client's key was already used: the request it recorded and the canonical terms it
+	/// was recorded under. The application decides whether this is a repeat or a conflict.
+	Existing {
+		terms: String,
+		request: MandateRequest,
+	},
+}
+
+/// A scope service's requests for mandates, which users grant by id.
+#[async_trait]
+pub trait MandateRequestStore: Send + Sync {
+	/// Record `terms` for the client, good for `ttl_seconds` on the database's clock — or
+	/// return what the client's key recorded before. Refuses (Validation) a
+	/// `mandate_expires_at` not after the database's clock.
+	async fn create(&self, terms: &MandateRequestTerms, idempotency_key: &str, ttl_seconds: i64) -> Result<Requested, DomainError>;
+
+	/// The request `id` unless it is unknown or past its `expires_at` (database clock).
+	async fn get(&self, id: Uuid) -> Result<Option<MandateRequest>, DomainError>;
 }

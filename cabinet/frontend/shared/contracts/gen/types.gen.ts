@@ -1939,6 +1939,16 @@ export type BankingV1GetInvitationRequest = {
 };
 
 /**
+ * GetMandateRequestRequest
+ */
+export type BankingV1GetMandateRequestRequest = {
+    /**
+     * request_id
+     */
+    request_id?: string;
+};
+
+/**
  * GetMeRequest
  */
 export type BankingV1GetMeRequest = {
@@ -2058,61 +2068,17 @@ export type BankingV1GrantAllocationAccessRequest = {
  */
 export type BankingV1GrantMandateRequest = {
     /**
-     * scope
-     */
-    scope?: string;
-    /**
-     * client_id
+     * request_id
      *
-     * the scope's service, as banking's grants name it
+     * a lowercase uuid, from the service's grant link
      */
-    client_id?: string;
-    /**
-     * cap_per_op
-     *
-     * > 0: the most one hold or charge may draw
-     */
-    cap_per_op?: string;
-    /**
-     * cap_24h
-     *
-     * >= cap_per_op: drawn over a rolling 24 h
-     */
-    cap_24h?: string;
-    /**
-     * operations
-     *
-     * at least one, each once
-     */
-    operations?: Array<BankingV1MandateOperation>;
-    /**
-     * expires_at
-     *
-     * unix seconds, in the future and within 5 years; 0 = until revoked
-     */
-    expires_at?: number | string;
+    request_id?: string;
     /**
      * idempotency_key
      *
      * 1..128 chars; a repeat returns the original mandate
      */
     idempotency_key?: string;
-    /**
-     * cap_outstanding
-     *
-     * >= cap_per_op; empty = cap_24h. The most the client's ACTIVE holds may hold at once,
-     * whenever they were placed — a hold without a TTL stays out of a rolling 24 h window
-     * while it still holds the money.
-     */
-    cap_outstanding?: string;
-    /**
-     * cap_book_fill_24h
-     *
-     * Required exactly when `operations` lists BOOK_FILL, > 0: the most a rolling 24 h of
-     * captures may send from the client's holds into OTHER users' compartments. A hold
-     * placed under an earlier mandate is bound by the lower of its cap and this one.
-     */
-    cap_book_fill_24h?: string;
 };
 
 /**
@@ -2740,6 +2706,64 @@ export type BankingV1MandateList = {
  * What a mandate lets the service do with the caller's compartment.
  */
 export type BankingV1MandateOperation = 'MANDATE_OPERATION_UNSPECIFIED' | 'MANDATE_OPERATION_RESERVE' | 'MANDATE_OPERATION_CHARGE' | 'MANDATE_OPERATION_BOOK_FILL';
+
+/**
+ * MandateRequest
+ *
+ * What a service asks the caller to grant, as banking stored it. Amounts are decimal USDT.
+ */
+export type BankingV1MandateRequest = {
+    /**
+     * request_id
+     */
+    request_id?: string;
+    /**
+     * scope
+     */
+    scope?: string;
+    /**
+     * client_id
+     */
+    client_id?: string;
+    /**
+     * client_display_name
+     */
+    client_display_name?: string;
+    /**
+     * cap_per_op
+     */
+    cap_per_op?: string;
+    /**
+     * cap_24h
+     */
+    cap_24h?: string;
+    /**
+     * cap_outstanding
+     */
+    cap_outstanding?: string;
+    /**
+     * cap_book_fill_24h
+     *
+     * empty unless `operations` lists BOOK_FILL
+     */
+    cap_book_fill_24h?: string;
+    /**
+     * operations
+     */
+    operations?: Array<BankingV1MandateOperation>;
+    /**
+     * mandate_expires_at
+     *
+     * unix seconds; 0 = until revoked
+     */
+    mandate_expires_at?: number | string;
+    /**
+     * expires_at
+     *
+     * unix seconds: until when this request can be granted
+     */
+    expires_at?: number | string;
+};
 
 /**
  * MigrateDepositAddressToCustodianRequest
@@ -9975,6 +9999,35 @@ export type BankingV1CompartmentServiceGetCompartmentResponses = {
 };
 
 export type BankingV1CompartmentServiceGetCompartmentResponse = BankingV1CompartmentServiceGetCompartmentResponses[keyof BankingV1CompartmentServiceGetCompartmentResponses];
+
+export type BankingV1CompartmentServiceGetMandateRequestData = {
+    body: BankingV1GetMandateRequestRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/GetMandateRequest';
+};
+
+export type BankingV1CompartmentServiceGetMandateRequestErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceGetMandateRequestError = BankingV1CompartmentServiceGetMandateRequestErrors[keyof BankingV1CompartmentServiceGetMandateRequestErrors];
+
+export type BankingV1CompartmentServiceGetMandateRequestResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1MandateRequest;
+};
+
+export type BankingV1CompartmentServiceGetMandateRequestResponse = BankingV1CompartmentServiceGetMandateRequestResponses[keyof BankingV1CompartmentServiceGetMandateRequestResponses];
 
 export type BankingV1CompartmentServiceGetScopePolicyData = {
     body: BankingV1GetScopePolicyRequest;

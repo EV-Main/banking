@@ -14,7 +14,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_ledger::{ClientId, HoldTerms, MandateOperation, MoneyEventKind},
-	scope_mandates::{Mandate, MandateCaps, MandateTerms, MandateUsage},
+	scope_mandates::{Mandate, MandateCaps, MandateRequest, MandateRequestTerms, MandateTerms, MandateUsage},
 	scopes::ScopeId,
 	users::UserId,
 };
@@ -30,7 +30,7 @@ use crate::{
 	},
 	ports::{
 		scope_ledger::MandateDraw,
-		scope_mandates::{Granted, MandateStore, RecordedMandate},
+		scope_mandates::{Granted, MandateRequestStore, MandateStore, RecordedMandate, Requested},
 	},
 };
 
@@ -402,5 +402,137 @@ impl MandateStore for PgScopeLedger {
 			out.push(recorded(&mut conn, mandate_from(row)?).await?);
 		}
 		Ok(out)
+	}
+}
+
+type RequestRow = (Uuid, String, String, String, String, String, Option<String>, Vec<String>, Option<i64>, i64, i64);
+
+macro_rules! select_request {
+	($tail:literal) => {
+		concat!(
+			"SELECT id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
+			"EXTRACT(EPOCH FROM mandate_expires_at)::BIGINT, EXTRACT(EPOCH FROM created_at)::BIGINT, ",
+			"EXTRACT(EPOCH FROM expires_at)::BIGINT FROM scope_mandate_requests ",
+			$tail
+		)
+	};
+}
+
+fn request_from(row: RequestRow) -> Result<MandateRequest, DomainError> {
+	let (id, scope, client, per_op, per_24h, outstanding, book_fill, operations, mandate_expires_at, created_at, expires_at) = row;
+	let corrupt = |e: DomainError| DomainError::Repository(format!("scope mandate request {id}: {e}"));
+	let operations = operations.iter().map(|raw| MandateOperation::parse(raw)).collect::<Result<Vec<_>, _>>().map_err(corrupt)?;
+	let caps = MandateCaps {
+		per_op: base_units("cap_per_op", &per_op)?,
+		per_24h: base_units("cap_24h", &per_24h)?,
+		outstanding: base_units("cap_outstanding", &outstanding)?,
+		book_fill_24h: book_fill.as_deref().map(|raw| base_units("cap_book_fill_24h", raw)).transpose()?,
+	};
+	let terms = MandateRequestTerms::new(
+		ScopeId::parse(&scope).map_err(corrupt)?,
+		ClientId::parse(&client).map_err(corrupt)?,
+		caps,
+		&operations,
+		mandate_expires_at,
+	)
+	.map_err(corrupt)?;
+	Ok(MandateRequest { id, terms, created_at, expires_at })
+}
+
+/// What the client's key recorded, expired or not: a repeat is answered with the original.
+async fn by_key(conn: &mut PgConnection, client: &ClientId, idempotency_key: &str) -> Result<Option<(String, MandateRequest)>, DomainError> {
+	let stored: Option<(String, Uuid)> = sqlx::query_as("SELECT terms, id FROM scope_mandate_requests WHERE client_id = $1 AND idempotency_key = $2")
+		.bind(client.as_str())
+		.bind(idempotency_key)
+		.fetch_optional(&mut *conn)
+		.await
+		.map_err(repo_err)?;
+	let Some((terms, id)) = stored else { return Ok(None) };
+	let row = sqlx::query_as::<_, RequestRow>(select_request!("WHERE id = $1"))
+		.bind(id)
+		.fetch_one(conn)
+		.await
+		.map_err(repo_err)?;
+	Ok(Some((terms, request_from(row)?)))
+}
+
+#[async_trait]
+impl MandateRequestStore for PgScopeLedger {
+	async fn create(&self, terms: &MandateRequestTerms, idempotency_key: &str, ttl_seconds: i64) -> Result<Requested, DomainError> {
+		let mut conn = self.pool().acquire().await.map_err(repo_err)?;
+		if let Some((stored, request)) = by_key(&mut conn, &terms.client, idempotency_key).await? {
+			let now = db_now(&mut conn).await?;
+			if stored != terms.canonical() || request.expires_at > now {
+				return Ok(Requested::Existing { terms: stored, request });
+			}
+			// The same ask repeated after its link died: the service retried with its own key, so
+			// it gets the same request alive again rather than a dead id.
+			terms.check_expiry(now)?;
+			// Two repeats extend once: the second finds the row alive and reads what the first set.
+			let extended = sqlx::query_as::<_, RequestRow>(concat!(
+				"UPDATE scope_mandate_requests SET expires_at = LEAST(now() + make_interval(secs => $2), mandate_expires_at) ",
+				"WHERE id = $1 AND expires_at <= now() ",
+				"RETURNING id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
+				"EXTRACT(EPOCH FROM mandate_expires_at)::BIGINT, EXTRACT(EPOCH FROM created_at)::BIGINT, EXTRACT(EPOCH FROM expires_at)::BIGINT"
+			))
+			.bind(request.id)
+			.bind(ttl_seconds as f64)
+			.fetch_optional(&mut *conn)
+			.await
+			.map_err(repo_err)?;
+			let request = match extended {
+				Some(row) => request_from(row)?,
+				None => sqlx::query_as::<_, RequestRow>(select_request!("WHERE id = $1"))
+					.bind(request.id)
+					.fetch_one(&mut *conn)
+					.await
+					.map_err(repo_err)
+					.and_then(request_from)?,
+			};
+			return Ok(Requested::Existing { terms: stored, request });
+		}
+		terms.check_expiry(db_now(&mut conn).await?)?;
+		let operations: Vec<&str> = terms.operations.iter().map(|operation| operation.as_str()).collect();
+		// A concurrent create under the same key loses the insert and reads the winner's row.
+		let inserted = sqlx::query_as::<_, RequestRow>(concat!(
+			"INSERT INTO scope_mandate_requests (id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
+			"mandate_expires_at, idempotency_key, terms, expires_at) ",
+			"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9), $10, $11, LEAST(now() + make_interval(secs => $12), to_timestamp($9))) ",
+			"ON CONFLICT (client_id, idempotency_key) DO NOTHING ",
+			"RETURNING id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
+			"EXTRACT(EPOCH FROM mandate_expires_at)::BIGINT, EXTRACT(EPOCH FROM created_at)::BIGINT, EXTRACT(EPOCH FROM expires_at)::BIGINT"
+		))
+		.bind(Uuid::new_v4())
+		.bind(terms.scope.as_str())
+		.bind(terms.client.as_str())
+		.bind(terms.caps.per_op.base_units().to_string())
+		.bind(terms.caps.per_24h.base_units().to_string())
+		.bind(terms.caps.outstanding.base_units().to_string())
+		.bind(terms.caps.book_fill_24h.map(|cap| cap.base_units().to_string()))
+		.bind(&operations)
+		.bind(terms.mandate_expires_at.map(|at| at as f64))
+		.bind(idempotency_key)
+		.bind(terms.canonical())
+		.bind(ttl_seconds as f64)
+		.fetch_optional(&mut *conn)
+		.await
+		.map_err(repo_err)?;
+		if let Some(row) = inserted {
+			return Ok(Requested::New(request_from(row)?));
+		}
+		let (stored, request) = by_key(&mut conn, &terms.client, idempotency_key)
+			.await?
+			.ok_or_else(|| DomainError::Repository(format!("mandate request key {idempotency_key} conflicted, then vanished")))?;
+		Ok(Requested::Existing { terms: stored, request })
+	}
+
+	async fn get(&self, id: Uuid) -> Result<Option<MandateRequest>, DomainError> {
+		sqlx::query_as::<_, RequestRow>(select_request!("WHERE id = $1 AND expires_at > now()"))
+			.bind(id)
+			.fetch_optional(self.pool())
+			.await
+			.map_err(repo_err)?
+			.map(request_from)
+			.transpose()
 	}
 }

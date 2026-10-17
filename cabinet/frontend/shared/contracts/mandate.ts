@@ -29,3 +29,32 @@ export interface Mandate {
 export interface MandateList {
   mandates: Mandate[];
 }
+
+/**
+ * What a service asked the reader to grant, as the BFF serves it (`GET
+ * /api/wallet/mandate-requests/{id}`; aligned with the generated `BankingV1MandateRequest`,
+ * hand-written for the same reason as {@link Mandate}: lowercase operations, string stamps).
+ * The grant page shows exactly these terms and nothing the URL says.
+ */
+export interface MandateRequest {
+  request_id: string;
+  scope: string;
+  client_id: string;
+  client_display_name: string;
+  cap_per_op: string;
+  cap_24h: string;
+  cap_outstanding: string;
+  /** "" unless `operations` lists `book_fill`. */
+  cap_book_fill_24h: string;
+  operations: MandateOperation[];
+  /** Unix seconds of the mandate's own end; "0" = until revoked. */
+  mandate_expires_at: string;
+  /** Unix seconds until which this request can still be granted. */
+  expires_at: string;
+}
+
+/** The only body `POST /api/wallet/mandates` accepts: terms are looked up from the request. */
+export interface GrantMandateBody {
+  request_id: string;
+  idempotency_key: string;
+}

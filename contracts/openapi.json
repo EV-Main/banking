@@ -3012,6 +3012,65 @@
         }
       }
     },
+    "/banking.v1.CompartmentService/GetMandateRequest": {
+      "post": {
+        "tags": [
+          "banking.v1.CompartmentService"
+        ],
+        "summary": "GetMandateRequest",
+        "description": "A scope service's stored request for a mandate (`scope.v1.MandateRequestService`),\n for the caller to read before granting it. Unknown, expired and malformed ids are\n the same NOT_FOUND; the id is a lowercase uuid.",
+        "operationId": "banking.v1.CompartmentService.GetMandateRequest",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetMandateRequestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.MandateRequest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.CompartmentService/GetScopePolicy": {
       "post": {
         "tags": [
@@ -3077,7 +3136,7 @@
           "banking.v1.CompartmentService"
         ],
         "summary": "GrantMandate",
-        "description": "Let a scope's service draw on the caller's compartment in that scope — hold it\n (a subscription, a buy order) or charge it — within caps the caller sets. This is\n the only consent a service's debit stands on; without it the service can only\n send an invoice. A client that banking's grants do not allow to touch users'\n compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,\n client): granting again replaces it — new holds and charges draw on the new one,\n while holds already standing stay under the mandate they were placed with until they\n finish. The new mandate still binds them: none outlives its `expires_at`, and a\n capture of one into another user needs BOOK_FILL from both. Naturally confirmed on\n the caller's first move into the scope, on one screen.",
+        "description": "Let a scope's service draw on the caller's compartment in that scope — hold it\n (a subscription, a buy order) or charge it — within the caps of the service's\n request, which the caller grants as it stands (`request_id`; unknown or expired is\n NOT_FOUND). This is\n the only consent a service's debit stands on; without it the service can only\n send an invoice. A client that banking's grants do not allow to touch users'\n compartments in the scope is INVALID_ARGUMENT. One live mandate per (scope,\n client): granting again replaces it — new holds and charges draw on the new one,\n while holds already standing stay under the mandate they were placed with until they\n finish. The new mandate still binds them: none outlives its `expires_at`, and a\n capture of one into another user needs BOOK_FILL from both. Naturally confirmed on\n the caller's first move into the scope, on one screen.",
         "operationId": "banking.v1.CompartmentService.GrantMandate",
         "parameters": [
           {
@@ -10816,6 +10875,17 @@
         "title": "GetInvitationRequest",
         "additionalProperties": false
       },
+      "banking.v1.GetMandateRequestRequest": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "request_id"
+          }
+        },
+        "title": "GetMandateRequestRequest",
+        "additionalProperties": false
+      },
       "banking.v1.GetMeRequest": {
         "type": "object",
         "title": "GetMeRequest",
@@ -10921,56 +10991,15 @@
       "banking.v1.GrantMandateRequest": {
         "type": "object",
         "properties": {
-          "scope": {
+          "request_id": {
             "type": "string",
-            "title": "scope"
-          },
-          "client_id": {
-            "type": "string",
-            "title": "client_id",
-            "description": "the scope's service, as banking's grants name it"
-          },
-          "cap_per_op": {
-            "type": "string",
-            "title": "cap_per_op",
-            "description": "\u003e 0: the most one hold or charge may draw"
-          },
-          "cap_24h": {
-            "type": "string",
-            "title": "cap_24h",
-            "description": "\u003e= cap_per_op: drawn over a rolling 24 h"
-          },
-          "operations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/banking.v1.MandateOperation"
-            },
-            "title": "operations",
-            "description": "at least one, each once"
-          },
-          "expires_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "expires_at",
-            "format": "int64",
-            "description": "unix seconds, in the future and within 5 years; 0 = until revoked"
+            "title": "request_id",
+            "description": "a lowercase uuid, from the service's grant link"
           },
           "idempotency_key": {
             "type": "string",
             "title": "idempotency_key",
             "description": "1..128 chars; a repeat returns the original mandate"
-          },
-          "cap_outstanding": {
-            "type": "string",
-            "title": "cap_outstanding",
-            "description": "\u003e= cap_per_op; empty = cap_24h. The most the client's ACTIVE holds may hold at once,\n whenever they were placed — a hold without a TTL stays out of a rolling 24 h window\n while it still holds the money."
-          },
-          "cap_book_fill_24h": {
-            "type": "string",
-            "title": "cap_book_fill_24h",
-            "description": "Required exactly when `operations` lists BOOK_FILL, \u003e 0: the most a rolling 24 h of\n captures may send from the client's holds into OTHER users' compartments. A hold\n placed under an earlier mandate is bound by the lower of its cap and this one."
           }
         },
         "title": "GrantMandateRequest",
@@ -11586,6 +11615,72 @@
           "MANDATE_OPERATION_BOOK_FILL"
         ],
         "description": "What a mandate lets the service do with the caller's compartment."
+      },
+      "banking.v1.MandateRequest": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "request_id"
+          },
+          "scope": {
+            "type": "string",
+            "title": "scope"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "client_id"
+          },
+          "client_display_name": {
+            "type": "string",
+            "title": "client_display_name"
+          },
+          "cap_per_op": {
+            "type": "string",
+            "title": "cap_per_op"
+          },
+          "cap_24h": {
+            "type": "string",
+            "title": "cap_24h"
+          },
+          "cap_outstanding": {
+            "type": "string",
+            "title": "cap_outstanding"
+          },
+          "cap_book_fill_24h": {
+            "type": "string",
+            "title": "cap_book_fill_24h",
+            "description": "empty unless `operations` lists BOOK_FILL"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.MandateOperation"
+            },
+            "title": "operations"
+          },
+          "mandate_expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "mandate_expires_at",
+            "format": "int64",
+            "description": "unix seconds; 0 = until revoked"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "string"
+            ],
+            "title": "expires_at",
+            "format": "int64",
+            "description": "unix seconds: until when this request can be granted"
+          }
+        },
+        "title": "MandateRequest",
+        "additionalProperties": false,
+        "description": "What a service asks the caller to grant, as banking stored it. Amounts are decimal USDT."
       },
       "banking.v1.MigrateDepositAddressToCustodianRequest": {
         "type": "object",

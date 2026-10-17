@@ -12,21 +12,21 @@ import { ActionFrame, useWalletAction } from "@/features/wallet-action";
 import type { Mandate } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
 import { MandateCard } from "@/views/wallet/ui/mandate-card";
+import { GrantMandate } from "@/views/wallet/ui/mandate-grant";
 
 /**
- * What a scope's services may draw on the reader's compartment, and the way to end it.
- *
- * Granting is deliberately absent: a grant names a service and its caps, and neither may
- * come from the URL (checklist item 12). The hub keeps no record of what a service asked
- * for, so there is nothing server-side to show the reader and let them accept; until it
- * does, this page offers only what the server already holds. The URL's `scope` merely
+ * Two pages in one route. With a `request` in the URL it grants what that server-held request
+ * asks; without one it lists what services may draw and ends them. The URL never carries the
+ * service or its caps (checklist item 12): a grant names a request, the server holds the
+ * terms, and the page shows them back before the reader accepts. The URL's `scope` merely
  * narrows the server's own list.
  */
 export function MandateActionView() {
   const { params, finished, finish } = useWalletAction();
+  const done = (mandate: Mandate) => finish("done", mandate.mandate_id);
   return (
     <ActionFrame params={params} finished={finished} finish={finish}>
-      <Mandates urlScope={params.scope} onRevoked={(mandate) => finish("done", mandate.mandate_id)} />
+      {params.request !== null ? <GrantMandate key={params.request} requestId={params.request} urlScope={params.scope} onGranted={done} /> : <Mandates urlScope={params.scope} onRevoked={done} />}
     </ActionFrame>
   );
 }

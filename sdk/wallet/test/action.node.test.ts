@@ -22,14 +22,24 @@ describe('wallet action allow-lists', () => {
     expect(WALLET_ACTION_PATHS).toEqual(['/wallet/pay', '/wallet/withdraw', '/wallet/move', '/wallet/mandate']);
   });
 
-  it('should_keep_only_invoice_and_scope', () => {
-    expect(WALLET_ACTION_PARAMS).toEqual(['invoice', 'scope']);
+  it('should_keep_only_invoice_scope_and_request', () => {
+    expect(WALLET_ACTION_PARAMS).toEqual(['invoice', 'scope', 'request']);
   });
 });
 
 describe('walletActionUrl: what passes', () => {
   it.each(['pay', 'withdraw', 'move', 'mandate'])('should_accept_the_%s_action_on_evinvest_ltd', action => {
     expect(walletActionUrl(`https://evinvest.ltd/wallet/${action}`)?.href).toBe(`https://evinvest.ltd/wallet/${action}`);
+  });
+
+  it('should_keep_the_request_parameter_of_a_mandate_page', () => {
+    expect(walletActionUrl('https://evinvest.ltd/wallet/mandate?request=mr_1&scope=sa&limit=9')?.href).toBe(
+      'https://evinvest.ltd/wallet/mandate?scope=sa&request=mr_1',
+    );
+  });
+
+  it.each(['a/b', 'a%2Fb', 'a b', 'a.b', ''])('should_refuse_the_whole_url_for_a_request_%j', request => {
+    expect(walletActionUrl(`https://evinvest.ltd/wallet/mandate?request=${request}`)).toBeNull();
   });
 
   it('should_keep_the_invoice_and_scope_parameters', () => {

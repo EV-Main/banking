@@ -12,7 +12,8 @@
 
 use domain::{
 	money::Usdt,
-	scope_ledger::{ClientId, MandateOperation},
+	scope_ledger::MandateOperation,
+	scope_mandates::MandateRequest,
 	scopes::{Compartment, MoveRefusal, ScopeId},
 };
 use evbanking_contracts::banking::v1::{self as pb, compartment_service_server::CompartmentService};
@@ -22,7 +23,7 @@ use crate::{
 	AppState,
 	application::{
 		compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
-		scope_mandates::{self as mandates_app, GrantRequest, MandatePorts},
+		scope_mandates::{self as mandates_app, MandatePorts, RequestPorts},
 	},
 	ports::{
 		compartments::{RecordedMove, ScopeRecord},
@@ -47,6 +48,14 @@ impl CompartmentSvc {
 			ledger: self.state.ledger.as_ref(),
 			policy: self.state.outflow.as_ref(),
 			relay: &self.state.relay_notify,
+		}
+	}
+
+	fn request_ports(&self) -> RequestPorts<'_> {
+		RequestPorts {
+			grants: &self.state.scope_grants,
+			requests: self.state.mandate_requests.as_ref(),
+			scopes: self.state.compartments.as_ref(),
 		}
 	}
 
@@ -108,24 +117,19 @@ impl CompartmentService for CompartmentSvc {
 		Ok(Response::new(policy_to_proto(&view.scope, view.caller_eligible)))
 	}
 
+	async fn get_mandate_request(&self, request: Request<pb::GetMandateRequestRequest>) -> Result<Response<pb::MandateRequest>, Status> {
+		caller_id(&request)?;
+		let asked = mandates_app::read_request(&self.request_ports(), request_id_of(&request.get_ref().request_id)?)
+			.await
+			.map_err(map_err)?;
+		Ok(Response::new(mandate_request_to_proto(&asked)))
+	}
+
 	async fn grant_mandate(&self, request: Request<pb::GrantMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
 		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: true }).await?;
 		let req = request.into_inner();
-		let parsed = GrantRequest {
-			scope: ScopeId::parse(&req.scope).map_err(map_err)?,
-			client: ClientId::parse(&req.client_id).map_err(map_err)?,
-			cap_per_op: Usdt::parse_decimal(&req.cap_per_op).map_err(map_err)?,
-			cap_24h: Usdt::parse_decimal(&req.cap_24h).map_err(map_err)?,
-			cap_outstanding: optional_cap(&req.cap_outstanding)?,
-			cap_book_fill_24h: optional_cap(&req.cap_book_fill_24h)?,
-			operations: req.operations.iter().map(|raw| operation_of(*raw)).collect::<Result<_, _>>()?,
-			expires_at: match req.expires_at {
-				0 => None,
-				at if at < 0 => return Err(Status::invalid_argument("expires_at must be unix seconds, or 0")),
-				at => Some(at),
-			},
-			idempotency_key: req.idempotency_key,
-		};
+		let asked = mandates_app::read_request(&self.request_ports(), request_id_of(&req.request_id)?).await.map_err(map_err)?;
+		let parsed = mandates_app::grant_of(asked, req.idempotency_key);
 		let granted = mandates_app::grant(&self.mandate_ports(), user, parsed).await.map_err(map_err)?;
 		Ok(Response::new(mandate_to_proto(&granted)))
 	}
@@ -151,20 +155,13 @@ impl CompartmentService for CompartmentSvc {
 	}
 }
 
-fn optional_cap(raw: &str) -> Result<Option<Usdt>, Status> {
-	if raw.is_empty() {
-		return Ok(None);
-	}
-	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
-}
-
-fn operation_of(raw: i32) -> Result<MandateOperation, Status> {
-	match pb::MandateOperation::try_from(raw) {
-		Ok(pb::MandateOperation::Reserve) => Ok(MandateOperation::Reserve),
-		Ok(pb::MandateOperation::Charge) => Ok(MandateOperation::Charge),
-		Ok(pb::MandateOperation::BookFill) => Ok(MandateOperation::BookFill),
-		Ok(pb::MandateOperation::Unspecified) | Err(_) => Err(Status::invalid_argument("operations must name RESERVE, CHARGE or BOOK_FILL")),
-	}
+fn request_id_of(raw: &str) -> Result<uuid::Uuid, Status> {
+	// Any spelling of an id that is not banking's own names no request it stored; the answer is
+	// the one an unknown id gets.
+	uuid::Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::not_found("mandate request"))
 }
 
 fn operation_to_proto(operation: MandateOperation) -> pb::MandateOperation {
@@ -196,6 +193,24 @@ fn mandate_to_proto(recorded: &RecordedMandate) -> pb::Mandate {
 		cap_book_fill_24h: optional_amount(terms.caps.book_fill_24h),
 		outstanding: recorded.usage.outstanding.to_decimal_string(),
 		book_filled_24h: recorded.usage.book_filled_24h.to_decimal_string(),
+	}
+}
+
+fn mandate_request_to_proto(request: &MandateRequest) -> pb::MandateRequest {
+	let terms = &request.terms;
+	pb::MandateRequest {
+		request_id: request.id.to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		client_id: terms.client.as_str().to_owned(),
+		// As in `mandate_to_proto`: the client's id is all banking knows to call it.
+		client_display_name: terms.client.as_str().to_owned(),
+		cap_per_op: terms.caps.per_op.to_decimal_string(),
+		cap_24h: terms.caps.per_24h.to_decimal_string(),
+		cap_outstanding: terms.caps.outstanding.to_decimal_string(),
+		cap_book_fill_24h: optional_amount(terms.caps.book_fill_24h),
+		operations: terms.operations.iter().map(|operation| operation_to_proto(*operation) as i32).collect(),
+		mandate_expires_at: terms.mandate_expires_at.unwrap_or(0),
+		expires_at: request.expires_at,
 	}
 }
 
@@ -240,5 +255,19 @@ fn move_to_proto(recorded: &RecordedMove) -> pb::CompartmentMove {
 		created_at: recorded.created_at,
 		state: recorded.state.as_str().to_owned(),
 		failure_reason: recorded.failure_reason.clone().unwrap_or_default(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn only_a_lowercase_uuid_names_a_request() {
+		let id = uuid::Uuid::new_v4();
+		assert_eq!(request_id_of(&id.to_string()).unwrap(), id);
+		for raw in [id.to_string().to_uppercase(), id.simple().to_string(), String::new(), "not-a-uuid".into(), format!(" {id}")] {
+			assert_eq!(request_id_of(&raw).unwrap_err().code(), tonic::Code::NotFound, "{raw:?}");
+		}
 	}
 }

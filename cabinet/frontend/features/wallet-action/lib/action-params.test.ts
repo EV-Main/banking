@@ -82,3 +82,16 @@ test("a reference longer than 128 characters is left out of the result message",
     outcome: "done",
   });
 });
+
+test("a request id is read like any other id", () => {
+  assert.equal(read({ request: "mr_01-A" }).request, "mr_01-A");
+  assert.equal(read({}).request, null);
+});
+
+test("a request id that is not 1-128 of A-Za-z0-9_- reads as absent", () => {
+  assert.equal(read({ request: "a/b" }).request, null);
+  assert.equal(read({ request: "a b" }).request, null);
+  assert.equal(read({ request: "" }).request, null);
+  assert.equal(read({ request: "r".repeat(129) }).request, null);
+  assert.equal(read({ request: "r".repeat(128) }).request, "r".repeat(128));
+});

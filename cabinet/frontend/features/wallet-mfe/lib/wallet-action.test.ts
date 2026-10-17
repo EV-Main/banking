@@ -26,6 +26,11 @@ test("the action href carries the path plus scope and invoice only", () => {
   );
 });
 
+test("a mandate request id rides in the href as request, after scope", () => {
+  assert.equal(walletActionHref("https://evinvest.ltd", "mandate", { scope: "sa", request: "mr_1" }), "https://evinvest.ltd/wallet/mandate?scope=sa&request=mr_1");
+  assert.equal(walletActionHref("https://evinvest.ltd", "mandate", { request: "x&limit=9" }), "https://evinvest.ltd/wallet/mandate");
+});
+
 test("malformed ids are left out of the action href", () => {
   assert.equal(walletActionHref("https://evinvest.ltd", "withdraw", { scope: "s a", invoice: "x&amount=9" }), "https://evinvest.ltd/wallet/withdraw");
 });
