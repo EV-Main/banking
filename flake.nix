@@ -1310,6 +1310,10 @@
           window-export = pkgs.runCommand "window-export" { meta.mainProgram = "window-export"; } ''
             install -Dm755 ${bankingBins}/bin/window-export $out/bin/window-export
           '';
+          # The write side of the same window: maintenance, drain, remap, close (docs/WINDOW-TOOL.md).
+          window-tool = pkgs.runCommand "window-tool" { meta.mainProgram = "window-tool"; } ''
+            install -Dm755 ${bankingBins}/bin/window-tool $out/bin/window-tool
+          '';
         } // containerStd.packages;
 
         containers = containerStd.containers;
