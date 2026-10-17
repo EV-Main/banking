@@ -26,11 +26,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{
-	application::{consilium as consilium_app, payments as payments_app},
+	application::{
+		consilium as consilium_app,
+		payment_approvals::{self, ApprovalRound, ApprovalRoundPorts},
+		payments as payments_app,
+		scope_operations::CatalogGate,
+	},
 	config::KycGate,
 	ports::{
 		AllocationRegistry, Custody, Deposits, FeePolicyChanges, NavMarks, OutflowPolicy, PaymentRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository,
-		WithdrawalRepository, consilium::ConsiliumRepository, deposit_addresses::DepositAddresses, ledger::Ledger,
+		WithdrawalRepository, consilium::ConsiliumRepository, deposit_addresses::DepositAddresses, ledger::Ledger, payments::PaymentApprovalStore, scope_operations::Approvals,
 	},
 };
 
@@ -51,6 +56,16 @@ pub struct SweepReport {
 	pub voided: usize,
 	/// The payment orders' own half of the sweep.
 	pub payments: payments_app::SweepReport,
+	/// The concierge-approved payments' half: proposals opened, decisions carried out.
+	pub approvals: ApprovalRound,
+}
+
+/// What the sweep needs to drive payments decided over concierge's approvals. Absent, those
+/// orders wait where they are and the old consilium path is untouched.
+pub struct PaymentApprovalDriver {
+	pub store: Arc<dyn PaymentApprovalStore>,
+	pub approvals: Arc<dyn Approvals>,
+	pub catalog: CatalogGate,
 }
 
 /// Constructed with a struct literal rather than a positional `new`: eight `Arc`s in a row
@@ -76,6 +91,7 @@ pub struct ConsiliumSweeper {
 	pub kyc: KycGate,
 	pub approval_url_base: String,
 	pub consent_url_base: String,
+	pub payment_approvals: Option<PaymentApprovalDriver>,
 }
 
 impl ConsiliumSweeper {
@@ -176,6 +192,21 @@ impl ConsiliumSweeper {
 		// 72h, and an approved order whose effect never got created (a crash after the
 		// consent, a reservation the relay had not yet applied) is picked up here.
 		report.payments = payments_app::sweep(&ports.payment_ports(), now).await?;
+		// Runs whichever way NEW orders are seated: an order opened under concierge's approvals
+		// before a rollback to the consilium still has to be proposed, carried out and reported.
+		if let Some(driver) = &self.payment_approvals {
+			let payment_ports = ports.payment_ports();
+			report.approvals = payment_approvals::round(
+				&ApprovalRoundPorts {
+					payments: &payment_ports,
+					store: driver.store.as_ref(),
+					approvals: driver.approvals.as_ref(),
+					catalog: &driver.catalog,
+				},
+				now,
+			)
+			.await?;
+		}
 		Ok(report)
 	}
 }

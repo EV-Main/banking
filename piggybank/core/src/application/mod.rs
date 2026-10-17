@@ -59,6 +59,7 @@ pub mod funds;
 pub mod issuance;
 pub mod operations;
 pub mod ownership;
+pub mod payment_approvals;
 pub mod payments;
 pub mod scope_charges;
 pub mod scope_invoices;

@@ -20,7 +20,7 @@ use domain::{
 	consilium::{Consilium, ConsiliumId, ConsiliumKind, ConsiliumTerms},
 	error::DomainError,
 	money::{Network, Usdt},
-	payments::{PaymentApproval, PaymentDestination, PaymentEffect, PaymentId, PaymentOrder, PaymentState, PaymentTerms, PaymentTier},
+	payments::{CONCIERGE_TTL_SECS, PaymentApproval, PaymentDestination, PaymentEffect, PaymentId, PaymentOrder, PaymentState, PaymentTerms, PaymentTier},
 	users::UserId,
 	withdrawals::WithdrawalId,
 };
@@ -33,7 +33,7 @@ use crate::{
 		credentials::{self, token_digest},
 		withdrawals::{self as withdrawal_app, AdmissionGates, WithdrawalPorts, require_outflows_enabled},
 	},
-	config::KycGate,
+	config::{KycGate, PaymentApprovalMode},
 	infrastructure::{consilium::digest, relay::payment_reserve_id},
 	ports::{
 		AllocationRegistry, Custody, OutflowPolicy, UserRepository, WithdrawalRepository,
@@ -41,7 +41,7 @@ use crate::{
 		ledger::Ledger,
 		payments::{
 			ApprovalSeat, ConsentAudit, ConsentCredential, ConsentDecision, ConsentInvitation, ConsentOutcome, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, PaymentView,
-			ReservationStatus, already_open,
+			ReservationStatus, SessionSeat, already_open, consent_not_found,
 		},
 	},
 };
@@ -73,8 +73,11 @@ pub struct PaymentPorts<'a> {
 	/// Base URL the investor's emailed consent link is built on.
 	pub consent_url_base: &'a str,
 	/// Whether a governance mailer is actually wired behind the `consilium_mail` queue. See
-	/// [`require_governance_mail`].
+	/// [`require_governance_mail`]. Asked only of the consilium path: over concierge's
+	/// approvals no governance mail is sent.
 	pub governance_mail_wired: bool,
+	/// How a NEW order is seated. Orders already open keep the seat they were opened with.
+	pub approvals: PaymentApprovalMode,
 }
 
 impl PaymentPorts<'_> {
@@ -125,19 +128,40 @@ pub struct SweepReport {
 /// cannot pay out from at all. Solvency is a pre-check, not a guarantee — the claim can
 /// still fall between here and execution, which is what `execution_failed` exists for.
 pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTerms, now: i64) -> Result<PaymentView, DomainError> {
-	require_governance_mail(ports.governance_mail_wired)?;
+	let mode = ports.approvals;
+	if mode == PaymentApprovalMode::Consilium {
+		require_governance_mail(ports.governance_mail_wired)?;
+	}
 	if spending_closed(terms.from()) {
 		return Err(DomainError::Precondition(TREASURY_SPENDING_CLOSED.into()));
 	}
+	if mode == PaymentApprovalMode::Concierge && terms.requirement() == PaymentApproval::OwnerConsilium {
+		// The owners decide over the sentence the order carries; one that would not fit the
+		// approval is refused here, before an approval nobody could read is proposed.
+		terms.approval_fields(&terms.destination_label())?;
+	}
 	check_executable(ports, &terms).await?;
 	let payload_hash = digest(&terms.canonical_bytes());
-	let mut order = PaymentOrder::open(PaymentId::new(), terms, payload_hash, initiator, now);
-	match order.requirement() {
-		PaymentApproval::SubjectConsent(subject) => {
+	let mut order = match (mode, terms.requirement()) {
+		(PaymentApprovalMode::Concierge, PaymentApproval::OwnerConsilium) => PaymentOrder::open_for(PaymentId::new(), terms, payload_hash, initiator, now, CONCIERGE_TTL_SECS),
+		_ => PaymentOrder::open(PaymentId::new(), terms, payload_hash, initiator, now),
+	};
+	match (mode, order.requirement()) {
+		(PaymentApprovalMode::Concierge, PaymentApproval::SubjectConsent(subject)) => {
+			let seat = session_seat(ports, subject).await?;
+			ports.payments.open(&mut order, ApprovalSeat::Session(seat), ports.consent_url_base).await?;
+		}
+		(PaymentApprovalMode::Concierge, PaymentApproval::OwnerConsilium) => {
+			if ports.payments.has_open_against(order.terms().from()).await? {
+				return Err(already_open());
+			}
+			ports.payments.open(&mut order, ApprovalSeat::Concierge, ports.consent_url_base).await?;
+		}
+		(PaymentApprovalMode::Consilium, PaymentApproval::SubjectConsent(subject)) => {
 			let credential = consent_credential(ports, subject).await?;
 			ports.payments.open(&mut order, ApprovalSeat::Consent(credential), ports.consent_url_base).await?;
 		}
-		PaymentApproval::OwnerConsilium => {
+		(PaymentApprovalMode::Consilium, PaymentApproval::OwnerConsilium) => {
 			// Asked BEFORE the quorum is seated. The unique index refuses the duplicate order
 			// regardless — but by then N owners have been mailed an approval and are about
 			// to be mailed a withdrawal. A race past this read still lands on the index and
@@ -257,6 +281,34 @@ async fn consent_credential(ports: &PaymentPorts<'_>, subject: UserId) -> Result
 	})
 }
 
+/// The investor's in-cabinet seat, pinned to their standing as the projection holds it now.
+///
+/// The subject must be active: a disabled account is not a principal that may authorize its
+/// money leaving. The pins are `consent_credential`'s, read the same way — the folded revoke
+/// floor of both planes and the digest of the mailbox — so a revoke on either plane voids the
+/// seat. There is no mailbox-verified check: the person answering is signed in, which is the
+/// proof the mailbox was.
+async fn session_seat(ports: &PaymentPorts<'_>, subject: UserId) -> Result<SessionSeat, DomainError> {
+	let user = ports.users.find_by_id(subject).await?.ok_or_else(|| DomainError::NotFound {
+		entity: "user",
+		id: subject.to_string(),
+	})?;
+	if !user.is_active() {
+		return Err(DomainError::Precondition(
+			"the investor's account is not active, so their confirmation cannot be asked for".into(),
+		));
+	}
+	let issuance = ports.users.resolve_issuance_by_banking_id(subject).await?.ok_or_else(|| DomainError::NotFound {
+		entity: "user",
+		id: subject.to_string(),
+	})?;
+	Ok(SessionSeat {
+		subject,
+		token_version_at_open: issuance.token_version,
+		email_hash_at_open: digest(issuance.email.as_bytes()),
+	})
+}
+
 /// Open the owners' consilium over a fund-owned order. The same gates as a revenue payout —
 /// a settled roster, a roster large enough to reach quorum, one token and one code per
 /// eligible seat — and the order's own subject, id included, as the hashed terms.
@@ -315,6 +367,29 @@ pub async fn submit_consent(ports: &PaymentPorts<'_>, token: &str, code: &str, d
 	Ok(outcome)
 }
 
+/// The orders waiting for the investor's own answer in the cabinet.
+pub async fn awaiting_confirmation(payments: &dyn PaymentRepository, subject: UserId) -> Result<Vec<PaymentView>, DomainError> {
+	payments.awaiting_session_consent(subject).await
+}
+
+/// One order as the investor it spends may see it. Anyone else's, and one that is not
+/// answered in the cabinet, are the same NOT_FOUND as one that does not exist.
+pub async fn find_for_subject(payments: &dyn PaymentRepository, id: PaymentId, subject: UserId) -> Result<PaymentView, DomainError> {
+	payments.find_for_session_subject(id, subject).await?.ok_or_else(consent_not_found)
+}
+
+/// The investor's own answer, given signed in. Like [`submit_consent`], an approval is
+/// executed inline and a failure there is the order's to record, not the answer's to undo.
+pub async fn answer_consent(ports: &PaymentPorts<'_>, subject: UserId, id: PaymentId, decision: ConsentDecision, audit: &ConsentAudit, now: i64) -> Result<ConsentOutcome, DomainError> {
+	let outcome = ports.payments.answer_session_consent(id, subject, decision, audit, now).await?;
+	if outcome.approved
+		&& let Err(err) = execute(ports, outcome.payment.order.id(), now).await
+	{
+		tracing::error!(payment_id = %outcome.payment.order.id(), "payments: confirmed but the order could not be executed: {err}");
+	}
+	Ok(outcome)
+}
+
 /// Turn an approved order into its effect.
 ///
 /// Safe to call more than once, from more than one place:
@@ -356,7 +431,7 @@ pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Resul
 	if spending_closed(order.terms().from()) {
 		return ports.payments.record_execution(id, ExecutionOutcome::Failed(TREASURY_SPENDING_CLOSED.into()), now).await;
 	}
-	if let Some(cause) = view.consent.as_ref().and_then(|consent| consent.invalidated) {
+	if let Some(cause) = view.consent_invalidated() {
 		let withdrawal = (order.tier() == PaymentTier::External).then(|| withdrawal_id(id));
 		return ports.payments.record_execution(id, ExecutionOutcome::ConsentVoid { cause, withdrawal }, now).await;
 	}

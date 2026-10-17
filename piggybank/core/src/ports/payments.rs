@@ -27,6 +27,8 @@ use domain::{
 	withdrawals::WithdrawalId,
 };
 
+use super::scope_operations::ApprovalLevel;
+
 /// The digest length every stored secret is reduced to, named so the schema's
 /// `octet_length(...) = 32` checks and the Rust side cannot drift apart.
 pub const DIGEST_BYTES: usize = 32;
@@ -48,6 +50,23 @@ pub enum ApprovalSeat {
 	Consilium(ConsiliumId),
 	/// The source is one investor's claim: that investor's own emailed consent.
 	Consent(ConsentCredential),
+	/// The source is fund-owned and the owners decide over a concierge `bank:payment`
+	/// approval. Nothing to supply: the repository renders the approval's fields from the
+	/// order and stores what it sent, and the executor proposes it.
+	Concierge,
+	/// The source is one investor's claim and that investor answers inside the cabinet.
+	Session(SessionSeat),
+}
+
+/// The investor's in-cabinet seat. The repository writes the notice that asks them to answer
+/// it in the same transaction as the seat, for the reason a consent mail was: an order nobody
+/// was told about looks open for 72 hours and was unanswerable from the first instant.
+pub struct SessionSeat {
+	pub subject: UserId,
+	/// The subject's folded revoke floor at open — [`ConsentCredential::token_version_at_open`].
+	pub token_version_at_open: u64,
+	/// SHA-256 over the subject's mirrored mailbox at open — [`ConsentCredential::email_hash_at_open`].
+	pub email_hash_at_open: [u8; DIGEST_BYTES],
 }
 
 /// The minted consent seat. The plaintext token and code travel no further than the mail row
@@ -154,6 +173,30 @@ impl ConsentDecision {
 	}
 }
 
+/// The investor's in-cabinet seat as a surface renders it.
+#[derive(Debug)]
+pub struct SessionConsentView {
+	pub subject: UserId,
+	pub email: String,
+	pub decision: ConsentDecision,
+	/// Unix seconds; 0 while pending.
+	pub decided_at: i64,
+	/// Why the seat can no longer be answered or executed, or `None` while both pins hold.
+	pub invalidated: Option<ConsentInvalidation>,
+}
+
+/// The owners' concierge approval as a surface renders it.
+#[derive(Debug)]
+pub struct ConciergeSeatView {
+	/// Concierge's id; `None` until the executor has opened the proposal.
+	pub approval_id: Option<String>,
+	pub level: Option<ApprovalLevel>,
+	/// SHA-256 hex of the payload banking proposed.
+	pub payload_hash: String,
+	/// The destination as the owners were shown it.
+	pub destination: String,
+}
+
 /// What a human recognises the receiving end BY, beside the canonical label. The label
 /// (`PaymentTerms::destination_label`) is what the digest binds and every surface shares; an
 /// investor's masked mailbox or a product's title is the detail that lets an approver tell
@@ -173,10 +216,24 @@ pub struct PaymentView {
 	pub initiator_email: String,
 	/// Present exactly when the requirement is the owner quorum.
 	pub consilium_id: Option<ConsiliumId>,
-	/// Present exactly when the requirement is the subject's consent.
+	/// Present exactly when the requirement is the subject's emailed consent.
 	pub consent: Option<ConsentView>,
+	/// Present exactly when the owners decide over a concierge approval.
+	pub concierge: Option<ConciergeSeatView>,
+	/// Present exactly when the subject answers inside the cabinet.
+	pub session: Option<SessionConsentView>,
 	/// The receiving end's recognisable detail, when it has one.
 	pub destination_detail: Option<EndDetail>,
+}
+
+impl PaymentView {
+	/// Why the investor's consent — by either seat — no longer stands, if it does not.
+	pub fn consent_invalidated(&self) -> Option<ConsentInvalidation> {
+		self.consent
+			.as_ref()
+			.and_then(|consent| consent.invalidated)
+			.or_else(|| self.session.as_ref().and_then(|session| session.invalidated))
+	}
 }
 
 /// What the emailed investor is shown. Deliberately narrower than [`PaymentView`]: the terms
@@ -362,6 +419,76 @@ pub trait PaymentRepository: Send + Sync {
 	/// has already been dispatched cannot be voided (the broadcast may have landed), so the
 	/// effect is recorded as it is and the pin movement is logged rather than lied about.
 	async fn record_execution(&self, id: PaymentId, outcome: ExecutionOutcome, at: i64) -> Result<PaymentView, DomainError>;
+
+	/// Record that the concierge approval decided this order in favour. The counterpart of
+	/// [`Self::record_approval`] for the concierge seat, and idempotent in the same way: an
+	/// order already `approved` or `executed` is returned as it stands, so a decision served
+	/// twice approves once and reserves once.
+	///
+	/// `approval_id` must be the one the seat recorded when the proposal was opened; a seat
+	/// that has none yet (the answer to the proposal was lost) takes this one. A different id
+	/// is a [`DomainError::Conflict`]: one order, one approval. Under the order's row lock.
+	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, at: i64) -> Result<PaymentView, DomainError>;
+
+	/// The investor's own answer to an order seated on [`ApprovalSeat::Session`], given signed
+	/// in. Under the order's lock it re-reads the pins, records the answer and moves the order,
+	/// exactly as [`Self::submit`] does for the emailed seat — without a code to compare, since
+	/// the session proved who is asking.
+	///
+	/// `subject` must be the seat's subject: another user's order is [`consent_not_found`], the
+	/// same door as an order that does not exist. A repeat of the same answer is an idempotent
+	/// no-op; a different one is a [`DomainError::Conflict`]. A seat whose pins have moved is
+	/// refused with a Conflict and the order is rejected with it.
+	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &ConsentAudit, at: i64) -> Result<ConsentOutcome, DomainError>;
+
+	/// The orders waiting for `subject`'s answer inside the cabinet, newest first.
+	async fn awaiting_session_consent(&self, subject: UserId) -> Result<Vec<PaymentView>, DomainError>;
+
+	/// One order as its in-cabinet subject may see it; anyone else's, or an order with no such
+	/// seat, is `None`.
+	async fn find_for_session_subject(&self, id: PaymentId, subject: UserId) -> Result<Option<PaymentView>, DomainError>;
+}
+
+/// An order whose approval the executor has something to do about.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DueApproval {
+	pub id: PaymentId,
+	/// How many times the executor put it off.
+	pub attempts: u32,
+}
+
+/// The executor's side of [`ApprovalSeat::Concierge`]: which orders it has to open, watch,
+/// report and withdraw, and the notes it leaves on the seat. Kept apart from
+/// [`PaymentRepository`] so the surfaces that open and answer orders do not carry the
+/// executor's bookkeeping, and the other way round.
+#[async_trait]
+pub trait PaymentApprovalStore: Send + Sync {
+	/// Pending orders whose proposal is not opened yet and whose turn has come, oldest first.
+	async fn due_to_propose(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError>;
+
+	/// Pending orders with an opened approval whose turn to be asked about has come.
+	async fn due_to_check(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError>;
+
+	/// Orders that executed or failed and whose outcome concierge has not been told.
+	async fn due_to_report(&self, limit: u32) -> Result<Vec<PaymentId>, DomainError>;
+
+	/// Orders that were cancelled or expired while their proposal was live and not yet
+	/// withdrawn.
+	async fn due_to_withdraw(&self, limit: u32) -> Result<Vec<(PaymentId, String)>, DomainError>;
+
+	/// The proposal was opened as `approval_id` (resolved to `level`; `None` when concierge
+	/// did not say). A repeat with the same id is a no-op, a different id a
+	/// [`DomainError::Conflict`].
+	async fn opened(&self, id: PaymentId, approval_id: &str, level: Option<ApprovalLevel>) -> Result<(), DomainError>;
+
+	/// Try again no sooner than `delay_secs` from now; counts one more attempt.
+	async fn postpone(&self, id: PaymentId, delay_secs: u32, why: &str) -> Result<(), DomainError>;
+
+	/// Concierge was told how the order ended.
+	async fn reported(&self, id: PaymentId) -> Result<(), DomainError>;
+
+	/// The proposal of a dead order was taken back, or found already closed.
+	async fn withdrawn(&self, id: PaymentId) -> Result<(), DomainError>;
 }
 
 /// The admin payments screen's read model.

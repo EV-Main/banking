@@ -22,7 +22,9 @@ use domain::{
 	payments::{PaymentDestination, PaymentId, PaymentReason, PaymentState, PaymentTerms},
 	users::{ConciergeUserId, UserId, mask_email},
 };
-use evbanking_contracts::banking::v1::{self as pb, payment_consent_service_server::PaymentConsentService, payments_service_server::PaymentsService};
+use evbanking_contracts::banking::v1::{
+	self as pb, payment_confirmation_service_server::PaymentConfirmationService, payment_consent_service_server::PaymentConsentService, payments_service_server::PaymentsService,
+};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
@@ -30,7 +32,7 @@ use crate::{
 	AppState,
 	application::payments as payments_app,
 	ports::payments::{ConsentAudit, ConsentDecision, ConsentInvitation, EndDetail, PaymentFilter, PaymentView},
-	services::support::{MAX_AUDIT_IP_BYTES, MAX_AUDIT_USER_AGENT_BYTES, caller_id, clamp, map_err, require_permission, unix_now},
+	services::support::{MAX_AUDIT_IP_BYTES, MAX_AUDIT_USER_AGENT_BYTES, caller_id, clamp, map_err, require_permission, unfrozen_caller, unix_now},
 };
 
 /// The default page size for the payment history.
@@ -43,6 +45,17 @@ pub struct PaymentsSvc {
 }
 
 impl PaymentsSvc {
+	pub fn new(state: AppState) -> Self {
+		Self { state }
+	}
+}
+
+#[derive(Clone)]
+pub struct PaymentConfirmationSvc {
+	pub state: AppState,
+}
+
+impl PaymentConfirmationSvc {
 	pub fn new(state: AppState) -> Self {
 		Self { state }
 	}
@@ -76,6 +89,7 @@ impl AppState {
 			approval_url_base: &self.consilium_approval_url_base,
 			consent_url_base: &self.payment_consent_url_base,
 			governance_mail_wired: crate::infrastructure::governance_mail::is_wired(),
+			approvals: self.payment_approvals,
 		}
 	}
 
@@ -248,6 +262,47 @@ fn payment_to_proto(view: &PaymentView) -> pb::Payment {
 		executed_withdrawal_id: order.executed_withdrawal_id().map(|id| id.to_string()).unwrap_or_default(),
 		failure_reason: order.failure_reason().unwrap_or_default().to_owned(),
 		version: order.version(),
+		seat: seat_name(view).to_owned(),
+		approval_id: view.concierge.as_ref().and_then(|seat| seat.approval_id.clone()).unwrap_or_default(),
+		session_decision: view.session.as_ref().map(|session| decision_to_proto(session.decision)).unwrap_or_default(),
+	}
+}
+
+/// Which seat decides the order — the wire's `Payment.seat`. A row with none is one written
+/// before seats were recorded.
+fn seat_name(view: &PaymentView) -> &'static str {
+	if view.consilium_id.is_some() {
+		"consilium"
+	} else if view.consent.is_some() {
+		"consent"
+	} else if view.concierge.is_some() {
+		"concierge_approval"
+	} else if view.session.is_some() {
+		"session"
+	} else {
+		""
+	}
+}
+
+/// The order as its subject sees it in the cabinet. Narrower than [`payment_to_proto`]: the
+/// terms they answer, and the operator as a masked address.
+fn confirmation_to_proto(view: &PaymentView) -> pb::PaymentConfirmation {
+	let order = &view.order;
+	let terms = order.terms();
+	pb::PaymentConfirmation {
+		payment_id: order.id().to_string(),
+		state: state_to_proto(order.state()),
+		tier: order.tier().as_str().to_owned(),
+		source: Some(source_to_proto(terms)),
+		destination: Some(destination_to_proto(terms, view.destination_detail.as_ref())),
+		amount: terms.amount().to_decimal_string(),
+		reason: terms.reason().as_str().to_owned(),
+		payload_hash: order.payload_hash_hex(),
+		initiator_email: mask_email(&view.initiator_email),
+		expires_at: order.expires_at(),
+		decision: view.session.as_ref().map(|session| decision_to_proto(session.decision)).unwrap_or_default(),
+		invalidated: view.session.as_ref().is_some_and(|session| session.invalidated.is_some()),
+		failure_reason: order.failure_reason().unwrap_or_default().to_owned(),
 	}
 }
 
@@ -338,6 +393,50 @@ impl PaymentsService for PaymentsSvc {
 		let id = parse_payment_id(&request.get_ref().payment_id)?;
 		let view = payments_app::cancel(&self.state.payment_ports(), id, caller, unix_now()).await.map_err(map_err)?;
 		Ok(Response::new(payment_to_proto(&view)))
+	}
+}
+
+#[tonic::async_trait]
+impl PaymentConfirmationService for PaymentConfirmationSvc {
+	async fn list_payment_confirmations(&self, request: Request<pb::ListPaymentConfirmationsRequest>) -> Result<Response<pb::PaymentConfirmationList>, Status> {
+		let subject = caller_id(&request)?;
+		let views = payments_app::awaiting_confirmation(self.state.payments.as_ref(), subject).await.map_err(map_err)?;
+		Ok(Response::new(pb::PaymentConfirmationList {
+			items: views.iter().map(confirmation_to_proto).collect(),
+		}))
+	}
+
+	async fn get_payment_confirmation(&self, request: Request<pb::GetPaymentConfirmationRequest>) -> Result<Response<pb::PaymentConfirmation>, Status> {
+		let subject = caller_id(&request)?;
+		let id = parse_payment_id(&request.get_ref().payment_id)?;
+		let view = payments_app::find_for_subject(self.state.payments.as_ref(), id, subject).await.map_err(consent_err)?;
+		Ok(Response::new(confirmation_to_proto(&view)))
+	}
+
+	async fn answer_payment_confirmation(&self, request: Request<pb::AnswerPaymentConfirmationRequest>) -> Result<Response<pb::PaymentConfirmation>, Status> {
+		let decision = decision_from_proto(request.get_ref().decision)?;
+		// An approval moves the caller's money and is gated like every such RPC; a decline moves
+		// nothing and must stay possible for a caller whose tokens were revoked or whose account
+		// is frozen — it is the way to stop an order they did not mean.
+		let subject = match decision {
+			ConsentDecision::Approve => unfrozen_caller(&self.state, &request).await?,
+			ConsentDecision::Reject | ConsentDecision::Pending => caller_id(&request)?,
+		};
+		let req = request.into_inner();
+		let id = parse_payment_id(&req.payment_id)?;
+		let audit = ConsentAudit {
+			client_ip: clamp(req.client_ip, MAX_AUDIT_IP_BYTES),
+			user_agent: clamp(req.user_agent, MAX_AUDIT_USER_AGENT_BYTES),
+		};
+		let outcome = payments_app::answer_consent(&self.state.payment_ports(), subject, id, decision, &audit, unix_now())
+			.await
+			.map_err(consent_err)?;
+		// WARN on success on purpose, like OpenPayment: an investor's say-so over their own
+		// money is worth an audit line that stands out.
+		tracing::warn!(payment_id = %id, subject = %subject, decision = decision.as_str(), decided = outcome.decided, "an investor answered a payment order in the cabinet");
+		// The state AFTER the execution the answer triggered, not the one the answer left.
+		let view = payments_app::find_for_subject(self.state.payments.as_ref(), id, subject).await.map_err(consent_err)?;
+		Ok(Response::new(confirmation_to_proto(&view)))
 	}
 }
 

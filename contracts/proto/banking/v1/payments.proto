@@ -22,6 +22,14 @@ package banking.v1;
 // by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is
 // FAILED_PRECONDITION `treasury spending waits for scope approvals`.
 //
+// HOW THE APPROVAL IS SEATED. By default (`PAYMENT_APPROVALS`, unset or `concierge`) the
+// owners decide a fund-owned order over a concierge approval of kind `bank:payment` — banking
+// proposes it, pulls it once passed and reports the outcome — and an investor's order is
+// answered by that investor, signed in, over PaymentConfirmationService; no token and no
+// mail are involved. `PAYMENT_APPROVALS=consilium` is the rollback: new orders are seated on
+// banking's consilium and the emailed token as before. An order keeps the seat it was opened
+// with. See `Payment.seat`.
+//
 // IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms
 // shown in the mail; changing anything means cancel and reopen.
 service PaymentsService {
@@ -57,6 +65,27 @@ service PaymentConsentService {
   // Answer the consent. Requires the token AND the secret code from the mail. Five failed
   // code attempts burn the token permanently — and, with one seat, fail the payment closed.
   rpc SubmitConsent(SubmitConsentRequest) returns (SubmitConsentResponse);
+}
+
+// PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.
+// Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has
+// no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and
+// code: the session is the credential, and the cabinet's gate asks for a fresh login before
+// an approval (a decline asks for none).
+service PaymentConfirmationService {
+  // The caller's orders waiting for their answer, newest first.
+  rpc ListPaymentConfirmations(ListPaymentConfirmationsRequest) returns (PaymentConfirmationList);
+
+  // One order as its subject may see it, whatever state it is in.
+  rpc GetPaymentConfirmation(GetPaymentConfirmationRequest) returns (PaymentConfirmation);
+
+  // Answer: APPROVE or REJECT. Idempotent for the same answer; a different one after an
+  // answer is ALREADY_EXISTS. An approval is gated like any money the caller moves (revoked
+  // tokens, the operator's pause, a frozen account) and executed at once; a failure in the
+  // execution is the order's to record and does not undo the answer. A seat whose pins have
+  // moved (the caller's sessions were revoked, or their mailbox changed, since the order
+  // opened) fails the order closed and answers ALREADY_EXISTS with the reason.
+  rpc AnswerPaymentConfirmation(AnswerPaymentConfirmationRequest) returns (PaymentConfirmation);
 }
 
 // Where an order stands. Terminal everywhere except PENDING and APPROVED.
@@ -183,6 +212,14 @@ message Payment {
   string failure_reason = 17;
   // Monotonic per order.
   uint64 version = 18;
+  // The seat that decides the order: `consilium`, `consent` (the emailed token),
+  // `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
+  // the cabinet). Empty only for a row written before seats were recorded.
+  string seat = 19;
+  // Concierge's id of the approval, once banking has opened it; set for `concierge_approval`.
+  string approval_id = 20;
+  // The investor's own answer, set for `session`.
+  ConsentDecision session_decision = 21;
 }
 
 message PaymentList {
@@ -264,4 +301,46 @@ message SubmitConsentResponse {
   PaymentConsentInvitation invitation = 1;
   // True when this answer carried the order out of PENDING.
   bool decided = 2;
+}
+
+// One order as the investor it spends is shown it: the terms they answer and nothing about
+// the operator beyond a masked address.
+message PaymentConfirmation {
+  string payment_id = 1;
+  PaymentState state = 2;
+  string tier = 3;
+  PaymentEnd source = 4;
+  PaymentEnd destination = 5;
+  string amount = 6;
+  string reason = 7;
+  // Hex SHA-256 over the canonical terms the answer binds to.
+  string payload_hash = 8;
+  // Who opened it, masked.
+  string initiator_email = 9;
+  int64 expires_at = 10;
+  // This seat's own answer; PENDING until they give one.
+  ConsentDecision decision = 11;
+  // True when one of the pins recorded at open has moved: the order can no longer be
+  // answered or executed.
+  bool invalidated = 12;
+  string failure_reason = 13;
+}
+
+message PaymentConfirmationList {
+  repeated PaymentConfirmation items = 1;
+}
+
+message ListPaymentConfirmationsRequest {}
+
+message GetPaymentConfirmationRequest {
+  string payment_id = 1;
+}
+
+message AnswerPaymentConfirmationRequest {
+  string payment_id = 1;
+  // APPROVE or REJECT. PENDING is rejected as an invalid argument.
+  ConsentDecision decision = 2;
+  // Audit only — the edge supplies these; they are never trusted for authorization.
+  string client_ip = 3;
+  string user_agent = 4;
 }

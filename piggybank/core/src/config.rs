@@ -142,6 +142,43 @@ impl KycGate {
 	}
 }
 
+/// Which way a NEW payment order is decided: over concierge's approvals, or by the old
+/// banking-run consilium and emailed consent. Read once at boot from `PAYMENT_APPROVALS`.
+///
+/// The default is `Concierge`. `Consilium` is the rollback: it changes how orders OPENED from
+/// then on are seated and nothing else. An order already seated keeps the seat it was opened
+/// with — the sweeper, the old consilium and consent surfaces and the concierge executor all
+/// stay running in both modes — so flipping the switch strands nothing in flight.
+///
+/// | `PAYMENT_APPROVALS` | new orders |
+/// | --- | --- |
+/// | unset / empty / `concierge` | fund money: a `bank:payment` approval; an investor's: their answer in the cabinet |
+/// | `consilium` | fund money: banking's consilium; an investor's: the emailed token |
+/// | anything else | `concierge`, with a WARN naming the value |
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaymentApprovalMode {
+	Concierge,
+	Consilium,
+}
+
+impl PaymentApprovalMode {
+	pub fn from_env() -> Self {
+		Self::read(env::var("PAYMENT_APPROVALS").ok().as_deref())
+	}
+
+	fn read(raw: Option<&str>) -> Self {
+		match raw.map(str::trim) {
+			None | Some("") => Self::Concierge,
+			Some(value) if value.eq_ignore_ascii_case("concierge") => Self::Concierge,
+			Some(value) if value.eq_ignore_ascii_case("consilium") => Self::Consilium,
+			Some(value) => {
+				tracing::warn!("PAYMENT_APPROVALS={value:?} is neither `concierge` nor `consilium` — new payments are decided over concierge's approvals");
+				Self::Concierge
+			}
+		}
+	}
+}
+
 /// The on-chain rail configs, kept on their original env-based conditional
 /// construction (a rail runs only when its endpoint var is set), so they are
 /// NOT part of the boot-asserted [`AppConfig`] — production instead asserts
@@ -1201,6 +1238,18 @@ mod tests {
 		}
 		for raw in [Some("false"), Some("False"), Some("0"), Some(" false ")] {
 			assert_eq!(KycGate::read(raw), KycGate::LIFTED, "{raw:?} must lift the gate");
+		}
+	}
+
+	/// The switch resolves to the new path on every reading but the one explicit word that asks
+	/// for the old one: a typo must not silently route fund money back to the consilium.
+	#[test]
+	fn only_the_word_consilium_selects_the_old_payment_path() {
+		for raw in [None, Some(""), Some("  "), Some("concierge"), Some("Concierge"), Some("consilum"), Some("old")] {
+			assert_eq!(PaymentApprovalMode::read(raw), PaymentApprovalMode::Concierge, "{raw:?}");
+		}
+		for raw in [Some("consilium"), Some("CONSILIUM"), Some(" consilium ")] {
+			assert_eq!(PaymentApprovalMode::read(raw), PaymentApprovalMode::Consilium, "{raw:?}");
 		}
 	}
 

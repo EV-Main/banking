@@ -560,6 +560,42 @@ each of these makes it safe to reach more than once:
 `execution_failed` is terminal and retried by nothing: the reason is what the initiator (and,
 for a consilium, every owner) reads.
 
+### Decided over concierge's approvals (the default)
+
+Org restructure plan §4.4 moves the decision out of this plane. `PAYMENT_APPROVALS`
+(`config::PaymentApprovalMode`, read once at boot) says how a NEW order is seated; unset or
+`concierge` is the default, `consilium` is the rollback. An order keeps the seat it was opened
+with, and every part of the old path keeps running in both modes.
+
+| source | seat (default) | seat (`PAYMENT_APPROVALS=consilium`) |
+| --- | --- | --- |
+| fund-owned | a `bank:payment` approval in scope `main`, decided by the platform owners (`payment_concierge_approval`) | banking's consilium (`payment_approval`) |
+| an investor's claim | that investor's own answer, signed in (`payment_session_consent`) | the emailed token and code (`payment_consent`) |
+
+**Fund money.** `open` stores the order and a seat holding the rendered destination and the
+SHA-256 of the approval payload (`ev-approval-v1`); it calls nobody. The executor
+(`application/payment_approvals.rs`, run by the consilium sweeper's minute) publishes banking's
+catalog, proposes the approval (idempotent by `payment:<uuid>`), watches it, and — once it
+passed — re-reads it by id, checks kind, scope `main`, `subject_ref`, and the payload hash
+against the stored order, approves the order **once** (`record_concierge_approval`, under the
+order's row lock), runs the same `execute` as every other approval, and reports the outcome.
+A decision is served until its outcome is reported, so every step is idempotent: a second
+approval for one order, a decision for an order that ended otherwise, and one whose hash is
+not the order's are reported `VOID` and move nothing. Concierge being away delays an order and
+never fails it. The order's window is 7 days (`CONCIERGE_TTL_SECS`), not 72 hours: the
+approval's own clock (72 hours open, then its veto delay) is what ends it, and the order's must
+not run out first. Treasury spending stays closed (`TREASURY_SPENDING_CLOSED`).
+
+**Investor money.** No token and no code: the order is seated on the investor, a notice
+(`bank:money-movement`, through concierge's scope inbox) tells them, and they answer in the
+cabinet (`PaymentConfirmationService`, BFF `/api/wallet/payments/**`). Approving needs a fresh
+sign-in (`step_up_required`), declining never does. The pins are the mailed seat's: sessions
+revoked or the mailbox changed since open void the answer and, later, the execution.
+
+**Notices.** `PaymentConsent` and `PaymentOutcome` become `EmitScopeNotification` on topic
+`bank:money-movement`, written to `scope_notification_outbox` in the transaction of the fact
+and delivered by a singleton worker. `SendGovernanceMail` is not on this path at all.
+
 ### Mail
 
 Both approval mails leave through the same `consilium_mail` queue, written in the same

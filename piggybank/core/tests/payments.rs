@@ -330,14 +330,14 @@ async fn a_consent_seat(pool: &PgPool, subject: UserId) -> ApprovalSeat {
 fn token_hash_of(seat: &ApprovalSeat) -> [u8; 32] {
 	match seat {
 		ApprovalSeat::Consent(credential) => credential.token_hash,
-		ApprovalSeat::Consilium(_) => unreachable!("this helper mints consent seats"),
+		ApprovalSeat::Consilium(_) | ApprovalSeat::Concierge | ApprovalSeat::Session(_) => unreachable!("this helper mints consent seats"),
 	}
 }
 
 fn token_of(seat: &ApprovalSeat) -> &str {
 	match seat {
 		ApprovalSeat::Consent(credential) => &credential.token,
-		ApprovalSeat::Consilium(_) => unreachable!("this helper mints consent seats"),
+		ApprovalSeat::Consilium(_) | ApprovalSeat::Concierge | ApprovalSeat::Session(_) => unreachable!("this helper mints consent seats"),
 	}
 }
 
@@ -1391,7 +1391,7 @@ async fn a_changed_mailbox_voids_a_pending_consent() {
 use domain::money::WalletAddress;
 use piggybank_core::{
 	application::payments as payments_app,
-	config::KycGate,
+	config::{KycGate, PaymentApprovalMode},
 	infrastructure::{allocations::PgAllocations, consilium::PgConsilia, operations, outflow::PgOutflowPolicy, withdrawals::PgWithdrawals},
 	ports::{WithdrawalRepository, ledger::Ledger},
 };
@@ -1446,6 +1446,8 @@ fn ports(a: &App) -> payments_app::PaymentPorts<'_> {
 		approval_url_base: APPROVAL_URL_BASE,
 		consent_url_base: CONSENT_URL_BASE,
 		governance_mail_wired: true,
+		// These suites pin the consilium path, which stays selectable as the rollback.
+		approvals: PaymentApprovalMode::Consilium,
 	}
 }
 

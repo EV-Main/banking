@@ -137,6 +137,9 @@ impl ConsiliumPorts<'_> {
 			approval_url_base: self.approval_url_base,
 			consent_url_base: self.consent_url_base,
 			governance_mail_wired: self.governance_mail_wired,
+			// Only `open` reads the mode, and a consilium's own flows never open an order: they
+			// execute and close the ones already seated, whichever way those were seated.
+			approvals: crate::config::PaymentApprovalMode::Consilium,
 		}
 	}
 }
