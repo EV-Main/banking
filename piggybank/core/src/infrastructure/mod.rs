@@ -46,6 +46,8 @@
 //!   time-ordered activity timeline (query side only; writes nothing).
 //! - [`outflow`] — the `OutflowPolicy` adapter: the read-only kill-switch plus the
 //!   owner's freeze/KYC standing, the facts every payout path clears before dispatch.
+//! - [`window_export`] / [`window_tool`] — the migration window's read-only export and its
+//!   operator tool (maintenance, drain, remap, close, reconcile; `docs/WINDOW-TOOL.md`).
 //! - [`telemetry`] — the observability adapter: the one seam that hands errors to
 //!   the monitoring vendor, so call sites stay vendor-agnostic.
 //! - [`rails`] — what the EVM/TON/Tron rails share verbatim: the watcher and sweep error
@@ -115,5 +117,6 @@ pub mod tron_sweep;
 pub mod tron_withdrawal_watcher;
 pub mod users;
 pub mod window_export;
+pub mod window_tool;
 pub mod withdrawal_watcher;
 pub mod withdrawals;

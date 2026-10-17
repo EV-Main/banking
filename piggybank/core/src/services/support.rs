@@ -119,6 +119,18 @@ fn money_caller_gate(token_version: u64, target: Option<&IssuanceTarget>, paused
 	}
 }
 
+/// Refuse an operator money mutation (issue/retire units, settle fee units, post a
+/// valuation) while the hub is in maintenance. `operations_mode` pauses the users' paths
+/// through [`money_caller_gate`]; these have no user-money caller, so without this the
+/// migration window's cut could move under an administrator's hand. The window tool's own
+/// burn calls the application layer, not this handler, so it is unaffected.
+pub async fn require_not_paused(state: &AppState) -> Result<(), Status> {
+	if state.outflow.outflows_paused().await.map_err(map_err)? {
+		return Err(Status::failed_precondition(OUTFLOWS_PAUSED));
+	}
+	Ok(())
+}
+
 /// Gate an RPC on a `bank:*` permission, read from the caller's mirrored `users.permissions`
 /// (concierge's resolution of their seat, over the bridge). Only a human access token
 /// qualifies. Every path fails closed: no local row, or a row concierge has not yet told us

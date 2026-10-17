@@ -28,7 +28,9 @@ use crate::{
 	services::{
 		allocations::holding_to_proto,
 		funds::redemption_to_proto,
-		support::{caller_id, map_err, optional, parse_redemption_id, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_permission, resolve_target_user, unix_now},
+		support::{
+			caller_id, map_err, optional, parse_redemption_id, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_not_paused, require_permission, resolve_target_user, unix_now,
+		},
 	},
 };
 
@@ -229,6 +231,7 @@ impl BalanceService for BalanceSvc {
 
 	async fn post_fund_valuation(&self, request: Request<pb::PostFundValuationRequest>) -> Result<Response<pb::FundNav>, Status> {
 		require_permission(&self.state, &request, bank::Valuation::Post).await?;
+		require_not_paused(&self.state).await?;
 		let caller = caller_id(&request)?;
 		let claims = claims_of(&request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
 		let posted_by = claims.sub.clone();

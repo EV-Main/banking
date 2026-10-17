@@ -461,6 +461,11 @@ pub enum TransferCode {
 	/// (`ScopeLedgerService.Charge`): `Dr scope_claim:<scope>:<user> / Cr
 	/// scope_account:<scope>:<label>`, posted at once.
 	ScopeCharge,
+	/// A move the migration window's operator tool posted directly (`window-tool`): an
+	/// allocation's cash onto its scope account, or a unit holding closed against the supply.
+	/// Its own code so the window's postings are told apart from every saga's on the ledger
+	/// alone; the claim pair says which of the two it was.
+	WindowMigration,
 }
 
 impl TransferCode {
@@ -501,6 +506,7 @@ impl TransferCode {
 			Self::ScopePayout => 59,
 			Self::InvoicePayment => 58,
 			Self::ScopeCharge => 60,
+			Self::WindowMigration => 61,
 		}
 	}
 }
@@ -1047,6 +1053,7 @@ mod tests {
 			TransferCode::ScopePayout,
 			TransferCode::InvoicePayment,
 			TransferCode::ScopeCharge,
+			TransferCode::WindowMigration,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

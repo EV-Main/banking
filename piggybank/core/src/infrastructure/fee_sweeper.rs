@@ -55,6 +55,7 @@ use crate::{
 		fees::{FeeAssessments, FeePolicies, FeePolicyChanges, PositionAccruals},
 		ledger::Ledger,
 		nav::NavMarks,
+		outflow::OutflowPolicy,
 	},
 };
 
@@ -82,9 +83,14 @@ pub struct FeeSweeper {
 	ledger: Arc<dyn Ledger>,
 	nav: Arc<dyn NavMarks>,
 	notify: Arc<Notify>,
+	/// The maintenance switch: a charge moves units, and the migration window's cut must not.
+	outflow: Arc<dyn OutflowPolicy>,
 }
 
 impl FeeSweeper {
+	// Composition-root wiring: each argument is a distinct port the sweeper needs, and
+	// bundling them into a struct would only rename the same list.
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		policies: Arc<dyn FeePolicies>,
 		changes: Arc<dyn FeePolicyChanges>,
@@ -93,6 +99,7 @@ impl FeeSweeper {
 		ledger: Arc<dyn Ledger>,
 		nav: Arc<dyn NavMarks>,
 		notify: Arc<Notify>,
+		outflow: Arc<dyn OutflowPolicy>,
 	) -> Self {
 		Self {
 			policies,
@@ -102,6 +109,7 @@ impl FeeSweeper {
 			ledger,
 			nav,
 			notify,
+			outflow,
 		}
 	}
 
@@ -120,7 +128,7 @@ impl FeeSweeper {
 				}
 				last_sweep = Some(Instant::now());
 			}
-			match fee_app::promote_due(self.changes.as_ref(), now, &mut promotion_failures).await {
+			match self.promote(now, &mut promotion_failures).await {
 				Ok(promoted) if promoted > 0 => info!(promoted, "fee sweeper: promoted scheduled fee-policy changes"),
 				Ok(_) => {}
 				Err(err) => warn!("fee sweeper: could not list due fee-policy changes (will retry): {err}"),
@@ -132,6 +140,27 @@ impl FeeSweeper {
 		}
 	}
 
+	/// Whether the hub is in maintenance. Unreadable counts as paused: a skipped cycle is
+	/// retried, a charge made while the switch could not be read is not undone.
+	async fn paused(&self) -> bool {
+		match self.outflow.outflows_paused().await {
+			Ok(paused) => paused,
+			Err(err) => {
+				warn!("fee sweeper: cannot read the maintenance switch, skipping this cycle: {err}");
+				true
+			}
+		}
+	}
+
+	/// Promote due fee-policy changes; a no-op in maintenance.
+	pub async fn promote(&self, now_unix: i64, failures: &mut HashMap<domain::fees::FeePolicyChangeId, u32>) -> Result<usize, domain::error::DomainError> {
+		if self.paused().await {
+			info!("fee sweeper: maintenance is on, not promoting fee-policy changes");
+			return Ok(0);
+		}
+		fee_app::promote_due(self.changes.as_ref(), now_unix, failures).await
+	}
+
 	/// One sweep; returns how many positions it actually charged. Public and
 	/// `now_unix`-parameterised so an integration test can drive a year of accrual
 	/// deterministically instead of waiting for one.
@@ -140,6 +169,10 @@ impl FeeSweeper {
 	/// policy, a stale NAV, a locked holding, a charge that floors to nothing — is a
 	/// non-event that leaves the position exactly as it was for the next cycle.
 	pub async fn sweep(&self, now_unix: i64) -> Result<usize, domain::error::DomainError> {
+		if self.paused().await {
+			info!("fee sweeper: maintenance is on, not charging fees");
+			return Ok(0);
+		}
 		let due = self.accruals.due(now_unix.saturating_sub(MIN_ACCRUAL_AGE), BATCH).await?;
 		let mut charged = 0usize;
 		for accrual in due {

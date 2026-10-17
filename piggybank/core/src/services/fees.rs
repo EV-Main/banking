@@ -34,7 +34,7 @@ use crate::{
 	AppState,
 	application::fees::{self as fee_app, FeePolicyPorts, PolicyChangeRequest, PolicyReader, PolicyView},
 	ports::fees::{AssessmentRecord, FeePolicyChange},
-	services::support::{caller_id, holds_permission, map_err, require_permission, unix_now},
+	services::support::{caller_id, holds_permission, map_err, require_not_paused, require_permission, unix_now},
 };
 
 #[derive(Clone)]
@@ -258,6 +258,7 @@ impl FeesService for FeesSvc {
 
 	async fn settle_fee_shares(&self, request: Request<pb::SettleFeeSharesRequest>) -> Result<Response<pb::FeeSettlement>, Status> {
 		require_permission(&self.state, &request, bank::Allocation::Manage).await?;
+		require_not_paused(&self.state).await?;
 		let settler = caller_id(&request)?;
 		let req = request.into_inner();
 		let service = ServiceId::parse(&req.service).map_err(map_err)?;
