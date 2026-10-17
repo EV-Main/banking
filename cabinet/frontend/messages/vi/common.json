@@ -2695,6 +2695,14 @@
     "en": "Next",
     "t": "Tiếp"
   },
+  "approval.lines.digestMismatchTitle": {
+    "en": "These lines do not match the approval",
+    "t": "Các dòng này không khớp với yêu cầu phê duyệt"
+  },
+  "approval.lines.digestMismatch": {
+    "en": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+    "t": "Các dòng hiển thị không băm ra mã mà yêu cầu phê duyệt của bạn mang theo. Đừng phê duyệt khoản chi trả này; hãy báo cho chủ sở hữu nền tảng."
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Cabinet"

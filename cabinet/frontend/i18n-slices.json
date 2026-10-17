@@ -1454,6 +1454,8 @@
       "approval.lines.col.recipient",
       "approval.lines.description",
       "approval.lines.digest",
+      "approval.lines.digestMismatch",
+      "approval.lines.digestMismatchTitle",
       "approval.lines.distribution",
       "approval.lines.from",
       "approval.lines.largest",

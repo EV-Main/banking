@@ -2695,6 +2695,14 @@
     "en": "Next",
     "t": "Далее"
   },
+  "approval.lines.digestMismatchTitle": {
+    "en": "These lines do not match the approval",
+    "t": "Эти строки не совпадают с согласованием"
+  },
+  "approval.lines.digestMismatch": {
+    "en": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+    "t": "Показанные строки не дают дайджест, указанный в вашем согласовании. Не одобряйте эту выплату и сообщите владельцам платформы."
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Кабинет"

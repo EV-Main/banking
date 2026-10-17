@@ -602,6 +602,8 @@
   "approval.lines.col.recipient": "Recipient",
   "approval.lines.description": "Every recipient and amount of the payout you are asked to approve.",
   "approval.lines.digest": "Lines digest",
+  "approval.lines.digestMismatch": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+  "approval.lines.digestMismatchTitle": "These lines do not match the approval",
   "approval.lines.distribution": "Distribution",
   "approval.lines.from": "Paid from",
   "approval.lines.largest": "Largest",

@@ -2695,6 +2695,14 @@
     "en": "Next",
     "t": "Suivant"
   },
+  "approval.lines.digestMismatchTitle": {
+    "en": "These lines do not match the approval",
+    "t": "Ces lignes ne correspondent pas à l'approbation"
+  },
+  "approval.lines.digestMismatch": {
+    "en": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+    "t": "Les lignes affichées ne donnent pas l'empreinte portée par votre approbation. N'approuvez pas ce paiement et prévenez les propriétaires de la plateforme."
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Mon espace"

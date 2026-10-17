@@ -6,11 +6,11 @@
 // The BFF answers one identical 404 for an unknown operation and for one the reader is not
 // an approver of, so this page cannot — and does not try to — say which it was.
 
-import { Link2Off } from "lucide-react";
+import { Link2Off, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { useLocale, useT } from "@evinvest/i18n/react";
-import { Badge, Button, Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@evinvest/uikit";
+import { Alert, AlertDescription, AlertTitle, Badge, Button, Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle, Skeleton, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@evinvest/uikit";
 
 import { PAYOUT_LINES_PAGE } from "@/entities/payout-review/api/payout-lines-client";
 import { payoutLinesResource } from "@/entities/payout-review/model/payout-lines-resource";
@@ -55,6 +55,15 @@ export function PayoutLinesView({ operationId }: { operationId: string }) {
         <Skeleton className="h-64 w-full" />
       ) : (
         <>
+          {/* Absent counts as a mismatch: only a page the BFF vouched for may be read as the
+              payout being approved. */}
+          {page.digest_matches !== true && (
+            <Alert variant="destructive">
+              <TriangleAlert />
+              <AlertTitle>{t("approval.lines.digestMismatchTitle", "These lines do not match the approval")}</AlertTitle>
+              <AlertDescription>{t("approval.lines.digestMismatch", "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.")}</AlertDescription>
+            </Alert>
+          )}
           <PayoutLinesSummary page={page} />
           <Table>
             <TableHeader>
@@ -69,7 +78,9 @@ export function PayoutLinesView({ operationId }: { operationId: string }) {
                 <TableRow key={line.line_no}>
                   <TableCell className="tabular-nums text-ink-soft">{(line.line_no ?? 0) + 1}</TableCell>
                   <TableCell className="whitespace-normal break-all">
-                    {line.recipient}
+                    {/* Free text from another service: isolated so a right-to-left name cannot
+                        reorder the amount or badges beside it. */}
+                    <bdi className="font-mono-tech">{line.recipient}</bdi>
                     <span className="ml-2 inline-flex flex-wrap gap-1.5 align-middle">
                       {line.no_history && <Badge variant="outline" className="text-accent-error">{t("approval.lines.noHistory", "No history in this scope")}</Badge>}
                       {line.amount === page.max_line && <Badge variant="outline">{t("approval.lines.largest", "Largest")}</Badge>}
