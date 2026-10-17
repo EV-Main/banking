@@ -18,6 +18,7 @@
 use axum::{
 	Json,
 	extract::{Path, Query, State},
+	http::{HeaderName, header::CACHE_CONTROL},
 };
 use axum_extra::extract::cookie::CookieJar;
 use evbanking_contracts::banking::v1 as bk;
@@ -67,6 +68,31 @@ fn is_operation_id(raw: &str) -> bool {
 		})
 }
 
+/// The `lines_digest` the approval's voters hold, if it carries one as text.
+fn approval_digest(approval: &cc::Approval) -> Option<&str> {
+	approval.fields.iter().find(|f| f.key == "lines_digest").and_then(|f| match &f.value {
+		Some(cc::approval_field_value::Value::Text(digest)) => Some(digest.as_str()),
+		_ => None,
+	})
+}
+
+/// Whether the lines the hub vouches for (`page_digest`) are the ones the voters hold. An
+/// approval that carries no digest vouches for nothing.
+fn digest_matches(approval: &cc::Approval, page_digest: &str) -> bool {
+	approval_digest(approval).is_some_and(|digest| digest == page_digest)
+}
+
+/// Recipients and amounts of a person's payouts must not outlive the page in a shared cache
+/// or the browser's history store.
+type NoStore = [(HeaderName, &'static str); 1];
+const NO_STORE: NoStore = [(CACHE_CONTROL, "private, no-store")];
+
+/// An unverified address is whatever its owner typed; matching the roster on it would let
+/// anyone who registered an approver's email read their lines.
+fn may_read(me: &cc::UserProfile, approval: &cc::Approval, approval_id: &str, operation_id: &str) -> bool {
+	me.email_verified && on_roster(approval, approval_id, operation_id, &me.email)
+}
+
 /// Whether `approval` is the payout approval of `operation_id` and `email` is on its roster.
 fn on_roster(approval: &cc::Approval, approval_id: &str, operation_id: &str, email: &str) -> bool {
 	let email = email.trim().to_lowercase();
@@ -78,7 +104,7 @@ fn on_roster(approval: &cc::Approval, approval_id: &str, operation_id: &str, ema
 		&& approval.voters.iter().any(|voter| voter.email.trim().to_lowercase() == email)
 }
 
-pub async fn lines(State(st): State<AppState>, jar: CookieJar, Path(operation_id): Path<String>, Query(q): Query<PageQuery>) -> Result<Json<dto::PayoutLinesPage>, ApiError> {
+pub async fn lines(State(st): State<AppState>, jar: CookieJar, Path(operation_id): Path<String>, Query(q): Query<PageQuery>) -> Result<(NoStore, Json<dto::PayoutLinesPage>), ApiError> {
 	let (token, claims) = require_identity(&st, &jar).await?;
 	// Lowercase hyphenated only: it is what the approval's `subject_ref` carries.
 	if !is_operation_id(&operation_id) {
@@ -88,7 +114,7 @@ pub async fn lines(State(st): State<AppState>, jar: CookieJar, Path(operation_id
 
 	let approval_id = st.grpc.get_payout_approval(&money, &operation_id).await.map_err(refusal)?.approval_id;
 	let (me, approval) = tokio::try_join!(st.grpc.get_me(&token), st.grpc.get_approval(&token, &approval_id)).map_err(refusal)?;
-	if !on_roster(&approval, &approval_id, &operation_id, &me.email) {
+	if !may_read(&me, &approval, &approval_id, &operation_id) {
 		return Err(hidden());
 	}
 
@@ -99,7 +125,10 @@ pub async fn lines(State(st): State<AppState>, jar: CookieJar, Path(operation_id
 		limit: q.limit.unwrap_or(0),
 	};
 	let page = st.grpc.list_payout_lines(&money, req).await.map_err(refusal)?;
-	Ok(Json(page.into()))
+	let digest_matches = digest_matches(&approval, &page.lines_digest);
+	let mut page = dto::PayoutLinesPage::from(page);
+	page.digest_matches = digest_matches;
+	Ok((NO_STORE, Json(page)))
 }
 
 #[cfg(test)]
@@ -146,6 +175,55 @@ mod tests {
 		stripped.voters[0].email.clear();
 		assert!(!on_roster(&stripped, "a-1", OP, ""));
 		assert!(!on_roster(&stripped, "a-1", OP, "owner@example.com"));
+	}
+
+	fn profile(email: &str, verified: bool) -> cc::UserProfile {
+		cc::UserProfile {
+			email: email.into(),
+			email_verified: verified,
+			..Default::default()
+		}
+	}
+
+	#[test]
+	fn a_voters_address_that_is_not_verified_reads_nothing() {
+		assert!(may_read(&profile("owner@example.com", true), &approval(), "a-1", OP));
+		assert!(!may_read(&profile("owner@example.com", false), &approval(), "a-1", OP));
+	}
+
+	fn with_digest(digest: &str) -> cc::Approval {
+		let mut a = approval();
+		a.fields = vec![cc::ApprovalFieldValue {
+			key: "lines_digest".into(),
+			value: Some(cc::approval_field_value::Value::Text(digest.into())),
+		}];
+		a
+	}
+
+	#[test]
+	fn the_digest_is_the_one_the_approval_carries_or_none() {
+		assert_eq!(approval_digest(&with_digest("abc")), Some("abc"));
+		assert_eq!(approval_digest(&approval()), None, "an approval without the field cannot vouch for any lines");
+		let mut wrong_type = approval();
+		wrong_type.fields = vec![cc::ApprovalFieldValue {
+			key: "lines_digest".into(),
+			value: Some(cc::approval_field_value::Value::Count(1)),
+		}];
+		assert_eq!(approval_digest(&wrong_type), None);
+	}
+
+	#[test]
+	fn lines_whose_digest_differs_from_the_approvals_are_flagged() {
+		assert!(digest_matches(&with_digest("abc"), "abc"));
+		assert!(!digest_matches(&with_digest("abc"), "abd"), "another digest");
+		assert!(!digest_matches(&with_digest("abc"), ""), "an empty digest");
+		assert!(!digest_matches(&approval(), "abc"), "an approval without the field");
+	}
+
+	#[test]
+	fn the_lines_are_never_cached() {
+		let response = axum::response::IntoResponse::into_response((NO_STORE, Json(serde_json::json!({}))));
+		assert_eq!(response.headers()[CACHE_CONTROL], "private, no-store");
 	}
 
 	#[test]

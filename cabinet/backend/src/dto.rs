@@ -3158,6 +3158,9 @@ pub struct PayoutLinesPage {
 	pub distribution: bool,
 	pub over_scope_budget: bool,
 	pub lines_digest: String,
+	/// Filled by the BFF, never by the hub: the page's digest is the one the approval's voters
+	/// hold. `false` means the lines are not the ones being approved.
+	pub digest_matches: bool,
 	pub offset: u32,
 	pub lines: Vec<PayoutReviewLine>,
 }
@@ -3175,6 +3178,7 @@ impl From<bk::PayoutLinesPage> for PayoutLinesPage {
 			distribution: p.distribution,
 			over_scope_budget: p.over_scope_budget,
 			lines_digest: p.lines_digest,
+			digest_matches: false,
 			offset: p.offset,
 			lines: p.lines.into_iter().map(PayoutReviewLine::from).collect(),
 		}
