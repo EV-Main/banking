@@ -49,7 +49,7 @@ use crate::{
 		allocations::{AllocationAccessGrant, AllocationRecord},
 		issuance::UnitIssuanceRecord,
 	},
-	services::support::{caller_id, holds_permission, map_err, optional, require_permission, resolve_target_user, unix_now},
+	services::support::{caller_id, holds_permission, map_err, optional, require_not_paused, require_permission, resolve_target_user, unix_now},
 };
 
 #[derive(Clone)]
@@ -231,6 +231,7 @@ impl AllocationsService for AllocationsSvc {
 
 	async fn issue_units(&self, request: Request<pb::IssueUnitsRequest>) -> Result<Response<pb::UnitIssuance>, Status> {
 		require_permission(&self.state, &request, bank::Allocation::Manage).await?;
+		require_not_paused(&self.state).await?;
 		let req = request.into_inner();
 		let service = ServiceId::parse(&req.service).map_err(map_err)?;
 		let holder = self.resolve_holder(&req.user_id).await?;
@@ -265,6 +266,7 @@ impl AllocationsService for AllocationsSvc {
 
 	async fn retire_units(&self, request: Request<pb::RetireUnitsRequest>) -> Result<Response<pb::UnitIssuance>, Status> {
 		require_permission(&self.state, &request, bank::Allocation::Manage).await?;
+		require_not_paused(&self.state).await?;
 		let req = request.into_inner();
 		let service = ServiceId::parse(&req.service).map_err(map_err)?;
 		let holder = self.resolve_holder(&req.user_id).await?;

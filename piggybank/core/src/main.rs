@@ -385,6 +385,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		ledger.clone(),
 		nav.clone(),
 		relay_notify.clone(),
+		Arc::new(PgOutflowPolicy::new(pool.clone())),
 	);
 	// The per-rail counterpart to `reconciliation`: that one relates two TigerBeetle accounts,
 	// so it stays green when the LEDGER and the CHAIN disagree. This compares `wallet:<net>`
