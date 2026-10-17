@@ -13,12 +13,17 @@
 -- one seat of the four, which the application checks and the composite keys below make
 -- unrepresentable for the wrong source.
 --
--- REVERSIBILITY: DROP TABLE IF EXISTS scope_notification_outbox, payment_session_consent,
---   payment_concierge_approval;
---   Safe while the default is switched back to `consilium` and no order seated on them is
---   open: dropping a seat under an open order leaves an order nothing can approve, which
---   expires on its own. Rolling the image back past this migration also needs, as
---   `postgres`, BEFORE the older image starts:
+-- REVERSIBILITY. The way back is the FLAG, not the image: set `PAYMENT_APPROVALS=consilium`
+-- (new orders then use the old path), wait until every order seated on these tables has ended
+-- (`SELECT count(*) FROM payments p WHERE p.state IN ('pending', 'approved') AND (EXISTS (SELECT
+-- 1 FROM payment_concierge_approval WHERE payment_id = p.id) OR EXISTS (SELECT 1 FROM
+-- payment_session_consent WHERE payment_id = p.id))` is 0 — they end by themselves, within 7 days),
+-- and only then, if at all, roll anything back. An image older than this release cannot even
+-- propose: concierge already holds a newer catalog than the old image's.
+--   The tables may stay for good: the rows are history, nothing reads them once the flag is
+--   off, and nothing is lost by leaving them. If they are dropped,
+--   DROP TABLE IF EXISTS scope_notification_outbox, payment_session_consent, payment_concierge_approval;
+--   then, as `postgres`, BEFORE an older image starts:
 --   DELETE FROM _sqlx_migrations WHERE version = 66;
 --   — `sqlx::migrate!()` refuses to boot a binary that does not know an applied version.
 SET LOCAL lock_timeout = '3s';
@@ -32,11 +37,13 @@ SET LOCAL statement_timeout = '30s';
 -- because the detail — a mailbox, a product's title — can change while the order waits, and
 -- a hash recomputed from today's detail would no longer be the one the owners voted on.
 --
--- `approval_id` is NULL until the proposal is opened; the executor opens it from here, so a
--- concierge outage delays an order and never loses one. `reported_at` is set once the outcome
+-- `approval_id` is NULL until the proposal is opened. The request that wrote the order opens
+-- it, with the proof of who asked (concierge keeps that person off the roster); an order that
+-- stays NULL is a request that died between the two and is closed by the executor, never
+-- proposed later without the proof. `reported_at` is set once the outcome
 -- is told to concierge; `withdrawn_at` once the proposal of an order that died first was
 -- taken back.
-CREATE TABLE payment_concierge_approval (
+CREATE TABLE IF NOT EXISTS payment_concierge_approval (
     payment_id      UUID        PRIMARY KEY REFERENCES payments (id) ON DELETE CASCADE,
     -- Always TRUE, and only ever TRUE: the second key of the composite FK, which is what
     -- keeps this seat off an investor's order.
@@ -52,14 +59,18 @@ CREATE TABLE payment_concierge_approval (
     last_error      TEXT,
     withdrawn_at    TIMESTAMPTZ,
     reported_at     TIMESTAMPTZ,
+    -- Unix seconds after which concierge voids the passed decision unexecuted (its
+    -- `execute_by`), recorded when the decision is carried here; past it the order is not
+    -- executed. NULL until then.
+    execute_by      BIGINT      CHECK (execute_by IS NULL OR execute_by > 0),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (payment_id, fund_owned) REFERENCES payments (id, fund_owned) ON DELETE CASCADE
 );
 
 -- The executor's probes: orders whose proposal is not opened yet, and those whose approval is
 -- still to be watched. Both are tiny sets; the partial indexes keep them so.
-CREATE INDEX payment_concierge_approval_unopened_idx ON payment_concierge_approval (next_attempt_at) WHERE approval_id IS NULL;
-CREATE INDEX payment_concierge_approval_unreported_idx ON payment_concierge_approval (created_at) WHERE approval_id IS NOT NULL AND reported_at IS NULL;
+CREATE INDEX IF NOT EXISTS payment_concierge_approval_unopened_idx ON payment_concierge_approval (next_attempt_at) WHERE approval_id IS NULL;
+CREATE INDEX IF NOT EXISTS payment_concierge_approval_unreported_idx ON payment_concierge_approval (created_at) WHERE approval_id IS NOT NULL AND reported_at IS NULL;
 
 -- The investor's seat: their own answer, given signed in to the cabinet. No token and no code:
 -- the session is the credential, and the cabinet gate asks for a fresh login before an
@@ -70,7 +81,7 @@ CREATE INDEX payment_concierge_approval_unreported_idx ON payment_concierge_appr
 -- the money is about to move, fail-closed — a `RevokeTokens` or a changed mailbox in between
 -- voids the consent. The composite FK is `payment_consent`'s too: the seat can only name its
 -- payment's actual source user, which the database generates from `from_kind`/`from_id`.
-CREATE TABLE payment_session_consent (
+CREATE TABLE IF NOT EXISTS payment_session_consent (
     payment_id                    UUID        PRIMARY KEY REFERENCES payments (id) ON DELETE CASCADE,
     subject_user_id               UUID        NOT NULL REFERENCES users (id),
     decision                      TEXT        NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending', 'approve', 'reject')),
@@ -88,7 +99,7 @@ CREATE TABLE payment_session_consent (
 );
 
 -- "What is waiting for me": the cabinet's list, per subject, over the unanswered seats only.
-CREATE INDEX payment_session_consent_pending_idx ON payment_session_consent (subject_user_id) WHERE decision = 'pending';
+CREATE INDEX IF NOT EXISTS payment_session_consent_pending_idx ON payment_session_consent (subject_user_id) WHERE decision = 'pending';
 
 -- Notices to a person about their money, through concierge's scope inbox
 -- (`ScopeInboxService.EmitScopeNotification`, topic `bank:money-movement`). The queue the
@@ -100,7 +111,7 @@ CREATE INDEX payment_session_consent_pending_idx ON payment_session_consent (sub
 -- singleton worker. The emit is idempotent by `dedupe_key`, so redelivery is free.
 -- `user_id` is the recipient's BANKING id: the worker resolves the concierge id at send time,
 -- in the plane that owns identities.
-CREATE TABLE scope_notification_outbox (
+CREATE TABLE IF NOT EXISTS scope_notification_outbox (
     id              BIGSERIAL   PRIMARY KEY,
     user_id         UUID        NOT NULL REFERENCES users (id),
     topic           TEXT        NOT NULL CHECK (topic ~ '^bank:[a-z0-9_-]+(:[a-z0-9_-]+)*$' AND octet_length(topic) <= 64),
@@ -124,5 +135,5 @@ CREATE TABLE scope_notification_outbox (
     CONSTRAINT scope_notification_outbox_withdrawn_is_unsent CHECK (withdrawn_at IS NULL OR sent_at IS NULL)
 );
 
-CREATE INDEX scope_notification_outbox_due_idx ON scope_notification_outbox (id) WHERE sent_at IS NULL AND withdrawn_at IS NULL;
-CREATE INDEX scope_notification_outbox_payment_idx ON scope_notification_outbox (payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS scope_notification_outbox_due_idx ON scope_notification_outbox (id) WHERE sent_at IS NULL AND withdrawn_at IS NULL AND attempts < 10;
+CREATE INDEX IF NOT EXISTS scope_notification_outbox_payment_idx ON scope_notification_outbox (payment_id) WHERE payment_id IS NOT NULL;

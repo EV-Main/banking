@@ -338,11 +338,12 @@ fn concierge_view(row: &PgRow) -> Result<ConciergeSeatView, DomainError> {
 		level: level.as_deref().map(ApprovalLevel::parse).transpose()?,
 		payload_hash: row.try_get("payload_hash").map_err(repo_err)?,
 		destination: row.try_get("destination").map_err(repo_err)?,
+		execute_by: row.try_get("execute_by").map_err(repo_err)?,
 	})
 }
 
 async fn concierge_of_payment(conn: &mut PgConnection, payment: Uuid) -> Result<Option<ConciergeSeatView>, DomainError> {
-	sqlx::query("SELECT approval_id, approval_level, payload_hash, destination FROM payment_concierge_approval WHERE payment_id = $1")
+	sqlx::query("SELECT approval_id, approval_level, payload_hash, destination, execute_by FROM payment_concierge_approval WHERE payment_id = $1")
 		.bind(payment)
 		.fetch_optional(&mut *conn)
 		.await
@@ -570,7 +571,7 @@ async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 		return Ok(());
 	};
 	let detail = detail_of(conn, order.terms().to()).await?;
-	let what = format!("{} to {}", mail_amount(order.terms().amount()), mail_destination(order.terms(), detail.as_ref()));
+	let what = format!("{} to {}", mail_amount(order.terms().amount()), approval_destination(order.terms(), detail.as_ref()));
 	let why = match cause {
 		ConsentInvalidation::SessionsRevoked { .. } => "the sessions of the account were revoked after the payment was opened",
 		ConsentInvalidation::EmailChanged => "the mailbox of the account changed after the payment was opened",
@@ -947,11 +948,17 @@ impl PaymentRepository for PgPayments {
 					topic: MONEY_MOVEMENT_TOPIC.to_owned(),
 					kind: CONSENT_NOTICE_KIND.to_owned(),
 					title: "Confirm a payment from your account".to_owned(),
+					// The operator's words go into the notice only where the approval would carry them
+					// (length, control characters, links); otherwise the page is where they are read.
 					body: format!(
-						"A payment of {} from your account to {} waits for your confirmation. Reason: {}. Open the cabinet to confirm or decline it; it lapses on its own if you do nothing.",
+						"A payment of {} from your account to {} waits for your confirmation.{} Open the cabinet to confirm or decline it; it lapses on its own if you do nothing.",
 						mail_amount(order.terms().amount()),
-						mail_destination(order.terms(), detail.as_ref()),
-						order.terms().reason(),
+						approval_destination(order.terms(), detail.as_ref()),
+						if domain::payments::is_plain_text(order.terms().reason().as_str()) {
+							format!(" Reason: {}.", order.terms().reason())
+						} else {
+							" The reason is on the confirmation page.".to_owned()
+						},
 					),
 					link: answer_link(order.id()),
 					dedupe_key: format!("payment:{}:consent:{}", order.id(), session.subject),
@@ -1364,7 +1371,7 @@ impl PaymentRepository for PgPayments {
 		Ok(view)
 	}
 
-	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, at: i64) -> Result<PaymentView, DomainError> {
+	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, execute_by: i64, at: i64) -> Result<PaymentView, DomainError> {
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
 		let mut order = locked(&mut tx, id).await?;
 		let known: Option<Option<String>> = sqlx::query_scalar("SELECT approval_id FROM payment_concierge_approval WHERE payment_id = $1 FOR UPDATE")
@@ -1375,19 +1382,24 @@ impl PaymentRepository for PgPayments {
 		match known {
 			None => return Err(DomainError::Conflict("this payment is not decided by a concierge approval".into())),
 			Some(Some(known)) if known != approval_id => return Err(DomainError::Conflict("another approval decides this payment".into())),
-			Some(Some(_)) => {}
-			Some(None) => {
-				sqlx::query("UPDATE payment_concierge_approval SET approval_id = $2 WHERE payment_id = $1")
-					.bind(id.raw())
-					.bind(approval_id)
-					.execute(&mut *tx)
-					.await
-					.map_err(repo_err)?;
-			}
+			Some(Some(_) | None) => {}
 		}
+		// The deadline and the id are recorded even for a decision served again; the id only
+		// ever fills an empty seat (the answer to the proposal was lost), never replaces one.
+		sqlx::query("UPDATE payment_concierge_approval SET approval_id = COALESCE(approval_id, $2), execute_by = COALESCE(execute_by, NULLIF($3, 0)) WHERE payment_id = $1")
+			.bind(id.raw())
+			.bind(approval_id)
+			.bind(execute_by)
+			.execute(&mut *tx)
+			.await
+			.map_err(repo_err)?;
 		// A decision served again after it was acted on: approved once, reserved once. An order
-		// that ended otherwise is refused by `approve` — a late decision never reaches money.
+		// that ended otherwise is refused by `approve` — a late decision never reaches money —
+		// and one whose own window ran out is refused here, whether or not the sweep reached it.
 		if !matches!(order.state(), PaymentState::Approved | PaymentState::Executed) {
+			if order.expires_at() <= at {
+				return Err(DomainError::Conflict("the payment's window ended before the decision was carried out".into()));
+			}
 			order.approve(at)?;
 			persist(&mut tx, &mut order).await?;
 		}
@@ -1507,13 +1519,24 @@ impl PaymentRepository for PgPayments {
 
 #[async_trait]
 impl PaymentApprovalStore for PgPayments {
-	async fn due_to_propose(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError> {
-		self.due(
+	async fn unproposed(&self, older_than_secs: u32, limit: u32) -> Result<Vec<DueApproval>, DomainError> {
+		let rows = sqlx::query(
 			"SELECT s.payment_id, s.attempts FROM payment_concierge_approval s JOIN payments p ON p.id = s.payment_id \
-			 WHERE s.approval_id IS NULL AND p.state = 'pending' AND s.next_attempt_at <= now() ORDER BY s.created_at LIMIT $1",
-			limit,
+			 WHERE s.approval_id IS NULL AND p.state = 'pending' AND s.created_at < now() - make_interval(secs => $1) ORDER BY s.created_at LIMIT $2",
 		)
+		.bind(f64::from(older_than_secs))
+		.bind(i64::from(limit))
+		.fetch_all(&self.pool)
 		.await
+		.map_err(repo_err)?;
+		rows.iter()
+			.map(|row| {
+				Ok(DueApproval {
+					id: PaymentId::from_raw(row.try_get("payment_id").map_err(repo_err)?),
+					attempts: row.try_get::<i32, _>("attempts").map_err(repo_err)?.max(0) as u32,
+				})
+			})
+			.collect()
 	}
 
 	async fn due_to_check(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError> {
@@ -1592,9 +1615,10 @@ impl PaymentApprovalStore for PgPayments {
 		Ok(())
 	}
 
-	async fn reported(&self, id: PaymentId) -> Result<(), DomainError> {
-		sqlx::query("UPDATE payment_concierge_approval SET reported_at = COALESCE(reported_at, now()) WHERE payment_id = $1")
+	async fn reported(&self, id: PaymentId, refused: Option<&str>) -> Result<(), DomainError> {
+		sqlx::query("UPDATE payment_concierge_approval SET reported_at = COALESCE(reported_at, now()), last_error = COALESCE($2, last_error) WHERE payment_id = $1")
 			.bind(id.raw())
+			.bind(refused.map(|why| format!("concierge refused the outcome: {why}")))
 			.execute(&self.pool)
 			.await
 			.map_err(repo_err)?;
@@ -1689,7 +1713,7 @@ impl PaymentFeed for PgPayments {
 		}
 
 		let mut concierge_by_payment = HashMap::new();
-		for row in &sqlx::query("SELECT payment_id, approval_id, approval_level, payload_hash, destination FROM payment_concierge_approval WHERE payment_id = ANY($1)")
+		for row in &sqlx::query("SELECT payment_id, approval_id, approval_level, payload_hash, destination, execute_by FROM payment_concierge_approval WHERE payment_id = ANY($1)")
 			.bind(&ids)
 			.fetch_all(&mut *conn)
 			.await

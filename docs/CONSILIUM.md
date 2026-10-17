@@ -572,19 +572,39 @@ with, and every part of the old path keeps running in both modes.
 | fund-owned | a `bank:payment` approval in scope `main`, decided by the platform owners (`payment_concierge_approval`) | banking's consilium (`payment_approval`) |
 | an investor's claim | that investor's own answer, signed in (`payment_session_consent`) | the emailed token and code (`payment_consent`) |
 
-**Fund money.** `open` stores the order and a seat holding the rendered destination and the
-SHA-256 of the approval payload (`ev-approval-v1`); it calls nobody. The executor
-(`application/payment_approvals.rs`, run by the consilium sweeper's minute) publishes banking's
-catalog, proposes the approval (idempotent by `payment:<uuid>`), watches it, and — once it
-passed — re-reads it by id, checks kind, scope `main`, `subject_ref`, and the payload hash
-against the stored order, approves the order **once** (`record_concierge_approval`, under the
-order's row lock), runs the same `execute` as every other approval, and reports the outcome.
-A decision is served until its outcome is reported, so every step is idempotent: a second
-approval for one order, a decision for an order that ended otherwise, and one whose hash is
-not the order's are reported `VOID` and move nothing. Concierge being away delays an order and
-never fails it. The order's window is 7 days (`CONCIERGE_TTL_SECS`), not 72 hours: the
-approval's own clock (72 hours open, then its veto delay) is what ends it, and the order's must
-not run out first. Treasury spending stays closed (`TREASURY_SPENDING_CLOSED`).
+**Fund money.** The request that opens the order proposes the approval in the same breath,
+WITH THE PROOF of who asked (D24(1)): the initiator's own concierge access token in
+`x-ev-user-token` and their `auth_subject` as `requested_by`. With it concierge keeps the
+initiator off the owners' roster, so nobody votes on their own payment. Without a token the
+order is not written; if the proposal does not open (concierge away, a stale token, a hash
+that disagrees, too little window) the order is closed with the reason and the source is free
+to open again. The executor never proposes — the proof is one token for one request and is not
+kept — and closes an order whose request died before it did. The executor
+(`application/payment_approvals.rs`, run by the consilium sweeper's minute) watches the
+approval and — once it passed — re-reads it by id, checks kind, scope `main`, `subject_ref`
+and the payload hash against the stored order, approves the order **once**
+(`record_concierge_approval`, under the order's row lock), runs the same `execute` as every
+other approval, and reports the outcome. A decision is served until its outcome is reported,
+so every step is idempotent: a second approval for one order, a decision for an order that
+ended otherwise, and one whose hash is not the order's are reported `VOID` and move nothing.
+The decision's `execute_by` is stored with the seat and an order is not executed after it
+(`execution_failed`); a refusal by concierge to take an outcome is kept on the seat
+(`last_error`). The order's window is 7 days (`CONCIERGE_TTL_SECS`): 72 hours open, a veto
+delay of 24 hours (up to 72 by policy), and 72 hours to execute. Treasury spending stays
+closed (`TREASURY_SPENDING_CLOSED`).
+
+**The proof's freshness.** Concierge accepts the token only if minted within 120 seconds. The
+cabinet session renews its access token (15-minute TTL) only when it is about to expire, so the
+console cannot make one fresh on demand: until the identity plane offers a forced renewal, an
+open with an older token fails with that reason. That is why the first rollout sets
+`PAYMENT_APPROVALS=consilium` and switches only once a fresh-token path exists.
+
+**Rolling back.** The way back is the flag, never the image. Set `PAYMENT_APPROVALS=consilium`
+(new orders use the old path), wait until every order seated on `payment_concierge_approval` /
+`payment_session_consent` has ended (the query is in migration 0066's header; they end by
+themselves within 7 days), and only then consider anything else. An image older than this
+release cannot propose: concierge already holds a newer catalog. (The catalog gate logs that
+refusal at error and proposes on, so `bank:*` operations are not stopped on top of it.)
 
 **Investor money.** No token and no code: the order is seated on the investor, a notice
 (`bank:money-movement`, through concierge's scope inbox) tells them, and they answer in the

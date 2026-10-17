@@ -20,6 +20,7 @@ use piggybank_core::{
 	application::{
 		auth_sync,
 		book::BookFeed,
+		payment_approvals::PaymentProposer,
 		scope_operations::{ApprovalExecutor, CatalogGate},
 	},
 	config::{self, Rails},
@@ -34,7 +35,7 @@ use piggybank_core::{
 		compartments::PgCompartments,
 		consilium::PgConsilia,
 		consilium_mailer::{self, ConsiliumMailer},
-		consilium_sweeper::{ConsiliumSweeper, PaymentApprovalDriver},
+		consilium_sweeper::ConsiliumSweeper,
 		custody::{ChainCustody, MultiChainCustody, StubCustody},
 		db,
 		deposit_watcher::DepositWatcher,
@@ -267,6 +268,11 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let pg_payments = Arc::new(PgPayments::new(pool.clone()));
 	let payments: Arc<dyn PaymentRepository> = pg_payments.clone();
 	let payment_approval_store: Arc<dyn piggybank_core::ports::payments::PaymentApprovalStore> = pg_payments.clone();
+	let payment_proposer = Arc::new(PaymentProposer {
+		store: payment_approval_store,
+		approvals: Arc::new(ConciergeApprovals::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
+		catalog: Arc::new(CatalogGate::new()),
+	});
 	let payment_feed: Arc<dyn PaymentFeed> = pg_payments;
 	let allocations: Arc<dyn AllocationRegistry> = Arc::new(PgAllocations::new(pool.clone()));
 	let subscriptions: Arc<dyn SubscriptionRepository> = Arc::new(PgSubscriptions::new(pool.clone()));
@@ -528,11 +534,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		consent_url_base: config.payment_consent_url_base.clone(),
 		// Always wired, whichever way new payments are seated: orders already seated on a
 		// concierge approval are finished by it, and with none open a round is a few cheap reads.
-		payment_approvals: Some(PaymentApprovalDriver {
-			store: payment_approval_store,
-			approvals: Arc::new(ConciergeApprovals::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
-			catalog: CatalogGate::new(),
-		}),
+		payment_approvals: Some(payment_proposer.clone()),
 	};
 	// Notices to people about their money go through concierge's scope inbox, from a queue
 	// written beside the fact they announce.
@@ -587,7 +589,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		scope_ledger_store.clone(),
 	)
 	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default())
-	.with_payment_approvals(payment_approval_mode);
+	.with_payment_approvals(payment_approval_mode, payment_proposer);
 
 	// Operations are only ever requested over the scope ledger's listener, so their executor
 	// runs exactly when the listener does: a hub without it neither opens nor pulls banking's

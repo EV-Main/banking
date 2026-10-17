@@ -27,7 +27,7 @@ use domain::{
 };
 use piggybank_core::{
 	application::{
-		payment_approvals::{self, ApprovalRound, ApprovalRoundPorts},
+		payment_approvals::{self, ApprovalRound, ApprovalRoundPorts, open_with_proof, propose_on_open},
 		payments as payments_app,
 		scope_operations::CatalogGate,
 	},
@@ -41,7 +41,7 @@ use piggybank_core::{
 		ledger::Ledger,
 		payments::{ConsentAudit, ConsentDecision, ExecutionOutcome, PaymentRepository},
 		scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier},
-		scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal},
+		scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof},
 	},
 };
 use sha2::{Digest, Sha256};
@@ -94,12 +94,25 @@ struct ConciergeState {
 	reports: Vec<(String, ApprovalOutcome)>,
 	withdrawn: Vec<String>,
 	proposals: usize,
+	/// The owners concierge would seat on a platform roster, by `auth_subject`.
+	owners: Vec<String>,
+	/// Proposals opened WITHOUT a proof of who asked — the executor must never make one.
+	unproven: usize,
+	/// A proof older than concierge accepts (120 s): every proof is refused.
+	stale_proofs: bool,
+	/// Concierge no longer takes any outcome (a decision past its `execute_by`).
+	refuse_reports: bool,
+	/// The `execute_by` the next opened approval carries once passed.
+	execute_by: i64,
 }
 
 struct Held {
 	view: ApprovalView,
 	proposal: Option<Proposal>,
 	reported: Option<ApprovalOutcome>,
+	/// Who may vote: the roster frozen at open, the proven initiator taken off it.
+	roster: Vec<String>,
+	requested_by: Option<String>,
 }
 
 impl Concierge {
@@ -135,13 +148,24 @@ impl Concierge {
 						state: ApprovalState::Passed,
 						level: Some(ApprovalLevel::Platform),
 						payload_hash: payload_hash.to_owned(),
+						execute_by: 0,
 					},
 					proposal: None,
 					reported: None,
+					roster: Vec::new(),
+					requested_by: None,
 				},
 			);
 		});
 		id
+	}
+
+	fn voters(&self, approval_id: &str) -> Vec<String> {
+		self.with(|s| s.approvals[approval_id].roster.clone())
+	}
+
+	fn requested_by(&self, approval_id: &str) -> Option<String> {
+		self.with(|s| s.approvals[approval_id].requested_by.clone())
 	}
 
 	fn reports(&self) -> Vec<(String, ApprovalOutcome)> {
@@ -156,7 +180,15 @@ fn concierge_hash(proposal: &Proposal) -> String {
 #[async_trait]
 impl Approvals for Concierge {
 	async fn propose(&self, proposal: &Proposal) -> Result<ApprovalView, ApprovalsError> {
+		self.with(|s| s.unproven += 1);
+		self.propose_for(proposal, None).await
+	}
+
+	async fn propose_for(&self, proposal: &Proposal, proof: Option<&UserProof>) -> Result<ApprovalView, ApprovalsError> {
 		self.with(|s| {
+			if proof.is_some() && s.stale_proofs {
+				return Err(ApprovalsError::Refused("the user token is older than 120 seconds: mint one for this request".into()));
+			}
 			if s.down {
 				return Err(ApprovalsError::Unavailable("down".into()));
 			}
@@ -178,7 +210,10 @@ impl Approvals for Concierge {
 				// The floor: a `bank:payment` is the owners'.
 				level: Some(ApprovalLevel::Platform),
 				payload_hash: s.tamper_open.take().unwrap_or_else(|| concierge_hash(proposal)),
+				execute_by: s.execute_by,
 			};
+			// The roster is frozen at open, and a PROVEN initiator is kept off it (D24(1)).
+			let roster: Vec<String> = s.owners.iter().filter(|owner| proof.is_none_or(|proof| **owner != proof.requested_by)).cloned().collect();
 			s.by_dedupe.insert(proposal.dedupe_key.clone(), id.clone());
 			s.approvals.insert(
 				id,
@@ -186,6 +221,8 @@ impl Approvals for Concierge {
 					view: view.clone(),
 					proposal: Some(proposal.clone()),
 					reported: None,
+					roster,
+					requested_by: proof.map(|proof| proof.requested_by.clone()),
 				},
 			);
 			Ok(view)
@@ -223,6 +260,9 @@ impl Approvals for Concierge {
 		self.with(|s| {
 			if s.down {
 				return Err(ApprovalsError::Unavailable("down".into()));
+			}
+			if s.refuse_reports {
+				return Err(ApprovalsError::Refused("the decision lapsed".into()));
 			}
 			let held = s.approvals.get_mut(approval_id).ok_or_else(|| ApprovalsError::Refused("not found".into()))?;
 			// Repeating the same outcome is a no-op; a different one is refused.
@@ -402,6 +442,36 @@ async fn mail_rows(pool: &PgPool, order: PaymentId) -> i64 {
 		.unwrap()
 }
 
+/// The proof of who asked, as a request carries it. The fake concierge accepts any token it is
+/// not told is stale; what matters on this side is that it is passed and never kept.
+const PROOF: &str = "initiator-access-token";
+
+async fn open_fund(a: &App, initiator: UserId, terms: PaymentTerms, token: Option<&str>) -> Result<piggybank_core::ports::payments::PaymentView, DomainError> {
+	let payment_ports = ports(a);
+	open_with_proof(
+		&ApprovalRoundPorts {
+			payments: &payment_ports,
+			store: &a.payments,
+			approvals: &a.concierge,
+			catalog: &a.catalog,
+		},
+		initiator,
+		terms,
+		token,
+		now(),
+	)
+	.await
+}
+
+async fn subject_of(pool: &PgPool, user: UserId) -> String {
+	sqlx::query_scalar("SELECT auth_subject FROM users WHERE id = $1").bind(user.raw()).fetch_one(pool).await.unwrap()
+}
+
+/// The one order the test wrote.
+async fn only_payment(pool: &PgPool) -> PaymentId {
+	PaymentId::from_raw(sqlx::query_scalar("SELECT id FROM payments").fetch_one(pool).await.expect("exactly one order"))
+}
+
 async fn state_of(a: &App, id: PaymentId) -> PaymentState {
 	payments_app::find(&a.payments, id).await.unwrap().order.state()
 }
@@ -431,10 +501,8 @@ async fn a_proposed_fund_payment(a: &App, initiator: UserId, amount: &str) -> Op
 	a.relay.drain().await;
 	let fund_locked = a.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fund())).await.unwrap().locked;
 	let fee_posted = a.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted;
-	let view = payments_app::open(&ports(a), initiator, fund_to_fee(amount), now()).await.expect("open the payment");
+	let view = open_fund(a, initiator, fund_to_fee(amount), Some(PROOF)).await.expect("open the payment");
 	let id = view.order.id();
-	let proposed = round(a).await;
-	assert_eq!(proposed.proposed, 1, "{proposed:?}");
 	Opened {
 		approval: approval_id_of(a, id).await,
 		id,
@@ -460,7 +528,7 @@ async fn a_fund_payment_is_decided_over_a_concierge_approval_and_moves_money_onc
 	let fund_locked_before = a.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fund())).await.unwrap().locked;
 	let fee_before = a.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fee())).await.unwrap().posted;
 
-	let view = payments_app::open(&ports(&a), initiator, fund_to_fee("250"), now()).await.expect("open the payment");
+	let view = open_fund(&a, initiator, fund_to_fee("250"), Some(PROOF)).await.expect("open the payment");
 	let id = view.order.id();
 	// Seated on the approval and on nothing of the old path: no consilium, no governance mail,
 	// and the window is the approval's, not the 72 hours the old quorum had.
@@ -469,16 +537,15 @@ async fn a_fund_payment_is_decided_over_a_concierge_approval_and_moves_money_onc
 	assert!((view.order.expires_at() - view.order.created_at() - CONCIERGE_TTL_SECS).abs() <= 2);
 	const { assert!(CONCIERGE_TTL_SECS > TTL_SECS) };
 	assert_eq!(mail_rows(&a.pool, id).await, 0, "no governance mail is written");
-	assert!(a.concierge.with(|s| s.approvals.is_empty()), "nothing is proposed inside open");
-
-	// The round publishes the catalog first, then opens the proposal.
-	let first = round(&a).await;
-	assert_eq!(first.proposed, 1);
+	// The request that wrote the order opened the proposal, publishing the catalog first.
+	assert_eq!(round(&a).await.proposed, 0, "the executor opens nothing");
 	let (version, kinds, topics) = a.concierge.with(|s| s.catalog.clone()).expect("the catalog was published");
 	assert_eq!(version, BANK_CATALOG_VERSION);
 	assert!(kinds.iter().any(|kind| kind == PAYMENT_KIND), "{kinds:?}");
 	assert_eq!(topics, vec![MONEY_MOVEMENT_TOPIC.to_owned()]);
 	let approval = approval_id_of(&a, id).await;
+	assert_eq!(a.concierge.with(|s| s.unproven), 0, "never proposed without the proof of who asked");
+	assert_eq!(a.concierge.requested_by(&approval), Some(subject_of(&a.pool, initiator).await));
 	let proposal = a.concierge.proposal(&approval);
 	assert_eq!((proposal.kind.as_str(), proposal.scope.as_str()), (PAYMENT_KIND, "main"));
 	assert_eq!(proposal.subject_ref, approval_subject_ref(id));
@@ -604,9 +671,9 @@ async fn a_decision_that_is_not_the_stored_orders_moves_nothing() {
 	// At open: the two planes disagree about what is being approved.
 	fund(&a, LedgerAccountKey::ServiceClaim(ServiceId::fund()), "1000").await;
 	a.concierge.with(|s| s.tamper_open = Some("0".repeat(64)));
-	let id = payments_app::open(&ports(&a), initiator, fund_to_fee("10"), now()).await.unwrap().order.id();
-	let ended = round(&a).await;
-	assert_eq!((ended.proposed, ended.rejected), (0, 1));
+	let refused = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(ref why)) if why.contains("disagree")), "{refused:?}");
+	let id = only_payment(&a.pool).await;
 	assert_eq!(state_of(&a, id).await, PaymentState::Rejected, "the order ends now, not after the owners voted on it");
 	assert_eq!(a.concierge.with(|s| s.withdrawn.len()), 1, "and the proposal is taken back");
 
@@ -654,41 +721,193 @@ async fn only_the_approval_opened_for_an_order_may_execute_it() {
 	reset(&a.pool).await;
 }
 
-/// Concierge being away costs time and nothing else: the order waits unproposed, is neither
-/// failed nor lost, and is proposed once concierge is back.
+/// Concierge being away when the order is opened closes it with the reason and frees the
+/// source: the proof of who asked is not kept, so there is no later attempt to wait for. Opened
+/// again with concierge back, it goes through.
 #[tokio::test]
-async fn a_concierge_outage_delays_a_payment_and_never_fails_it() {
+async fn a_concierge_outage_at_open_closes_the_order_and_a_retry_opens_it() {
 	let _guard = exclusive().await;
-	let Some(a) = app("payment approvals outage").await else { return };
+	let Some(mut a) = app("payment approvals outage").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
-	let id = payments_app::open(&ports(&a), initiator, fund_to_fee("10"), now()).await.unwrap().order.id();
+	fund(&a, LedgerAccountKey::ServiceClaim(ServiceId::fund()), "1000").await;
 
 	a.concierge.with(|s| s.down = true);
-	let down = round(&a).await;
-	assert_eq!(down, ApprovalRound::default());
-	assert_eq!(state_of(&a, id).await, PaymentState::Pending);
+	let down = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await;
+	assert!(matches!(down, Err(DomainError::Precondition(ref why)) if why.contains("open it again")), "{down:?}");
+	let first = only_payment(&a.pool).await;
+	assert_eq!(state_of(&a, first).await, PaymentState::Rejected);
 	assert!(a.concierge.with(|s| s.approvals.is_empty()));
 
 	a.concierge.with(|s| s.down = false);
 	// The catalog gate backs off after a failed publish; a fresh process publishes at once.
-	let restarted = CatalogGate::new();
+	a.catalog = CatalogGate::new();
+	let again = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await.expect("the source is free again");
+	assert!(again.concierge.is_some_and(|seat| seat.approval_id.is_some()));
+	assert_eq!(again.order.state(), PaymentState::Pending);
+
+	reset(&a.pool).await;
+}
+
+/// The initiator of a payment out of fund money is kept off the owners' roster, so nobody
+/// votes on their own request — and without the proof of who asked the order is not written at
+/// all. An order whose request died between the write and the proposal is closed by the
+/// executor, never proposed later without the proof.
+#[tokio::test]
+async fn the_initiator_does_not_vote_on_their_own_payment() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals initiator").await else { return };
+	reset(&a.pool).await;
+	let initiator = an_investor(&a.pool).await;
+	let subject = subject_of(&a.pool, initiator).await;
+	fund(&a, LedgerAccountKey::ServiceClaim(ServiceId::fund()), "1000").await;
+	a.concierge.with(|s| s.owners = vec!["owner-a".into(), subject.clone(), "owner-b".into(), "owner-c".into()]);
+
+	let view = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await.unwrap();
+	let approval = view.concierge.unwrap().approval_id.unwrap();
+	assert_eq!(
+		a.concierge.voters(&approval),
+		vec!["owner-a".to_owned(), "owner-b".to_owned(), "owner-c".to_owned()],
+		"the initiator holds no seat"
+	);
+	assert_eq!(a.concierge.requested_by(&approval), Some(subject));
+	payments_app::cancel(&ports(&a), view.order.id(), initiator, now()).await.unwrap();
+
+	// No proof, no order.
+	for missing in [None, Some("")] {
+		let refused = open_fund(&a, initiator, fund_to_fee("11"), missing).await;
+		assert!(matches!(refused, Err(DomainError::Precondition(_))), "{missing:?}: {refused:?}");
+	}
+	let orders: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payments").fetch_one(&a.pool).await.unwrap();
+	assert_eq!(orders, 1, "only the first order was written");
+
+	// A proof concierge finds stale (older than 120 s) closes the order with the reason.
+	a.concierge.with(|s| s.stale_proofs = true);
+	let stale = open_fund(&a, initiator, fund_to_fee("12"), Some(PROOF)).await;
+	assert!(matches!(stale, Err(DomainError::Precondition(ref why)) if why.contains("older than 120")), "{stale:?}");
+	a.concierge.with(|s| s.stale_proofs = false);
+
+	// A request that died after writing the order: the executor closes it, and proposes nothing.
+	let stranded = payments_app::open(&ports(&a), initiator, fund_to_fee("13"), now()).await.unwrap().order.id();
+	assert_eq!(round(&a).await.rejected, 0, "not before the request could still be in flight");
+	sqlx::query("UPDATE payment_concierge_approval SET created_at = now() - interval '10 minutes' WHERE payment_id = $1")
+		.bind(stranded.raw())
+		.execute(&a.pool)
+		.await
+		.unwrap();
+	assert_eq!(round(&a).await.rejected, 1);
+	assert_eq!(state_of(&a, stranded).await, PaymentState::Rejected);
+	assert_eq!(a.concierge.with(|s| s.unproven), 0, "the executor never proposes without the proof");
+
+	reset(&a.pool).await;
+}
+
+/// An order that could pass and then find itself expired is closed before the owners are
+/// asked: a decision needs 96 hours (72 open, 24 of veto) plus a margin.
+#[tokio::test]
+async fn an_order_with_too_little_window_left_is_not_proposed() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals window").await else { return };
+	reset(&a.pool).await;
+	let initiator = an_investor(&a.pool).await;
+	fund(&a, LedgerAccountKey::ServiceClaim(ServiceId::fund()), "1000").await;
+	let view = payments_app::open(&ports(&a), initiator, fund_to_fee("10"), now()).await.unwrap();
+	let late = now() + CONCIERGE_TTL_SECS - 97 * 3600;
 	let payment_ports = ports(&a);
-	let up = payment_approvals::round(
+	let refused = propose_on_open(
 		&ApprovalRoundPorts {
 			payments: &payment_ports,
 			store: &a.payments,
 			approvals: &a.concierge,
-			catalog: &restarted,
+			catalog: &a.catalog,
 		},
-		now(),
+		&view,
+		&UserProof {
+			requested_by: subject_of(&a.pool, initiator).await,
+			token: PROOF.into(),
+		},
+		late,
 	)
-	.await
-	.unwrap();
-	assert_eq!(up.proposed, 1);
-	assert_eq!(state_of(&a, id).await, PaymentState::Pending);
+	.await;
+	assert!(matches!(refused, Err(DomainError::Precondition(ref why)) if why.contains("too late")), "{refused:?}");
+	assert_eq!(state_of(&a, view.order.id()).await, PaymentState::Rejected);
+	assert!(a.concierge.with(|s| s.approvals.is_empty()), "nothing was proposed");
 
 	reset(&a.pool).await;
+}
+
+/// A decision past its `execute_by` is not authority any more: the order fails closed with the
+/// reason, the reservation is given back, and concierge's refusal to take the outcome is kept
+/// on the seat instead of being passed off as "told".
+#[tokio::test]
+async fn a_decision_past_its_execute_by_fails_the_order_closed() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals execute_by").await else { return };
+	reset(&a.pool).await;
+	let initiator = an_investor(&a.pool).await;
+	a.concierge.with(|s| s.execute_by = now() - 60);
+	let open = a_proposed_fund_payment(&a, initiator, "25").await;
+	a.concierge.set_state(&open.approval, ApprovalState::Passed);
+	a.concierge.with(|s| s.refuse_reports = true);
+
+	round(&a).await;
+	let view = payments_app::find(&a.payments, open.id).await.unwrap();
+	assert_eq!(view.order.state(), PaymentState::ExecutionFailed);
+	assert!(
+		view.order.failure_reason().is_some_and(|why| why.contains("execution window lapsed")),
+		"{:?}",
+		view.order.failure_reason()
+	);
+	assert!(view.concierge.is_some_and(|seat| seat.execute_by.is_some()));
+	assert_eq!(relayed_kinds(&a.pool, open.id).await, vec!["reserved".to_owned(), "released".to_owned()]);
+	let (reported, note): (bool, Option<String>) = sqlx::query_as("SELECT reported_at IS NOT NULL, last_error FROM payment_concierge_approval WHERE payment_id = $1")
+		.bind(open.id.raw())
+		.fetch_one(&a.pool)
+		.await
+		.unwrap();
+	assert!(reported && note.is_some_and(|why| why.contains("refused the outcome")), "the refusal is kept");
+	a.relay.drain().await;
+	assert_eq!(a.ledger.balance(&LedgerAccountKey::ServiceClaim(ServiceId::fund())).await.unwrap().locked, open.fund_locked);
+
+	reset(&a.pool).await;
+}
+
+/// An order whose own window ended is not approved by a decision that arrives late, whether or
+/// not the sweep reached it: the decision is reported VOID and the order stays as it was.
+#[tokio::test]
+async fn a_decision_arriving_after_the_orders_window_approves_nothing() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals expired window").await else { return };
+	reset(&a.pool).await;
+	let initiator = an_investor(&a.pool).await;
+	let open = a_proposed_fund_payment(&a, initiator, "18").await;
+	sqlx::query("UPDATE payments SET expires_at = now() - interval '1 second' WHERE id = $1")
+		.bind(open.id.raw())
+		.execute(&a.pool)
+		.await
+		.unwrap();
+	a.concierge.set_state(&open.approval, ApprovalState::Passed);
+
+	let late = round(&a).await;
+	assert_eq!(late.voided, 1, "{late:?}");
+	assert_eq!(state_of(&a, open.id).await, PaymentState::Pending, "no state change from a late decision");
+	assert!(relayed_kinds(&a.pool, open.id).await.is_empty());
+
+	reset(&a.pool).await;
+}
+
+/// The migration may run twice (a restart after a half-applied boot) and changes nothing the
+/// second time.
+#[tokio::test]
+async fn the_migration_is_idempotent() {
+	let _guard = exclusive().await;
+	let Some(pool) = common::pool().await else { return };
+	let mut tx = pool.begin().await.unwrap();
+	sqlx::raw_sql(include_str!("../migrations/0066_payment_approvals.sql"))
+		.execute(&mut *tx)
+		.await
+		.expect("the second run is a no-op");
+	tx.commit().await.unwrap();
 }
 
 /// The operator's pause holds an approved order without closing it: the decision is recorded,
@@ -764,11 +983,10 @@ async fn the_consilium_mode_still_routes_a_fund_payment_to_the_old_path() {
 		matches!(refused, Err(DomainError::Conflict(ref why)) if why.contains("governance mail")),
 		"the old path needs its mailer: {refused:?}"
 	);
-	let seated = payments_app::open(&ports(&a), initiator, fund_to_fee("5"), now())
+	let seated = open_fund(&a, initiator, fund_to_fee("5"), Some(PROOF))
 		.await
 		.expect("the default path needs no governance mailer");
 	assert!(seated.concierge.is_some() && seated.consilium_id.is_none());
-	assert_eq!(round(&a).await.proposed, 1);
 
 	reset(&a.pool).await;
 }
@@ -921,6 +1139,45 @@ async fn an_investor_may_decline_and_nothing_moves() {
 	assert_eq!(worker.drain().await.unwrap(), 0, "a withdrawn notice is never handed over");
 	let late = payments_app::answer_consent(&ports(&a), investor, id, ConsentDecision::Approve, &audit(), now()).await;
 	assert!(matches!(late, Err(DomainError::Conflict(_))), "an answered order cannot be answered the other way: {late:?}");
+
+	reset(&a.pool).await;
+}
+
+/// The operator's reason reaches the investor's notice only where an approval would carry it:
+/// one with a link, or too long, is left for the confirmation page, which shows it as text.
+#[tokio::test]
+async fn an_operators_reason_with_a_link_stays_out_of_the_notice() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals notice reason").await else { return };
+	reset(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	fund(&a, LedgerAccountKey::UserClaim(investor), "100").await;
+	let body_of = |reason: String| {
+		let a = &a;
+		async move {
+			let terms = PaymentTerms::new(
+				Party::User(investor),
+				PaymentDestination::Internal(Party::Service(ServiceId::fee())),
+				usdt("5"),
+				PaymentReason::new(reason).unwrap(),
+			)
+			.unwrap();
+			let id = payments_app::open(&ports(a), investor, terms, now()).await.unwrap().order.id();
+			let body: String = sqlx::query_scalar("SELECT body FROM scope_notification_outbox WHERE payment_id = $1")
+				.bind(id.raw())
+				.fetch_one(&a.pool)
+				.await
+				.unwrap();
+			payments_app::cancel(&ports(a), id, investor, now()).await.unwrap();
+			body
+		}
+	};
+	assert!(body_of("monthly rent".into()).await.contains("Reason: monthly rent."));
+	for bad in ["pay at https://evil.example/now".to_owned(), "www.evil.example now".to_owned(), "x".repeat(300)] {
+		let body = body_of(bad.clone()).await;
+		assert!(body.contains("The reason is on the confirmation page."), "{bad}: {body}");
+		assert!(!body.contains("evil") && !body.contains("xxxx"), "{body}");
+	}
 
 	reset(&a.pool).await;
 }

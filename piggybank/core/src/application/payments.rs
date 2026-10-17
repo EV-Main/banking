@@ -426,6 +426,14 @@ pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Resul
 		let reason = "the stored terms no longer match the payload hash that was approved".to_owned();
 		return ports.payments.record_execution(id, ExecutionOutcome::Failed(reason), now).await;
 	}
+	// A decision concierge has voided unexecuted is not authority any more, however long this
+	// plane held it (the pause, a held relay): the order fails closed with the reason.
+	if let Some(by) = view.concierge.as_ref().and_then(|seat| seat.execute_by)
+		&& now > by
+	{
+		let reason = "the approval's execution window lapsed before the payment was carried out".to_owned();
+		return ports.payments.record_execution(id, ExecutionOutcome::Failed(reason), now).await;
+	}
 	// An order approved before the treasury closed must not pay out either; the failure is
 	// terminal, mailed like any other.
 	if spending_closed(order.terms().from()) {

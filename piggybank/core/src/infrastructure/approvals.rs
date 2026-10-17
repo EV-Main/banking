@@ -16,7 +16,7 @@ use evconcierge_contracts::concierge::v1::{
 };
 use tonic::{Code, Request, Status, metadata::MetadataValue, transport::Channel};
 
-use crate::ports::scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal};
+use crate::ports::scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof};
 
 /// A call that has not answered by then is treated as concierge being unavailable; the
 /// executor retries on its next round.
@@ -172,22 +172,32 @@ fn view(approval: Approval) -> Result<ApprovalView, ApprovalsError> {
 		state,
 		level,
 		payload_hash: approval.payload_hash,
+		execute_by: approval.execute_by,
 	})
 }
 
 #[async_trait]
 impl Approvals for ConciergeApprovals {
 	async fn propose(&self, proposal: &Proposal) -> Result<ApprovalView, ApprovalsError> {
-		let request = self.request(ProposeRequest {
+		self.propose_for(proposal, None).await
+	}
+
+	async fn propose_for(&self, proposal: &Proposal, proof: Option<&UserProof>) -> Result<ApprovalView, ApprovalsError> {
+		let mut request = self.request(ProposeRequest {
 			kind: proposal.kind.clone(),
 			scope: proposal.scope.clone(),
 			subject_ref: proposal.subject_ref.clone(),
-			// banking acts for a service, which cannot prove which person asked it.
-			requested_by: String::new(),
+			// Without a proof banking acts for a service, which cannot prove which person asked.
+			requested_by: proof.map(|proof| proof.requested_by.clone()).unwrap_or_default(),
 			reason: proposal.reason.clone(),
 			fields: proposal.fields.iter().map(field).collect(),
 			dedupe_key: proposal.dedupe_key.clone(),
 		})?;
+		if let Some(proof) = proof {
+			// The person's own token, raw and without `Bearer`, as the scope inbox takes it too.
+			let token: MetadataValue<_> = proof.token.parse().map_err(|_| ApprovalsError::Refused("the user token is not a valid header value".into()))?;
+			request.metadata_mut().insert("x-ev-user-token", token);
+		}
 		let approval = self.client().propose(request).await.map_err(|status| classify("Propose", status))?.into_inner();
 		view(approval)
 	}

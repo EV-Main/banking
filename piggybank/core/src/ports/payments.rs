@@ -195,6 +195,9 @@ pub struct ConciergeSeatView {
 	pub payload_hash: String,
 	/// The destination as the owners were shown it.
 	pub destination: String,
+	/// Unix seconds after which the passed decision is void unexecuted (concierge's
+	/// `execute_by`); `None` until the decision was carried to this plane.
+	pub execute_by: Option<i64>,
 }
 
 /// What a human recognises the receiving end BY, beside the canonical label. The label
@@ -428,7 +431,10 @@ pub trait PaymentRepository: Send + Sync {
 	/// `approval_id` must be the one the seat recorded when the proposal was opened; a seat
 	/// that has none yet (the answer to the proposal was lost) takes this one. A different id
 	/// is a [`DomainError::Conflict`]: one order, one approval. Under the order's row lock.
-	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, at: i64) -> Result<PaymentView, DomainError>;
+	///
+	/// `execute_by` is the decision's own deadline (0: unknown) and is stored with the seat; an
+	/// order whose own window ended (`expires_at` at or before `at`) is not approved.
+	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, execute_by: i64, at: i64) -> Result<PaymentView, DomainError>;
 
 	/// The investor's own answer to an order seated on [`ApprovalSeat::Session`], given signed
 	/// in. Under the order's lock it re-reads the pins, records the answer and moves the order,
@@ -463,8 +469,11 @@ pub struct DueApproval {
 /// executor's bookkeeping, and the other way round.
 #[async_trait]
 pub trait PaymentApprovalStore: Send + Sync {
-	/// Pending orders whose proposal is not opened yet and whose turn has come, oldest first.
-	async fn due_to_propose(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError>;
+	/// Pending orders whose proposal was never opened and which were written more than
+	/// `older_than_secs` ago, oldest first. The proposal is opened by the request that wrote the
+	/// order, with the proof of who asked; an order still without one is a request that died
+	/// between the two, and nothing may open it later without that proof.
+	async fn unproposed(&self, older_than_secs: u32, limit: u32) -> Result<Vec<DueApproval>, DomainError>;
 
 	/// Pending orders with an opened approval whose turn to be asked about has come.
 	async fn due_to_check(&self, limit: u32) -> Result<Vec<DueApproval>, DomainError>;
@@ -484,8 +493,9 @@ pub trait PaymentApprovalStore: Send + Sync {
 	/// Try again no sooner than `delay_secs` from now; counts one more attempt.
 	async fn postpone(&self, id: PaymentId, delay_secs: u32, why: &str) -> Result<(), DomainError>;
 
-	/// Concierge was told how the order ended.
-	async fn reported(&self, id: PaymentId) -> Result<(), DomainError>;
+	/// Concierge was told how the order ended, or refused to take it (`refused` says why and is
+	/// kept on the seat): either way nothing more is to be reported.
+	async fn reported(&self, id: PaymentId, refused: Option<&str>) -> Result<(), DomainError>;
 
 	/// The proposal of a dead order was taken back, or found already closed.
 	async fn withdrawn(&self, id: PaymentId) -> Result<(), DomainError>;

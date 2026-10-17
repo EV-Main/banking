@@ -84,6 +84,8 @@ struct FakeState {
 	throttle_next: u32,
 	/// Every `PublishScopeCatalog` refused for good.
 	refuse_publish: bool,
+	/// The stored catalog is newer than the one offered.
+	stale_publish: bool,
 }
 
 /// concierge's `ApprovalExecutionService` as banking sees it. The payload hash is computed
@@ -182,6 +184,7 @@ impl Approvals for FakeConcierge {
 				state: ApprovalState::Open,
 				level: Some(if platform { ApprovalLevel::Platform } else { ApprovalLevel::Scope }),
 				payload_hash: s.tamper_open.take().unwrap_or_else(|| concierge_hash(proposal)),
+				execute_by: 0,
 			};
 			s.by_dedupe.insert(proposal.dedupe_key.clone(), id.clone());
 			s.approvals.insert(
@@ -235,7 +238,10 @@ impl Approvals for FakeConcierge {
 		self.with(|s| {
 			s.calls.push("publish");
 			if s.refuse_publish {
-				return Err(ApprovalsError::Refused("version does not supersede the stored one".into()));
+				return Err(ApprovalsError::Refused("the catalog breaks this plane's floor".into()));
+			}
+			if s.stale_publish {
+				return Err(ApprovalsError::Refused(format!("version {version} does not supersede the stored {}", version + 1)));
 			}
 			if s.down || s.publish_outages > 0 {
 				s.publish_outages = s.publish_outages.saturating_sub(1);
@@ -1453,6 +1459,33 @@ async fn a_refused_catalog_holds_every_proposal_back() {
 	);
 	assert_eq!(h.catalog.refusals(), 1);
 	assert!(reload(&h, &asked).await.operation.progress().approval_id.is_none());
+}
+
+/// An image older than the release that published the stored catalog is refused "does not
+/// supersede": that one refusal logs and goes on, so a rolled-back image does not also lose
+/// every `bank:*` proposal.
+#[tokio::test]
+async fn a_catalog_older_than_the_stored_one_does_not_hold_proposals() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "1000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "3000").await;
+	let (_, alice) = user(&h).await;
+	let b = base(&h, &grants);
+	let asked = ops::request_payout(&ops_ports(&h, &b), &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1500")], &key()))
+		.await
+		.unwrap();
+	h.concierge.with(|s| {
+		s.stale_publish = true;
+		// The stored catalog (a newer build's) holds the kind, as concierge's would.
+		s.catalog = Some((BANK_CATALOG_VERSION + 1, BANK_CATALOG.iter().map(|spec| spec.kind.to_owned()).collect()));
+	});
+	round(&h, &grants).await;
+	assert_eq!(h.catalog.refusals(), 1, "counted, to alert on");
+	assert!(
+		reload(&h, &asked).await.operation.progress().approval_id.is_some(),
+		"and the proposal went out against the stored catalog"
+	);
 }
 
 #[tokio::test]

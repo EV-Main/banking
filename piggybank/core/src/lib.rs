@@ -145,6 +145,9 @@ pub struct AppState {
 	/// How a new payment order is seated: over concierge's approvals (the default) or by the
 	/// old consilium and emailed consent. See [`config::PaymentApprovalMode`].
 	pub payment_approvals: config::PaymentApprovalMode,
+	/// What opens a fund payment's approval with the proof of who asked. `None` only where no
+	/// concierge is wired (a test): a fund payment is then refused rather than opened unproposable.
+	pub payment_proposer: Option<Arc<application::payment_approvals::PaymentProposer>>,
 	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
 	/// page it points at is served by the cabinet, not here; the hub only has to mint a
 	/// link an owner's mail client will render.
@@ -232,12 +235,14 @@ impl AppState {
 			mandate_requests: scope_ledger,
 			scope_grants: Arc::new(Grants::default()),
 			payment_approvals: config::PaymentApprovalMode::Concierge,
+			payment_proposer: None,
 		}
 	}
 
 	/// The payment-approval switch as the environment set it.
-	pub fn with_payment_approvals(mut self, mode: config::PaymentApprovalMode) -> Self {
+	pub fn with_payment_approvals(mut self, mode: config::PaymentApprovalMode, proposer: Arc<application::payment_approvals::PaymentProposer>) -> Self {
 		self.payment_approvals = mode;
+		self.payment_proposer = Some(proposer);
 		self
 	}
 

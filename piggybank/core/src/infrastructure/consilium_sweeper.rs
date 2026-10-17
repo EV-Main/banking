@@ -28,14 +28,13 @@ use tracing::{error, info, warn};
 use crate::{
 	application::{
 		consilium as consilium_app,
-		payment_approvals::{self, ApprovalRound, ApprovalRoundPorts},
+		payment_approvals::{self, ApprovalRound, ApprovalRoundPorts, PaymentProposer},
 		payments as payments_app,
-		scope_operations::CatalogGate,
 	},
 	config::KycGate,
 	ports::{
 		AllocationRegistry, Custody, Deposits, FeePolicyChanges, NavMarks, OutflowPolicy, PaymentRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository,
-		WithdrawalRepository, consilium::ConsiliumRepository, deposit_addresses::DepositAddresses, ledger::Ledger, payments::PaymentApprovalStore, scope_operations::Approvals,
+		WithdrawalRepository, consilium::ConsiliumRepository, deposit_addresses::DepositAddresses, ledger::Ledger,
 	},
 };
 
@@ -58,14 +57,6 @@ pub struct SweepReport {
 	pub payments: payments_app::SweepReport,
 	/// The concierge-approved payments' half: proposals opened, decisions carried out.
 	pub approvals: ApprovalRound,
-}
-
-/// What the sweep needs to drive payments decided over concierge's approvals. Absent, those
-/// orders wait where they are and the old consilium path is untouched.
-pub struct PaymentApprovalDriver {
-	pub store: Arc<dyn PaymentApprovalStore>,
-	pub approvals: Arc<dyn Approvals>,
-	pub catalog: CatalogGate,
 }
 
 /// Constructed with a struct literal rather than a positional `new`: eight `Arc`s in a row
@@ -91,7 +82,9 @@ pub struct ConsiliumSweeper {
 	pub kyc: KycGate,
 	pub approval_url_base: String,
 	pub consent_url_base: String,
-	pub payment_approvals: Option<PaymentApprovalDriver>,
+	/// What drives payments decided over concierge's approvals. Absent, those orders wait where
+	/// they are and the old consilium path is untouched.
+	pub payment_approvals: Option<Arc<PaymentProposer>>,
 }
 
 impl ConsiliumSweeper {
@@ -201,7 +194,7 @@ impl ConsiliumSweeper {
 					payments: &payment_ports,
 					store: driver.store.as_ref(),
 					approvals: driver.approvals.as_ref(),
-					catalog: &driver.catalog,
+					catalog: driver.catalog.as_ref(),
 				},
 				now,
 			)

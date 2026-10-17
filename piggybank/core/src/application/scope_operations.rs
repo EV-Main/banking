@@ -524,10 +524,17 @@ impl CatalogGate {
 	}
 
 	/// Publish the catalog unless this process already did; `true` once proposing may go on.
-	/// A transient failure is retried with a doubling backoff. A refusal — an older version
-	/// than concierge stores, the same version with other kinds, a catalog concierge's floor
-	/// rejects — holds proposals too, retried hourly: proposing against a catalog this build
-	/// did not publish would put kinds in front of the voters that this build does not mean.
+	/// A transient failure is retried with a doubling backoff. A refusal — the same version
+	/// with other kinds, a catalog concierge's floor rejects — holds proposals too, retried
+	/// hourly: proposing against a catalog this build did not publish would put kinds in front
+	/// of the voters that this build does not mean.
+	///
+	/// A catalog OLDER than the stored one (an image rolled back below the release that
+	/// published the newer) is the one refusal that does not hold: it is logged at error and
+	/// proposing goes on, because concierge checks every proposal's kind and fields against the
+	/// catalog it holds, and execution is bound to the `payload_hash` stored with the operation.
+	/// Rolling the image back is still wrong — the way back is `PAYMENT_APPROVALS=consilium` —
+	/// but it must not stop every `bank:*` proposal on top of that.
 	pub(crate) async fn ensure(&self, approvals: &dyn Approvals) -> bool {
 		{
 			let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -543,6 +550,14 @@ impl CatalogGate {
 		match outcome {
 			Ok(()) => {
 				info!(version = BANK_CATALOG_VERSION, "scope operations: bank:* approval catalog published");
+				state.settled = true;
+			}
+			Err(ApprovalsError::Refused(why)) if why.contains("does not supersede") => {
+				let total = self.refusals.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+				error!(
+					version = BANK_CATALOG_VERSION,
+					total, "scope operations: concierge holds a newer bank:* catalog than this build's — an image older than the release that published it is running; proposing on: {why}"
+				);
 				state.settled = true;
 			}
 			Err(ApprovalsError::Refused(why)) => {

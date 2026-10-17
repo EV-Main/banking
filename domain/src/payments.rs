@@ -66,6 +66,13 @@ use crate::{
 /// The longest a TEXT field of an approval may be, in bytes (concierge's `ApprovalFieldType`).
 pub const APPROVAL_TEXT_MAX_BYTES: usize = 200;
 
+/// Whether a text is one the approval — and the notices built on the same words — would carry:
+/// within [`APPROVAL_TEXT_MAX_BYTES`], no control character, no link.
+pub fn is_plain_text(value: &str) -> bool {
+	let lowered = value.to_lowercase();
+	value.len() <= APPROVAL_TEXT_MAX_BYTES && !value.chars().any(char::is_control) && !lowered.contains("://") && !lowered.contains("www.")
+}
+
 /// A unique payment-order id (UUID). Minted by the application layer.
 pub type PaymentId = Id<PaymentTag>;
 /// Phantom tag making [`PaymentId`] a distinct, incompatible identity type.
@@ -75,10 +82,19 @@ pub struct PaymentTag;
 /// token lives for, because they close the same gap: a human has to read a mail and act.
 pub const TTL_SECS: i64 = 72 * 60 * 60;
 
-/// How long an order stays open while a concierge approval decides it (7 days): the approval
-/// is open for up to 72 hours, and a passed one waits out its veto delay (up to 72 hours)
-/// before it can be executed. What ends the order earlier is the approval's own end.
+/// How long an order stays open while a concierge approval decides it (7 days). The approval
+/// is open for up to 72 hours, a passed one waits out its veto delay (24 hours by default, up
+/// to 72 by policy), and is then executable for 72 hours; the order must outlive the part of
+/// that which comes before its execution. What ends the order earlier is the approval's own end.
 pub const CONCIERGE_TTL_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// What a decision needs before it can be carried out at the default policy: 72 hours open and
+/// a 24-hour veto delay. An order proposed with less window left than this plus
+/// [`DECISION_MARGIN_SECS`] could pass and then find itself expired.
+pub const DECISION_WINDOW_SECS: i64 = 96 * 60 * 60;
+
+/// Room on top of [`DECISION_WINDOW_SECS`] for the executor's own cadence.
+pub const DECISION_MARGIN_SECS: i64 = 2 * 60 * 60;
 
 /// The longest reason an initiator may attach, **in bytes**. Bytes, not characters, because the limit exists to
 /// bound what a mail and a column carry, and both count bytes.
@@ -446,8 +462,7 @@ impl PaymentTerms {
 	/// sentence the order carries, and a reason cut to fit would approve something else.
 	pub fn approval_fields(&self, destination: &str) -> Result<Vec<ApprovalField>, DomainError> {
 		let text = |key: &'static str, value: &str| -> Result<ApprovalField, DomainError> {
-			let lowered = value.to_lowercase();
-			if value.len() > APPROVAL_TEXT_MAX_BYTES || value.chars().any(char::is_control) || lowered.contains("://") || lowered.contains("www.") {
+			if !is_plain_text(value) {
 				return Err(DomainError::Validation(format!(
 					"the {key} of a payment decided by the platform owners is at most {APPROVAL_TEXT_MAX_BYTES} bytes of plain text without a link"
 				)));

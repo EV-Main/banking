@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::{
 	AppState,
-	application::payments as payments_app,
+	application::{payment_approvals, payments as payments_app},
 	ports::payments::{ConsentAudit, ConsentDecision, ConsentInvitation, EndDetail, PaymentFilter, PaymentView},
 	services::support::{MAX_AUDIT_IP_BYTES, MAX_AUDIT_USER_AGENT_BYTES, caller_id, clamp, map_err, require_permission, unfrozen_caller, unix_now},
 };
@@ -302,7 +302,9 @@ fn confirmation_to_proto(view: &PaymentView) -> pb::PaymentConfirmation {
 		expires_at: order.expires_at(),
 		decision: view.session.as_ref().map(|session| decision_to_proto(session.decision)).unwrap_or_default(),
 		invalidated: view.session.as_ref().is_some_and(|session| session.invalidated.is_some()),
-		failure_reason: order.failure_reason().unwrap_or_default().to_owned(),
+		// Empty on purpose: the order's reason is the operators' wording (a domain error, a
+		// pin), not text for the person whose money it is; the page words the failure itself.
+		failure_reason: String::new(),
 	}
 }
 
@@ -339,13 +341,29 @@ impl PaymentsService for PaymentsSvc {
 	async fn open_payment(&self, request: Request<pb::OpenPaymentRequest>) -> Result<Response<pb::Payment>, Status> {
 		require_permission(&self.state, &request, bank::Payment::Open).await?;
 		let initiator = caller_id(&request)?;
+		// The proof of who asked, for a payment the owners decide: the initiator's own access
+		// token of the identity plane, minted for this request. Relayed to concierge, never logged.
+		let proof_token = request.metadata().get("x-ev-user-token").and_then(|value| value.to_str().ok()).map(str::to_owned);
 		let req = request.into_inner();
 		let source = self.state.parse_party(req.source.as_ref()).await?;
 		let destination = self.state.parse_destination(req.destination.as_ref()).await?;
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
 		let reason = PaymentReason::new(req.reason).map_err(map_err)?;
 		let terms = PaymentTerms::new(source, destination, amount, reason).map_err(map_err)?;
-		let view = payments_app::open(&self.state.payment_ports(), initiator, terms, unix_now()).await.map_err(map_err)?;
+		let payment_ports = self.state.payment_ports();
+		let view = match &self.state.payment_proposer {
+			Some(proposer) => {
+				let ports = payment_approvals::ApprovalRoundPorts {
+					payments: &payment_ports,
+					store: proposer.store.as_ref(),
+					approvals: proposer.approvals.as_ref(),
+					catalog: proposer.catalog.as_ref(),
+				};
+				payment_approvals::open_with_proof(&ports, initiator, terms, proof_token.as_deref(), unix_now()).await
+			}
+			None => payments_app::open(&payment_ports, initiator, terms, unix_now()).await,
+		}
+		.map_err(map_err)?;
 		// WARN on success on purpose: a proposal to move money between two named ends is
 		// worth an audit line that stands out, the same way a payout proposal is.
 		tracing::warn!(
