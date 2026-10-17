@@ -513,7 +513,7 @@ pub fn invoice_step(invoice: &Invoice) -> Result<NewMoneyEvent, DomainError> {
 		InvoiceState::Cancelled => (MoneyEventKind::InvoiceCancelled, terms.client.as_str()),
 		// Banking's own doing, by the clock the client set.
 		InvoiceState::Expired => (MoneyEventKind::InvoiceExpired, ""),
-		InvoiceState::Paid => return Err(DomainError::Repository(format!("invoice {}: a payment's event is the relay's", invoice.id()))),
+		InvoiceState::Processing | InvoiceState::Paid => return Err(DomainError::Repository(format!("invoice {}: a payment's event is the relay's", invoice.id()))),
 	};
 	Ok(NewMoneyEvent {
 		event_id: event_id(&format!("invoice:{}:{}", invoice.id(), invoice.version())),

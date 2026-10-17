@@ -21,7 +21,11 @@ service InvoicePaymentService {
   // Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, when the
   // chosen source cannot cover it, or when the payer is below the receiving scope's
   // `min_kyc_level`. A repeat with the same `idempotency_key` returns
-  // the paid invoice; paying it again under a new key is FAILED_PRECONDITION.
+  // the invoice you paid; paying it again under a new key is FAILED_PRECONDITION.
+  // PAID MEANS POSTED. The answer is the invoice as it stands now: `processing` while the
+  // ledger has not taken the payment (normally milliseconds), `paid` once it has. A
+  // payment the ledger refuses puts the invoice back to `open`, payable again. Poll
+  // `GetPayableInvoice` until it leaves `processing`.
   rpc PayInvoice(PayInvoiceRequest) returns (PayableInvoice);
 }
 
@@ -35,10 +39,12 @@ message PayableInvoice {
   string display_name = 3;    // the scope's human name
   string amount = 4;          // decimal USDT
   string memo = 5;            // the scope's text, plain
-  string state = 6;           // open | paid | cancelled | expired
+  // open | processing | paid | cancelled | expired. `paid` only once the ledger has posted
+  // the payment; `processing` until then (it ends as `paid`, or back at `open` if refused).
+  string state = 6;
   int64 expires_at = 7;       // unix seconds
-  int64 paid_at = 8;          // unix seconds, once paid
-  string paid_from = 9;       // once paid: `main` or the scope
+  int64 paid_at = 8;          // unix seconds, once paid (posted), to the payer only
+  string paid_from = 9;       // once paid (posted): `main` or the scope
   // What the caller could pay from right now, decimal USDT: their `main` available
   // balance and their available balance in this scope's compartment.
   string available_main = 10;

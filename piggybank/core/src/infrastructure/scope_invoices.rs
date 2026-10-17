@@ -236,6 +236,7 @@ impl InvoiceStore for PgScopeLedger {
 			Ok(true) => record_closed(&mut tx, &mut recorded.invoice).await?,
 			Ok(false) => {}
 			Err(InvoiceRefusal::NotOpen) => return Err(TransferError::Refused(LedgerRefusal::InvoiceNotOpen)),
+			Err(InvoiceRefusal::Processing) => return Err(TransferError::Refused(LedgerRefusal::InvoiceProcessing)),
 			Err(other) => return Err(TransferError::Internal(format!("invoice {id}: a cancel refused as {}", other.reason()))),
 		}
 		tx.commit().await.map_err(repo_err)?;

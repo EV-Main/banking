@@ -252,6 +252,9 @@ pub enum LedgerRefusal {
 	MandateRequired,
 	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
 	InvoiceNotOpen,
+	/// The invoice's payment is waiting for the ledger, so it can be neither cancelled nor
+	/// treated as closed yet (FAILED_PRECONDITION).
+	InvoiceProcessing,
 }
 
 impl LedgerRefusal {
@@ -267,6 +270,7 @@ impl LedgerRefusal {
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
 			Self::InvoiceNotOpen => "invoice_not_open",
+			Self::InvoiceProcessing => "invoice_processing",
 		}
 	}
 
@@ -281,7 +285,8 @@ impl LedgerRefusal {
 			| Self::HoldNotActive
 			| Self::UserFrozen
 			| Self::MandateRequired
-			| Self::InvoiceNotOpen => false,
+			| Self::InvoiceNotOpen
+			| Self::InvoiceProcessing => false,
 		}
 	}
 }

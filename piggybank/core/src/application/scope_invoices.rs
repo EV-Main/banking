@@ -283,8 +283,8 @@ impl PaymentAdmission for Admission<'_> {
 	async fn admit(&self, invoice: &mut Invoice, facts: &PaymentFacts, reads: &mut dyn LockedReads) -> Result<(), PaymentError> {
 		// What is no longer payable says so before anything about the payer: a second payer of a
 		// paid invoice learns that, not why they could not have paid it anyway.
-		// The stored state, not the read view: a payment still waiting for the ledger reads open
-		// but is a payment all the same.
+		// The stored state, not the read view: a payment still waiting for the ledger reads
+		// processing but is a payment all the same.
 		if invoice.state() != InvoiceState::Open || invoice.is_due(facts.now) {
 			return Err(PaymentError::Refused(InvoiceRefusal::NotOpen));
 		}

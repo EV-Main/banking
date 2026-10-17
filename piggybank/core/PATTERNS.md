@@ -1178,7 +1178,7 @@ transaction, so a second payer waiting on the row finds it taken; the payer's ke
 user on the row (`scope_invoices_pay_key_idx`). **Paid means posted**: the payment follows the
 relay's `Posting` discipline like a move — counted from the row in `unapplied_debits` (the
 `scope_invoices` kind is left out of the outbox scan), stamped `posted` by the relay, and only
-then shown as PAID (to the issuer and the payer alike) and sent as INVOICE_PAID. A refused or
+then shown as PAID (to the issuer and the payer alike) and sent as INVOICE_PAID. Until then every read shows PROCESSING (a view, never stored: the row is `paid` with `ledger_state = pending`), with no payer named; `CancelInvoice` in that window is `invoice_processing`, not `invoice_not_open`. A refused or
 parked leg reopens the invoice (`scope_invoices::fail_payment`: `open`, payment columns and key
 cleared, version + 1, `pay_failure_reason`, a `PaymentFailed` fact in the event log) — the
 issuer, never told of the payment, hears nothing. The stamps match the attempt's version, so a
