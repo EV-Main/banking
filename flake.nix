@@ -1306,6 +1306,10 @@
           ledger-gap = pkgs.runCommand "ledger-gap" { meta.mainProgram = "ledger-gap"; } ''
             install -Dm755 ${bankingBins}/bin/ledger-gap $out/bin/ledger-gap
           '';
+          # The migration window runs it by hand against the primary (docs/WINDOW-EXPORT.md).
+          window-export = pkgs.runCommand "window-export" { meta.mainProgram = "window-export"; } ''
+            install -Dm755 ${bankingBins}/bin/window-export $out/bin/window-export
+          '';
         } // containerStd.packages;
 
         containers = containerStd.containers;

@@ -15,6 +15,10 @@ path = "src/main.rs"
 name = "ledger-gap"
 path = "src/ledger_gap.rs"
 
+[[bin]]
+name = "window-export"
+path = "src/window_export.rs"
+
 [features]
 # The concierge governance-mail transport — how an owner is actually told that a consilium
 # is waiting on them. ON by default: a consilium nobody can be emailed about is one

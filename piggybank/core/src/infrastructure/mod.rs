@@ -114,5 +114,6 @@ pub mod tron_rpc;
 pub mod tron_sweep;
 pub mod tron_withdrawal_watcher;
 pub mod users;
+pub mod window_export;
 pub mod withdrawal_watcher;
 pub mod withdrawals;
