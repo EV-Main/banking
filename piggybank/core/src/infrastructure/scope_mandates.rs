@@ -461,6 +461,34 @@ impl MandateRequestStore for PgScopeLedger {
 	async fn create(&self, terms: &MandateRequestTerms, idempotency_key: &str, ttl_seconds: i64) -> Result<Requested, DomainError> {
 		let mut conn = self.pool().acquire().await.map_err(repo_err)?;
 		if let Some((stored, request)) = by_key(&mut conn, &terms.client, idempotency_key).await? {
+			let now = db_now(&mut conn).await?;
+			if stored != terms.canonical() || request.expires_at > now {
+				return Ok(Requested::Existing { terms: stored, request });
+			}
+			// The same ask repeated after its link died: the service retried with its own key, so
+			// it gets the same request alive again rather than a dead id.
+			terms.check_expiry(now)?;
+			// Two repeats extend once: the second finds the row alive and reads what the first set.
+			let extended = sqlx::query_as::<_, RequestRow>(concat!(
+				"UPDATE scope_mandate_requests SET expires_at = LEAST(now() + make_interval(secs => $2), mandate_expires_at) ",
+				"WHERE id = $1 AND expires_at <= now() ",
+				"RETURNING id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
+				"EXTRACT(EPOCH FROM mandate_expires_at)::BIGINT, EXTRACT(EPOCH FROM created_at)::BIGINT, EXTRACT(EPOCH FROM expires_at)::BIGINT"
+			))
+			.bind(request.id)
+			.bind(ttl_seconds as f64)
+			.fetch_optional(&mut *conn)
+			.await
+			.map_err(repo_err)?;
+			let request = match extended {
+				Some(row) => request_from(row)?,
+				None => sqlx::query_as::<_, RequestRow>(select_request!("WHERE id = $1"))
+					.bind(request.id)
+					.fetch_one(&mut *conn)
+					.await
+					.map_err(repo_err)
+					.and_then(request_from)?,
+			};
 			return Ok(Requested::Existing { terms: stored, request });
 		}
 		terms.check_expiry(db_now(&mut conn).await?)?;
@@ -469,7 +497,7 @@ impl MandateRequestStore for PgScopeLedger {
 		let inserted = sqlx::query_as::<_, RequestRow>(concat!(
 			"INSERT INTO scope_mandate_requests (id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
 			"mandate_expires_at, idempotency_key, terms, expires_at) ",
-			"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9), $10, $11, now() + make_interval(secs => $12)) ",
+			"VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9), $10, $11, LEAST(now() + make_interval(secs => $12), to_timestamp($9))) ",
 			"ON CONFLICT (client_id, idempotency_key) DO NOTHING ",
 			"RETURNING id, scope, client_id, cap_per_op, cap_24h, cap_outstanding, cap_book_fill_24h, operations, ",
 			"EXTRACT(EPOCH FROM mandate_expires_at)::BIGINT, EXTRACT(EPOCH FROM created_at)::BIGINT, EXTRACT(EPOCH FROM expires_at)::BIGINT"

@@ -159,6 +159,9 @@ impl MandateTerms {
 	}
 }
 
+/// The nearest end a request may propose for its mandate: one hour.
+pub const MIN_REQUEST_MANDATE_SECONDS: i64 = 60 * 60;
+
 /// What a scope's service asks a user to grant: a [`MandateTerms`] before there is a user.
 /// The same rules hold, so a request that could never be granted is refused when it is made.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -184,8 +187,15 @@ impl MandateRequestTerms {
 		})
 	}
 
+	/// As a grant's expiry, and not within [`MIN_REQUEST_MANDATE_SECONDS`]: the request lives no
+	/// longer than the mandate it proposes, so a nearer end would hand out a link that dies
+	/// within minutes.
 	pub fn check_expiry(&self, now: i64) -> Result<(), DomainError> {
-		check_expiry_at(self.mandate_expires_at, now)
+		check_expiry_at(self.mandate_expires_at, now)?;
+		match self.mandate_expires_at {
+			Some(at) if at < now.saturating_add(MIN_REQUEST_MANDATE_SECONDS) => Err(DomainError::Validation("mandate_expires_at must be at least an hour ahead".into())),
+			Some(_) | None => Ok(()),
+		}
 	}
 
 	/// For the idempotency comparison, as [`MandateTerms::canonical`].
