@@ -3329,7 +3329,8 @@ export type BankingV1PayableInvoice = {
     /**
      * state
      *
-     * open | paid | cancelled | expired
+     * open | processing | paid | cancelled | expired. `paid` only once the ledger has posted
+     * the payment; `processing` until then (it ends as `paid`, or back at `open` if refused).
      */
     state?: string;
     /**
@@ -3341,13 +3342,13 @@ export type BankingV1PayableInvoice = {
     /**
      * paid_at
      *
-     * unix seconds, once paid
+     * unix seconds, once paid (posted), to the payer only
      */
     paid_at?: number | string;
     /**
      * paid_from
      *
-     * once paid: `main` or the scope
+     * once paid (posted): `main` or the scope
      */
     paid_from?: string;
     /**

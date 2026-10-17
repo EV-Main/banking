@@ -5081,7 +5081,7 @@
           "banking.v1.InvoicePaymentService"
         ],
         "summary": "PayInvoice",
-        "description": "Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, when the\n chosen source cannot cover it, or when the payer is below the receiving scope's\n `min_kyc_level`. A repeat with the same `idempotency_key` returns\n the paid invoice; paying it again under a new key is FAILED_PRECONDITION.",
+        "description": "Pay an OPEN invoice. FAILED_PRECONDITION when it is no longer open, when the\n chosen source cannot cover it, or when the payer is below the receiving scope's\n `min_kyc_level`. A repeat with the same `idempotency_key` returns\n the invoice you paid; paying it again under a new key is FAILED_PRECONDITION.\n PAID MEANS POSTED. The answer is the invoice as it stands now: `processing` while the\n ledger has not taken the payment (normally milliseconds), `paid` once it has. A\n payment the ledger refuses puts the invoice back to `open`, payable again. Poll\n `GetPayableInvoice` until it leaves `processing`.",
         "operationId": "banking.v1.InvoicePaymentService.PayInvoice",
         "parameters": [
           {
@@ -11990,7 +11990,7 @@
           "state": {
             "type": "string",
             "title": "state",
-            "description": "open | paid | cancelled | expired"
+            "description": "open | processing | paid | cancelled | expired. `paid` only once the ledger has posted\n the payment; `processing` until then (it ends as `paid`, or back at `open` if refused)."
           },
           "expires_at": {
             "type": [
@@ -12008,12 +12008,12 @@
             ],
             "title": "paid_at",
             "format": "int64",
-            "description": "unix seconds, once paid"
+            "description": "unix seconds, once paid (posted), to the payer only"
           },
           "paid_from": {
             "type": "string",
             "title": "paid_from",
-            "description": "once paid: `main` or the scope"
+            "description": "once paid (posted): `main` or the scope"
           },
           "available_main": {
             "type": "string",

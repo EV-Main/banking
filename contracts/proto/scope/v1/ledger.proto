@@ -117,8 +117,9 @@ syntax = "proto3";
 //
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
-// `hold_not_active`, `invoice_not_open`, `scope_frozen`, `scope_closed`, `user_frozen`,
-// `not_account_owner`, `not_granted`, `fee_route_unavailable`); clients branch on (code, message) and nothing else.
+// `hold_not_active`, `invoice_not_open`, `invoice_processing`, `scope_frozen`, `scope_closed`,
+// `user_frozen`, `not_account_owner`, `not_granted`, `fee_route_unavailable`); clients branch on
+// (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
 // positive, at most the ledger's precision. Banking reads any plain decimal and always

@@ -32,6 +32,10 @@ pub const MAX_INVOICE_TTL_SECS: i64 = 30 * 24 * 60 * 60;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvoiceState {
 	Open,
+	/// A payment is recorded but the ledger has not posted it yet. A read-only view
+	/// ([`Invoice::state_at`]): it is never stored, because the stored state of such an invoice
+	/// is `Paid` with an unposted payment, and it ends as `Paid` (posted) or `Open` (refused).
+	Processing,
 	Paid,
 	Cancelled,
 	Expired,
@@ -41,6 +45,7 @@ impl InvoiceState {
 	pub const fn as_str(self) -> &'static str {
 		match self {
 			Self::Open => "open",
+			Self::Processing => "processing",
 			Self::Paid => "paid",
 			Self::Cancelled => "cancelled",
 			Self::Expired => "expired",
@@ -50,6 +55,7 @@ impl InvoiceState {
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
 		match raw {
 			"open" => Ok(Self::Open),
+			// `processing` is deliberately absent: it is a view, never a stored state.
 			"paid" => Ok(Self::Paid),
 			"cancelled" => Ok(Self::Cancelled),
 			"expired" => Ok(Self::Expired),
@@ -108,6 +114,10 @@ pub struct InvoicePayment {
 pub enum InvoiceRefusal {
 	/// Paid, cancelled, expired, or past its expiry (FAILED_PRECONDITION).
 	NotOpen,
+	/// A payment is waiting for the ledger (FAILED_PRECONDITION). Told apart from `NotOpen` so a
+	/// cancelling issuer learns to retry once the payment resolves, not that the invoice is
+	/// closed for good — it may yet fall back to open.
+	Processing,
 	/// The invoice names another payer. Answered as the same NOT_FOUND as an unknown id, so
 	/// nobody learns which invoice ids exist.
 	OtherPayer,
@@ -123,6 +133,7 @@ impl InvoiceRefusal {
 	pub const fn reason(self) -> &'static str {
 		match self {
 			Self::NotOpen => "invoice_not_open",
+			Self::Processing => "invoice_processing",
 			Self::OtherPayer => "not_found",
 			Self::KycLevel => "kyc_level",
 			Self::ScopeFrozen => "scope_frozen",
@@ -231,14 +242,14 @@ impl Invoice {
 
 	/// The state as anyone reading it at `now` must see it: an open invoice past its expiry is
 	/// expired even before the reaper records it, so no reader offers to pay it; a payment the
-	/// ledger has not taken yet is not a payment to anyone outside — the invoice reads open
-	/// until it posts (and stays open if it is refused).
+	/// ledger has not taken yet is not a payment to anyone outside — the invoice reads
+	/// processing until it posts (paid), or falls back to open if the ledger refuses it.
 	pub fn state_at(&self, now: i64) -> InvoiceState {
 		if self.is_due(now) {
 			return InvoiceState::Expired;
 		}
 		match (self.state, &self.payment) {
-			(InvoiceState::Paid, Some(payment)) if !payment.posted => InvoiceState::Open,
+			(InvoiceState::Paid, Some(payment)) if !payment.posted => InvoiceState::Processing,
 			(state, _) => state,
 		}
 	}
@@ -302,7 +313,8 @@ impl Invoice {
 	}
 
 	/// Withdraw an open invoice: `true` when it is cancelled now, `false` when it already was.
-	/// Paid, expired, or past its expiry is [`InvoiceRefusal::NotOpen`].
+	/// Paid, expired, or past its expiry is [`InvoiceRefusal::NotOpen`]; a payment still waiting
+	/// for the ledger is [`InvoiceRefusal::Processing`].
 	pub fn cancel(&mut self, now: i64) -> Result<bool, InvoiceRefusal> {
 		match self.state {
 			InvoiceState::Cancelled => Ok(false),
@@ -310,7 +322,9 @@ impl Invoice {
 				self.close(false);
 				Ok(true)
 			}
-			InvoiceState::Open | InvoiceState::Paid | InvoiceState::Expired => Err(InvoiceRefusal::NotOpen),
+			InvoiceState::Paid if self.payment.as_ref().is_some_and(|payment| !payment.posted) => Err(InvoiceRefusal::Processing),
+			// `Processing` is a view and never the stored state; refused like any closed invoice.
+			InvoiceState::Open | InvoiceState::Processing | InvoiceState::Paid | InvoiceState::Expired => Err(InvoiceRefusal::NotOpen),
 		}
 	}
 
@@ -508,7 +522,7 @@ mod tests {
 
 		let mut paid = open(None);
 		paid.pay(payment("u-1", Compartment::Main, NOW)).unwrap();
-		assert_eq!(paid.cancel(NOW), Err(InvoiceRefusal::NotOpen));
+		assert_eq!(paid.cancel(NOW), Err(InvoiceRefusal::Processing));
 
 		let mut due = open(None);
 		assert_eq!(due.cancel(NOW + 3600), Err(InvoiceRefusal::NotOpen));
@@ -522,7 +536,8 @@ mod tests {
 		let mut invoice = open(None);
 		invoice.pay(payment("u-1", Compartment::Main, NOW)).unwrap();
 		invoice.drain_events();
-		assert_eq!((invoice.state(), invoice.state_at(NOW)), (InvoiceState::Paid, InvoiceState::Open));
+		assert_eq!((invoice.state(), invoice.state_at(NOW)), (InvoiceState::Paid, InvoiceState::Processing));
+		assert_eq!(invoice.clone().cancel(NOW), Err(InvoiceRefusal::Processing), "a cancel waits for the ledger's answer");
 		assert!(invoice.posted_payment().is_none());
 		assert!(invoice.fail_payment("insufficient_funds"));
 		assert_eq!((invoice.state(), invoice.version()), (InvoiceState::Open, 3));
@@ -539,6 +554,8 @@ mod tests {
 		)
 		.unwrap();
 		assert_eq!(posted.state_at(NOW), InvoiceState::Paid);
+		assert!(InvoiceState::parse("processing").is_err(), "processing is a view, never stored");
+		assert_eq!(posted.clone().cancel(NOW), Err(InvoiceRefusal::NotOpen), "a posted payment is closed for good");
 		assert!(!posted.clone().fail_payment("late"), "a posted payment is final");
 	}
 

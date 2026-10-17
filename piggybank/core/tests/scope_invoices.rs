@@ -327,12 +327,15 @@ async fn paying_from_main_posts_one_transfer_into_the_scope_account_without_the_
 
 	let k = key();
 	let paid = pay(&h, user, &invoice, Compartment::Main, &k).await.unwrap();
-	// Paid means posted: until the relay applies it, nobody — payer or issuer — reads it paid.
-	assert_eq!(paid.state(), InvoiceState::Open);
+	// Paid means posted: until the relay applies it, nobody — payer or issuer — reads it paid;
+	// both read it processing.
+	assert_eq!(paid.state(), InvoiceState::Processing);
 	assert!(paid.own_payment().is_none());
 	assert_eq!(paid.recorded.invoice.payment().map(|payment| payment.from.clone()), Some(Compartment::Main));
 	let unposted = invoices_app::get_invoice(&issuer_ports(&h, &grants), &client, &scope, invoice_id(&invoice)).await.unwrap();
-	assert_eq!(unposted.invoice.state_at(unposted.read_at), InvoiceState::Open);
+	assert_eq!(unposted.invoice.state_at(unposted.read_at), InvoiceState::Processing);
+	let listed = invoices_app::get_payable(&payer_ports(&h), user, invoice_id(&invoice)).await.unwrap();
+	assert_eq!(listed.state(), InvoiceState::Processing);
 	assert!(unposted.invoice.posted_payment().is_none());
 	// Before the relay applied it, the payment is already spoken for.
 	let second = issue(&h, &client, &grants, &scope, "10", None).await;
@@ -530,8 +533,17 @@ async fn a_cancelled_invoice_stays_cancelled_and_takes_no_payment() {
 
 	let paid = issue(&h, &client, &grants, &scope, "1", None).await;
 	pay(&h, user, &paid, Compartment::Main, &key()).await.unwrap();
-	assert_eq!(refusal(invoices_app::cancel_invoice(&p, &client, &scope, invoice_id(&paid)).await), LedgerRefusal::InvoiceNotOpen);
+	// The payment waits for the ledger: a cancel gets its own reason, not "closed".
+	assert_eq!(
+		refusal(invoices_app::cancel_invoice(&p, &client, &scope, invoice_id(&paid)).await),
+		LedgerRefusal::InvoiceProcessing
+	);
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
+	assert_eq!(
+		refusal(invoices_app::cancel_invoice(&p, &client, &scope, invoice_id(&paid)).await),
+		LedgerRefusal::InvoiceNotOpen,
+		"once posted it is closed for good"
+	);
 
 	let kinds: Vec<MoneyEventKind> = events_of(&h, &client, &grants, &scope)
 		.await

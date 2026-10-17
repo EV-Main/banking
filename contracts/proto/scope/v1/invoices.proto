@@ -10,8 +10,10 @@ package scope.v1;
 //
 // PAID MEANS POSTED. An invoice is PAID — here, in `GetInvoice`, and as
 // `KIND_INVOICE_PAID` — only once the ledger has taken the payment. Until then it reads
-// OPEN with no payer, and a payment the ledger refuses leaves it OPEN, payable again; the
-// issuer is never told of a payment that did not happen. This is how a
+// PROCESSING with no payer, and a payment the ledger refuses leaves it OPEN, payable
+// again; the issuer is never told of a payment that did not happen. PROCESSING is a
+// moment, not an outcome: poll `GetInvoice` or wait for `KIND_INVOICE_PAID`, and never
+// fulfil on it. This is how a
 // service takes a one-off payment from a user who gave it no mandate.
 //
 // Grants, identifiers, amounts, `idempotency_key` and `subject_ref` follow
@@ -27,8 +29,9 @@ service InvoiceService {
   // `idempotency_key`, by design: it names the invoice and asks for one end state, so a
   // retry IS a repeat — cancelling a cancelled invoice returns it unchanged, whoever
   // cancelled it and whenever. A paid or expired one (an open one past `expires_at`
-  // included, and one whose payment is waiting for the ledger) is FAILED_PRECONDITION
-  // `invoice_not_open`.
+  // included) is FAILED_PRECONDITION `invoice_not_open`; one whose payment is waiting for
+  // the ledger (PROCESSING) is FAILED_PRECONDITION `invoice_processing` — it may still fall
+  // back to open, so retry once it settles.
   rpc CancelInvoice(CancelInvoiceRequest) returns (Invoice);
 
   // One invoice the caller issued, as it stands now; anyone else's is NOT_FOUND. An open
@@ -43,6 +46,10 @@ enum InvoiceState {
   INVOICE_STATE_PAID = 2;
   INVOICE_STATE_CANCELLED = 3;
   INVOICE_STATE_EXPIRED = 4;
+  // The payer has paid, but the ledger has not posted it yet (normally milliseconds). NOT a
+  // payment: it ends as PAID, or falls back to OPEN if the ledger refuses it. Do not
+  // fulfil on it; wait for PAID / `KIND_INVOICE_PAID`.
+  INVOICE_STATE_PROCESSING = 5;
 }
 
 message CreateInvoiceRequest {

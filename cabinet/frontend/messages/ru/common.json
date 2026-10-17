@@ -7579,10 +7579,6 @@
     "en": "Move funds",
     "t": "Перевести средства"
   },
-  "walletAction.payTitle": {
-    "en": "Pay invoice",
-    "t": "Оплатить счёт"
-  },
   "walletAction.unavailable": {
     "en": "This is not available yet. Nothing has been charged or moved.",
     "t": "Пока недоступно. Ничего не списано и не перемещено."
@@ -7674,5 +7670,45 @@
   "walletMfe.allActivity": {
     "en": "See all activity",
     "t": "Все операции"
+  },
+  "walletAction.fromMain": {
+    "en": "Main balance",
+    "t": "Основной баланс"
+  },
+  "walletAction.fromScope": {
+    "en": "{scope} balance",
+    "t": "Баланс {scope}"
+  },
+  "walletAction.invoiceClosed": {
+    "en": "This invoice can no longer be paid. Nothing has been charged.",
+    "t": "Этот счёт больше нельзя оплатить. Ничего не списано."
+  },
+  "walletAction.invoiceMissing": {
+    "en": "This link does not name an invoice.",
+    "t": "В ссылке не указан счёт."
+  },
+  "walletAction.invoicePaid": {
+    "en": "This invoice is paid.",
+    "t": "Этот счёт оплачен."
+  },
+  "walletAction.payFrom": {
+    "en": "Pay from",
+    "t": "Оплатить с"
+  },
+  "walletAction.payNow": {
+    "en": "Pay",
+    "t": "Оплатить"
+  },
+  "walletAction.payRefused": {
+    "en": "The payment did not go through. Nothing was charged — you can try again.",
+    "t": "Платёж не прошёл. Ничего не списано — можно попробовать снова."
+  },
+  "walletAction.processing": {
+    "en": "Processing your payment…",
+    "t": "Платёж обрабатывается…"
+  },
+  "walletAction.processingSlow": {
+    "en": "Still processing. You can close this window — the payment is not lost, and the service is told once it completes.",
+    "t": "Платёж ещё обрабатывается. Окно можно закрыть — платёж не потерян, сервис узнает о нём, как только он завершится."
   }
 }

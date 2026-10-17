@@ -7579,10 +7579,6 @@
     "en": "Move funds",
     "t": "Transférer des fonds"
   },
-  "walletAction.payTitle": {
-    "en": "Pay invoice",
-    "t": "Payer la facture"
-  },
   "walletAction.unavailable": {
     "en": "This is not available yet. Nothing has been charged or moved.",
     "t": "Ce n’est pas encore disponible. Rien n’a été débité ni déplacé."
@@ -7674,5 +7670,45 @@
   "walletMfe.allActivity": {
     "en": "See all activity",
     "t": "Voir toute l’activité"
+  },
+  "walletAction.fromMain": {
+    "en": "Main balance",
+    "t": "Solde principal"
+  },
+  "walletAction.fromScope": {
+    "en": "{scope} balance",
+    "t": "Solde {scope}"
+  },
+  "walletAction.invoiceClosed": {
+    "en": "This invoice can no longer be paid. Nothing has been charged.",
+    "t": "Cette facture ne peut plus être payée. Rien n'a été débité."
+  },
+  "walletAction.invoiceMissing": {
+    "en": "This link does not name an invoice.",
+    "t": "Ce lien ne désigne aucune facture."
+  },
+  "walletAction.invoicePaid": {
+    "en": "This invoice is paid.",
+    "t": "Cette facture est payée."
+  },
+  "walletAction.payFrom": {
+    "en": "Pay from",
+    "t": "Payer depuis"
+  },
+  "walletAction.payNow": {
+    "en": "Pay",
+    "t": "Payer"
+  },
+  "walletAction.payRefused": {
+    "en": "The payment did not go through. Nothing was charged — you can try again.",
+    "t": "Le paiement n'a pas abouti. Rien n'a été débité — vous pouvez réessayer."
+  },
+  "walletAction.processing": {
+    "en": "Processing your payment…",
+    "t": "Traitement de votre paiement…"
+  },
+  "walletAction.processingSlow": {
+    "en": "Still processing. You can close this window — the payment is not lost, and the service is told once it completes.",
+    "t": "Traitement en cours. Vous pouvez fermer cette fenêtre — le paiement n'est pas perdu et le service en sera informé dès qu'il sera terminé."
   }
 }

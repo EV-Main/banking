@@ -252,6 +252,9 @@ pub enum LedgerRefusal {
 	MandateRequired,
 	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
 	InvoiceNotOpen,
+	/// The invoice's payment is waiting for the ledger, so it can be neither cancelled nor
+	/// treated as closed yet (FAILED_PRECONDITION).
+	InvoiceProcessing,
 	/// A fee sweep would land where banking cannot route it on: the scope's route destination
 	/// (invest's `alloc:fee`) is not open yet (FAILED_PRECONDITION). Nothing is moved, so the
 	/// fee never gets stuck on a collector; retry once the account exists.
@@ -271,6 +274,7 @@ impl LedgerRefusal {
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
 			Self::InvoiceNotOpen => "invoice_not_open",
+			Self::InvoiceProcessing => "invoice_processing",
 			Self::FeeRouteUnavailable => "fee_route_unavailable",
 		}
 	}
@@ -287,6 +291,7 @@ impl LedgerRefusal {
 			| Self::UserFrozen
 			| Self::MandateRequired
 			| Self::InvoiceNotOpen
+			| Self::InvoiceProcessing
 			| Self::FeeRouteUnavailable => false,
 		}
 	}

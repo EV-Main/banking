@@ -684,8 +684,8 @@ impl InvoiceService for ScopeLedgerSvc {
 fn invoice_to_proto(recorded: &RecordedInvoice) -> pb::Invoice {
 	let invoice = &recorded.invoice;
 	let terms = invoice.terms();
-	// A payment the ledger has not taken is nobody's news yet: the invoice reads open
-	// (`state_at`) and names no payer until it posts.
+	// A payment the ledger has not taken is nobody's news yet: the invoice reads
+	// processing (`state_at`) and names no payer until it posts.
 	let payment = invoice.posted_payment();
 	pb::Invoice {
 		invoice_id: invoice.id().to_string(),
@@ -696,6 +696,7 @@ fn invoice_to_proto(recorded: &RecordedInvoice) -> pb::Invoice {
 		// An open invoice past its expiry reads expired before the reaper records it.
 		state: match invoice.state_at(recorded.read_at) {
 			InvoiceState::Open => pb::InvoiceState::Open,
+			InvoiceState::Processing => pb::InvoiceState::Processing,
 			InvoiceState::Paid => pb::InvoiceState::Paid,
 			InvoiceState::Cancelled => pb::InvoiceState::Cancelled,
 			InvoiceState::Expired => pb::InvoiceState::Expired,
