@@ -80,6 +80,8 @@ struct Tb {
 	supply: Supply,
 	total: AllocationTotal,
 	ownership: Option<Ownership>,
+	/// Pending + locked on the supply, the cash claim and every holding.
+	in_flight: u128,
 }
 
 /// What an export holds, for the operator's summary.
@@ -254,8 +256,9 @@ async fn export_in_snapshot<W: Write>(conn: &mut PgConnection, ledger: &dyn Ledg
 	lines.put_all(fee_settlements, Record::FeeSettlement)?;
 	lines.put_all(users, Record::User)?;
 	let mut totals = Vec::with_capacity(tb.len());
-	let (mut total_held, mut total_outstanding) = (0u128, 0u128);
+	let (mut total_held, mut total_outstanding, mut in_flight) = (0u128, 0u128, 0u128);
 	for t in tb {
+		in_flight = in_flight.checked_add(t.in_flight).ok_or_else(|| eyre!("Σ pending units overflow u128"))?;
 		lines.put_all(t.holdings, Record::ShareHolding)?;
 		lines.put(&Record::Supply(t.supply))?;
 		if let Some(ownership) = t.ownership {
@@ -269,7 +272,7 @@ async fn export_in_snapshot<W: Write>(conn: &mut PgConnection, ledger: &dyn Ledg
 	}
 
 	let outbox_undispatched = u64::try_from(outbox_undispatched).wrap_err("outbox count is negative")?;
-	let clean = outbox_undispatched == 0 && totals.iter().all(|t| t.balanced);
+	let clean = outbox_undispatched == 0 && in_flight == 0 && totals.iter().all(|t| t.balanced);
 	// The trailer counts itself, so a reader summing `counts` gets the line count of the file.
 	lines.counts.insert("trailer".to_owned(), 1);
 	let trailer = Trailer {
@@ -279,6 +282,7 @@ async fn export_in_snapshot<W: Write>(conn: &mut PgConnection, ledger: &dyn Ledg
 		total_held: total_held.to_string(),
 		total_outstanding: total_outstanding.to_string(),
 		outbox_undispatched,
+		pending_or_locked: in_flight.to_string(),
 		clean,
 	};
 	lines.put(&Record::Trailer(trailer.clone()))?;
@@ -299,7 +303,21 @@ async fn read_allocation(ledger: &dyn Ledger, slug: &str) -> Result<Tb> {
 
 	let mut holdings = Vec::new();
 	let (mut users, mut book, mut fee) = (0u128, 0u128, 0u128);
-	for (key, posted) in ledger.share_holdings(&HoldingScope::Product(service.clone())).await.map_err(|e| eyre!("{e}"))? {
+	let scanned = ledger.share_holdings(&HoldingScope::Product(service.clone())).await.map_err(|e| eyre!("{e}"))?;
+	// `share_holdings` is posted-only; a pending leg (a redemption's reserved burn) is read
+	// from the account itself, zero-balance holdings included.
+	let keys: Vec<LedgerAccountKey> = scanned.iter().map(|(key, _)| key.clone()).collect();
+	let mut in_flight = [&outstanding, &claim]
+		.iter()
+		.try_fold(0u128, |acc, b| acc.checked_add(b.pending)?.checked_add(b.locked))
+		.ok_or_else(|| eyre!("pending units of {slug} overflow u128"))?;
+	for balance in ledger.balances(&keys).await.map_err(|e| eyre!("{e}"))? {
+		in_flight = in_flight
+			.checked_add(balance.pending)
+			.and_then(|s| s.checked_add(balance.locked))
+			.ok_or_else(|| eyre!("pending units of {slug} overflow u128"))?;
+	}
+	for (key, posted) in scanned {
 		if posted == 0 {
 			continue;
 		}
@@ -368,6 +386,7 @@ async fn read_allocation(ledger: &dyn Ledger, slug: &str) -> Result<Tb> {
 			balanced: held == outstanding.posted,
 		},
 		ownership,
+		in_flight,
 	})
 }
 

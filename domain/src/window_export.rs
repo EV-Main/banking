@@ -321,8 +321,19 @@ pub struct Trailer {
 	/// Outbox events neither dispatched nor parked at the snapshot. The window needs `0`:
 	/// anything else is money that had not reached TigerBeetle when it was read.
 	pub outbox_undispatched: u64,
-	/// Every allocation balanced and nothing in the outbox.
+	/// Σ units and cash the ledger showed as pending or locked at the read (in-flight
+	/// two-phase transfers: a redemption's reserved burn, a withdrawal's reserve). The window
+	/// needs `0`: a pending leg can still post or void, so the posted balances are not final.
+	/// Added after schema 1 shipped, with a default, so a file without it reads as `0` and
+	/// a reader of the earlier shape ignores it: the schema version did not change.
+	#[serde(default = "zero_units")]
+	pub pending_or_locked: String,
+	/// Every allocation balanced, nothing in the outbox and nothing pending or locked.
 	pub clean: bool,
+}
+
+fn zero_units() -> String {
+	"0".to_owned()
 }
 
 #[cfg(test)]
