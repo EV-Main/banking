@@ -7,7 +7,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_ledger::{ClientId, ScopeTransfer},
-	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout},
+	scope_operations::{ApprovalField, KindSpec, PendingOperation, ScopePayout, TopicSpec},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId},
 	users::UserId,
 };
@@ -337,7 +337,8 @@ pub trait Approvals: Send + Sync {
 	/// Concierge allows it only while the proposal is OPEN, or PASSED before `executable_at`.
 	async fn withdraw(&self, approval_id: &str, reason: &str) -> Result<(), ApprovalsError>;
 
-	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole:
-	/// the same version with the same kinds is a no-op on concierge's side.
-	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError>;
+	/// Publish banking's namespace catalog (`ScopeCatalogService.PublishScopeCatalog`), whole —
+	/// the approval kinds and the notification topics together, as concierge stores them as
+	/// one: the same version with the same content is a no-op on concierge's side.
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec], topics: &[TopicSpec]) -> Result<(), ApprovalsError>;
 }

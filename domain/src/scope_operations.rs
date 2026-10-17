@@ -553,7 +553,9 @@ pub struct EscalationSpec {
 /// One `bank:*` kind as banking publishes it (`ApprovalKindSpec`).
 #[derive(Clone, Copy, Debug)]
 pub struct KindSpec {
-	pub kind: OperationKind,
+	/// `<namespace>:<name>`. A string and not [`OperationKind`]: `bank:payment` is decided over
+	/// a payment order, not a pending operation, and shares only the catalog with them.
+	pub kind: &'static str,
 	pub label: &'static str,
 	pub description: &'static str,
 	pub level: KindLevel,
@@ -564,14 +566,14 @@ pub struct KindSpec {
 /// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
 /// every change to the catalog — concierge refuses a catalog of the version it stores with
 /// other content, and one more than a day ahead of its clock.
-pub const BANK_CATALOG_VERSION: u64 = 1_792_108_800;
+pub const BANK_CATALOG_VERSION: u64 = 1_792_281_600;
 
 /// [`BANK_CATALOG`] rendered field by field, one line per item — what a test pins, beside
 /// [`BANK_CATALOG_VERSION`], so the catalog cannot change without the version moving.
 pub fn bank_catalog_canonical() -> String {
 	let mut out = String::new();
 	for spec in BANK_CATALOG {
-		out.push_str(&format!("kind\t{}\t{}\t{}\t{:?}\n", spec.kind.as_str(), spec.label, spec.description, spec.level));
+		out.push_str(&format!("kind\t{}\t{}\t{}\t{:?}\n", spec.kind, spec.label, spec.description, spec.level));
 		for field in spec.fields {
 			out.push_str(&format!("field\t{}\t{}\t{:?}\t{}\n", field.key, field.label, field.field_type, field.required));
 		}
@@ -582,8 +584,40 @@ pub fn bank_catalog_canonical() -> String {
 			));
 		}
 	}
+	for topic in BANK_TOPICS {
+		out.push_str(&format!("topic\t{}\t{}\t{}\t{}\n", topic.topic, topic.label, topic.description, topic.default_subscribed));
+	}
 	out
 }
+
+/// The notification topic of the money plane's notices to a person about their own money
+/// (`bank:money-movement`): a payment out of their claim that awaits their confirmation, and
+/// the end of one that died. Published in banking's catalog — concierge accepts an emit on a
+/// namespace's topic only once its catalog in force holds it.
+pub const MONEY_MOVEMENT_TOPIC: &str = "bank:money-movement";
+
+/// One notification topic as banking publishes it (`NotificationTopicSpec`).
+#[derive(Clone, Copy, Debug)]
+pub struct TopicSpec {
+	pub topic: &'static str,
+	/// Plain text, at most 60 bytes.
+	pub label: &'static str,
+	/// Plain text, at most 200 bytes.
+	pub description: &'static str,
+	/// Whether an account that never touched the topic receives it.
+	pub default_subscribed: bool,
+}
+
+/// The topics banking publishes beside [`BANK_CATALOG`], in the same publication.
+pub const BANK_TOPICS: &[TopicSpec] = &[TopicSpec {
+	topic: MONEY_MOVEMENT_TOPIC,
+	label: "Money movement",
+	description: "Payments out of your account that wait for your confirmation, and what became of them.",
+	// A payment awaiting the owner of the money is the one notice that must not depend on the
+	// user having found a settings page; they can still switch it off, and the payment stays
+	// answerable in the cabinet either way.
+	default_subscribed: true,
+}];
 
 const fn field(key: &'static str, label: &'static str, field_type: FieldType, required: bool) -> FieldSpec {
 	FieldSpec { key, label, field_type, required }
@@ -596,13 +630,35 @@ const TRANSFER_FIELDS: &[FieldSpec] = &[
 	field("amount", "Amount", FieldType::Amount, true),
 ];
 
-/// The kinds banking proposes today — what [`PendingOperation::approval_fields`] sends,
-/// field for field. `bank:payment`, `bank:seed_capital`, `bank:treasury_surplus` and
-/// `bank:compartment_policy` join it when banking opens them over this seam; a catalog is
-/// published whole, so a kind left out here is one concierge stops accepting.
+/// The kind of a payment order decided by the platform owners (`bank:payment`, concierge's
+/// `domain::floors`: always PLATFORM). Proposed in [`PAYMENT_APPROVAL_SCOPE`] over
+/// `payment:<uuid>`.
+pub const PAYMENT_KIND: &str = "bank:payment";
+
+/// The scope a payment is proposed in: platform money belongs to no scope, and concierge
+/// resolves a proposal in `main` to the owners.
+pub const PAYMENT_APPROVAL_SCOPE: &str = "main";
+
+/// The fields of `bank:payment`: concierge's table names `tier`, `source`, `destination` and
+/// `amount`; `reason` rides beside them because it is the sentence the approvers read to
+/// learn why the money moves.
+const PAYMENT_FIELDS: &[FieldSpec] = &[
+	field("tier", "Tier", FieldType::Text, true),
+	field("source", "Source", FieldType::Text, true),
+	field("destination", "Destination", FieldType::Text, true),
+	field("amount", "Amount", FieldType::Amount, true),
+	field("reason", "Reason", FieldType::Text, true),
+];
+
+/// The kinds banking proposes today — what [`PendingOperation::approval_fields`] and
+/// `PaymentTerms::approval_fields` send, field for field. `bank:seed_capital` is not here
+/// (it goes with the allocations, banking#245), and `bank:treasury_surplus` and
+/// `bank:compartment_policy` join when banking has a path that opens them — the treasury's
+/// spending is closed and a scope's policy has no RPC yet. A catalog is published whole, so
+/// a kind left out here is one concierge stops accepting.
 pub const BANK_CATALOG: &[KindSpec] = &[
 	KindSpec {
-		kind: OperationKind::ScopePayout,
+		kind: OperationKind::ScopePayout.as_str(),
 		label: "Payout from a scope account",
 		description: "A payout from a scope account to users' compartments in the scope, requested by the scope's service.",
 		level: KindLevel::Scope,
@@ -659,7 +715,7 @@ pub const BANK_CATALOG: &[KindSpec] = &[
 		],
 	},
 	KindSpec {
-		kind: OperationKind::AccountTransfer,
+		kind: OperationKind::AccountTransfer.as_str(),
 		label: "Transfer between accounts of a scope",
 		description: "A transfer between two accounts of one scope, requested by the service that owns both.",
 		level: KindLevel::Scope,
@@ -682,7 +738,15 @@ pub const BANK_CATALOG: &[KindSpec] = &[
 		],
 	},
 	KindSpec {
-		kind: OperationKind::ScopeTransfer,
+		kind: PAYMENT_KIND,
+		label: "Payment from fund money",
+		description: "A payment out of an allocation's pooled claim or banking's treasury, to an internal claim or an address; the platform owners decide it.",
+		level: KindLevel::Platform,
+		fields: PAYMENT_FIELDS,
+		escalations: &[],
+	},
+	KindSpec {
+		kind: OperationKind::ScopeTransfer.as_str(),
 		label: "Transfer between scopes",
 		description: "A transfer from an account of one scope into an account of another, requested by the service that owns both.",
 		level: KindLevel::Platform,
@@ -1189,7 +1253,7 @@ mod tests {
 	/// every required field is always carried — else concierge refuses the proposal.
 	#[test]
 	fn the_catalog_declares_exactly_what_the_approvals_carry() {
-		let spec = |kind: OperationKind| BANK_CATALOG.iter().find(|spec| spec.kind == kind).expect("kind published");
+		let spec = |kind: OperationKind| BANK_CATALOG.iter().find(|spec| spec.kind == kind.as_str()).expect("kind published");
 		let ops = [
 			payout_op(vec![paid("a", "1")]),
 			payout_op(vec![paid("a", "1"), paid("b", "2")]),

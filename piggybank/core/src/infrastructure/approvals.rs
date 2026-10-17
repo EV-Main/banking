@@ -8,10 +8,10 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, EscalationTest, FieldType, KindLevel, KindSpec};
+use domain::scope_operations::{APPROVAL_CURRENCY, ApprovalField, ApprovalValue, EscalationTest, FieldType, KindLevel, KindSpec, TopicSpec};
 use evconcierge_contracts::concierge::v1::{
 	Approval, ApprovalAmount, ApprovalEscalation, ApprovalFieldSpec, ApprovalFieldType, ApprovalFieldValue, ApprovalKindSpec, ApprovalLevel as WireLevel, ApprovalOutcome as WireOutcome,
-	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
+	ApprovalState as WireState, EscalationTest as WireTest, GetProposalRequest, NotificationTopicSpec, ProposeRequest, PublishScopeCatalogRequest, PullApprovedRequest, ReportOutcomeRequest,
 	WithdrawProposalRequest, approval_execution_service_client::ApprovalExecutionServiceClient, approval_field_value::Value, scope_catalog_service_client::ScopeCatalogServiceClient,
 };
 use tonic::{Code, Request, Status, metadata::MetadataValue, transport::Channel};
@@ -89,7 +89,7 @@ fn field(field: &ApprovalField) -> ApprovalFieldValue {
 
 fn kind_spec(spec: &KindSpec) -> ApprovalKindSpec {
 	ApprovalKindSpec {
-		name: spec.kind.as_str().to_owned(),
+		name: spec.kind.to_owned(),
 		label: spec.label.to_owned(),
 		description: spec.description.to_owned(),
 		level: match spec.level {
@@ -129,6 +129,15 @@ fn kind_spec(spec: &KindSpec) -> ApprovalKindSpec {
 			.collect(),
 		// Filled by concierge on read; ignored on publish.
 		proposer: String::new(),
+	}
+}
+
+fn topic_spec(spec: &TopicSpec) -> NotificationTopicSpec {
+	NotificationTopicSpec {
+		topic: spec.topic.to_owned(),
+		label: spec.label.to_owned(),
+		description: spec.description.to_owned(),
+		default_subscribed: spec.default_subscribed,
 	}
 }
 
@@ -221,12 +230,11 @@ impl Approvals for ConciergeApprovals {
 		Ok(())
 	}
 
-	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError> {
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec], topics: &[TopicSpec]) -> Result<(), ApprovalsError> {
 		let request = self.request(PublishScopeCatalogRequest {
 			version,
 			approval_kinds: kinds.iter().map(kind_spec).collect(),
-			// banking publishes no notification topics; its mails go through the relay.
-			notification_topics: Vec::new(),
+			notification_topics: topics.iter().map(topic_spec).collect(),
 		})?;
 		ScopeCatalogServiceClient::new(self.channel.clone())
 			.publish_scope_catalog(request)

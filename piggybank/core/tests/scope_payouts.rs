@@ -231,7 +231,7 @@ impl Approvals for FakeConcierge {
 		})
 	}
 
-	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec]) -> Result<(), ApprovalsError> {
+	async fn publish_catalog(&self, version: u64, kinds: &[KindSpec], _topics: &[domain::scope_operations::TopicSpec]) -> Result<(), ApprovalsError> {
 		self.with(|s| {
 			s.calls.push("publish");
 			if s.refuse_publish {
@@ -241,7 +241,7 @@ impl Approvals for FakeConcierge {
 				s.publish_outages = s.publish_outages.saturating_sub(1);
 				return Err(ApprovalsError::Unavailable("down".into()));
 			}
-			let names: Vec<String> = kinds.iter().map(|spec| spec.kind.as_str().to_owned()).collect();
+			let names: Vec<String> = kinds.iter().map(|spec| spec.kind.to_owned()).collect();
 			match &s.catalog {
 				// concierge's rule: the same version with the same content is a no-op, with
 				// other content or older is refused.
@@ -675,7 +675,7 @@ async fn a_line_past_the_per_line_ceiling_needs_the_owners() {
 		proposal.fields.iter().any(|f| f.key == "max_line" && f.value == ApprovalValue::Amount(usdt("1500"))),
 		"the approvers and the escalation rule see the largest line"
 	);
-	let spec = BANK_CATALOG.iter().find(|k| k.kind == OperationKind::ScopePayout).unwrap();
+	let spec = BANK_CATALOG.iter().find(|k| k.kind == OperationKind::ScopePayout.as_str()).unwrap();
 	assert!(
 		spec.escalations
 			.iter()
@@ -1249,7 +1249,7 @@ async fn the_catalog_is_published_before_the_first_proposal_and_once_per_version
 	assert!(reload(&h, &asked).await.operation.progress().approval_id.is_some());
 	let stored = h.concierge.with(|s| s.catalog.clone()).unwrap();
 	assert_eq!(stored.0, BANK_CATALOG_VERSION);
-	assert_eq!(stored.1, BANK_CATALOG.iter().map(|spec| spec.kind.as_str().to_owned()).collect::<Vec<_>>());
+	assert_eq!(stored.1, BANK_CATALOG.iter().map(|spec| spec.kind.to_owned()).collect::<Vec<_>>());
 
 	// A restart publishes again, and concierge keeps the one version.
 	let restarted = CatalogGate::new();
