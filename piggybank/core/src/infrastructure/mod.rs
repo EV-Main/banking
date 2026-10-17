@@ -38,6 +38,8 @@
 //!   approval, [`approvals`] concierge's approval execution seam over the bridge.
 //! - [`scope_invoices`] — Postgres adapter for invoices scopes issue and users pay (the
 //!   payment is posted by the relay), plus the reaper's expiry of open invoices.
+//! - [`scope_charges`] — Postgres adapter for one-off charges of users' compartments (posted by
+//!   the relay), plus the reaper's replay of a lost one.
 //! - [`scope_events`] — the consumer of concierge's scope stream: keeps `scopes` (state,
 //!   version) as concierge has them, registering scopes banking has not seen.
 //! - [`operation_feed`] — the read-side merge of the four money projections into one
@@ -85,6 +87,7 @@ pub mod reaper;
 pub mod reconciliation;
 pub mod redemptions;
 pub mod relay;
+pub mod scope_charges;
 pub mod scope_events;
 pub mod scope_holds;
 pub mod scope_invoices;

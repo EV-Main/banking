@@ -15,10 +15,9 @@
 //!
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
 //! `Void`, `GetHold` — a `Reserve` stands on the user's mandate for the client),
-//! `Payout`, the requested operations (`RequestPayout`, `RequestTransfer`,
-//! `GetPendingOperation`), `InvoiceService` and `MoneyEvents.Pull`, behind the same two
-//! layers. `Charge` is UNIMPLEMENTED with the reason, and a client must treat that as "not
-//! yet", not "never".
+//! `Charge` (a one-off debit on the user's mandate), `Payout`, the requested
+//! operations (`RequestPayout`, `RequestTransfer`, `GetPendingOperation`), `InvoiceService` and
+//! `MoneyEvents.Pull`, behind the same two layers.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -64,6 +63,7 @@ use uuid::Uuid;
 
 use crate::{
 	application::{
+		scope_charges::{self as charges_app, ChargeRequest},
 		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts},
 		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ListHoldsRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
@@ -72,6 +72,7 @@ use crate::{
 	ports::{
 		compartments::CompartmentStore,
 		ledger::Ledger,
+		scope_charges::RecordedCharge,
 		scope_invoices::{InvoiceStore, RecordedInvoice},
 		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
 		scope_operations::{OperationStore, PayoutStore, RecordedOperation, RecordedPayout},
@@ -343,15 +344,8 @@ fn label_of(raw: &str) -> Result<ScopeAccountLabel, Status> {
 	ScopeAccountLabel::parse(raw).map_err(map_err)
 }
 
-/// What a part-1 server answers for an RPC it does not serve yet.
-fn not_yet(rpc: &str, why: &str) -> Status {
-	Status::unimplemented(format!("{rpc} is not served yet: {why}"))
-}
-
 /// Most labels one `GetBalances` may name: one ledger read per label.
 const MAX_BALANCE_LABELS: usize = 256;
-
-const NEEDS_CHARGES: &str = "a one-shot debit has no ledger posting yet; place a hold under the mandate and capture it";
 
 fn subject_of(raw: &str) -> Result<SubjectRef, Status> {
 	SubjectRef::parse(raw).map_err(map_err)
@@ -462,8 +456,19 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 	}
 
 	async fn charge(&self, request: Request<pb::ChargeRequest>) -> Result<Response<pb::ScopeCharge>, Status> {
-		caller(&request)?;
-		Err(not_yet("Charge", NEEDS_CHARGES))
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = ChargeRequest {
+			scope: scope_of(&req.scope)?,
+			auth_subject: req.auth_subject,
+			amount: Usdt::parse_decimal(&req.amount).map_err(map_err)?,
+			to: label_of(&req.to_label)?,
+			memo: req.memo,
+			subject_ref: subject_of(&req.subject_ref)?,
+			idempotency_key: req.idempotency_key,
+		};
+		let recorded = charges_app::charge(&self.ports(), &client, parsed).await.map_err(|err| refused("Charge", &client, err))?;
+		Ok(Response::new(charge_to_proto(&recorded)))
 	}
 
 	async fn payout(&self, request: Request<pb::PayoutRequest>) -> Result<Response<pb::ScopePayout>, Status> {
@@ -753,6 +758,7 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 			MoneyEventKind::HoldVoided => Kind::HoldVoided,
 			MoneyEventKind::HoldExpired => Kind::HoldExpired,
 			MoneyEventKind::Transferred => Kind::Transferred,
+			MoneyEventKind::Charged => Kind::Charged,
 			MoneyEventKind::PaidOut => Kind::PaidOut,
 			MoneyEventKind::OperationRequested => Kind::OperationRequested,
 			MoneyEventKind::OperationRejected => Kind::OperationRejected,
@@ -784,6 +790,22 @@ fn event_to_proto(event: &MoneyEventRecord) -> pb::MoneyEvent {
 		paid_from: event.paid_from.clone(),
 		counterparty_scope: event.counterparty_scope.clone(),
 		failure_reason: event.failure_reason.clone(),
+	}
+}
+
+fn charge_to_proto(recorded: &RecordedCharge) -> pb::ScopeCharge {
+	let terms = recorded.charge.terms();
+	pb::ScopeCharge {
+		charge_id: recorded.charge.id().to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		auth_subject: recorded.auth_subject.clone(),
+		amount: terms.amount.to_decimal_string(),
+		to_label: terms.to.as_str().to_owned(),
+		created_at: recorded.created_at,
+		subject_ref: terms.subject_ref.as_str().to_owned(),
+		memo: terms.memo.clone(),
+		mandate_id: terms.mandate_id.to_string(),
+		charged_by_client: terms.client.as_str().to_owned(),
 	}
 }
 

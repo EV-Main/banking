@@ -186,7 +186,17 @@ service ScopeLedgerService {
 
   // One-shot debit of a user's compartment into a scope account the caller owns,
   // under the user's mandate for the caller (operation CHARGE, counted against its
-  // caps).
+  // caps). Needs the `compartments` grant. A `to_label` the caller does not own — banking's
+  // `fee` and `treasury` included — is `not_account_owner`; a compartment that cannot cover
+  // the amount right now is `insufficient_funds`.
+  //
+  // Like Reserve, the answer means the charge is RECORDED; KIND_CHARGED in `MoneyEvents`
+  // means the ledger posted it. Should the ledger refuse it after all, the charge is
+  // stamped failed, nothing leaves the compartment, no CHARGED is ever delivered and it
+  // stops counting against the mandate — so a service ships what it sold on the money
+  // event, not on this answer. A charge not posted within an hour of the call is refused
+  // (failed, never announced). Revoking the mandate does not cancel a charge already
+  // recorded: the user's consent was given when the call was made.
   rpc Charge(ChargeRequest) returns (ScopeCharge);
 
   // Pay out of a scope account the caller owns into users' compartments in the scope,

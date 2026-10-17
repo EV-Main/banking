@@ -457,6 +457,10 @@ pub enum TransferCode {
 	/// `Dr <main or the compartment in the scope> / Cr scope_account:<scope>:<label>`, posted
 	/// at once.
 	InvoicePayment,
+	/// A scope's one-off charge of a user's compartment under their mandate
+	/// (`ScopeLedgerService.Charge`): `Dr scope_claim:<scope>:<user> / Cr
+	/// scope_account:<scope>:<label>`, posted at once.
+	ScopeCharge,
 }
 
 impl TransferCode {
@@ -496,6 +500,7 @@ impl TransferCode {
 			Self::ScopeHold => 57,
 			Self::ScopePayout => 59,
 			Self::InvoicePayment => 58,
+			Self::ScopeCharge => 60,
 		}
 	}
 }
@@ -1041,6 +1046,7 @@ mod tests {
 			TransferCode::ScopeHold,
 			TransferCode::ScopePayout,
 			TransferCode::InvoicePayment,
+			TransferCode::ScopeCharge,
 		]
 		.map(TransferCode::code);
 		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();

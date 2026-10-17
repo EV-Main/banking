@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use domain::{
 	architecture::DomainEvent,
 	balance::LedgerAccountKey,
+	scope_charges::ChargeEvent,
 	scope_invoices::InvoiceEvent,
 	scope_ledger::ScopeLedgerEvent,
 	scope_operations::ScopePayoutEvent,
@@ -16,7 +17,7 @@ use sqlx::PgConnection;
 use tracing::warn;
 
 use crate::{
-	infrastructure::{compartments, ledger, outbox::OutboxRow, relay, scope_invoices, scope_ledger},
+	infrastructure::{compartments, ledger, outbox::OutboxRow, relay, scope_charges, scope_invoices, scope_ledger},
 	ports::ledger::{LedgerError, LockedReads},
 };
 
@@ -62,19 +63,24 @@ fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 	}
 }
 
-/// Moves, scope transfers, payouts and invoice payments are counted from their own tables,
+/// Moves, scope transfers, payouts, invoice payments and charges are counted from their own tables,
 /// not the outbox: a `pending` one whose event a relay dispatched without posting (the
 /// reaper's case) is still promised away.
 const UNAPPLIED_EVENTS: &str = "SELECT seq, event_id, aggregate, aggregate_id, kind, payload::text AS payload, attempts FROM outbox \
 	 WHERE dispatched_at IS NULL AND parked_at IS NULL AND kind <> ALL($1) AND ($2::text IS NULL OR strpos(payload::text, $2) > 0)";
 
 /// What the user's own rows promise out of `compartment` and the ledger has not taken yet: their
-/// `pending` moves out of it and their `pending` invoice payments from it.
+/// `pending` moves out of it and their `pending` invoice payments from it and, for a compartment, their `pending` charges.
 async fn user_pending(conn: &mut PgConnection, user: UserId, compartment: &Compartment) -> Result<domain::money::Usdt, domain::error::DomainError> {
 	let moves = compartments::pending_out(&mut *conn, user, compartment).await?;
 	let payments = scope_invoices::pending_payments(&mut *conn, user, compartment).await?;
+	let charges = match compartment {
+		Compartment::Main => domain::money::Usdt::ZERO,
+		Compartment::Scope(scope) => scope_charges::pending_charges(&mut *conn, user, scope).await?,
+	};
 	moves
 		.checked_add(payments)
+		.and_then(|total| total.checked_add(charges))
 		.ok_or_else(|| domain::error::DomainError::Repository(format!("pending debits of {} overflow", compartment.as_str())))
 }
 
@@ -92,7 +98,7 @@ pub async fn unapplied_debits(conn: &mut PgConnection, key: &LedgerAccountKey) -
 	.map_err(|e| LedgerError::Unavailable(format!("pending moves and transfers of {}: {e}", key.logical_key())))?
 	.map_or(0, |pending| pending.base_units());
 	let rows = sqlx::query_as::<_, OutboxRow>(UNAPPLIED_EVENTS)
-		.bind([CompartmentEvent::KIND, ScopeLedgerEvent::KIND, ScopePayoutEvent::KIND, InvoiceEvent::KIND].as_slice())
+		.bind([CompartmentEvent::KIND, ScopeLedgerEvent::KIND, ScopePayoutEvent::KIND, InvoiceEvent::KIND, ChargeEvent::KIND].as_slice())
 		.bind(owner(key).map(|user| user.to_string()))
 		.fetch_all(&mut *conn)
 		.await

@@ -342,7 +342,7 @@ async fn production_serve_mounts_the_hubs_authorizer() {
 }
 
 #[tokio::test]
-async fn an_rpc_not_served_yet_says_so() {
+async fn charge_is_served_and_reads_its_request() {
 	let Some(h) = harness().await else { return };
 	let addr = ephemeral().await;
 	let server = serve_stub(&h, addr).await;
@@ -365,9 +365,10 @@ async fn an_rpc_not_served_yet_says_so() {
 		ScopeLedgerServiceClient::new(channel).charge(request).await
 	})
 	.await;
-	let status = outcome.expect_err("Charge is not served yet");
-	assert_eq!(status.code(), Code::Unimplemented);
-	assert!(status.message().starts_with("Charge is not served yet"), "{}", status.message());
+	// An empty request is read and refused by the handler itself (no amount), not answered as
+	// "not served": the call got through both layers.
+	let status = outcome.expect_err("an empty Charge names no amount");
+	assert_eq!(status.code(), Code::InvalidArgument, "{}", status.message());
 }
 
 // MoneyEvents is a second service on the listener: it must sit behind both layers too.

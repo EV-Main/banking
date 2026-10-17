@@ -14,7 +14,7 @@ use domain::{
 };
 use uuid::Uuid;
 
-use crate::ports::{compartments::ScopeRecord, ledger::LockedReads};
+use crate::ports::{compartments::ScopeRecord, ledger::LockedReads, scope_charges::ChargeStore};
 
 /// The RPC names idempotency keys are unique under, as stored.
 pub const RPC_OPEN_ACCOUNT: &str = "open_account";
@@ -115,8 +115,10 @@ pub trait TransferAdmission: Send + Sync {
 	async fn admit(&self, facts: &TransferFacts, reads: &mut dyn LockedReads) -> Result<(), TransferError>;
 }
 
+/// A client's charges are part of the same control plane (one key space, one handle on the
+/// ports), hence the supertrait.
 #[async_trait]
-pub trait ScopeLedgerStore: Send + Sync {
+pub trait ScopeLedgerStore: ChargeStore + Send + Sync {
 	/// Every account `client` owns in `scope`, ordered by label.
 	async fn accounts_of(&self, client: &ClientId, scope: &ScopeId) -> Result<Vec<OwnedAccount>, DomainError>;
 
