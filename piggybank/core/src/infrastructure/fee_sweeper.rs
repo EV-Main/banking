@@ -55,6 +55,7 @@ use crate::{
 		fees::{FeeAssessments, FeePolicies, FeePolicyChanges, PositionAccruals},
 		ledger::Ledger,
 		nav::NavMarks,
+		outflow::OutflowPolicy,
 	},
 };
 
@@ -87,6 +88,9 @@ pub struct FeeSweeper {
 }
 
 impl FeeSweeper {
+	// Composition-root wiring: each argument is a distinct port the sweeper needs, and
+	// bundling them into a struct would only rename the same list.
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		policies: Arc<dyn FeePolicies>,
 		changes: Arc<dyn FeePolicyChanges>,

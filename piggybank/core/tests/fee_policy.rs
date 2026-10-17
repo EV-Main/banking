@@ -885,6 +885,7 @@ async fn the_sweeper_charges_every_due_position_and_records_a_statement() {
 		h.ledger.clone(),
 		Arc::new(PgNav::new(h.pool.clone())),
 		h.notify.clone(),
+		Arc::new(piggybank_core::infrastructure::outflow::PgOutflowPolicy::new(h.pool.clone())),
 	);
 	assert!(sweeper.sweep(now_unix()).await.unwrap() >= 1, "the backdated position is due");
 	h.relay.drain().await;
