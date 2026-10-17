@@ -144,6 +144,14 @@ impl Grpc {
 		cc::governance_service_client::GovernanceServiceClient::new(self.concierge.clone())
 	}
 
+	fn payout_review(&self) -> bk::payout_review_service_client::PayoutReviewServiceClient<Channel> {
+		bk::payout_review_service_client::PayoutReviewServiceClient::new(self.piggybank.clone())
+	}
+
+	fn approvals(&self) -> cc::approval_service_client::ApprovalServiceClient<Channel> {
+		cc::approval_service_client::ApprovalServiceClient::new(self.concierge.clone())
+	}
+
 	fn removal_approval(&self) -> cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient<Channel> {
 		cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient::new(self.concierge.clone())
 	}
@@ -158,6 +166,15 @@ impl Grpc {
 
 	pub async fn update_profile(&self, token: &str, req: cc::UpdateProfileRequest) -> Result<cc::UserProfile, Status> {
 		Ok(self.directory().update_profile(bearer(token, req)?).await?.into_inner())
+	}
+
+	/// One concierge approval under the caller's own visibility (`ApprovalService.GetApproval`):
+	/// an approval they may not see is the same `NOT_FOUND` as an unknown one.
+	pub async fn get_approval(&self, token: &str, approval_id: &str) -> Result<cc::Approval, Status> {
+		let req = cc::GetApprovalRequest {
+			approval_id: approval_id.to_string(),
+		};
+		Ok(self.approvals().get_approval(bearer(token, req)?).await?.into_inner())
 	}
 
 	// ── banking auth plane (money-plane token issuance) ─────────────────────────
@@ -255,6 +272,17 @@ impl Grpc {
 	pub async fn list_operations(&self, token: &str, limit: u32) -> Result<bk::OperationList, Status> {
 		let req = bk::ListOperationsRequest { limit };
 		Ok(self.operations().list_operations(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn get_payout_approval(&self, token: &str, operation_id: &str) -> Result<bk::PayoutApprovalRef, Status> {
+		let req = bk::GetPayoutApprovalRequest {
+			operation_id: operation_id.to_string(),
+		};
+		Ok(self.payout_review().get_payout_approval(bearer(token, req)?).await?.into_inner())
+	}
+
+	pub async fn list_payout_lines(&self, token: &str, req: bk::ListPayoutLinesRequest) -> Result<bk::PayoutLinesPage, Status> {
+		Ok(self.payout_review().list_payout_lines(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn subscribe(&self, token: &str, req: bk::SubscribeRequest) -> Result<bk::Subscription, Status> {

@@ -3121,3 +3121,62 @@ mod tests {
 		assert!(ConsiliumInvitation::from(bk::ConsiliumInvitation::default()).valuation_override.is_none());
 	}
 }
+
+// ── piggybank: pending scope payout review ───────────────────────────────────
+
+/// One recipient of a pending scope payout and what they are paid.
+#[derive(Serialize)]
+pub struct PayoutReviewLine {
+	pub line_no: u32,
+	pub recipient: String,
+	pub amount: String,
+	/// Banking has never paid this recipient in the payout's scope.
+	pub no_history: bool,
+}
+
+impl From<bk::PayoutReviewLine> for PayoutReviewLine {
+	fn from(l: bk::PayoutReviewLine) -> Self {
+		Self {
+			line_no: l.line_no,
+			recipient: l.recipient,
+			amount: l.amount,
+			no_history: l.no_history,
+		}
+	}
+}
+
+/// A page of a pending scope payout's lines with the summary of the whole payout.
+#[derive(Serialize)]
+pub struct PayoutLinesPage {
+	pub operation_id: String,
+	pub state: String,
+	pub from_account: String,
+	pub total: String,
+	pub max_line: String,
+	pub recipients: u32,
+	pub recipients_without_history: u32,
+	pub distribution: bool,
+	pub over_scope_budget: bool,
+	pub lines_digest: String,
+	pub offset: u32,
+	pub lines: Vec<PayoutReviewLine>,
+}
+
+impl From<bk::PayoutLinesPage> for PayoutLinesPage {
+	fn from(p: bk::PayoutLinesPage) -> Self {
+		Self {
+			operation_id: p.operation_id,
+			state: p.state,
+			from_account: p.from_account,
+			total: p.total,
+			max_line: p.max_line,
+			recipients: p.recipients,
+			recipients_without_history: p.recipients_without_history,
+			distribution: p.distribution,
+			over_scope_budget: p.over_scope_budget,
+			lines_digest: p.lines_digest,
+			offset: p.offset,
+			lines: p.lines.into_iter().map(PayoutReviewLine::from).collect(),
+		}
+	}
+}

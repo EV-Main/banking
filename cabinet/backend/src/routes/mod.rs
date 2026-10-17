@@ -10,6 +10,7 @@ pub mod identity;
 pub mod money;
 pub mod notifications;
 pub mod payments;
+pub mod payout_review;
 pub mod platform;
 pub mod system;
 #[cfg(test)]
@@ -214,6 +215,9 @@ fn requests(state: AppState) -> Router {
 		.route("/api/owners/proposals/{id}/cancel", post(consilium::cancel_proposal))
 		.route("/api/owners/admissions/{id}/vote", post(consilium::vote_admission))
 		.route("/api/owners/admissions/{id}/cancel", post(consilium::cancel_admission))
+		// A pending scope payout's lines, for the approvers on its roster. Session-gated, and
+		// the roster check happens against concierge in the handler — see `payout_review`.
+		.route("/api/approvals/payouts/{operation_id}/lines", get(payout_review::lines))
 		// The public approval surface. NO session, NO CSRF, and no session cookie is even
 		// read: the emailed token in the path is the whole credential. See `approval`.
 		.route("/api/approval/payout/{token}", get(approval::payout_invitation).post(approval::payout_decision))
