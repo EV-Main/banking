@@ -30,8 +30,10 @@ use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
 	AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
-	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger, scope_invoices::InvoiceStore,
-	scope_mandates::MandateStore,
+	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository,
+	ledger::Ledger,
+	scope_invoices::InvoiceStore,
+	scope_mandates::{MandateRequestStore, MandateStore},
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -132,6 +134,8 @@ pub struct AppState {
 	pub invoices: Arc<dyn InvoiceStore>,
 	/// Users' mandates — their consent to a scope's service drawing on their compartment.
 	pub mandates: Arc<dyn MandateStore>,
+	/// What scope services ask users to grant; users read and grant them by id.
+	pub mandate_requests: Arc<dyn MandateRequestStore>,
 	/// Banking's grants to scope service clients, as the scope ledger serves them: a user may
 	/// grant a mandate only to a client these let touch compartments. Empty — every grant
 	/// refused — while the scope ledger is not configured ([`Self::with_scope_grants`]).
@@ -187,7 +191,7 @@ impl AppState {
 		compartments: Arc<dyn CompartmentStore>,
 		invoices: Arc<dyn InvoiceStore>,
 	) -> Self {
-		let pool_for_mandates = pool.clone();
+		let scope_ledger = Arc::new(infrastructure::scope_ledger::PgScopeLedger::new(pool.clone()));
 		Self {
 			pool,
 			ledger,
@@ -221,7 +225,8 @@ impl AppState {
 			outflow,
 			compartments,
 			invoices,
-			mandates: Arc::new(infrastructure::scope_ledger::PgScopeLedger::new(pool_for_mandates)),
+			mandates: scope_ledger.clone(),
+			mandate_requests: scope_ledger,
 			scope_grants: Arc::new(Grants::default()),
 		}
 	}

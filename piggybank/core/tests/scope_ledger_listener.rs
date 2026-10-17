@@ -20,8 +20,8 @@ use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use domain::scopes::ScopeId;
 use evbanking_auth::{AuthConfig, AuthError, AuthService, Authenticate, Claims, TokenType, provisioner_channel};
 use evbanking_contracts::scope::v1::{
-	ChargeRequest, GetBalancesRequest, GetBalancesResponse, GetInvoiceRequest, PullRequest, invoice_service_client::InvoiceServiceClient, money_events_client::MoneyEventsClient,
-	scope_ledger_service_client::ScopeLedgerServiceClient,
+	ChargeRequest, CreateMandateRequestRequest, GetBalancesRequest, GetBalancesResponse, GetInvoiceRequest, MandateOperation, PullRequest, invoice_service_client::InvoiceServiceClient,
+	mandate_request_service_client::MandateRequestServiceClient, money_events_client::MoneyEventsClient, scope_ledger_service_client::ScopeLedgerServiceClient,
 };
 use piggybank_core::{
 	config::ScopeLedgerSettings,
@@ -98,6 +98,7 @@ async fn harness() -> Option<Harness> {
 			holds: store.clone(),
 			events: store.clone(),
 			invoices: store.clone(),
+			mandate_requests: store.clone(),
 			scopes: Arc::new(PgCompartments::new(pool.clone())),
 			ledger,
 			relay: Arc::new(Notify::new()),
@@ -436,6 +437,47 @@ async fn invoices_are_served_behind_both_layers() {
 	assert_eq!(
 		served.expect_err("an invoice nobody issued").code(),
 		Code::NotFound,
+		"a known client with its service token reaches the handler"
+	);
+}
+
+// MandateRequestService is a fourth service on the listener: behind both layers too.
+#[tokio::test]
+async fn mandate_requests_are_served_behind_both_layers() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let scope = h.scope.clone();
+	let (anonymous, served) = with_server(addr.port(), server, || async {
+		let tls = ClientTlsConfig::new()
+			.ca_certificate(Certificate::from_pem(fixture("ca.pem")))
+			.domain_name("localhost")
+			.identity(Identity::from_pem(fixture("invest.pem"), fixture("invest.key")));
+		let channel = Endpoint::from_shared(format!("https://localhost:{}", addr.port()))
+			.unwrap()
+			.tls_config(tls)
+			.unwrap()
+			.connect_lazy();
+		let ask = || CreateMandateRequestRequest {
+			scope: scope.as_str().to_owned(),
+			operations: vec![MandateOperation::Reserve as i32],
+			cap_per_op: "1".into(),
+			cap_24h: "1".into(),
+			idempotency_key: Uuid::new_v4().to_string(),
+			..CreateMandateRequestRequest::default()
+		};
+		let anonymous = MandateRequestServiceClient::new(channel.clone()).create_mandate_request(Request::new(ask())).await;
+		let mut request = Request::new(ask());
+		request.metadata_mut().insert("authorization", format!("Bearer {SERVICE_TOKEN}").parse().unwrap());
+		(anonymous, MandateRequestServiceClient::new(channel).create_mandate_request(request).await)
+	})
+	.await;
+	assert_eq!(anonymous.expect_err("no bearer, no request").code(), Code::Unauthenticated);
+	// The fixture grant lets `invest` open accounts in the scope but not draw on compartments,
+	// so the handler itself refuses — not "unimplemented", which an unmounted service would be.
+	assert_eq!(
+		served.expect_err("a client without the compartments flag").code(),
+		Code::InvalidArgument,
 		"a known client with its service token reaches the handler"
 	);
 }

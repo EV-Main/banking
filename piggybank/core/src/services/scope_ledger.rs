@@ -16,8 +16,8 @@
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
 //! `Void`, `GetHold` — a `Reserve` stands on the user's mandate for the client),
 //! `Charge` (a one-off debit on the user's mandate), `Payout`, the requested
-//! operations (`RequestPayout`, `RequestTransfer`, `GetPendingOperation`), `InvoiceService` and
-//! `MoneyEvents.Pull`, behind the same two layers.
+//! operations (`RequestPayout`, `RequestTransfer`, `GetPendingOperation`), `InvoiceService`,
+//! `MandateRequestService` and `MoneyEvents.Pull`, behind the same two layers.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -35,7 +35,8 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_invoices::InvoiceState,
-	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, MoneyEventKind, SubjectRef, TransferReason},
+	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, MandateOperation, MoneyEventKind, SubjectRef, TransferReason},
+	scope_mandates::MandateRequest,
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
@@ -43,6 +44,7 @@ use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of,
 use evbanking_contracts::scope::v1::{
 	self as pb,
 	invoice_service_server::{InvoiceService, InvoiceServiceServer},
+	mandate_request_service_server::{MandateRequestService, MandateRequestServiceServer},
 	money_events_server::{MoneyEvents, MoneyEventsServer},
 	scope_ledger_service_server::{ScopeLedgerService, ScopeLedgerServiceServer},
 };
@@ -66,6 +68,7 @@ use crate::{
 		scope_charges::{self as charges_app, ChargeRequest},
 		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts},
 		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ListHoldsRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_mandates::{self as mandates_app, CreateRequest, RequestPorts},
 		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
 	config::ScopeLedgerSettings,
@@ -75,6 +78,7 @@ use crate::{
 		scope_charges::RecordedCharge,
 		scope_invoices::{InvoiceStore, RecordedInvoice},
 		scope_ledger::{CaptureTarget, EventAccount, HoldStore, MoneyEventRecord, MoneyEventStore, RecordedHold, RecordedTransfer, ScopeLedgerStore},
+		scope_mandates::MandateRequestStore,
 		scope_operations::{OperationStore, PayoutStore, RecordedOperation, RecordedPayout},
 	},
 	services::support::map_err,
@@ -187,6 +191,7 @@ pub struct ScopeLedgerDeps {
 	pub holds: Arc<dyn HoldStore>,
 	pub events: Arc<dyn MoneyEventStore>,
 	pub invoices: Arc<dyn InvoiceStore>,
+	pub mandate_requests: Arc<dyn MandateRequestStore>,
 	/// The scope registry (which scopes exist, their state and policy).
 	pub scopes: Arc<dyn CompartmentStore>,
 	pub ledger: Arc<dyn Ledger>,
@@ -251,6 +256,7 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::DEBUG)))
 		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(InvoiceServiceServer::new(service.clone()))))
+		.add_service(identity.layer(auth.layer(MandateRequestServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MoneyEventsServer::new(service))))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
@@ -288,6 +294,14 @@ impl ScopeLedgerSvc {
 		InvoicePorts {
 			grants: &self.grants,
 			invoices: self.deps.invoices.as_ref(),
+			scopes: self.deps.scopes.as_ref(),
+		}
+	}
+
+	fn request_ports(&self) -> RequestPorts<'_> {
+		RequestPorts {
+			grants: &self.grants,
+			requests: self.deps.mandate_requests.as_ref(),
 			scopes: self.deps.scopes.as_ref(),
 		}
 	}
@@ -678,6 +692,67 @@ impl InvoiceService for ScopeLedgerSvc {
 			.await
 			.map_err(|err| refused("GetInvoice", &client, err))?;
 		Ok(Response::new(invoice_to_proto(&recorded)))
+	}
+}
+
+#[tonic::async_trait]
+impl MandateRequestService for ScopeLedgerSvc {
+	async fn create_mandate_request(&self, request: Request<pb::CreateMandateRequestRequest>) -> Result<Response<pb::MandateRequest>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let optional_cap = |raw: &str| if raw.is_empty() { Ok(None) } else { Usdt::parse_decimal(raw).map(Some).map_err(map_err) };
+		let parsed = CreateRequest {
+			scope: scope_of(&req.scope)?,
+			cap_per_op: Usdt::parse_decimal(&req.cap_per_op).map_err(map_err)?,
+			cap_24h: Usdt::parse_decimal(&req.cap_24h).map_err(map_err)?,
+			cap_outstanding: optional_cap(&req.cap_outstanding)?,
+			cap_book_fill_24h: optional_cap(&req.cap_book_fill_24h)?,
+			operations: req.operations.iter().map(|raw| mandate_operation_of(*raw)).collect::<Result<_, _>>()?,
+			mandate_expires_at: match req.mandate_expires_at {
+				0 => None,
+				at if at < 0 => return Err(Status::invalid_argument("mandate_expires_at must be unix seconds, or 0")),
+				at => Some(at),
+			},
+			idempotency_key: req.idempotency_key,
+		};
+		let created = mandates_app::create_request(&self.request_ports(), &client, parsed)
+			.await
+			.map_err(|err| refused("CreateMandateRequest", &client, err.into()))?;
+		Ok(Response::new(mandate_request_to_proto(&created)))
+	}
+}
+
+fn mandate_operation_of(raw: i32) -> Result<MandateOperation, Status> {
+	match pb::MandateOperation::try_from(raw) {
+		Ok(pb::MandateOperation::Reserve) => Ok(MandateOperation::Reserve),
+		Ok(pb::MandateOperation::Charge) => Ok(MandateOperation::Charge),
+		Ok(pb::MandateOperation::BookFill) => Ok(MandateOperation::BookFill),
+		Ok(pb::MandateOperation::Unspecified) | Err(_) => Err(Status::invalid_argument("operations must name RESERVE, CHARGE or BOOK_FILL")),
+	}
+}
+
+fn mandate_request_to_proto(request: &MandateRequest) -> pb::MandateRequest {
+	let terms = &request.terms;
+	pb::MandateRequest {
+		request_id: request.id.to_string(),
+		scope: terms.scope.as_str().to_owned(),
+		operations: terms
+			.operations
+			.iter()
+			.map(|operation| match operation {
+				MandateOperation::Reserve => pb::MandateOperation::Reserve,
+				MandateOperation::Charge => pb::MandateOperation::Charge,
+				MandateOperation::BookFill => pb::MandateOperation::BookFill,
+			} as i32)
+			.collect(),
+		cap_per_op: terms.caps.per_op.to_decimal_string(),
+		cap_24h: terms.caps.per_24h.to_decimal_string(),
+		cap_outstanding: terms.caps.outstanding.to_decimal_string(),
+		cap_book_fill_24h: terms.caps.book_fill_24h.map(Usdt::to_decimal_string).unwrap_or_default(),
+		mandate_expires_at: terms.mandate_expires_at.unwrap_or(0),
+		expires_at: request.expires_at,
+		created_at: request.created_at,
+		grant_url: mandates_app::grant_url(request.id),
 	}
 }
 

@@ -220,55 +220,28 @@ pub async fn list_mandates(State(st): State<AppState>, jar: CookieJar) -> Result
 	Ok(Json(list.into()))
 }
 
-/// `POST /api/wallet/mandates` — first-party, CSRF-checked and rate-limited: let a scope's service draw on the
-/// caller's compartment within the caps the body names. Consent to future debits, so only a
-/// page on evinvest.ltd may ask for it — never a scope's own host.
+/// `GET /api/wallet/mandate-requests/{id}` — what a scope's service asked the caller to grant,
+/// for the consent screen. An unknown, expired or malformed id is the same 404.
+pub async fn get_mandate_request(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>) -> Result<Json<dto::MandateRequest>, ApiError> {
+	let token = require_money_token(&st, &jar).await?;
+	let request = st.grpc.get_mandate_request(&token, &id).await.map_err(|s| ApiError::read(s, "mandate request unavailable"))?;
+	Ok(Json(request.into()))
+}
+
+/// `POST /api/wallet/mandates` — first-party, CSRF-checked and rate-limited: grant the mandate a
+/// scope's service asked for. The body names only the request and the click's idempotency key;
+/// the limits are the stored request's, so a page cannot grant more than the user was shown.
+/// Consent to future debits, so only a page on evinvest.ltd may ask for it — never a scope's own host.
 pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	require_fresh_login(&claims, now_secs().max(0) as u64)?;
 	let token = money_token_for(&st, &claims).await?;
 	let v = parse_body(&body);
-	let (Some(scope), Some(client_id), Some(cap_per_op), Some(cap_24h), Some(idempotency_key)) = (
-		required(&v, "scope"),
-		required(&v, "client_id"),
-		required(&v, "cap_per_op"),
-		required(&v, "cap_24h"),
-		required(&v, "idempotency_key"),
-	) else {
-		return Err(ApiError::BadRequest("scope, client_id, cap_per_op, cap_24h and idempotency_key are required".into()));
+	let (Some(request_id), Some(idempotency_key)) = (required(&v, "request_id"), required(&v, "idempotency_key")) else {
+		return Err(ApiError::BadRequest("request_id and idempotency_key are required".into()));
 	};
-	let operations = mandate_operations(&v)?;
-	let expires_at = match v.get("expires_at") {
-		None | Some(serde_json::Value::Null) => 0,
-		Some(raw) => raw.as_i64().filter(|at| *at >= 0).ok_or_else(|| ApiError::BadRequest("expires_at must be unix seconds".into()))?,
-	};
-	let req = bk::GrantMandateRequest {
-		scope,
-		client_id,
-		cap_per_op,
-		cap_24h,
-		operations,
-		expires_at,
-		idempotency_key,
-		cap_outstanding: required(&v, "cap_outstanding").unwrap_or_default(),
-		cap_book_fill_24h: required(&v, "cap_book_fill_24h").unwrap_or_default(),
-	};
+	let req = bk::GrantMandateRequest { request_id, idempotency_key };
 	Ok(Json(st.grpc.grant_mandate(&token, req).await?.into()))
-}
-
-/// The body's `operations`, by the names [`dto::mandate_operation_name`] writes.
-fn mandate_operations(v: &serde_json::Value) -> Result<Vec<i32>, ApiError> {
-	let invalid = || ApiError::BadRequest("operations must be a non-empty list of reserve, charge, book_fill".into());
-	let listed = v.get("operations").and_then(serde_json::Value::as_array).filter(|list| !list.is_empty()).ok_or_else(invalid)?;
-	listed
-		.iter()
-		.map(|item| match item.as_str() {
-			Some("reserve") => Ok(bk::MandateOperation::Reserve as i32),
-			Some("charge") => Ok(bk::MandateOperation::Charge as i32),
-			Some("book_fill") => Ok(bk::MandateOperation::BookFill as i32),
-			_ => Err(invalid()),
-		})
-		.collect()
 }
 
 /// `POST /api/wallet/mandates/{id}/revoke` — first-party, CSRF-checked and rate-limited: end a mandate; the
@@ -488,7 +461,7 @@ mod wallet_gate_tests {
 	const SCOPE_HOST: &str = "https://sa.evinvest.ltd";
 	const SCOPE_HOSTS: &str = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
 	const CSRF: &str = "csrf-token";
-	const MANDATE: &str = r#"{"scope":"invest","client_id":"invest","cap_per_op":"1","cap_24h":"1","operations":["reserve"],"idempotency_key":"k-1"}"#;
+	const MANDATE: &str = r#"{"request_id":"4f0c2d1e-0000-4000-8000-0123456789ab","idempotency_key":"k-1"}"#;
 	const MOVE: &str = r#"{"from_scope":"main","to_scope":"sa","amount":"1","idempotency_key":"k-1"}"#;
 
 	/// Every route that moves money or consents to it being drawn, with a body that passes
@@ -651,6 +624,17 @@ mod wallet_gate_tests {
 		assert!(!response.contains("step_up_required"), "a fresh login passes the gate: {response}");
 	}
 
+	/// Reading a service's request for a mandate is a read, like an invoice: no CSRF token, no
+	/// first-party origin, only a session.
+	#[tokio::test]
+	async fn a_mandate_request_is_read_with_a_session_alone() {
+		let uri = "/api/wallet/mandate-requests/4f0c2d1e-0000-4000-8000-0123456789ab";
+		for origin in [Some(FIRST_PARTY), Some(SCOPE_HOST), None] {
+			let (status, _, response) = send(&app(), request("GET", uri, "", origin, false)).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "from {origin:?}: {response}");
+		}
+	}
+
 	/// With no first-party origin configured the money gate refuses everything, even the
 	/// origin production would accept; the websocket guard, which only reads, stays open
 	/// for local development.
@@ -736,7 +720,13 @@ mod wallet_gate_tests {
 			let (_, headers, _) = send(&app, request("OPTIONS", uri, "", Some(SCOPE_HOST), false)).await;
 			assert_eq!(cors_of(&headers), (None, None), "OPTIONS {uri}");
 		}
-		for uri in ["/api/wallet/withdrawals", "/api/wallet/deposit-address", "/api/wallet/mandates", "/api/wallet/deposits"] {
+		for uri in [
+			"/api/wallet/withdrawals",
+			"/api/wallet/deposit-address",
+			"/api/wallet/mandates",
+			"/api/wallet/mandate-requests/4f0c2d1e-0000-4000-8000-0123456789ab",
+			"/api/wallet/deposits",
+		] {
 			let (_, headers, _) = send(&app, request("GET", uri, "", Some(SCOPE_HOST), false)).await;
 			assert_eq!(cors_of(&headers), (None, None), "{uri} is not a scope read");
 		}

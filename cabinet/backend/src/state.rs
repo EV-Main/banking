@@ -252,6 +252,11 @@ impl Grpc {
 		Ok(self.compartments().list_mandates(bearer(token, bk::ListMandatesRequest {})?).await?.into_inner())
 	}
 
+	pub async fn get_mandate_request(&self, token: &str, request_id: &str) -> Result<bk::MandateRequest, Status> {
+		let req = bk::GetMandateRequestRequest { request_id: request_id.to_string() };
+		Ok(self.compartments().get_mandate_request(bearer(token, req)?).await?.into_inner())
+	}
+
 	pub async fn grant_mandate(&self, token: &str, req: bk::GrantMandateRequest) -> Result<bk::Mandate, Status> {
 		Ok(self.compartments().grant_mandate(bearer(token, req)?).await?.into_inner())
 	}

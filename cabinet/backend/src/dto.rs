@@ -409,6 +409,43 @@ impl From<bk::Mandate> for Mandate {
 	}
 }
 
+/// What a scope's service asks the caller to grant, as banking stored it — the whole consent
+/// screen: the page names only the request id, never the limits. Caps are decimal USDT strings
+/// (`cap_book_fill_24h` `""` unless `operations` lists `book_fill`); times are unix seconds as
+/// strings, `mandate_expires_at` `"0"` = until revoked.
+#[derive(Serialize)]
+pub struct MandateRequest {
+	pub request_id: String,
+	pub scope: String,
+	pub client_id: String,
+	pub client_display_name: String,
+	pub cap_per_op: String,
+	pub cap_24h: String,
+	pub cap_outstanding: String,
+	pub cap_book_fill_24h: String,
+	pub operations: Vec<&'static str>,
+	pub mandate_expires_at: String,
+	pub expires_at: String,
+}
+
+impl From<bk::MandateRequest> for MandateRequest {
+	fn from(r: bk::MandateRequest) -> Self {
+		Self {
+			request_id: r.request_id,
+			scope: r.scope,
+			client_id: r.client_id,
+			client_display_name: r.client_display_name,
+			cap_per_op: r.cap_per_op,
+			cap_24h: r.cap_24h,
+			cap_outstanding: r.cap_outstanding,
+			cap_book_fill_24h: r.cap_book_fill_24h,
+			operations: r.operations.into_iter().map(mandate_operation_name).collect(),
+			mandate_expires_at: r.mandate_expires_at.to_string(),
+			expires_at: r.expires_at.to_string(),
+		}
+	}
+}
+
 list_dto! { MandateList from bk::MandateList { mandates: Vec<Mandate> } }
 
 /// What it takes to move money into a scope. Limits are decimal USDT strings, `""` = none.

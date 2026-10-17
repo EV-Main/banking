@@ -66,41 +66,74 @@ pub struct MandateTerms {
 	pub expires_at: Option<i64>,
 }
 
+/// The rules every set of terms obeys, whoever it is for — a user's grant and a service's
+/// request for one are checked alike. Returns the operations in [`MandateOperation::ALL`]
+/// order.
+fn check_terms(scope: &ScopeId, caps: &MandateCaps, operations: &[MandateOperation]) -> Result<Vec<MandateOperation>, DomainError> {
+	if scope.is_main() {
+		return Err(DomainError::Validation("a mandate is never granted in main".into()));
+	}
+	if caps.per_op.is_zero() {
+		return Err(DomainError::Validation("cap_per_op must be positive".into()));
+	}
+	if caps.per_24h < caps.per_op {
+		return Err(DomainError::Validation("cap_24h must be at least cap_per_op".into()));
+	}
+	if caps.outstanding < caps.per_op {
+		return Err(DomainError::Validation("cap_outstanding must be at least cap_per_op".into()));
+	}
+	let mut ordered = Vec::with_capacity(operations.len());
+	for operation in MandateOperation::ALL {
+		match operations.iter().filter(|listed| **listed == operation).count() {
+			0 => {}
+			1 => ordered.push(operation),
+			_ => return Err(DomainError::Validation(format!("operation {} is listed twice", operation.as_str()))),
+		}
+	}
+	if ordered.is_empty() {
+		return Err(DomainError::Validation("a mandate lists at least one operation".into()));
+	}
+	match (ordered.contains(&MandateOperation::BookFill), caps.book_fill_24h) {
+		(true, None) => return Err(DomainError::Validation("cap_book_fill_24h is required with BOOK_FILL".into())),
+		(true, Some(cap)) if cap.is_zero() => return Err(DomainError::Validation("cap_book_fill_24h must be positive".into())),
+		(false, Some(_)) => return Err(DomainError::Validation("cap_book_fill_24h is set only with BOOK_FILL".into())),
+		(true, Some(_)) | (false, None) => {}
+	}
+	Ok(ordered)
+}
+
+/// A grant that is over before it starts is a mistake, not a mandate; one that ends past
+/// [`MAX_MANDATE_SECONDS`] is "until revoked" in disguise and must say so.
+fn check_expiry_at(expires_at: Option<i64>, now: i64) -> Result<(), DomainError> {
+	match expires_at {
+		Some(at) if at <= now => Err(DomainError::Validation("expires_at must be in the future".into())),
+		Some(at) if at > now.saturating_add(MAX_MANDATE_SECONDS) => Err(DomainError::Validation("expires_at must be within 5 years".into())),
+		Some(_) | None => Ok(()),
+	}
+}
+
+fn canonical_terms(scope: &ScopeId, client: &ClientId, caps: &MandateCaps, operations: &[MandateOperation], expires_at: Option<i64>) -> String {
+	let operations: Vec<&str> = operations.iter().map(|operation| operation.as_str()).collect();
+	[
+		scope.as_str().to_owned(),
+		client.as_str().to_owned(),
+		caps.per_op.base_units().to_string(),
+		caps.per_24h.base_units().to_string(),
+		caps.outstanding.base_units().to_string(),
+		caps.book_fill_24h.map(|cap| cap.base_units().to_string()).unwrap_or_default(),
+		operations.join(","),
+		expires_at.map(|at| at.to_string()).unwrap_or_default(),
+	]
+	.join("\n")
+}
+
 impl MandateTerms {
 	/// Checks what holds whenever the terms are read: a mandate in `main` is meaningless (no
 	/// client is ever granted there), caps must be positive and consistent, the operations a
 	/// non-empty set, and a BOOK_FILL cap present exactly when BOOK_FILL is listed — sending
 	/// the user's money to other users is never allowed by default.
 	pub fn new(user: UserId, scope: ScopeId, client: ClientId, caps: MandateCaps, operations: &[MandateOperation], expires_at: Option<i64>) -> Result<Self, DomainError> {
-		if scope.is_main() {
-			return Err(DomainError::Validation("a mandate is never granted in main".into()));
-		}
-		if caps.per_op.is_zero() {
-			return Err(DomainError::Validation("cap_per_op must be positive".into()));
-		}
-		if caps.per_24h < caps.per_op {
-			return Err(DomainError::Validation("cap_24h must be at least cap_per_op".into()));
-		}
-		if caps.outstanding < caps.per_op {
-			return Err(DomainError::Validation("cap_outstanding must be at least cap_per_op".into()));
-		}
-		let mut ordered = Vec::with_capacity(operations.len());
-		for operation in MandateOperation::ALL {
-			match operations.iter().filter(|listed| **listed == operation).count() {
-				0 => {}
-				1 => ordered.push(operation),
-				_ => return Err(DomainError::Validation(format!("operation {} is listed twice", operation.as_str()))),
-			}
-		}
-		if ordered.is_empty() {
-			return Err(DomainError::Validation("a mandate lists at least one operation".into()));
-		}
-		match (ordered.contains(&MandateOperation::BookFill), caps.book_fill_24h) {
-			(true, None) => return Err(DomainError::Validation("cap_book_fill_24h is required with BOOK_FILL".into())),
-			(true, Some(cap)) if cap.is_zero() => return Err(DomainError::Validation("cap_book_fill_24h must be positive".into())),
-			(false, Some(_)) => return Err(DomainError::Validation("cap_book_fill_24h is set only with BOOK_FILL".into())),
-			(true, Some(_)) | (false, None) => {}
-		}
+		let ordered = check_terms(&scope, &caps, operations)?;
 		Ok(Self {
 			user,
 			scope,
@@ -111,14 +144,8 @@ impl MandateTerms {
 		})
 	}
 
-	/// A grant that is over before it starts is a mistake, not a mandate; one that ends past
-	/// [`MAX_MANDATE_SECONDS`] is "until revoked" in disguise and must say so.
 	pub fn check_expiry(&self, now: i64) -> Result<(), DomainError> {
-		match self.expires_at {
-			Some(at) if at <= now => Err(DomainError::Validation("expires_at must be in the future".into())),
-			Some(at) if at > now.saturating_add(MAX_MANDATE_SECONDS) => Err(DomainError::Validation("expires_at must be within 5 years".into())),
-			Some(_) | None => Ok(()),
-		}
+		check_expiry_at(self.expires_at, now)
 	}
 
 	pub fn lists(&self, operation: MandateOperation) -> bool {
@@ -128,19 +155,54 @@ impl MandateTerms {
 	/// Everything the terms say, rendered for the idempotency comparison: a repeat of the key
 	/// with different terms is a conflict, not a repeat.
 	pub fn canonical(&self) -> String {
-		let operations: Vec<&str> = self.operations.iter().map(|operation| operation.as_str()).collect();
-		[
-			self.scope.as_str().to_owned(),
-			self.client.as_str().to_owned(),
-			self.caps.per_op.base_units().to_string(),
-			self.caps.per_24h.base_units().to_string(),
-			self.caps.outstanding.base_units().to_string(),
-			self.caps.book_fill_24h.map(|cap| cap.base_units().to_string()).unwrap_or_default(),
-			operations.join(","),
-			self.expires_at.map(|at| at.to_string()).unwrap_or_default(),
-		]
-		.join("\n")
+		canonical_terms(&self.scope, &self.client, &self.caps, &self.operations, self.expires_at)
 	}
+}
+
+/// What a scope's service asks a user to grant: a [`MandateTerms`] before there is a user.
+/// The same rules hold, so a request that could never be granted is refused when it is made.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MandateRequestTerms {
+	pub scope: ScopeId,
+	pub client: ClientId,
+	pub caps: MandateCaps,
+	/// Each operation once, in [`MandateOperation::ALL`] order.
+	pub operations: Vec<MandateOperation>,
+	/// The proposed end of the mandate itself, unix seconds; `None` = until revoked.
+	pub mandate_expires_at: Option<i64>,
+}
+
+impl MandateRequestTerms {
+	pub fn new(scope: ScopeId, client: ClientId, caps: MandateCaps, operations: &[MandateOperation], mandate_expires_at: Option<i64>) -> Result<Self, DomainError> {
+		let ordered = check_terms(&scope, &caps, operations)?;
+		Ok(Self {
+			scope,
+			client,
+			caps,
+			operations: ordered,
+			mandate_expires_at,
+		})
+	}
+
+	pub fn check_expiry(&self, now: i64) -> Result<(), DomainError> {
+		check_expiry_at(self.mandate_expires_at, now)
+	}
+
+	/// For the idempotency comparison, as [`MandateTerms::canonical`].
+	pub fn canonical(&self) -> String {
+		canonical_terms(&self.scope, &self.client, &self.caps, &self.operations, self.mandate_expires_at)
+	}
+}
+
+/// A mandate request as recorded.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MandateRequest {
+	pub id: uuid::Uuid,
+	pub terms: MandateRequestTerms,
+	/// Unix seconds.
+	pub created_at: i64,
+	/// Unix seconds: until when the user may grant it.
+	pub expires_at: i64,
 }
 
 /// A mandate as recorded.
