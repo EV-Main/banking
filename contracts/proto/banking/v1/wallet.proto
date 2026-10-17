@@ -88,6 +88,11 @@ message RequestWithdrawalRequest {
   string network = 1;  // bep20 | polygon | trc20 | ton — the rail to ship on
   string address = 2;  // destination on-chain address (validated per network)
   string amount = 3;   // gross decimal USDT to debit (the fee is taken from this)
+  // Client-minted, 1..128 bytes, unique per user (the withdraw page mints one per load). A
+  // repeat with the same network, address and amount returns the first withdrawal and opens
+  // no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates
+  // the field) = no deduplication.
+  string idempotency_key = 4;
 }
 
 message CancelWithdrawalRequest {
@@ -157,6 +162,10 @@ service CompartmentService {
   // knows, with the caller's balance there (zero if never entered) and its policy.
   rpc ListCompartments(ListCompartmentsRequest) returns (CompartmentList);
 
+  // The caller's balance in ONE scope (`main` included), for a client that shows a single
+  // compartment and must not read the sum over all of them. An unknown scope is NOT_FOUND.
+  rpc GetCompartment(GetCompartmentRequest) returns (Compartment);
+
   // Move money between `main` and one scope compartment — exactly one side is `main`.
   // Moving IN is checked against the scope's policy: FAILED_PRECONDITION with the
   // failed rule (`kyc_level`, `max_per_move`, `max_moved_in_24h`, `max_balance`) when
@@ -198,6 +207,10 @@ service CompartmentService {
 }
 
 message ListCompartmentsRequest {}
+
+message GetCompartmentRequest {
+  string scope = 1;  // `main` or a scope
+}
 
 // One compartment of the caller. Decimal USDT strings; total = available + held.
 message Compartment {

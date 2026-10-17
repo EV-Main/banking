@@ -18,7 +18,7 @@ use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_invoices::{Invoice, InvoiceId, InvoicePayment, InvoiceRefusal, InvoiceState, InvoiceTerms},
-	scope_ledger::{ClientId, Grants, LedgerRefusal, SubjectRef, validate_memo},
+	scope_ledger::{ClientId, Grants, IDEMPOTENCY_CONFLICT, LedgerRefusal, SubjectRef, validate_memo},
 	scopes::{Compartment, ScopeAccountLabel, ScopeId, ScopeState},
 	users::UserId,
 };
@@ -262,7 +262,7 @@ pub async fn pay(ports: &PayerPorts<'_>, user: UserId, id: Uuid, from: Compartme
 		Paid::Earlier(earlier) => {
 			let same = earlier.invoice.id().raw() == id && earlier.invoice.payment().is_some_and(|payment| payment.from == from);
 			if !same {
-				return Err(DomainError::Conflict("idempotency_key was used for a different payment".into()).into());
+				return Err(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into()).into());
 			}
 			earlier
 		}

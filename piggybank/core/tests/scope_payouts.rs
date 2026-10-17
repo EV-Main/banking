@@ -18,7 +18,7 @@ use domain::{
 	balance::{LedgerAccountKey, TransferCode},
 	error::DomainError,
 	money::{Network, Usdt},
-	scope_ledger::{ClientId, Grant, Grants, LedgerRefusal, MoneyEventKind, SubjectRef},
+	scope_ledger::{ClientId, Grant, Grants, IDEMPOTENCY_CONFLICT, LedgerRefusal, MoneyEventKind, SubjectRef},
 	scope_operations::{ApprovalValue, BANK_CATALOG, BANK_CATALOG_VERSION, KindSpec, OperationKind, OperationState, PayoutReason, RequestedLine},
 	scopes::{MoveState, ScopeAccountLabel, ScopeId, ScopeState},
 	users::UserId,
@@ -67,6 +67,10 @@ struct FakeState {
 	/// Serve passed decisions on every pull, reported or not.
 	serve_reported: bool,
 	reports: Vec<(String, ApprovalOutcome, String)>,
+	/// Approval ids withdrawn through `WithdrawProposal`.
+	withdrawn: Vec<String>,
+	/// Every `WithdrawProposal` fails as unavailable.
+	withdraw_down: bool,
 	/// The catalog stored for `bank`: its version and its kinds by name; `None` before the
 	/// first publication.
 	catalog: Option<(u64, Vec<String>)>,
@@ -249,6 +253,22 @@ impl Approvals for FakeConcierge {
 					Ok(())
 				}
 			}
+		})
+	}
+
+	async fn withdraw(&self, approval_id: &str, _reason: &str) -> Result<(), ApprovalsError> {
+		self.with(|s| {
+			if s.down || s.withdraw_down {
+				return Err(ApprovalsError::Unavailable("down".into()));
+			}
+			let held = s.approvals.get_mut(approval_id).ok_or_else(|| ApprovalsError::Refused("not found".into()))?;
+			// concierge's window: only while the proposal is still OPEN here.
+			if held.view.state != ApprovalState::Open {
+				return Err(ApprovalsError::Refused("not withdrawable".into()));
+			}
+			held.view.state = ApprovalState::Cancelled;
+			s.withdrawn.push(approval_id.to_owned());
+			Ok(())
 		})
 	}
 
@@ -615,6 +635,56 @@ async fn a_payout_past_a_ceiling_or_the_scope_budget_is_approval_required() {
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
+/// banking#525: one recipient cannot take a whole operation that fits every other ceiling.
+/// An automatic payout with a line past 1000 USDT needs the owners; a requested one is
+/// escalated by the `per_line` rule on the `max_line` field every approval carries.
+#[tokio::test]
+async fn a_line_past_the_per_line_ceiling_needs_the_owners() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "5000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "5000").await;
+	let (_, alice) = user(&h).await;
+	let (_, bob) = user(&h).await;
+	let b = base(&h, &grants);
+	let p = ops_ports(&h, &b);
+
+	assert_eq!(
+		refusal(
+			ops::payout(
+				&p,
+				&client,
+				payout_request(&scope, "alloc:x", vec![line(&alice, "1000.000000000000000001"), line(&bob, "1")], &key())
+			)
+			.await
+		),
+		LedgerRefusal::ApprovalRequired,
+		"the total is inside every ceiling, the line is not"
+	);
+	ops::payout(&p, &client, payout_request(&scope, "alloc:x", vec![line(&alice, "1000"), line(&bob, "1000")], &key()))
+		.await
+		.expect("the ceiling is inclusive, and a total of 2000 is under the per-operation one here");
+
+	let asked = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1500"), line(&bob, "1")], &key()))
+		.await
+		.unwrap();
+	round(&h, &grants).await;
+	let asked = reload(&h, &asked).await;
+	let proposal = h.concierge.proposal(&approval_id(&asked));
+	assert!(
+		proposal.fields.iter().any(|f| f.key == "max_line" && f.value == ApprovalValue::Amount(usdt("1500"))),
+		"the approvers and the escalation rule see the largest line"
+	);
+	let spec = BANK_CATALOG.iter().find(|k| k.kind == OperationKind::ScopePayout).unwrap();
+	assert!(
+		spec.escalations
+			.iter()
+			.any(|e| e.parameter == "per_line" && e.field_key == "max_line" && e.default_threshold == "1000"),
+		"the published catalog escalates a line past 1000 to the owners"
+	);
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
+}
+
 /// Ten payouts at once under one client's 24 h ceiling of three: each holds the scope's
 /// lock while it counts, so exactly three get through, whoever wins.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -730,6 +800,57 @@ async fn a_payout_is_refused_outside_the_callers_scope_and_accounts() {
 }
 
 // ── operations decided by an approval ────────────────────────────────────────
+
+/// A requested payout is stored whole under its key, so a key reused for other lines, another
+/// kind (a distribution) or another memo must not hand back the first request as if it were the
+/// second — the approvers would decide something the caller no longer means.
+#[tokio::test]
+async fn a_requested_payout_key_reused_with_other_terms_is_refused() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h, "1000", "5000", "5000").await;
+	let (client, grants) = payer(&scope);
+	funded(&h, &grants, &client, &scope, "alloc:x", "3000").await;
+	let (_, alice) = user(&h).await;
+	let (_, bob) = user(&h).await;
+	let b = base(&h, &grants);
+	let p = ops_ports(&h, &b);
+
+	let k = key();
+	let asked = request_payout(&scope, "alloc:x", vec![line(&alice, "1500"), line(&bob, "100")], &k);
+	let first = ops::request_payout(&p, &client, asked.clone()).await.unwrap();
+	for other in [
+		RequestPayoutRequest {
+			lines: vec![line(&alice, "1500")],
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			lines: vec![line(&alice, "1501"), line(&bob, "100")],
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			distribution: true,
+			..asked.clone()
+		},
+		RequestPayoutRequest {
+			memo: "Another".into(),
+			..asked.clone()
+		},
+	] {
+		match domain_err(ops::request_payout(&p, &client, other).await) {
+			DomainError::Conflict(why) => assert_eq!(why, IDEMPOTENCY_CONFLICT),
+			other => panic!("expected the idempotency conflict, got {other:?}"),
+		}
+	}
+	let reordered = RequestPayoutRequest {
+		lines: vec![line(&bob, "100"), line(&alice, "1500")],
+		..asked
+	};
+	assert_eq!(
+		ops::request_payout(&p, &client, reordered).await.unwrap().operation.id(),
+		first.operation.id(),
+		"the same lines in another order are one request"
+	);
+}
 
 #[tokio::test]
 async fn a_requested_payout_executes_once_and_only_after_its_approval_passes() {
@@ -882,6 +1003,22 @@ async fn a_decision_that_is_not_the_stored_operations_is_refused() {
 		.unwrap();
 	round(&h, &grants).await;
 	assert_eq!(reload(&h, &misopened).await.operation.progress().failure_reason.as_deref(), Some("approval_mismatch"));
+	// ...and the proposal it opened is withdrawn, so no owner votes on a dead operation.
+	assert_eq!(h.concierge.with(|s| s.withdrawn.len()), 1);
+	assert!(h.concierge.with(|s| s.approvals.values().any(|held| held.view.state == ApprovalState::Cancelled)));
+
+	// A withdrawal concierge cannot take does not undo the operation's end.
+	h.concierge.with(|s| {
+		s.tamper_open = Some("e".repeat(64));
+		s.withdraw_down = true;
+	});
+	let unwithdrawn = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1350")], &key()))
+		.await
+		.unwrap();
+	round(&h, &grants).await;
+	assert_eq!(reload(&h, &unwithdrawn).await.operation.progress().failure_reason.as_deref(), Some("approval_mismatch"));
+	assert_eq!(h.concierge.with(|s| s.withdrawn.len()), 1);
+	h.concierge.with(|s| s.withdraw_down = false);
 
 	// Pulled as passed, but VOID by the time banking re-reads it: not executed.
 	let raced = ops::request_payout(&p, &client, request_payout(&scope, "alloc:x", vec![line(&alice, "1400")], &key()))

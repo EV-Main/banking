@@ -131,6 +131,24 @@ impl HoldStore for PgScopeLedger {
 			.transpose()
 	}
 
+	async fn active_holds(&self, client: &ClientId, scopes: &[ScopeId], subject_prefix: &str, after: Option<Uuid>, limit: u32) -> Result<Vec<RecordedHold>, DomainError> {
+		let scopes: Vec<&str> = scopes.iter().map(ScopeId::as_str).collect();
+		sqlx::query_as::<_, HoldRow>(select_hold!(
+			"WHERE client_id = $1 AND scope = ANY($2) AND state = 'active' AND starts_with(subject_ref, $3) AND ($4::uuid IS NULL OR id > $4) ORDER BY id LIMIT $5"
+		))
+		.bind(client.as_str())
+		.bind(&scopes)
+		.bind(subject_prefix)
+		.bind(after)
+		.bind(i64::from(limit))
+		.fetch_all(self.pool())
+		.await
+		.map_err(repo_err)?
+		.into_iter()
+		.map(recorded_hold)
+		.collect()
+	}
+
 	async fn record_hold(&self, key: RequestKey<'_>, terms: &str, auth_subject: &str, admission: &dyn HoldAdmission) -> Result<Recorded<RecordedHold>, TransferError> {
 		let mut tx = self.pool().begin().await.map_err(repo_err)?;
 		outbox::lock_named(&mut tx, &key_lock(&key)).await?;

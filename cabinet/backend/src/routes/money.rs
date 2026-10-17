@@ -27,6 +27,11 @@ pub struct NetworkQuery {
 }
 
 #[derive(Deserialize)]
+pub struct ScopeQuery {
+	scope: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct LimitQuery {
 	limit: Option<u32>,
 }
@@ -100,6 +105,16 @@ pub async fn list_compartments(State(st): State<AppState>, jar: CookieJar) -> Re
 	Ok(Json(list.into()))
 }
 
+/// `GET /api/wallet/compartment?scope=` — the caller's balance in one compartment, for a
+/// scope host that must show its own balance and not the sum over all of them. Readable from
+/// the scope hosts like the list (`routes::cors`).
+pub async fn get_compartment(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ScopeQuery>) -> Result<Json<dto::Compartment>, ApiError> {
+	let scope = q.scope.filter(|scope| !scope.is_empty()).ok_or_else(|| ApiError::BadRequest("scope is required".into()))?;
+	let token = require_money_token(&st, &jar).await?;
+	let compartment = st.grpc.get_compartment(&token, &scope).await.map_err(|s| ApiError::read(s, "compartment unavailable"))?;
+	Ok(Json(compartment.into()))
+}
+
 /// `POST /api/wallet/compartments/move` — first-party, CSRF-checked and rate-limited: move money
 /// between `main` and one scope. The hub checks the policy, the balance and that one side is
 /// `main`; the BFF only refuses a body that names nothing.
@@ -143,7 +158,15 @@ pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, head
 	let (Some(network), Some(address), Some(amount)) = (required(&v, "network"), required(&v, "address"), required(&v, "amount")) else {
 		return Err(ApiError::BadRequest("network, address and amount are required".into()));
 	};
-	let req = bk::RequestWithdrawalRequest { network, address, amount };
+	// Minted by the withdraw page on load; absent from older clients, which keep the earlier
+	// no-dedupe behaviour at the hub.
+	let idempotency_key = required(&v, "idempotency_key").unwrap_or_default();
+	let req = bk::RequestWithdrawalRequest {
+		network,
+		address,
+		amount,
+		idempotency_key,
+	};
 	Ok(Json(st.grpc.request_withdrawal(&token, req).await?.into()))
 }
 

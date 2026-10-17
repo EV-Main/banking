@@ -101,6 +101,12 @@ impl ScopeAccountLabel {
 		Self("fee".to_owned())
 	}
 
+	/// The cash of the `fee` allocation in invest: where banking sweeps invest's collected
+	/// fees. An ordinary account of its owner, the invest client.
+	pub fn fee_allocation() -> Self {
+		Self("alloc:fee".to_owned())
+	}
+
 	/// Whether this is one of banking's own labels. Checked by the label itself, not by who
 	/// the registry says owns the row: no client may open, own or debit an account under one
 	/// of these in any scope, whatever a grant or a row says (`fee` is banking's in every

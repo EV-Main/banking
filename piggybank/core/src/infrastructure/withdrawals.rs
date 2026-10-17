@@ -27,6 +27,7 @@ use crate::{
 
 const SELECT_BY_ID: &str = "SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE id = $1";
 const SELECT_BY_ID_FOR_UPDATE: &str = "SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE id = $1 FOR UPDATE";
+const SELECT_BY_KEY: &str = "SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE user_id = $1 AND idempotency_key = $2";
 const SELECT_BY_USER: &str =
 	"SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE user_id = $1 AND source = 'user' ORDER BY created_at DESC";
 
@@ -104,21 +105,24 @@ fn repo_err(err: sqlx::Error) -> DomainError {
 	DomainError::Repository(err.to_string())
 }
 
-async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal) -> Result<(), DomainError> {
-	sqlx::query("INSERT INTO withdrawals (id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)")
-		.bind(withdrawal.id().raw())
-		.bind(withdrawal.source().column())
-		.bind(withdrawal.user().map(|user| user.raw()))
-		.bind(withdrawal.source().payment().map(|payment| payment.raw()))
-		.bind(withdrawal.network().as_str())
-		.bind(withdrawal.address().as_str())
-		.bind(withdrawal.amount().base_units().to_string())
-		.bind(withdrawal.fee().base_units().to_string())
-		.bind(withdrawal.state().as_str())
-		.bind(withdrawal.tx_ref().map(TxRef::as_str))
-		.execute(&mut *conn)
-		.await
-		.map_err(repo_err)?;
+async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal, idempotency_key: Option<&str>) -> Result<(), DomainError> {
+	sqlx::query(
+		"INSERT INTO withdrawals (id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+	)
+	.bind(withdrawal.id().raw())
+	.bind(withdrawal.source().column())
+	.bind(withdrawal.user().map(|user| user.raw()))
+	.bind(withdrawal.source().payment().map(|payment| payment.raw()))
+	.bind(withdrawal.network().as_str())
+	.bind(withdrawal.address().as_str())
+	.bind(withdrawal.amount().base_units().to_string())
+	.bind(withdrawal.fee().base_units().to_string())
+	.bind(withdrawal.state().as_str())
+	.bind(withdrawal.tx_ref().map(TxRef::as_str))
+	.bind(idempotency_key)
+	.execute(&mut *conn)
+	.await
+	.map_err(repo_err)?;
 	Ok(())
 }
 
@@ -173,10 +177,41 @@ impl WithdrawalRepository for PgWithdrawals {
 		// unified claim.
 		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
 		guard.check(&mut TxReads::new(&mut tx)).await?;
-		insert_row(&mut tx, withdrawal).await?;
+		insert_row(&mut tx, withdrawal, None).await?;
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
 		tx.commit().await.map_err(repo_err)?;
 		Ok(())
+	}
+
+	async fn open_keyed(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError> {
+		let mut tx = self.pool.begin().await.map_err(repo_err)?;
+		// The same lock `open` takes, so two requests of one user with one key are serialized
+		// and the second finds the first's row here instead of failing on the unique index.
+		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
+		let existing = sqlx::query_as::<_, WithdrawalRow>(SELECT_BY_KEY)
+			.bind(user.raw())
+			.bind(key)
+			.fetch_optional(&mut *tx)
+			.await
+			.map_err(repo_err)?;
+		if let Some(row) = existing {
+			return row.into_domain().map(Some);
+		}
+		guard.check(&mut TxReads::new(&mut tx)).await?;
+		insert_row(&mut tx, withdrawal, Some(key)).await?;
+		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
+		tx.commit().await.map_err(repo_err)?;
+		Ok(None)
+	}
+
+	async fn find_by_key(&self, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError> {
+		let row = sqlx::query_as::<_, WithdrawalRow>(SELECT_BY_KEY)
+			.bind(user.raw())
+			.bind(key)
+			.fetch_optional(&self.pool)
+			.await
+			.map_err(repo_err)?;
+		row.map(WithdrawalRow::into_domain).transpose()
 	}
 
 	async fn dispatch(&self, id: WithdrawalId) -> Result<Withdrawal, DomainError> {

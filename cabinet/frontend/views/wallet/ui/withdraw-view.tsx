@@ -59,6 +59,9 @@ export function WithdrawView({ initialNetwork, onWithdrawn }: { initialNetwork?:
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [done, setDone] = useState<Withdrawal | null>(null);
+  // Fixed at page load and kept across failed attempts, so a retried POST (a dropped response,
+  // a double click) is the same request to the hub and cannot open a second withdrawal.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const { data: wallet, error: walletError, isLoading: walletLoading } = useResource(walletResource);
   const { data: profile, error: profileError, isLoading: profileLoading } = useResource(profileResource);
@@ -93,8 +96,10 @@ export function WithdrawView({ initialNetwork, onWithdrawn }: { initialNetwork?:
       // The balance, the withdrawal queue and the timeline all move — `submitWithdrawal`
       // names those tags, so this screen's wallet and every other open surface refresh
       // themselves. No explicit reload here any more.
-      const withdrawal = await submitWithdrawal({ network: confirming.network, address: confirming.address, amount: confirming.amount });
+      const withdrawal = await submitWithdrawal({ network: confirming.network, address: confirming.address, amount: confirming.amount, idempotency_key: idempotencyKey });
       setDone(withdrawal);
+      // The key names this one request; the next withdrawal from the same page is a new one.
+      setIdempotencyKey(crypto.randomUUID());
       onWithdrawn?.(withdrawal);
       setAddress("");
       setAmount("");

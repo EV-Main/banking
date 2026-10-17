@@ -1844,6 +1844,18 @@ export type BankingV1GetBookRequest = {
 };
 
 /**
+ * GetCompartmentRequest
+ */
+export type BankingV1GetCompartmentRequest = {
+    /**
+     * scope
+     *
+     * `main` or a scope
+     */
+    scope?: string;
+};
+
+/**
  * GetConsentInvitationRequest
  */
 export type BankingV1GetConsentInvitationRequest = {
@@ -2997,6 +3009,15 @@ export type BankingV1Operation = {
      * performance
      */
     performance?: string;
+    /**
+     * scope
+     *
+     * The wallet compartment the row belongs to: `main` for every kind this feed carries
+     * today (deposits and withdrawals are main's; fund subscriptions, redemptions and fees
+     * settle against main's balance). A client in scope mode keeps only the rows whose
+     * `scope` is its own; compartment moves and scope payouts are not in this feed yet.
+     */
+    scope?: string;
 };
 
 /**
@@ -4162,6 +4183,15 @@ export type BankingV1RequestWithdrawalRequest = {
      * gross decimal USDT to debit (the fee is taken from this)
      */
     amount?: string;
+    /**
+     * idempotency_key
+     *
+     * Client-minted, 1..128 bytes, unique per user (the withdraw page mints one per load). A
+     * repeat with the same network, address and amount returns the first withdrawal and opens
+     * no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates
+     * the field) = no deduplication.
+     */
+    idempotency_key?: string;
 };
 
 /**
@@ -9762,6 +9792,35 @@ export type BankingV1BookServiceSetBookPolicyResponses = {
 };
 
 export type BankingV1BookServiceSetBookPolicyResponse = BankingV1BookServiceSetBookPolicyResponses[keyof BankingV1BookServiceSetBookPolicyResponses];
+
+export type BankingV1CompartmentServiceGetCompartmentData = {
+    body: BankingV1GetCompartmentRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.CompartmentService/GetCompartment';
+};
+
+export type BankingV1CompartmentServiceGetCompartmentErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1CompartmentServiceGetCompartmentError = BankingV1CompartmentServiceGetCompartmentErrors[keyof BankingV1CompartmentServiceGetCompartmentErrors];
+
+export type BankingV1CompartmentServiceGetCompartmentResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1Compartment;
+};
+
+export type BankingV1CompartmentServiceGetCompartmentResponse = BankingV1CompartmentServiceGetCompartmentResponses[keyof BankingV1CompartmentServiceGetCompartmentResponses];
 
 export type BankingV1CompartmentServiceGetScopePolicyData = {
     body: BankingV1GetScopePolicyRequest;
