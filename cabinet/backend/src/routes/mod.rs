@@ -426,4 +426,25 @@ mod tests {
 		assert!(!ct_str_eq("short", "longer-value"));
 		assert!(ct_str_eq("", ""));
 	}
+
+	fn claims_at(auth_time: Option<u64>) -> Claims {
+		serde_json::from_value(serde_json::json!({
+			"sub": "user-1", "iss": "i", "aud": "a", "exp": 0, "iat": 0, "typ": "access", "token_version": 0, "auth_time": auth_time,
+		}))
+		.expect("claims parse")
+	}
+
+	/// The edges a `<` / `<=` slip would move: exactly the limit passes, one second past it does
+	/// not, and a missing claim is never a pass. A future `auth_time` passes by design — concierge
+	/// signs it, so only its own clock skew can produce one.
+	#[test]
+	fn fresh_login_is_judged_at_the_five_minute_edge() {
+		let now = 1_000_000;
+		let judged = |at| require_fresh_login(&claims_at(at), now).is_ok();
+		assert!(judged(Some(now)));
+		assert!(judged(Some(now - STEP_UP_MAX_AGE_SECS)));
+		assert!(!judged(Some(now - STEP_UP_MAX_AGE_SECS - 1)));
+		assert!(!judged(None));
+		assert!(judged(Some(now + 30)));
+	}
 }
