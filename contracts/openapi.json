@@ -5547,6 +5547,124 @@
         }
       }
     },
+    "/banking.v1.PayoutReviewService/GetPayoutApproval": {
+      "post": {
+        "tags": [
+          "banking.v1.PayoutReviewService"
+        ],
+        "summary": "GetPayoutApproval",
+        "description": "The id of the concierge approval opened for a payout operation, so the BFF can ask\n concierge whether the caller is on its roster BEFORE any recipient is read. Carries no\n line, no amount and no name.",
+        "operationId": "banking.v1.PayoutReviewService.GetPayoutApproval",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.GetPayoutApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PayoutApprovalRef"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/banking.v1.PayoutReviewService/ListPayoutLines": {
+      "post": {
+        "tags": [
+          "banking.v1.PayoutReviewService"
+        ],
+        "summary": "ListPayoutLines",
+        "description": "One page of the operation's lines, with the summary every page repeats. `approval_id`\n must be the operation's own (from GetPayoutApproval).",
+        "operationId": "banking.v1.PayoutReviewService.ListPayoutLines",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/banking.v1.ListPayoutLinesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/banking.v1.PayoutLinesPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/banking.v1.UsersService/DisableUser": {
       "post": {
         "tags": [
@@ -10730,6 +10848,18 @@
         "title": "GetPaymentRequest",
         "additionalProperties": false
       },
+      "banking.v1.GetPayoutApprovalRequest": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "operation_id",
+            "description": "The operation id: a lowercase UUID, the tail of the approval's `pending_operation:\u003cid\u003e`."
+          }
+        },
+        "title": "GetPayoutApprovalRequest",
+        "additionalProperties": false
+      },
       "banking.v1.GetPositionRequest": {
         "type": "object",
         "properties": {
@@ -11188,6 +11318,31 @@
           }
         },
         "title": "ListPaymentsRequest",
+        "additionalProperties": false
+      },
+      "banking.v1.ListPayoutLinesRequest": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "operation_id"
+          },
+          "approval_id": {
+            "type": "string",
+            "title": "approval_id"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "offset",
+            "description": "Lines to skip, in the order they are paid. Past the end is an empty page."
+          },
+          "limit": {
+            "type": "integer",
+            "title": "limit",
+            "description": "Lines to return. 0 means the server default (50); the server caps it at 200."
+          }
+        },
+        "title": "ListPayoutLinesRequest",
         "additionalProperties": false
       },
       "banking.v1.ListPositionsRequest": {
@@ -12336,6 +12491,111 @@
           "PAYMENT_STATE_CANCELLED"
         ],
         "description": "Where an order stands. Terminal everywhere except PENDING and APPROVED."
+      },
+      "banking.v1.PayoutApprovalRef": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "title": "approval_id"
+          }
+        },
+        "title": "PayoutApprovalRef",
+        "additionalProperties": false
+      },
+      "banking.v1.PayoutLinesPage": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "title": "operation_id"
+          },
+          "state": {
+            "type": "string",
+            "title": "state",
+            "description": "`awaiting_approval` | `executed` | `rejected` | `failed`."
+          },
+          "from_account": {
+            "type": "string",
+            "title": "from_account",
+            "description": "`\u003cscope\u003e:\u003clabel\u003e` — the account the money leaves."
+          },
+          "total": {
+            "type": "string",
+            "title": "total",
+            "description": "Canonical decimal USDT; the sum of ALL lines, not of this page."
+          },
+          "max_line": {
+            "type": "string",
+            "title": "max_line",
+            "description": "The largest single line, as the approval shows it."
+          },
+          "recipients": {
+            "type": "integer",
+            "title": "recipients",
+            "description": "How many lines the payout has in all."
+          },
+          "recipients_without_history": {
+            "type": "integer",
+            "title": "recipients_without_history",
+            "description": "How many of them are recipients without history in the scope."
+          },
+          "distribution": {
+            "type": "boolean",
+            "title": "distribution"
+          },
+          "over_scope_budget": {
+            "type": "boolean",
+            "title": "over_scope_budget"
+          },
+          "lines_digest": {
+            "type": "string",
+            "title": "lines_digest",
+            "description": "SHA-256 over the lines, as the approval carries it."
+          },
+          "offset": {
+            "type": "integer",
+            "title": "offset",
+            "description": "The page asked for, echoed so a client can tell which one it holds."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/banking.v1.PayoutReviewLine"
+            },
+            "title": "lines"
+          }
+        },
+        "title": "PayoutLinesPage",
+        "additionalProperties": false
+      },
+      "banking.v1.PayoutReviewLine": {
+        "type": "object",
+        "properties": {
+          "line_no": {
+            "type": "integer",
+            "title": "line_no",
+            "description": "The place in the payout, from 0."
+          },
+          "recipient": {
+            "type": "string",
+            "title": "recipient",
+            "description": "The recipient as the requesting service named them — the string `lines_digest` covers."
+          },
+          "amount": {
+            "type": "string",
+            "title": "amount",
+            "description": "Canonical decimal USDT."
+          },
+          "no_history": {
+            "type": "boolean",
+            "title": "no_history",
+            "description": "The recipient has no earlier payout in this scope: banking has never paid them here, so\n an approver has nothing to compare the line with. Pending and posted payouts count;\n failed ones and this operation's own do not."
+          }
+        },
+        "title": "PayoutReviewLine",
+        "additionalProperties": false,
+        "description": "One recipient and what they are paid."
       },
       "banking.v1.PlaceOrderRequest": {
         "type": "object",
@@ -17000,6 +17260,10 @@
     {
       "name": "banking.v1.PaymentConsentService",
       "description": "PaymentConsentService — the surface an emailed investor reaches. Mounted OUTSIDE the\n user-auth layer, exactly as ConsiliumApprovalService is: the emailed token IS the\n credential, and the investor clicking it may not be signed in.\n\n The GET is strictly read-only because mail scanners issue automatic requests for every\n URL in a message. The consent is a separate call carrying the secret code from the same\n mail — that is what turns a scanned link into a deliberate human act."
+    },
+    {
+      "name": "banking.v1.PayoutReviewService",
+      "description": "PayoutReviewService — the lines of a `bank:scope_payout` operation, for the people who\n are asked to approve it (banking#529, SCOPE-LEDGER checklist item 9).\n\n The approval concierge shows carries only totals, the largest single line and two flags;\n the approvers could not see WHO is paid HOW MUCH. This is the read behind the page that\n shows them. It reads the operation banking STORED when the payout was requested — the same\n rows the approval's `lines_digest` was taken over and the executor pays from — never\n anything a caller sends.\n\n Read-only: it moves no money and writes nothing. Who may read is decided at the cabinet's\n BFF, which has the caller's concierge session: only a voter on the approval's frozen roster\n gets a page. This service refuses what it can check itself — an unknown operation, one that\n is not a payout, one whose approval is not opened, and a caller-supplied `approval_id` that\n is not the operation's own — all with one identical NOT_FOUND, so a probe learns nothing\n about which ids exist. Amounts are canonical decimal USDT strings."
     },
     {
       "name": "banking.v1.UsersService",

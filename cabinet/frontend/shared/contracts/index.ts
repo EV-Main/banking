@@ -48,6 +48,8 @@ export type {
   // The unified activity timeline — one read model over all four money kinds.
   BankingV1Operation as Operation,
   BankingV1OperationList as OperationList,
+  BankingV1PayoutLinesPage as PayoutLinesPage,
+  BankingV1PayoutReviewLine as PayoutReviewLine,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
   // What a fund charges, and what the caller's holding owes for it right now.
