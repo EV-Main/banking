@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package banking.v1;
+
+// PayoutReviewService — the lines of a `bank:scope_payout` operation, for the people who
+// are asked to approve it (banking#529, SCOPE-LEDGER checklist item 9).
+//
+// The approval concierge shows carries only totals, the largest single line and two flags;
+// the approvers could not see WHO is paid HOW MUCH. This is the read behind the page that
+// shows them. It reads the operation banking STORED when the payout was requested — the same
+// rows the approval's `lines_digest` was taken over and the executor pays from — never
+// anything a caller sends.
+//
+// Read-only: it moves no money and writes nothing. Who may read is decided at the cabinet's
+// BFF, which has the caller's concierge session: only a voter on the approval's frozen roster
+// gets a page. This service refuses what it can check itself — an unknown operation, one that
+// is not a payout, one whose approval is not opened, and a caller-supplied `approval_id` that
+// is not the operation's own — all with one identical NOT_FOUND, so a probe learns nothing
+// about which ids exist. Amounts are canonical decimal USDT strings.
+service PayoutReviewService {
+  // The id of the concierge approval opened for a payout operation, so the BFF can ask
+  // concierge whether the caller is on its roster BEFORE any recipient is read. Carries no
+  // line, no amount and no name.
+  rpc GetPayoutApproval(GetPayoutApprovalRequest) returns (PayoutApprovalRef);
+
+  // One page of the operation's lines, with the summary every page repeats. `approval_id`
+  // must be the operation's own (from GetPayoutApproval).
+  rpc ListPayoutLines(ListPayoutLinesRequest) returns (PayoutLinesPage);
+}
+
+message GetPayoutApprovalRequest {
+  // The operation id: a lowercase UUID, the tail of the approval's `pending_operation:<id>`.
+  string operation_id = 1;
+}
+
+message PayoutApprovalRef {
+  string approval_id = 1;
+}
+
+message ListPayoutLinesRequest {
+  string operation_id = 1;
+  string approval_id = 2;
+  // Lines to skip, in the order they are paid. Past the end is an empty page.
+  uint32 offset = 3;
+  // Lines to return. 0 means the server default (50); the server caps it at 200.
+  uint32 limit = 4;
+}
+
+// One recipient and what they are paid.
+message PayoutReviewLine {
+  // The place in the payout, from 0.
+  uint32 line_no = 1;
+  // The recipient as the requesting service named them — the string `lines_digest` covers.
+  string recipient = 2;
+  // Canonical decimal USDT.
+  string amount = 3;
+  // The recipient has no earlier POSTED approved payout in this scope: banking has never
+  // paid them through an approval here, so an approver has nothing to compare the line with.
+  // Pending payouts do not count (they may still fail), nor do the service's automatic
+  // payouts (redemption, book, fee rebate) or this operation's own.
+  bool no_history = 4;
+}
+
+message PayoutLinesPage {
+  string operation_id = 1;
+  // `awaiting_approval` | `executed` | `rejected` | `failed`.
+  string state = 2;
+  // `<scope>:<label>` — the account the money leaves.
+  string from_account = 3;
+  // Canonical decimal USDT; the sum of ALL lines, not of this page.
+  string total = 4;
+  // The largest single line, as the approval shows it.
+  string max_line = 5;
+  // How many lines the payout has in all.
+  uint32 recipients = 6;
+  // How many of them are recipients without history in the scope.
+  uint32 recipients_without_history = 7;
+  bool distribution = 8;
+  bool over_scope_budget = 9;
+  // SHA-256 over the lines, as stored with the operation. The hub recomputes it from the
+  // lines it reads and refuses the page when they differ.
+  string lines_digest = 10;
+  // The page asked for, echoed so a client can tell which one it holds.
+  uint32 offset = 11;
+  repeated PayoutReviewLine lines = 12;
+}

@@ -1973,6 +1973,18 @@ export type BankingV1GetPaymentRequest = {
 };
 
 /**
+ * GetPayoutApprovalRequest
+ */
+export type BankingV1GetPayoutApprovalRequest = {
+    /**
+     * operation_id
+     *
+     * The operation id: a lowercase UUID, the tail of the approval's `pending_operation:<id>`.
+     */
+    operation_id?: string;
+};
+
+/**
  * GetPositionRequest
  */
 export type BankingV1GetPositionRequest = {
@@ -2470,6 +2482,32 @@ export type BankingV1ListPaymentsRequest = {
      * treasury — the ones the owners' consilium gates, i.e. the governance surface.
      */
     fund_owned_only?: boolean;
+};
+
+/**
+ * ListPayoutLinesRequest
+ */
+export type BankingV1ListPayoutLinesRequest = {
+    /**
+     * operation_id
+     */
+    operation_id?: string;
+    /**
+     * approval_id
+     */
+    approval_id?: string;
+    /**
+     * offset
+     *
+     * Lines to skip, in the order they are paid. Past the end is an empty page.
+     */
+    offset?: number;
+    /**
+     * limit
+     *
+     * Lines to return. 0 means the server default (50); the server caps it at 200.
+     */
+    limit?: number;
 };
 
 /**
@@ -3657,6 +3695,122 @@ export type BankingV1PaymentList = {
  * Where an order stands. Terminal everywhere except PENDING and APPROVED.
  */
 export type BankingV1PaymentState = 'PAYMENT_STATE_UNSPECIFIED' | 'PAYMENT_STATE_PENDING' | 'PAYMENT_STATE_APPROVED' | 'PAYMENT_STATE_EXECUTED' | 'PAYMENT_STATE_EXECUTION_FAILED' | 'PAYMENT_STATE_REJECTED' | 'PAYMENT_STATE_EXPIRED' | 'PAYMENT_STATE_CANCELLED';
+
+/**
+ * PayoutApprovalRef
+ */
+export type BankingV1PayoutApprovalRef = {
+    /**
+     * approval_id
+     */
+    approval_id?: string;
+};
+
+/**
+ * PayoutLinesPage
+ */
+export type BankingV1PayoutLinesPage = {
+    /**
+     * operation_id
+     */
+    operation_id?: string;
+    /**
+     * state
+     *
+     * `awaiting_approval` | `executed` | `rejected` | `failed`.
+     */
+    state?: string;
+    /**
+     * from_account
+     *
+     * `<scope>:<label>` — the account the money leaves.
+     */
+    from_account?: string;
+    /**
+     * total
+     *
+     * Canonical decimal USDT; the sum of ALL lines, not of this page.
+     */
+    total?: string;
+    /**
+     * max_line
+     *
+     * The largest single line, as the approval shows it.
+     */
+    max_line?: string;
+    /**
+     * recipients
+     *
+     * How many lines the payout has in all.
+     */
+    recipients?: number;
+    /**
+     * recipients_without_history
+     *
+     * How many of them are recipients without history in the scope.
+     */
+    recipients_without_history?: number;
+    /**
+     * distribution
+     */
+    distribution?: boolean;
+    /**
+     * over_scope_budget
+     */
+    over_scope_budget?: boolean;
+    /**
+     * lines_digest
+     *
+     * SHA-256 over the lines, as stored with the operation. The hub recomputes it from the
+     * lines it reads and refuses the page when they differ.
+     */
+    lines_digest?: string;
+    /**
+     * offset
+     *
+     * The page asked for, echoed so a client can tell which one it holds.
+     */
+    offset?: number;
+    /**
+     * lines
+     */
+    lines?: Array<BankingV1PayoutReviewLine>;
+};
+
+/**
+ * PayoutReviewLine
+ *
+ * One recipient and what they are paid.
+ */
+export type BankingV1PayoutReviewLine = {
+    /**
+     * line_no
+     *
+     * The place in the payout, from 0.
+     */
+    line_no?: number;
+    /**
+     * recipient
+     *
+     * The recipient as the requesting service named them — the string `lines_digest` covers.
+     */
+    recipient?: string;
+    /**
+     * amount
+     *
+     * Canonical decimal USDT.
+     */
+    amount?: string;
+    /**
+     * no_history
+     *
+     * The recipient has no earlier POSTED approved payout in this scope: banking has never
+     * paid them through an approval here, so an approver has nothing to compare the line with.
+     * Pending payouts do not count (they may still fail), nor do the service's automatic
+     * payouts (redemption, book, fee rebate) or this operation's own.
+     */
+    no_history?: boolean;
+};
 
 /**
  * PlaceOrderRequest
@@ -11068,6 +11222,64 @@ export type BankingV1PaymentsServiceOpenPaymentResponses = {
 };
 
 export type BankingV1PaymentsServiceOpenPaymentResponse = BankingV1PaymentsServiceOpenPaymentResponses[keyof BankingV1PaymentsServiceOpenPaymentResponses];
+
+export type BankingV1PayoutReviewServiceGetPayoutApprovalData = {
+    body: BankingV1GetPayoutApprovalRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.PayoutReviewService/GetPayoutApproval';
+};
+
+export type BankingV1PayoutReviewServiceGetPayoutApprovalErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1PayoutReviewServiceGetPayoutApprovalError = BankingV1PayoutReviewServiceGetPayoutApprovalErrors[keyof BankingV1PayoutReviewServiceGetPayoutApprovalErrors];
+
+export type BankingV1PayoutReviewServiceGetPayoutApprovalResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PayoutApprovalRef;
+};
+
+export type BankingV1PayoutReviewServiceGetPayoutApprovalResponse = BankingV1PayoutReviewServiceGetPayoutApprovalResponses[keyof BankingV1PayoutReviewServiceGetPayoutApprovalResponses];
+
+export type BankingV1PayoutReviewServiceListPayoutLinesData = {
+    body: BankingV1ListPayoutLinesRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/banking.v1.PayoutReviewService/ListPayoutLines';
+};
+
+export type BankingV1PayoutReviewServiceListPayoutLinesErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type BankingV1PayoutReviewServiceListPayoutLinesError = BankingV1PayoutReviewServiceListPayoutLinesErrors[keyof BankingV1PayoutReviewServiceListPayoutLinesErrors];
+
+export type BankingV1PayoutReviewServiceListPayoutLinesResponses = {
+    /**
+     * Success
+     */
+    200: BankingV1PayoutLinesPage;
+};
+
+export type BankingV1PayoutReviewServiceListPayoutLinesResponse = BankingV1PayoutReviewServiceListPayoutLinesResponses[keyof BankingV1PayoutReviewServiceListPayoutLinesResponses];
 
 export type BankingV1UsersServiceDisableUserData = {
     body: BankingV1DisableUserRequest;

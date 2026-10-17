@@ -20,7 +20,8 @@ use evbanking_contracts::banking::v1::{
 	compartment_service_server::CompartmentServiceServer, consilium_approval_service_server::ConsiliumApprovalServiceServer, consilium_service_server::ConsiliumServiceServer,
 	fees_service_server::FeesServiceServer, funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer,
 	invoice_payment_service_server::InvoicePaymentServiceServer, operations_service_server::OperationsServiceServer, payment_consent_service_server::PaymentConsentServiceServer,
-	payments_service_server::PaymentsServiceServer, users_service_server::UsersServiceServer, wallet_service_server::WalletServiceServer,
+	payments_service_server::PaymentsServiceServer, payout_review_service_server::PayoutReviewServiceServer, users_service_server::UsersServiceServer,
+	wallet_service_server::WalletServiceServer,
 };
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
@@ -41,6 +42,7 @@ use crate::{
 		invoices::InvoicePaymentSvc,
 		operations::OperationsSvc,
 		payments::{PaymentConsentSvc, PaymentsSvc},
+		payout_review::PayoutReviewSvc,
 		users::UsersSvc,
 		wallet::WalletSvc,
 	},
@@ -57,6 +59,7 @@ pub mod health;
 pub mod invoices;
 pub mod operations;
 pub mod payments;
+pub mod payout_review;
 pub mod scope_ledger;
 pub(crate) mod support;
 pub mod users;
@@ -115,6 +118,7 @@ pub async fn serve(addr: SocketAddr, state: AppState, shutdown: impl Future<Outp
 		.add_service(ConsiliumApprovalServiceServer::new(ConsiliumApprovalSvc::new(state.clone())))
 		.add_service(auth.layer(PaymentsServiceServer::new(PaymentsSvc::new(state.clone()))))
 		.add_service(PaymentConsentServiceServer::new(PaymentConsentSvc::new(state.clone())))
+		.add_service(auth.layer(PayoutReviewServiceServer::new(PayoutReviewSvc::new(state.clone()))))
 		.add_service(auth.layer(CompartmentServiceServer::new(CompartmentSvc::new(state.clone()))))
 		.add_service(auth.layer(InvoicePaymentServiceServer::new(InvoicePaymentSvc::new(state.clone()))))
 		.add_service(auth.layer(WalletServiceServer::new(WalletSvc::new(state))))

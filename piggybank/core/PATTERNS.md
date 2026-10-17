@@ -1179,6 +1179,19 @@ the round goes on. The client sees
 OPERATION_REQUESTED / _REJECTED / _FAILED, and PAID_OUT / TRANSFERRED under its
 `subject_ref` when executed; an approved transfer between scopes shows once per side.
 
+**Payout review** (`PayoutReviewService`, `infrastructure::payout_review`, migration 0063; banking#529).
+The read behind the approvers' lines page: `GetPayoutApproval` hands the BFF the operation's
+`approval_id` (no line, no name) so it can ask concierge — with the caller's own token — whether
+the caller is a voter on that roster BEFORE `ListPayoutLines` reads anything; the lines come from
+the stored `scope_operation_lines`, bound to that approval id and re-hashed against the
+stored `lines_digest` (a mismatch refuses the page; the BFF also compares the digest to the one in
+the approval's fields and tells the page via `digest_matches`). A recipient is "without history"
+unless banking has a POSTED, `approved`-reason payout to them in the same scope — pending, failed,
+automatic (redemption/book/fee_rebate) and the operation's own payouts do not count. Every refusal is one `NOT_FOUND`.
+This service cannot see the roster itself (a service reads concierge's approvals without
+addresses), so it checks only revocation and the id binding: the roster gate is the BFF's
+(`cabinet/backend/src/routes/payout_review.rs`). Do not expose it to a caller that skips the BFF.
+
 **Reconciliation** (8) gauges scope transfers and payouts recorded and unposted for over 15
 min (`telemetry::note_stale_scope_postings`), outside `clean()`.
 

@@ -2619,6 +2619,90 @@
     "en": "You are answering as {email}.",
     "t": "Sie antworten als {email}."
   },
+  "approval.lines.title": {
+    "en": "Payout lines",
+    "t": "Auszahlungszeilen"
+  },
+  "approval.lines.description": {
+    "en": "Every recipient and amount of the payout you are asked to approve.",
+    "t": "Jeder Empfänger und Betrag der Auszahlung, die Sie freigeben sollen."
+  },
+  "approval.lines.unavailable": {
+    "en": "These lines are not available",
+    "t": "Diese Zeilen sind nicht verfügbar"
+  },
+  "approval.lines.unavailableHint": {
+    "en": "Only the people asked to approve a payout can see its lines. Check that you opened the link from your own approval.",
+    "t": "Nur die Personen, die eine Auszahlung freigeben sollen, sehen ihre Zeilen. Prüfen Sie, ob Sie den Link aus Ihrer eigenen Freigabe geöffnet haben."
+  },
+  "approval.lines.from": {
+    "en": "Paid from",
+    "t": "Ausgezahlt von"
+  },
+  "approval.lines.total": {
+    "en": "Total",
+    "t": "Gesamt"
+  },
+  "approval.lines.maxLine": {
+    "en": "Largest line",
+    "t": "Größte Zeile"
+  },
+  "approval.lines.recipients": {
+    "en": "Recipients",
+    "t": "Empfänger"
+  },
+  "approval.lines.withoutHistory": {
+    "en": "Recipients without history in this scope",
+    "t": "Empfänger ohne Historie in diesem Scope"
+  },
+  "approval.lines.digest": {
+    "en": "Lines digest",
+    "t": "Zeilen-Digest"
+  },
+  "approval.lines.distribution": {
+    "en": "Distribution",
+    "t": "Verteilung"
+  },
+  "approval.lines.overBudget": {
+    "en": "Over the scope's daily budget",
+    "t": "Über dem Tagesbudget des Scopes"
+  },
+  "approval.lines.col.recipient": {
+    "en": "Recipient",
+    "t": "Empfänger"
+  },
+  "approval.lines.col.amount": {
+    "en": "Amount (USDT)",
+    "t": "Betrag (USDT)"
+  },
+  "approval.lines.noHistory": {
+    "en": "No history in this scope",
+    "t": "Keine Historie in diesem Scope"
+  },
+  "approval.lines.largest": {
+    "en": "Largest",
+    "t": "Größte"
+  },
+  "approval.lines.range": {
+    "en": "{from}–{to} of {total}",
+    "t": "{from}–{to} von {total}"
+  },
+  "approval.lines.prev": {
+    "en": "Previous",
+    "t": "Zurück"
+  },
+  "approval.lines.next": {
+    "en": "Next",
+    "t": "Weiter"
+  },
+  "approval.lines.digestMismatchTitle": {
+    "en": "These lines do not match the approval",
+    "t": "Diese Zeilen passen nicht zur Freigabe"
+  },
+  "approval.lines.digestMismatch": {
+    "en": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+    "t": "Die angezeigten Zeilen ergeben nicht den Digest Ihrer Freigabe. Geben Sie diese Auszahlung nicht frei und informieren Sie die Plattform-Eigentümer."
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Cabinet"

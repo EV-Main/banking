@@ -2619,6 +2619,90 @@
     "en": "You are answering as {email}.",
     "t": "Bạn đang trả lời với tư cách {email}."
   },
+  "approval.lines.title": {
+    "en": "Payout lines",
+    "t": "Các dòng chi trả"
+  },
+  "approval.lines.description": {
+    "en": "Every recipient and amount of the payout you are asked to approve.",
+    "t": "Từng người nhận và số tiền của khoản chi trả bạn được yêu cầu phê duyệt."
+  },
+  "approval.lines.unavailable": {
+    "en": "These lines are not available",
+    "t": "Không thể xem các dòng này"
+  },
+  "approval.lines.unavailableHint": {
+    "en": "Only the people asked to approve a payout can see its lines. Check that you opened the link from your own approval.",
+    "t": "Chỉ những người được yêu cầu phê duyệt khoản chi trả mới xem được các dòng của nó. Hãy kiểm tra bạn đã mở liên kết từ chính yêu cầu phê duyệt của mình."
+  },
+  "approval.lines.from": {
+    "en": "Paid from",
+    "t": "Chi từ"
+  },
+  "approval.lines.total": {
+    "en": "Total",
+    "t": "Tổng cộng"
+  },
+  "approval.lines.maxLine": {
+    "en": "Largest line",
+    "t": "Dòng lớn nhất"
+  },
+  "approval.lines.recipients": {
+    "en": "Recipients",
+    "t": "Người nhận"
+  },
+  "approval.lines.withoutHistory": {
+    "en": "Recipients without history in this scope",
+    "t": "Người nhận chưa có lịch sử trong phạm vi này"
+  },
+  "approval.lines.digest": {
+    "en": "Lines digest",
+    "t": "Mã băm các dòng"
+  },
+  "approval.lines.distribution": {
+    "en": "Distribution",
+    "t": "Phân bổ"
+  },
+  "approval.lines.overBudget": {
+    "en": "Over the scope's daily budget",
+    "t": "Vượt ngân sách ngày của phạm vi"
+  },
+  "approval.lines.col.recipient": {
+    "en": "Recipient",
+    "t": "Người nhận"
+  },
+  "approval.lines.col.amount": {
+    "en": "Amount (USDT)",
+    "t": "Số tiền (USDT)"
+  },
+  "approval.lines.noHistory": {
+    "en": "No history in this scope",
+    "t": "Chưa có lịch sử trong phạm vi này"
+  },
+  "approval.lines.largest": {
+    "en": "Largest",
+    "t": "Lớn nhất"
+  },
+  "approval.lines.range": {
+    "en": "{from}–{to} of {total}",
+    "t": "{from}–{to} trên {total}"
+  },
+  "approval.lines.prev": {
+    "en": "Previous",
+    "t": "Trước"
+  },
+  "approval.lines.next": {
+    "en": "Next",
+    "t": "Tiếp"
+  },
+  "approval.lines.digestMismatchTitle": {
+    "en": "These lines do not match the approval",
+    "t": "Các dòng này không khớp với yêu cầu phê duyệt"
+  },
+  "approval.lines.digestMismatch": {
+    "en": "The lines shown do not hash to the digest your approval carries. Do not approve this payout; tell the platform owners.",
+    "t": "Các dòng hiển thị không băm ra mã mà yêu cầu phê duyệt của bạn mang theo. Đừng phê duyệt khoản chi trả này; hãy báo cho chủ sở hữu nền tảng."
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Cabinet"
