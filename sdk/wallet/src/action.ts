@@ -30,8 +30,12 @@ export const WALLET_ACTION_PATHS = ['/wallet/pay', '/wallet/withdraw', '/wallet/
 
 export type WalletActionPath = (typeof WALLET_ACTION_PATHS)[number];
 
-/** The only query parameters an action URL keeps: which invoice, which scope. */
-export const WALLET_ACTION_PARAMS = ['invoice', 'scope'] as const;
+/**
+ * The only query parameters an action URL keeps: which invoice, which scope, which
+ * mandate request. `request` names a server-side record of what a service asked for; the
+ * mandate's terms are read from it, never from the URL.
+ */
+export const WALLET_ACTION_PARAMS = ['invoice', 'scope', 'request'] as const;
 
 /** Query parameter telling the action page which origin to post its result to. */
 export const OPENER_PARAM = 'opener';
@@ -58,15 +62,17 @@ function isActionPath(path: string): path is WalletActionPath {
 /**
  * `raw` as a wallet action URL on `origin`, rebuilt from scratch, or null.
  * Only an exact {@link WALLET_ACTION_PATHS} path survives, with the first
- * `invoice` and `scope` values; every other parameter and the hash are
+ * `invoice`, `scope` and `request` values; every other parameter and the hash are
  * dropped. Refused outright: another origin, another path, credentials,
  * control characters and backslashes — browsers strip tabs and newlines and
- * read `\` as `/` before the check would see them — and an `invoice` or
- * `scope` that is present but not 1–128 of `A–Z a–z 0–9 _ -`.
+ * read `\` as `/` before the check would see them — and an `invoice`,
+ * `scope` or `request` that is present but not 1–128 of `A–Z a–z 0–9 _ -`.
  *
  * Contract of the action page on evinvest.ltd, which this URL opens:
  * - amount, address and recipient are never read from the URL — a payment's
  *   come from the invoice banking issued, server-side; the URL only names it;
+ * - a mandate's service and caps likewise come from the mandate request banking
+ *   stored, which `request` only names;
  * - `opener` is accepted only when its origin exactly matches one of the
  *   scope's registered origins, else ignored;
  * - `return_to` is accepted only when it is one of those origins plus a path

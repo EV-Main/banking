@@ -13,6 +13,8 @@ export interface ScopeHost {
 export interface ActionParams {
   scope: string | null;
   invoice: string | null;
+  /** The id of a mandate request banking stored; its terms are read from the server, never here. */
+  request: string | null;
   /** The opener origin to post the result to — a registered origin of `scope`, or null. */
   opener: string | null;
   /** The opener's nonce, echoed in the result; null when absent or malformed. */
@@ -71,6 +73,7 @@ export function readActionParams(search: string, pageOrigin: string, hosts: Read
   return {
     scope,
     invoice: id(query.get("invoice")),
+    request: id(query.get("request")),
     opener: openerOf(query.get("opener"), host),
     state: state !== null && STATE.test(state) ? state : null,
     returnTo: returnToOf(query.get("return_to"), pageOrigin, host),

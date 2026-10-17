@@ -70,7 +70,7 @@ Contract, host side:
 | --- | --- | --- |
 | attribute | `scope` | the scope host's id; absent = the full wallet, actions in place |
 | attribute | `invoice` | the invoice id (pay-invoice only) |
-| event | `ev:wallet-action` | cancelable, `detail: { href }`, one of `https://evinvest.ltd/wallet/{pay,withdraw,move,mandate}`; the host rebuilds it with only `invoice` and `scope` — each 1–128 of `A–Z a–z 0–9 _ -`, else the action is refused — and opens it |
+| event | `ev:wallet-action` | cancelable, `detail: { href }`, one of `https://evinvest.ltd/wallet/{pay,withdraw,move,mandate}`; the host rebuilds it with only `invoice`, `scope` and `request` (a mandate request id) — each 1–128 of `A–Z a–z 0–9 _ -`, else the action is refused — and opens it |
 | event | `ev:navigate` | `Wallet` only: an in-element link, as in `@evinvest/mfe` (`onNavigate`) |
 | query | `opener` | the host's origin, added to the popup URL — where the page posts |
 | query | `state` | 128 fresh random bits (`crypto.getRandomValues`, hex) per popup; the page echoes it in its message |
@@ -101,7 +101,7 @@ the page itself) · `busy` (another action's popup is open
 on this page: it is focused, and this call reports nothing) · `timeout`
 (default 15 min; the popup is closed) · `aborted` (`signal`) · `invalid_url`
 (not one of the four action paths on `https://evinvest.ltd`, or a malformed
-`invoice`/`scope`) · `unsupported` (no `crypto` to draw a state from;
+`invoice`/`scope`/`request`) · `unsupported` (no `crypto` to draw a state from;
 nothing opened). The React wrappers ignore `busy`,
 so a double click gives one popup and one `onResult`.
 A message counts only if `event.origin` is `https://evinvest.ltd`, its source

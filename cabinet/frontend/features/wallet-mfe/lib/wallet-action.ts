@@ -19,8 +19,9 @@ export const WALLET_ACTIONS = {
 
 export type WalletAction = keyof typeof WALLET_ACTIONS;
 
-// The SDK refuses an action whose `scope`/`invoice` is not this shape rather than cleaning
-// it, so the element never builds one it would refuse.
+// The SDK refuses an action whose `scope`/`invoice`/`request` is not this shape rather than
+// cleaning it, so the element never builds one it would refuse. Kept in step with the SDK's
+// `ACTION_PARAM_VALUE` and with `action-params.ts` here — three copies, no shared import.
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** An id the action URL may carry, or null — the same rule the host SDK applies. */
@@ -42,15 +43,17 @@ export function readScope(raw: string | null | undefined): string | null {
 
 /**
  * The absolute action URL on `origin` (the wallet's own origin, where the bundle came from):
- * the path and nothing but `scope`/`invoice`. Amounts, addresses and recipients never ride
+ * the path and nothing but `scope`/`invoice`/`request`. Amounts, addresses and recipients never ride
  * in it — the action page reads them from the server.
  */
-export function walletActionHref(origin: string, action: WalletAction, params: { scope?: string | null; invoice?: string | null } = {}): string {
+export function walletActionHref(origin: string, action: WalletAction, params: { scope?: string | null; invoice?: string | null; request?: string | null } = {}): string {
   const url = new URL(WALLET_ACTIONS[action], origin);
   const scope = actionId(params.scope);
   const invoice = actionId(params.invoice);
+  const request = actionId(params.request);
   if (invoice !== null) url.searchParams.set("invoice", invoice);
   if (scope !== null) url.searchParams.set("scope", scope);
+  if (request !== null) url.searchParams.set("request", request);
   return url.href;
 }
 

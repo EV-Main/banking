@@ -7639,6 +7639,10 @@
     "en": "Per 24 hours",
     "t": "Mỗi 24 giờ"
   },
+  "walletAction.capBookFill24h": {
+    "en": "Trades with other users, per 24 hours",
+    "t": "Giao dịch với người dùng khác trong 24 giờ"
+  },
   "walletAction.capOutstanding": {
     "en": "Held at once",
     "t": "Giữ cùng lúc"
@@ -7678,6 +7682,18 @@
   "walletAction.fromScope": {
     "en": "{scope} balance",
     "t": "Số dư {scope}"
+  },
+  "walletAction.grantNow": {
+    "en": "Allow",
+    "t": "Cho phép"
+  },
+  "walletAction.grantReplaces": {
+    "en": "{service} already has permission here. Allowing this replaces it.",
+    "t": "{service} đã có quyền ở đây. Quyền mới sẽ thay thế quyền cũ."
+  },
+  "walletAction.grantTitle": {
+    "en": "Allow {service} to use your funds?",
+    "t": "Cho phép {service} sử dụng tiền của bạn?"
   },
   "walletAction.invoiceClosed": {
     "en": "This invoice can no longer be paid. Nothing has been charged.",
@@ -7778,6 +7794,10 @@
   "walletAction.processingSlow": {
     "en": "Still processing. You can close this window — the payment is not lost, and the service is told once it completes.",
     "t": "Vẫn đang xử lý. Bạn có thể đóng cửa sổ này — khoản thanh toán không bị mất và dịch vụ sẽ được báo khi hoàn tất."
+  },
+  "walletAction.requestUnavailable": {
+    "en": "This request is not available. It may have expired — ask the service to send a new one.",
+    "t": "Yêu cầu này không khả dụng. Có thể nó đã hết hạn — hãy nhờ dịch vụ gửi yêu cầu mới."
   },
   "walletAction.revoke": {
     "en": "End this permission",

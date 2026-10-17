@@ -116,4 +116,4 @@ import type { BankingV1PayoutLinesPage as HubPayoutLinesPage } from "./gen";
 export type PayoutLinesPage = HubPayoutLinesPage & { digest_matches?: boolean };
 
 // Mandates: hand-written for the reason given above.
-export type { Mandate, MandateList, MandateOperation } from "./mandate";
+export type { GrantMandateBody, Mandate, MandateList, MandateOperation, MandateRequest } from "./mandate";
