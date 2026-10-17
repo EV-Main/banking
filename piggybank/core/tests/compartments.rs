@@ -145,7 +145,7 @@ fn refusal(result: Result<piggybank_core::ports::compartments::RecordedMove, Mov
 }
 
 #[tokio::test]
-async fn the_seeded_scopes_list_after_main_with_the_default_ceilings() {
+async fn the_seeded_scopes_list_after_main_with_their_policy() {
 	let Some(h) = harness().await else { return };
 	let user = funded_user(&h, "5").await;
 	let (views, kyc_level) = compartments_app::list_compartments(&ports(&h), user).await.unwrap();
@@ -158,7 +158,9 @@ async fn the_seeded_scopes_list_after_main_with_the_default_ceilings() {
 		assert_eq!(view.total, Usdt::ZERO, "never entered reads zero");
 		let scope = view.scope.as_ref().unwrap();
 		assert_eq!(scope.state, ScopeState::Active);
-		assert_eq!(scope.policy.min_kyc_level, 0);
+		// Migration 0061 (banking#523): level 1, 1000 per move, 5000 per rolling 24 h.
+		assert_eq!(scope.policy.min_kyc_level, 1);
+		assert_eq!((scope.policy.max_per_move, scope.policy.max_moved_in_24h), (Some(usdt("1000")), Some(usdt("5000"))));
 		assert_eq!(scope.policy.max_balance, None);
 		assert_eq!(
 			(scope.policy.auto_payout_per_op, scope.policy.auto_payout_24h, scope.policy.auto_transfer_24h),
@@ -170,6 +172,45 @@ async fn the_seeded_scopes_list_after_main_with_the_default_ceilings() {
 		.await
 		.unwrap();
 	assert_eq!(treasury.as_deref(), Some("banking"), "the treasury is banking's own account");
+}
+
+/// Replaying migration 0061 over a policy an operator has changed must leave it alone.
+#[tokio::test]
+async fn the_seed_migration_never_overwrites_an_operators_policy() {
+	let Some(h) = harness().await else { return };
+	let scope = own_scope(&h).await;
+	sqlx::query("UPDATE scope_policies SET min_kyc_level = 3 WHERE scope = $1")
+		.bind(scope.as_str())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	// The migration names `invest` and `sa` only; point its guarded UPDATE at this scope.
+	let sql = include_str!("../migrations/0061_scope_policy_invest_sa.sql").replace("('invest', 'sa')", &format!("('{}')", scope.as_str()));
+	sqlx::raw_sql(sqlx::AssertSqlSafe(sql.replace("SET LOCAL lock_timeout = '3s';", "")))
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let level: i32 = sqlx::query_scalar("SELECT min_kyc_level FROM scope_policies WHERE scope = $1")
+		.bind(scope.as_str())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(level, 3, "a set policy survives");
+	sqlx::query("UPDATE scope_policies SET min_kyc_level = 0 WHERE scope = $1")
+		.bind(scope.as_str())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	sqlx::raw_sql(sqlx::AssertSqlSafe(sql.replace("SET LOCAL lock_timeout = '3s';", "")))
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let level: i32 = sqlx::query_scalar("SELECT min_kyc_level FROM scope_policies WHERE scope = $1")
+		.bind(scope.as_str())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(level, 1, "a row still at the 0052 defaults is set");
 }
 
 #[tokio::test]

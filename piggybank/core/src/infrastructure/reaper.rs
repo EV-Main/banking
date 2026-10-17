@@ -79,6 +79,8 @@ pub struct ReaperReport {
 	pub redriven_invoice_payments: usize,
 	/// `pending` scope charges whose lost event was put back on the outbox.
 	pub redriven_scope_charges: usize,
+	/// Fee routes made or revived for swept fees that were stuck on a `fee` collector.
+	pub repaired_fee_routes: usize,
 }
 
 /// The reaper job: sweep on an interval until the process exits.
@@ -203,6 +205,12 @@ impl Reaper {
 			);
 		}
 
+		let routes = scope_ledger::redrive_fee_routes(&self.pool).await?;
+		report.repaired_fee_routes = routes.routed + routes.revived;
+		if report.repaired_fee_routes > 0 {
+			warn!(routed = routes.routed, revived = routes.revived, "reaper: routed swept fees that were stuck on a fee collector");
+		}
+
 		report.redriven_scope_payouts = scope_payouts::redrive_stale_payouts(&self.pool, self.move_redrive_after).await?;
 		if report.redriven_scope_payouts > 0 {
 			warn!(
@@ -248,6 +256,7 @@ impl Reaper {
 			|| report.redriven_scope_payouts > 0
 			|| report.redriven_invoice_payments > 0
 			|| report.redriven_scope_charges > 0
+			|| report.repaired_fee_routes > 0
 			|| report.expired_scope_holds > 0
 		{
 			self.notify.notify_one();

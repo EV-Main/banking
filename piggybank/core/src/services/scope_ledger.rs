@@ -32,9 +32,10 @@ use std::{
 };
 
 use domain::{
+	error::DomainError,
 	money::Usdt,
 	scope_invoices::InvoiceState,
-	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, MoneyEventKind, SubjectRef, TransferReason},
+	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, MoneyEventKind, SubjectRef, TransferReason},
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
@@ -64,7 +65,7 @@ use crate::{
 	application::{
 		scope_charges::{self as charges_app, ChargeRequest},
 		scope_invoices::{self as invoices_app, CreateInvoiceRequest, InvoicePorts},
-		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
+		scope_ledger::{self as ledger_app, AccountView, CaptureRequest, ListHoldsRequest, ReserveRequest, ScopeLedgerPorts, TransferError, TransferRequest, VoidRequest},
 		scope_operations::{self as operations_app, OperationPorts, PayoutRequest, RequestPayoutRequest, RequestTransferRequest},
 	},
 	config::ScopeLedgerSettings,
@@ -323,6 +324,8 @@ fn refused(rpc: &'static str, client: &ClientId, err: TransferError) -> Status {
 			tracing::error!(rpc, %client, "scope ledger: {why}");
 			return Status::internal("internal error");
 		}
+		// The whole message is the reason, like a refusal's: `map_err` would prefix it.
+		TransferError::Domain(DomainError::Conflict(why)) if why == IDEMPOTENCY_CONFLICT => Status::already_exists(IDEMPOTENCY_CONFLICT),
 		TransferError::Domain(err) => map_err(err),
 		TransferError::Exhausted(why) => Status::resource_exhausted(why),
 	};
@@ -362,6 +365,14 @@ fn optional_amount(raw: &str) -> Result<Option<Usdt>, Status> {
 		return Ok(None);
 	}
 	Usdt::parse_decimal(raw).map(Some).map_err(map_err)
+}
+
+/// A page token is the last hold id of the page before, as banking wrote it.
+fn page_token_of(raw: &str) -> Result<Uuid, Status> {
+	Uuid::parse_str(raw)
+		.ok()
+		.filter(|id| id.to_string() == raw)
+		.ok_or_else(|| Status::invalid_argument("page_token is not one this service issued"))
 }
 
 fn operation_id_of(raw: &str) -> Result<Uuid, Status> {
@@ -588,6 +599,22 @@ impl ScopeLedgerService for ScopeLedgerSvc {
 			.map_err(|err| refused("GetHold", &client, err))?;
 		Ok(Response::new(hold_to_proto(&recorded)))
 	}
+
+	async fn list_holds(&self, request: Request<pb::ListHoldsRequest>) -> Result<Response<pb::ListHoldsResponse>, Status> {
+		let client = caller(&request)?;
+		let req = request.into_inner();
+		let parsed = ListHoldsRequest {
+			scope: if req.scope.is_empty() { None } else { Some(scope_of(&req.scope)?) },
+			subject_prefix: req.subject_ref_prefix,
+			page_size: req.page_size,
+			after: if req.page_token.is_empty() { None } else { Some(page_token_of(&req.page_token)?) },
+		};
+		let page = ledger_app::list_holds(&self.ports(), &client, parsed).await.map_err(|err| refused("ListHolds", &client, err))?;
+		Ok(Response::new(pb::ListHoldsResponse {
+			holds: page.holds.iter().map(hold_to_proto).collect(),
+			next_page_token: page.next.map(|id| id.to_string()).unwrap_or_default(),
+		}))
+	}
 }
 
 #[tonic::async_trait]
@@ -804,7 +831,8 @@ fn transfer_to_proto(recorded: &RecordedTransfer) -> pb::ScopeTransfer {
 		subject_ref: transfer.subject_ref().as_str().to_owned(),
 		memo: transfer.memo().to_owned(),
 		reason: match transfer.reason() {
-			TransferReason::FeeSweep => pb::TransferReason::FeeSweep as i32,
+			// banking's route of the swept fees carries the sweep's reason (`ledger.proto`).
+			TransferReason::FeeSweep | TransferReason::FeeRoute => pb::TransferReason::FeeSweep as i32,
 			// An approved transfer has no automatic reason; its operation says why.
 			TransferReason::Approved => pb::TransferReason::Unspecified as i32,
 		},
@@ -878,5 +906,21 @@ fn operation_to_proto(recorded: &RecordedOperation) -> pb::PendingOperation {
 		decided_at: recorded.decided_at.unwrap_or(0),
 		result_id: progress.result_id.clone().unwrap_or_default(),
 		failure_reason: progress.failure_reason.clone().unwrap_or_default(),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_reused_key_is_already_exists_with_the_reason_alone_as_the_message() {
+		let client = ClientId::parse("invest").unwrap();
+		let status = refused("Reserve", &client, TransferError::Domain(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into())));
+		assert_eq!((status.code(), status.message()), (Code::AlreadyExists, "idempotency_conflict"));
+		// The other ALREADY_EXISTS (a label another client owns) keeps its own words.
+		let taken = refused("OpenAccount", &client, TransferError::Domain(DomainError::Conflict("label taken".into())));
+		assert_eq!(taken.code(), Code::AlreadyExists);
+		assert_ne!(taken.message(), "idempotency_conflict");
 	}
 }

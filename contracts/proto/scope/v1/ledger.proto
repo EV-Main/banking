@@ -64,6 +64,20 @@ syntax = "proto3";
 //         fees ever reach it;
 //       - `(<any other scope>, fee)` → `(main, treasury)`, banking's own — the only
 //         movement out of a scope without an approval, and never into another scope.
+//     The route runs once per FEE_SWEEP, right after the sweep posts: banking records it
+//     in the same step that marks the sweep posted (so a sweep never stands posted without
+//     its route), as ONE transfer of its own — it moves whole or not at all — keyed by the
+//     sweep, so a replay routes nothing twice. It is banking's call, not a client's, so it
+//     needs no grant, counts against no ceiling and no mandate, and a frozen scope does not
+//     stop it. Its money events are TRANSFERRED, `initiator_client` empty, `subject_ref`
+//     `fee_route:<the sweep's transfer id>`, and reach the client that made the sweep (see
+//     `events.proto`). The route needs its destination: a FEE_SWEEP while `(invest, alloc:fee)`
+//     is not open is FAILED_PRECONDITION `fee_route_unavailable` and nothing moves, so the
+//     invest client opens `alloc:fee` before it sweeps. Should the account be gone after a
+//     sweep was admitted, the route is recorded failed (`destination_missing`) and the amount
+//     waits on `(invest, fee)` — banking alerts, and its reaper delivers the route, once, when
+//     the account exists again. The labels `fee` and `treasury` are never debited by a client,
+//     whatever a grant says.
 //     A client's call never addresses two scopes; every other movement between scopes
 //     is a `RequestTransfer`.
 //   - A FROZEN scope takes no new debit (Reserve, Charge, Capture into a user, Payout,
@@ -104,7 +118,7 @@ syntax = "proto3";
 // REFUSALS. A FAILED_PRECONDITION or PERMISSION_DENIED carries a machine reason as the
 // whole status message (`insufficient_funds`, `mandate_required`, `approval_required`,
 // `hold_not_active`, `invoice_not_open`, `scope_frozen`, `scope_closed`, `user_frozen`,
-// `not_account_owner`, `not_granted`); clients branch on (code, message) and nothing else.
+// `not_account_owner`, `not_granted`, `fee_route_unavailable`); clients branch on (code, message) and nothing else.
 //
 // AMOUNTS are decimal USDT STRINGS (proto3 has no u128; a string is lossless), strictly
 // positive, at most the ledger's precision. Banking reads any plain decimal and always
@@ -118,8 +132,19 @@ syntax = "proto3";
 // alone carries none: it asks for one end state of one invoice, so a retry is a repeat.) Keys are unique per
 // (calling client, scope, RPC). A repeat with the same key and the same terms returns
 // the ORIGINAL result, even if the world moved since (a frozen scope, a prefix taken
-// away); the same key with different terms is ALREADY_EXISTS. The one exception: a
-// caller that no longer holds ANY grant in the scope gets `not_granted`, repeat or not. A saga retries with the key it stored before the first try.
+// away); the same key with different terms is ALREADY_EXISTS `idempotency_conflict` (that
+// is the whole message, which tells it from the other ALREADY_EXISTS, a label another
+// client owns), and nothing is done. This holds for EVERY mutating RPC that carries a key
+// (OpenAccount, Reserve, Capture, Void, Charge, Payout, Transfer, RequestPayout,
+// RequestTransfer, `InvoiceService.CreateInvoice`), so a retry can never sit on an earlier,
+// smaller or otherwise different result. The terms compared are everything the request
+// asks besides the key: the user, the amount, `ttl_seconds`, the hold, the accounts
+// (`to`, `from_label`, `to_label`, `to_scope`), `subject_ref`, `memo`, `reason`, a payout's
+// lines (as a set: their order is not a term), … The scope is part of the key's identity
+// (see above), so the same key in another scope is a new request, not a conflict. A
+// concurrent repeat waits for the first call and answers with its result. The one
+// exception: a caller that no longer holds ANY grant in the scope gets `not_granted`,
+// repeat or not. A saga retries with the key it stored before the first try.
 package scope.v1;
 
 service ScopeLedgerService {
@@ -229,6 +254,21 @@ service ScopeLedgerService {
   // One hold the caller placed, as it stands now — the saga's recovery read after a
   // timeout.
   rpc GetHold(GetHoldRequest) returns (Hold);
+
+  // The holds the caller placed that are still ACTIVE — the saga's recovery read when a
+  // `Reserve` answer was lost and the hold's id with it (the order row does not exist yet,
+  // so nothing else names the hold). Only the caller's own: another client's holds are not
+  // in the list, as they are NOT_FOUND to `GetHold`. `scope` empty lists across every
+  // scope the caller holds a grant in; one the caller holds no grant in, `main` included,
+  // is PERMISSION_DENIED `not_granted`, and a granted scope banking does not know is
+  // NOT_FOUND, as everywhere. `subject_ref_prefix` keeps the holds whose `subject_ref`
+  // starts with it (`order:` — every hold placed for an order). Paged by `hold_id`
+  // ascending, not by time: a hold placed while a client walks the pages may or may not
+  // be in that walk, so a reaper treats one walk as a sweep of what stood when it began
+  // and runs again. A hold past its `expires_at` that banking has not released yet still
+  // lists as ACTIVE; one that is VOIDED, EXPIRED or CAPTURED does not list at all (read
+  // it with `GetHold`).
+  rpc ListHolds(ListHoldsRequest) returns (ListHoldsResponse);
 }
 
 // One end of a money movement, inside the scope of the enclosing request or event
@@ -539,4 +579,23 @@ message GetBalancesResponse {
 message GetHoldRequest {
   string scope = 1;
   string hold_id = 2;
+}
+
+message ListHoldsRequest {
+  // Empty = every scope the caller holds a grant in.
+  string scope = 1;
+  // Keeps the holds whose `subject_ref` starts with this; at most 128 bytes, plain text.
+  // Empty = no filter.
+  string subject_ref_prefix = 2;
+  // 0 = 100; larger than 500 is clamped to 500.
+  uint32 page_size = 3;
+  // Empty = the first page; otherwise the previous response's `next_page_token`, unchanged,
+  // with the same `scope` and `subject_ref_prefix`.
+  string page_token = 4;
+}
+
+message ListHoldsResponse {
+  repeated Hold holds = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
 }

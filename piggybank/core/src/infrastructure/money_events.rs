@@ -300,17 +300,29 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 		to_label,
 		amount,
 	} = event;
-	let (client, subject_ref): (String, String) = sqlx::query_as("SELECT client_id, subject_ref FROM scope_transfers WHERE id = $1")
-		.bind(transfer_id.raw())
-		.fetch_one(pool)
-		.await
-		.map_err(|e| MoneyEventError::db(format!("scope transfer {transfer_id}"), e))?;
+	// `swept_by` is set on banking's fee route only: the client whose FEE_SWEEP it routes.
+	let (client, subject_ref, swept_by): (String, String, Option<String>) =
+		sqlx::query_as("SELECT t.client_id, t.subject_ref, s.client_id FROM scope_transfers t LEFT JOIN scope_transfers s ON s.id = t.fee_route_of WHERE t.id = $1")
+			.bind(transfer_id.raw())
+			.fetch_one(pool)
+			.await
+			.map_err(|e| MoneyEventError::db(format!("scope transfer {transfer_id}"), e))?;
 	let initiator = ClientId::parse(&client).map_err(|e| MoneyEventError::corrupt(format!("scope transfer {transfer_id}: {e}")))?;
+	let swept_by = swept_by
+		.map(|raw| ClientId::parse(&raw))
+		.transpose()
+		.map_err(|e| MoneyEventError::corrupt(format!("scope transfer {transfer_id}: {e}")))?;
 	let from_balance = balance_of(pool, ledger, &scope, &from_label).await?;
 	let to_balance = balance_of(pool, ledger, &to_scope, &to_label).await?;
-	let side = |event_name: String, side_scope: ScopeId, counterparty: String, balances: Vec<EventBalance>| {
+	let side = |event_name: String, side_scope: ScopeId, counterparty: String, balances: Vec<EventBalance>, shown_to_sweeper: bool| {
 		let mut audience = vec![initiator.clone()];
 		audience.extend(balances.iter().map(|entry| entry.owner.clone()));
+		// banking owns both ends of a route out of a non-invest scope and `main` has no client,
+		// so nobody would learn the money left `fee`: the client that swept it in does, on the
+		// scope's side. It sees only what it is party to — the sweep it made — and no balance.
+		if shown_to_sweeper {
+			audience.extend(swept_by.clone());
+		}
 		NewMoneyEvent {
 			event_id: event_id(&event_name),
 			scope: side_scope,
@@ -322,7 +334,8 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 			from: Some(EventAccount::Account(from_label.clone())),
 			to: Some(EventAccount::Account(to_label.clone())),
 			subject_ref: subject_ref.clone(),
-			initiator_client: initiator.as_str().to_owned(),
+			// Empty when banking itself moved the money (`events.proto`).
+			initiator_client: if initiator.is_banking() { String::new() } else { initiator.as_str().to_owned() },
 			balances,
 			hold_remaining: None,
 			counterparty_scope: counterparty,
@@ -333,7 +346,7 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 	};
 	if scope == to_scope {
 		let balances = from_balance.into_iter().chain(to_balance).collect();
-		return Ok(vec![side(format!("transferred:{transfer_id}"), scope, String::new(), balances)]);
+		return Ok(vec![side(format!("transferred:{transfer_id}"), scope, String::new(), balances, true)]);
 	}
 	Ok(vec![
 		side(
@@ -341,8 +354,15 @@ async fn transferred(pool: &PgPool, ledger: &dyn Ledger, event: ScopeLedgerEvent
 			scope.clone(),
 			to_scope.as_str().to_owned(),
 			from_balance.into_iter().collect(),
+			true,
 		),
-		side(format!("transferred:{transfer_id}:in"), to_scope, scope.as_str().to_owned(), to_balance.into_iter().collect()),
+		side(
+			format!("transferred:{transfer_id}:in"),
+			to_scope,
+			scope.as_str().to_owned(),
+			to_balance.into_iter().collect(),
+			false,
+		),
 	])
 }
 

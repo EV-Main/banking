@@ -15,6 +15,15 @@ import "scope/v1/ledger.proto";
 // compacted: a consumer dedupes by `event_id` and orders one aggregate's events by
 // `aggregate_version`. A scope outside the caller's grants is PERMISSION_DENIED.
 //
+// An EMPTY `scope` is one stream with one cursor over every scope the caller holds a grant
+// in — a client granted in `invest` and `sa` pulls both through a single `after_position`,
+// each event's `scope` saying which it belongs to, and never needs one cursor per scope.
+// The set is the caller's grants as banking's configuration has them when the call is
+// made. A scope granted to the client LATER joins the stream from the cursor on: its events
+// at positions the cursor has already passed are not served again, so a consumer that
+// needs them pulls that scope once by name from 0. A named `scope` is the same stream
+// narrowed to it, with the same global positions.
+//
 // VISIBILITY is per CLIENT, not per scope. A client receives only events of:
 //   - accounts it owns (opened, credited, debited — whoever caused it);
 //   - holds it placed, charges it made, payouts, transfers, invoices and operations
@@ -26,7 +35,13 @@ import "scope/v1/ledger.proto";
 // client owns. A movement between two scopes (an approved scope transfer, or banking's
 // sweep of a non-invest scope's fees into `(main, treasury)`) appears once per side,
 // `counterparty_scope` naming the other, each side delivered by the same rules; `main`
-// has no client, so the sweep shows on the scope's side alone.
+// has no client, so the sweep shows on the scope's side alone. banking's own route of swept
+// fees (`ledger.proto`, the fee route) is a TRANSFERRED too, `initiator_client` empty and
+// `subject_ref` `fee_route:<id of the sweep it routes>`; banking owns both its ends when the
+// scope is not invest, so the scope's side is delivered to the client whose FEE_SWEEP it
+// routes — with no `balance_after`, as neither account is its — and in invest, where the
+// destination `alloc:fee` is the invest client's, to that client as well, naming both
+// accounts in one event.
 //
 // Kinds will be added. A consumer that meets an unknown `kind` must park that event
 // and keep its cursor moving, not stop: banking may ship a kind before every consumer

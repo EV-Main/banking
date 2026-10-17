@@ -25,7 +25,7 @@ use domain::{
 	scope_ledger::{ClientId, Grants, LedgerRefusal, ScopeTransfer, ScopeTransferId, SubjectRef, TransferReason, TransferTerms, canonical},
 	scope_operations::{
 		AutoPayoutFacts, BANK_CATALOG, BANK_CATALOG_VERSION, OperationBody, OperationId, OperationKind, OperationState, OperationTerms, PayoutLine, PayoutReason, PayoutTerms,
-		PendingOperation, RequestedLine, ScopePayout, ScopePayoutId, canonical_lines, check_lines,
+		PendingOperation, RequestedLine, ScopePayout, ScopePayoutId, canonical_lines, check_lines, max_line,
 	},
 	scopes::{ScopeAccountLabel, ScopeId, ScopeState},
 };
@@ -206,6 +206,7 @@ impl PayoutAdmission for PayoutChecks<'_> {
 			.policy
 			.admit_auto_payout(AutoPayoutFacts {
 				total: self.total,
+				max_line: max_line(&request.lines),
 				paid_24h: facts.paid_24h,
 				scope_out_24h: facts.scope_out_24h,
 			})
@@ -1055,7 +1056,7 @@ mod tests {
 	/// the same version with other content, which would hold every proposal back in prod.
 	#[test]
 	fn the_published_catalog_is_pinned_to_its_version() {
-		const PINNED: (u64, &str) = (1_792_051_200, "ed3486ae9fd6971c9e4cdc733a39638bbf07349ce0aaffee926417c49c623b6e");
+		const PINNED: (u64, &str) = (1_792_108_800, "c808a2bc27d98db605b6693ec465af8cd31e3391fc786932e2c2317195c3560d");
 		let digest = sha256_hex(&domain::scope_operations::bank_catalog_canonical());
 		assert_eq!(
 			(BANK_CATALOG_VERSION, digest.as_str()),

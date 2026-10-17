@@ -101,6 +101,9 @@ pub struct TransferFacts {
 	pub source_owner: Option<ClientId>,
 	/// Who owns the destination account; `None` when it does not exist.
 	pub destination_owner: Option<ClientId>,
+	/// Whether the account banking routes the swept fee on to (`fee_route` of the scope) is
+	/// open: a sweep admitted without it would leave the fee stuck on the collector.
+	pub route_open: bool,
 	/// Σ the client's transfers in the scope over the last 24 h, `pending` and `posted`.
 	pub transferred_24h: Usdt,
 }
@@ -222,6 +225,11 @@ pub trait HoldStore: Send + Sync {
 	/// The hold `id` if `client` placed it in `scope`; `None` for anyone else's, as for one
 	/// that does not exist.
 	async fn hold(&self, client: &ClientId, scope: &ScopeId, id: Uuid) -> Result<Option<RecordedHold>, DomainError>;
+
+	/// The ACTIVE holds `client` placed in any of `scopes` whose `subject_ref` starts with
+	/// `subject_prefix` (empty = all), by hold id ascending, those past `after` only, at most
+	/// `limit`.
+	async fn active_holds(&self, client: &ClientId, scopes: &[ScopeId], subject_prefix: &str, after: Option<Uuid>, limit: u32) -> Result<Vec<RecordedHold>, DomainError>;
 
 	/// Place a hold on `auth_subject`'s compartment. Under a lock on the key it answers a key
 	/// already used with what that call recorded; otherwise, under the compartment's write

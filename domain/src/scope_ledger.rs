@@ -252,6 +252,10 @@ pub enum LedgerRefusal {
 	MandateRequired,
 	/// The invoice is paid or expired, or past its expiry (FAILED_PRECONDITION).
 	InvoiceNotOpen,
+	/// A fee sweep would land where banking cannot route it on: the scope's route destination
+	/// (invest's `alloc:fee`) is not open yet (FAILED_PRECONDITION). Nothing is moved, so the
+	/// fee never gets stuck on a collector; retry once the account exists.
+	FeeRouteUnavailable,
 }
 
 impl LedgerRefusal {
@@ -267,6 +271,7 @@ impl LedgerRefusal {
 			Self::UserFrozen => "user_frozen",
 			Self::MandateRequired => "mandate_required",
 			Self::InvoiceNotOpen => "invoice_not_open",
+			Self::FeeRouteUnavailable => "fee_route_unavailable",
 		}
 	}
 
@@ -281,7 +286,8 @@ impl LedgerRefusal {
 			| Self::HoldNotActive
 			| Self::UserFrozen
 			| Self::MandateRequired
-			| Self::InvoiceNotOpen => false,
+			| Self::InvoiceNotOpen
+			| Self::FeeRouteUnavailable => false,
 		}
 	}
 }
@@ -397,6 +403,9 @@ pub enum TransferReason {
 	FeeSweep,
 	/// banking executing an approved `RequestTransfer` — never a reason a client names.
 	Approved,
+	/// banking's own route of swept fees out of `(scope, fee)` — see [`fee_route`]. Never a
+	/// reason a client names, and the only transfer that leaves a `fee` collector.
+	FeeRoute,
 }
 
 impl TransferReason {
@@ -404,6 +413,7 @@ impl TransferReason {
 		match self {
 			Self::FeeSweep => "fee_sweep",
 			Self::Approved => "approved",
+			Self::FeeRoute => "fee_route",
 		}
 	}
 
@@ -411,8 +421,23 @@ impl TransferReason {
 		match raw {
 			"fee_sweep" => Ok(Self::FeeSweep),
 			"approved" => Ok(Self::Approved),
+			"fee_route" => Ok(Self::FeeRoute),
 			other => Err(DomainError::Validation(format!("unknown transfer reason: {other}"))),
 		}
+	}
+}
+
+/// The scope whose fees stay inside it: invest's cash fees feed the `fee` allocation's holders
+/// (D24(3)). Every other scope's go to banking's treasury.
+const FEE_STAYS_IN: &str = "invest";
+
+/// Where banking sweeps what a client swept into `(scope, fee)`: `(invest, alloc:fee)` for
+/// invest, `(main, treasury)` for any other scope (`scope/v1/ledger.proto`, the fee route).
+pub fn fee_route(scope: &ScopeId) -> (ScopeId, ScopeAccountLabel) {
+	if scope.as_str() == FEE_STAYS_IN {
+		(scope.clone(), ScopeAccountLabel::fee_allocation())
+	} else {
+		(ScopeId::main(), ScopeAccountLabel::treasury())
 	}
 }
 
@@ -501,6 +526,12 @@ impl TransferTerms {
 	}
 }
 
+/// The whole message of the ALREADY_EXISTS a scope-ledger call answers when its idempotency key
+/// was used before for other terms. A client branches on it, so it is a reason like the
+/// refusals' — and tells this conflict apart from the other ALREADY_EXISTS (a label another
+/// client owns).
+pub const IDEMPOTENCY_CONFLICT: &str = "idempotency_conflict";
+
 /// `len:value` per field, joined by `|`.
 pub fn canonical(fields: &[&str]) -> String {
 	fields.iter().map(|field| format!("{}:{field}", field.len())).collect::<Vec<_>>().join("|")
@@ -522,12 +553,36 @@ impl ScopeTransfer {
 		Ok(requested)
 	}
 
+	/// banking's route of `amount` swept into `(scope, fee)` by the transfer `funding`: out of
+	/// the collector to wherever [`fee_route`] says, as one transfer of its own. The subject
+	/// reference names the sweep it routes, so the route is traceable from the money events.
+	pub fn route_fee(id: ScopeTransferId, funding: ScopeTransferId, scope: ScopeId, amount: Usdt) -> Result<Self, DomainError> {
+		let (to_scope, to) = fee_route(&scope);
+		Self::request(
+			id,
+			TransferTerms {
+				client: ClientId::banking(),
+				scope,
+				from: ScopeAccountLabel::fee(),
+				to_scope,
+				to,
+				amount,
+				reason: TransferReason::FeeRoute,
+				subject_ref: SubjectRef::parse(&format!("fee_route:{funding}"))?,
+				memo: String::new(),
+				operation_id: None,
+			},
+		)
+	}
+
 	/// Rebuild from storage (no events).
 	pub fn restore(id: ScopeTransferId, terms: TransferTerms) -> Result<Self, DomainError> {
 		if terms.amount.is_zero() {
 			return Err(DomainError::Validation("amount must be positive".into()));
 		}
-		if terms.scope.is_main() || terms.to_scope.is_main() {
+		let routed = terms.reason == TransferReason::FeeRoute;
+		// Only banking's own fee route ends in `main` (its treasury).
+		if terms.scope.is_main() || (terms.to_scope.is_main() && !routed) {
 			return Err(DomainError::Validation("a client's transfer never names main".into()));
 		}
 		if terms.scope == terms.to_scope && terms.from == terms.to {
@@ -535,8 +590,9 @@ impl ScopeTransfer {
 		}
 		// The domain's own floor under the use case's checks: no client transfer debits one
 		// of banking's labels, a fee sweep only ever lands in its own scope's fee collector,
-		// and only an approved operation moves money anywhere else.
-		if terms.from.is_reserved() {
+		// and only an approved operation moves money anywhere else. The fee route is the one
+		// transfer out of a `fee` collector.
+		if terms.from.is_reserved() && !routed {
 			return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.from)));
 		}
 		match terms.reason {
@@ -548,6 +604,13 @@ impl ScopeTransfer {
 			TransferReason::Approved if terms.operation_id.is_none() => return Err(DomainError::Validation("an approved transfer names its operation".into())),
 			TransferReason::Approved if terms.to.is_reserved() => return Err(DomainError::Forbidden(format!("{} is banking's own account", terms.to))),
 			TransferReason::Approved => {}
+			// Only the form is checked on a reload; where a route goes is decided once, when
+			// [`ScopeTransfer::route_fee`] makes it, so a later change of the rule cannot make
+			// a stored route unreadable.
+			TransferReason::FeeRoute if !terms.client.is_banking() || terms.operation_id.is_some() || terms.from != ScopeAccountLabel::fee() => {
+				return Err(DomainError::Forbidden("a fee route is banking's own, out of the scope's fee collector".into()));
+			}
+			TransferReason::FeeRoute => {}
 		}
 		validate_memo(&terms.memo)?;
 		Ok(Self {
@@ -1254,6 +1317,59 @@ mod tests {
 		};
 		assert!(ScopeTransfer::request(ScopeTransferId::new(), sweep_with_operation).is_err());
 		assert_eq!(TransferReason::parse("approved").unwrap(), TransferReason::Approved);
+	}
+
+	#[test]
+	fn a_fee_route_leaves_fee_for_alloc_fee_in_invest_and_the_treasury_elsewhere() {
+		let funding = ScopeTransferId::new();
+		let routed = |name: &str| ScopeTransfer::route_fee(ScopeTransferId::new(), funding, scope(name), usdt("3")).unwrap();
+		let invest = routed("invest");
+		assert_eq!((invest.client().is_banking(), invest.from().as_str()), (true, "fee"));
+		assert_eq!((invest.to_scope().as_str(), invest.to().as_str()), ("invest", "alloc:fee"));
+		for other in ["sa", "service_arb", "investor"] {
+			let route = routed(other);
+			assert_eq!((route.to_scope().as_str(), route.to().as_str()), ("main", "treasury"), "{other}");
+			assert_eq!(route.scope().as_str(), other);
+		}
+		assert_eq!(invest.subject_ref().as_str(), format!("fee_route:{funding}"));
+
+		let mut route = routed("sa");
+		let json = serde_json::to_value(&route.drain_events()[0]).unwrap();
+		assert_eq!(
+			(json["from_label"].as_str(), json["to_scope"].as_str(), json["to_label"].as_str()),
+			(Some("fee"), Some("main"), Some("treasury"))
+		);
+
+		// Nobody else may build one, and no route goes elsewhere.
+		let route_terms = |client: &str, to_scope: &str, to: &str, from: &str| TransferTerms {
+			client: self::client(client),
+			scope: scope("sa"),
+			from: label(from),
+			to_scope: scope(to_scope),
+			to: label(to),
+			amount: usdt("1"),
+			reason: TransferReason::FeeRoute,
+			subject_ref: SubjectRef::parse(&format!("fee_route:{funding}")).unwrap(),
+			memo: String::new(),
+			operation_id: None,
+		};
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), route_terms("banking", "main", "treasury", "fee")).is_ok());
+		assert!(
+			ScopeTransfer::request(ScopeTransferId::new(), route_terms("panel", "main", "treasury", "fee")).is_err(),
+			"a client's route"
+		);
+		assert!(
+			ScopeTransfer::request(ScopeTransferId::new(), route_terms("banking", "main", "treasury", "alloc:x")).is_err(),
+			"only out of fee"
+		);
+		// A client's sweep still cannot reach main or leave fee.
+		let into_main = TransferTerms {
+			to_scope: ScopeId::main(),
+			to: label("treasury"),
+			..terms()
+		};
+		assert!(ScopeTransfer::request(ScopeTransferId::new(), into_main).is_err());
+		assert_eq!(TransferReason::parse("fee_route").unwrap(), TransferReason::FeeRoute);
 	}
 
 	#[test]

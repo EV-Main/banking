@@ -10,7 +10,7 @@
 use domain::{
 	error::DomainError,
 	money::Usdt,
-	scope_ledger::{ClientId, Grants, MandateOperation},
+	scope_ledger::{ClientId, Grants, IDEMPOTENCY_CONFLICT, MandateOperation},
 	scope_mandates::{MandateCaps, MandateTerms},
 	scopes::ScopeId,
 	users::UserId,
@@ -85,7 +85,7 @@ pub async fn grant(ports: &MandatePorts<'_>, user: UserId, request: GrantRequest
 	match ports.store.grant(&terms, &request.idempotency_key).await? {
 		Granted::New(mandate) => Ok(mandate),
 		Granted::Existing { terms: stored, mandate } if stored == terms.canonical() => Ok(mandate),
-		Granted::Existing { .. } => Err(DomainError::Conflict("idempotency_key was used for a different mandate".into())),
+		Granted::Existing { .. } => Err(DomainError::Conflict(IDEMPOTENCY_CONFLICT.into())),
 	}
 }
 
