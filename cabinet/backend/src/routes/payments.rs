@@ -25,7 +25,7 @@ use serde::Deserialize;
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{require_money_token, require_permission, verify_csrf},
+	routes::{require_money_token, require_permission, require_token, verify_csrf},
 	state::AppState,
 };
 
@@ -107,8 +107,14 @@ pub async fn open(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap
 	}
 	require_permission(&st, &jar, bank::Treasury::Read).await?;
 	let token = require_money_token(&st, &jar).await?;
+	// The same session's concierge access token: the proof of who is asking, for a payment the
+	// owners decide. Concierge accepts it only if minted within the last 120 seconds, and the
+	// session renews its access token (every 15 minutes) only when it is about to expire — so
+	// nothing here can make it fresh. A stale one fails the opening with that reason; a
+	// forced-renewal endpoint on the identity plane is what would remove the failure.
+	let proof = require_token(&st, &jar).await?;
 	let req = wire(&body)?;
-	Ok(Json(st.grpc.open_payment(&token, req).await?.into()))
+	Ok(Json(st.grpc.open_payment(&token, &proof, req).await?.into()))
 }
 
 /// `POST /api/admin/payments/{id}/cancel` — CSRF-checked: the initiator withdraws their

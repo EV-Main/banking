@@ -1005,8 +1005,15 @@ impl Grpc {
 		Ok(self.payments().get_payment(bearer(token, req)?).await?.into_inner())
 	}
 
-	pub async fn open_payment(&self, token: &str, req: bk::OpenPaymentRequest) -> Result<bk::Payment, Status> {
-		Ok(self.payments().open_payment(bearer(token, req)?).await?.into_inner())
+	/// `proof` is the caller's own concierge access token, relayed so the money plane can prove
+	/// to concierge who asked for a payment the owners decide (D24(1)): concierge accepts it only
+	/// minted within the last 120 seconds, so it travels once and is kept nowhere.
+	pub async fn open_payment(&self, token: &str, proof: &str, req: bk::OpenPaymentRequest) -> Result<bk::Payment, Status> {
+		let mut request = bearer(token, req)?;
+		request
+			.metadata_mut()
+			.insert("x-ev-user-token", proof.parse().map_err(|_| Status::unauthenticated("invalid user token"))?);
+		Ok(self.payments().open_payment(request).await?.into_inner())
 	}
 
 	pub async fn cancel_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {
