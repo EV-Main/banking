@@ -6159,6 +6159,50 @@ export type ConciergeV1DisableUserResponse = {
 };
 
 /**
+ * DrainLegacyProposalsRequest
+ */
+export type ConciergeV1DrainLegacyProposalsRequest = {
+    /**
+     * items
+     *
+     * At most 100.
+     */
+    items?: Array<ConciergeV1LegacyProposalRef>;
+    /**
+     * reason
+     *
+     * Required; recorded as the void reason. At most 200 characters.
+     */
+    reason?: string;
+};
+
+/**
+ * DrainLegacyProposalsResponse
+ */
+export type ConciergeV1DrainLegacyProposalsResponse = {
+    /**
+     * items
+     */
+    items?: Array<ConciergeV1DrainedProposal>;
+};
+
+/**
+ * DrainedProposal
+ */
+export type ConciergeV1DrainedProposal = {
+    /**
+     * ref
+     */
+    ref?: ConciergeV1LegacyProposalRef;
+    /**
+     * result
+     *
+     * `voided`, `not_open` (already decided, expired or withdrawn) or `not_found`.
+     */
+    result?: string;
+};
+
+/**
  * ExchangeCodeRequest
  */
 export type ConciergeV1ExchangeCodeRequest = {
@@ -6600,6 +6644,25 @@ export type ConciergeV1JwksResponse = {
      * keys
      */
     keys?: Array<ConciergeV1Jwk>;
+};
+
+/**
+ * LegacyProposalKind
+ */
+export type ConciergeV1LegacyProposalKind = 'LEGACY_PROPOSAL_KIND_UNSPECIFIED' | 'LEGACY_PROPOSAL_KIND_OWNER_REMOVAL' | 'LEGACY_PROPOSAL_KIND_OWNER_ADMISSION' | 'LEGACY_PROPOSAL_KIND_USER_PROPOSAL';
+
+/**
+ * LegacyProposalRef
+ */
+export type ConciergeV1LegacyProposalRef = {
+    /**
+     * kind
+     */
+    kind?: ConciergeV1LegacyProposalKind;
+    /**
+     * id
+     */
+    id?: string;
 };
 
 /**
@@ -8230,7 +8293,7 @@ export type ConciergeV1UserProfile = {
      * "admin_hold"  — one operator's brake; lapses at hold_expires_at; ReinstateUser
      * lifts it in one act.
      * "governance"  — the owners' ratified verdict; never lapses; ReinstateUser
-     * refuses and names OpenUserReinstatement.
+     * refuses and names ProposeUserReinstatement.
      */
     suspended_by?: string;
     /**
@@ -12000,6 +12063,35 @@ export type ConciergeV1GovernanceServiceCancelUserProposalResponses = {
 };
 
 export type ConciergeV1GovernanceServiceCancelUserProposalResponse = ConciergeV1GovernanceServiceCancelUserProposalResponses[keyof ConciergeV1GovernanceServiceCancelUserProposalResponses];
+
+export type ConciergeV1GovernanceServiceDrainLegacyProposalsData = {
+    body: ConciergeV1DrainLegacyProposalsRequest;
+    headers: {
+        'Connect-Protocol-Version': ConnectProtocolVersion;
+        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
+    };
+    path?: never;
+    query?: never;
+    url: '/concierge.v1.GovernanceService/DrainLegacyProposals';
+};
+
+export type ConciergeV1GovernanceServiceDrainLegacyProposalsErrors = {
+    /**
+     * Error
+     */
+    default: ConnectError;
+};
+
+export type ConciergeV1GovernanceServiceDrainLegacyProposalsError = ConciergeV1GovernanceServiceDrainLegacyProposalsErrors[keyof ConciergeV1GovernanceServiceDrainLegacyProposalsErrors];
+
+export type ConciergeV1GovernanceServiceDrainLegacyProposalsResponses = {
+    /**
+     * Success
+     */
+    200: ConciergeV1DrainLegacyProposalsResponse;
+};
+
+export type ConciergeV1GovernanceServiceDrainLegacyProposalsResponse = ConciergeV1GovernanceServiceDrainLegacyProposalsResponses[keyof ConciergeV1GovernanceServiceDrainLegacyProposalsResponses];
 
 export type ConciergeV1GovernanceServiceGetOwnerAdmissionData = {
     body: ConciergeV1GetOwnerAdmissionRequest;
