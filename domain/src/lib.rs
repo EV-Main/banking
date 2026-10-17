@@ -41,6 +41,7 @@ pub mod scope_operations;
 pub mod scopes;
 pub mod subscriptions;
 pub mod users;
+pub mod window_export;
 pub mod withdrawals;
 
 /// Append one length-prefixed field to a canonical encoding.
