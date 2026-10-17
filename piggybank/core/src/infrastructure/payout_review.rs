@@ -6,7 +6,12 @@
 //! the row. Who may read is not decided here (the BFF holds the caller's concierge session);
 //! what is decided here is that an operation, its kind and its approval all match.
 
-use domain::{error::DomainError, money::Usdt};
+use domain::{
+	error::DomainError,
+	money::Usdt,
+	scope_operations::{RequestedLine, lines_digest_input},
+};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -26,7 +31,7 @@ pub struct ReviewLine {
 	pub line_no: u32,
 	pub recipient: String,
 	pub amount: Usdt,
-	/// The recipient has no earlier, non-failed payout line in the operation's scope.
+	/// The recipient has no earlier POSTED approved payout in the operation's scope.
 	pub no_history: bool,
 }
 
@@ -77,7 +82,7 @@ pub async fn page(pool: &PgPool, operation_id: Uuid, approval_id: &str, offset: 
 	let rows: Vec<(i32, String, String, bool)> = sqlx::query_as(
 		"SELECT l.line_no, l.auth_subject, l.amount, NOT EXISTS ( \
 		     SELECT 1 FROM scope_payout_lines pl JOIN scope_payouts p ON p.id = pl.payout_id \
-		     WHERE pl.user_id = l.user_id AND p.scope = $2 AND p.state <> 'failed' AND p.operation_id IS DISTINCT FROM l.operation_id \
+		     WHERE pl.user_id = l.user_id AND p.scope = $2 AND p.state = 'posted' AND p.reason = 'approved' AND p.operation_id IS DISTINCT FROM l.operation_id \
 		 ) AS no_history \
 		 FROM scope_operation_lines l WHERE l.operation_id = $1 ORDER BY l.line_no",
 	)
@@ -94,6 +99,21 @@ pub async fn page(pool: &PgPool, operation_id: Uuid, approval_id: &str, offset: 
 			amount: base_units(&amount)?,
 			no_history,
 		});
+	}
+	// The approval the voters hold binds `lines_digest`, and the executor pays from these
+	// rows. If they no longer hash to it, showing them would let an approver vote on lines
+	// that are not the ones the digest covers, so nothing is shown.
+	let requested: Vec<RequestedLine> = all
+		.iter()
+		.map(|line| RequestedLine {
+			auth_subject: line.recipient.clone(),
+			amount: line.amount,
+		})
+		.collect();
+	let recomputed = hex::encode(Sha256::digest(lines_digest_input(&requested).as_bytes()));
+	if recomputed != lines_digest {
+		tracing::error!(operation = %operation_id, stored = %lines_digest, %recomputed, "payout lines do not hash to the operation's lines_digest");
+		return Err(DomainError::Repository(format!("payout operation {operation_id}: stored lines do not match lines_digest")));
 	}
 	let max_line = all.iter().map(|line| line.amount).max().unwrap_or(Usdt::ZERO);
 	let recipients_without_history = all.iter().filter(|line| line.no_history).count();

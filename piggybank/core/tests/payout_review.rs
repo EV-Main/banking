@@ -5,8 +5,12 @@
 
 mod common;
 
-use domain::money::Usdt;
+use domain::{
+	money::Usdt,
+	scope_operations::{RequestedLine, lines_digest_input},
+};
 use piggybank_core::infrastructure::payout_review::{approval_of, page};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -30,6 +34,14 @@ async fn user(pool: &PgPool, subject: &str) -> Uuid {
 async fn operation(pool: &PgPool, scope: &str, approval: Option<&str>, lines: &[(Uuid, String, u128)]) -> Uuid {
 	let id = Uuid::new_v4();
 	let total: u128 = lines.iter().map(|l| l.2).sum();
+	let requested: Vec<RequestedLine> = lines
+		.iter()
+		.map(|(_, subject, amount)| RequestedLine {
+			auth_subject: subject.clone(),
+			amount: Usdt::from_base_units(*amount),
+		})
+		.collect();
+	let digest = hex::encode(Sha256::digest(lines_digest_input(&requested).as_bytes()));
 	sqlx::query(
 		"INSERT INTO scope_operations (id, client_id, scope, kind, from_label, total, distribution, over_scope_budget, lines_digest, payload_hash, subject_ref, approval_id) \
 		 VALUES ($1, 'svc', $2, 'bank:scope_payout', 'main', $3, true, false, $4, $4, $5, $6)",
@@ -37,7 +49,7 @@ async fn operation(pool: &PgPool, scope: &str, approval: Option<&str>, lines: &[
 	.bind(id)
 	.bind(scope)
 	.bind(total.to_string())
-	.bind("a".repeat(64))
+	.bind(digest)
 	.bind(format!("pending_operation:{id}"))
 	.bind(approval)
 	.execute(pool)
@@ -57,19 +69,21 @@ async fn operation(pool: &PgPool, scope: &str, approval: Option<&str>, lines: &[
 	id
 }
 
-/// An earlier payout of `scope` that paid `user`, in `state`.
-async fn earlier_payout(pool: &PgPool, scope: &str, user: Uuid, subject: &str, state: &str) {
+/// An earlier payout of `scope` that paid `user`, for `reason`, in `state`.
+async fn earlier_payout(pool: &PgPool, scope: &str, user: Uuid, subject: &str, reason: &str, state: &str) {
 	let id = Uuid::new_v4();
 	let failure = (state == "failed").then_some("ledger refused");
 	sqlx::query(
-		"INSERT INTO scope_payouts (id, client_id, scope, from_label, total, recipients, reason, subject_ref, state, failure_reason) \
-		 VALUES ($1, 'svc', $2, 'main', '5', 1, 'redemption', $3, $4, $5)",
+		"INSERT INTO scope_payouts (id, client_id, scope, from_label, total, recipients, reason, subject_ref, state, failure_reason, operation_id) \
+		 VALUES ($1, 'svc', $2, 'main', '5', 1, $3, $4, $5, $6, $7)",
 	)
 	.bind(id)
 	.bind(scope)
-	.bind(format!("redemption:{id}"))
+	.bind(reason)
+	.bind(format!("{reason}:{id}"))
 	.bind(state)
 	.bind(failure)
+	.bind((reason == "approved").then(Uuid::new_v4))
 	.execute(pool)
 	.await
 	.unwrap();
@@ -147,29 +161,61 @@ async fn an_approval_that_is_not_the_operations_own_reads_nothing() {
 }
 
 #[tokio::test]
-async fn a_recipient_is_without_history_unless_banking_paid_them_in_this_scope() {
+async fn a_recipient_has_history_only_through_a_posted_approved_payout_in_this_scope() {
 	let Some(pool) = common::pool().await else { return };
 	let scope = scope();
-	let (paid, failed_only, elsewhere, fresh) = (
-		user(&pool, &format!("s-{}", Uuid::new_v4())).await,
-		user(&pool, &format!("s-{}", Uuid::new_v4())).await,
-		user(&pool, &format!("s-{}", Uuid::new_v4())).await,
-		user(&pool, &format!("s-{}", Uuid::new_v4())).await,
-	);
-	earlier_payout(&pool, &scope, paid, "paid", "posted").await;
-	earlier_payout(&pool, &scope, failed_only, "failed-only", "failed").await;
-	earlier_payout(&pool, &self::scope(), elsewhere, "elsewhere", "posted").await;
+	let names = ["approved-posted", "approved-pending", "approved-failed", "automatic-posted", "elsewhere", "fresh"];
+	let mut users = Vec::new();
+	for _ in names {
+		users.push(user(&pool, &format!("s-{}", Uuid::new_v4())).await);
+	}
+	earlier_payout(&pool, &scope, users[0], names[0], "approved", "posted").await;
+	earlier_payout(&pool, &scope, users[1], names[1], "approved", "pending").await;
+	earlier_payout(&pool, &scope, users[2], names[2], "approved", "failed").await;
+	for (user, reason) in [(users[3], "redemption"), (users[3], "book"), (users[3], "fee_rebate")] {
+		earlier_payout(&pool, &scope, user, names[3], reason, "posted").await;
+	}
+	earlier_payout(&pool, &self::scope(), users[4], names[4], "approved", "posted").await;
 	let approval = Uuid::new_v4().to_string();
-	let lines = [
-		(paid, "paid".to_owned(), 1u128),
-		(failed_only, "failed-only".to_owned(), 2),
-		(elsewhere, "elsewhere".to_owned(), 3),
-		(fresh, "fresh".to_owned(), 4),
-	];
+	let lines: Vec<_> = users.iter().zip(names).enumerate().map(|(n, (u, name))| (*u, name.to_owned(), n as u128 + 1)).collect();
 	let id = operation(&pool, &scope, Some(&approval), &lines).await;
 
 	let read = page(&pool, id, &approval, 0, 50).await.unwrap().unwrap();
 	let marks: Vec<(&str, bool)> = read.lines.iter().map(|l| (l.recipient.as_str(), l.no_history)).collect();
-	assert_eq!(marks, [("paid", false), ("failed-only", true), ("elsewhere", true), ("fresh", true)]);
-	assert_eq!(read.recipients_without_history, 3);
+	assert_eq!(
+		marks,
+		[
+			("approved-posted", false),
+			("approved-pending", true),
+			("approved-failed", true),
+			("automatic-posted", true),
+			("elsewhere", true),
+			("fresh", true)
+		]
+	);
+	assert_eq!(read.recipients_without_history, 5);
+}
+
+#[tokio::test]
+async fn lines_that_no_longer_hash_to_the_stored_digest_are_not_shown() {
+	let Some(pool) = common::pool().await else { return };
+	let scope = scope();
+	let u = user(&pool, &format!("s-{}", Uuid::new_v4())).await;
+	let approval = Uuid::new_v4().to_string();
+	let id = operation(&pool, &scope, Some(&approval), &[(u, "alice".to_owned(), 10)]).await;
+	assert!(page(&pool, id, &approval, 0, 50).await.unwrap().is_some(), "intact lines read");
+
+	sqlx::query("UPDATE scope_operation_lines SET amount = '11' WHERE operation_id = $1")
+		.bind(id)
+		.execute(&pool)
+		.await
+		.unwrap();
+	assert!(page(&pool, id, &approval, 0, 50).await.is_err(), "a changed amount is an error, not a page");
+
+	sqlx::query("UPDATE scope_operation_lines SET amount = '10', auth_subject = 'mallory' WHERE operation_id = $1")
+		.bind(id)
+		.execute(&pool)
+		.await
+		.unwrap();
+	assert!(page(&pool, id, &approval, 0, 50).await.is_err(), "a changed recipient is an error, not a page");
 }

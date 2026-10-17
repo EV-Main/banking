@@ -3761,7 +3761,8 @@ export type BankingV1PayoutLinesPage = {
     /**
      * lines_digest
      *
-     * SHA-256 over the lines, as the approval carries it.
+     * SHA-256 over the lines, as stored with the operation. The hub recomputes it from the
+     * lines it reads and refuses the page when they differ.
      */
     lines_digest?: string;
     /**
@@ -3803,9 +3804,10 @@ export type BankingV1PayoutReviewLine = {
     /**
      * no_history
      *
-     * The recipient has no earlier payout in this scope: banking has never paid them here, so
-     * an approver has nothing to compare the line with. Pending and posted payouts count;
-     * failed ones and this operation's own do not.
+     * The recipient has no earlier POSTED approved payout in this scope: banking has never
+     * paid them through an approval here, so an approver has nothing to compare the line with.
+     * Pending payouts do not count (they may still fail), nor do the service's automatic
+     * payouts (redemption, book, fee rebate) or this operation's own.
      */
     no_history?: boolean;
 };

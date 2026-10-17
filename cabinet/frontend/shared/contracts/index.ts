@@ -48,7 +48,6 @@ export type {
   // The unified activity timeline — one read model over all four money kinds.
   BankingV1Operation as Operation,
   BankingV1OperationList as OperationList,
-  BankingV1PayoutLinesPage as PayoutLinesPage,
   BankingV1PayoutReviewLine as PayoutReviewLine,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
@@ -104,3 +103,12 @@ export type {
   ConciergeV1GrantHolder as GrantHolder,
   ConciergeV1ListGrantsResponse as GrantHolderList,
 } from "./gen";
+
+import type { BankingV1PayoutLinesPage as HubPayoutLinesPage } from "./gen";
+
+/**
+ * The hub's page plus the one field only the BFF can fill: whether the page's `lines_digest`
+ * is the one the approval's voters hold (it needs the caller's concierge session, which the
+ * hub never sees). `false` or absent means the lines are NOT the ones being approved.
+ */
+export type PayoutLinesPage = HubPayoutLinesPage & { digest_matches?: boolean };

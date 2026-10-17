@@ -12551,7 +12551,7 @@
           "lines_digest": {
             "type": "string",
             "title": "lines_digest",
-            "description": "SHA-256 over the lines, as the approval carries it."
+            "description": "SHA-256 over the lines, as stored with the operation. The hub recomputes it from the\n lines it reads and refuses the page when they differ."
           },
           "offset": {
             "type": "integer",
@@ -12590,7 +12590,7 @@
           "no_history": {
             "type": "boolean",
             "title": "no_history",
-            "description": "The recipient has no earlier payout in this scope: banking has never paid them here, so\n an approver has nothing to compare the line with. Pending and posted payouts count;\n failed ones and this operation's own do not."
+            "description": "The recipient has no earlier POSTED approved payout in this scope: banking has never\n paid them through an approval here, so an approver has nothing to compare the line with.\n Pending payouts do not count (they may still fail), nor do the service's automatic\n payouts (redemption, book, fee rebate) or this operation's own."
           }
         },
         "title": "PayoutReviewLine",
