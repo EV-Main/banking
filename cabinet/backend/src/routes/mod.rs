@@ -314,6 +314,14 @@ pub fn money_mutation_limiter() -> AttemptLimiter {
 /// only then the banking token — so a refused request never costs an exchange RPC. Returns
 /// the money-plane token.
 pub async fn money_mutation(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<String, ApiError> {
+	let claims = money_gate(state, jar, headers).await?;
+	money_token_for(state, &claims).await
+}
+
+/// [`money_mutation`] up to, not including, the banking token: for a route that has one more
+/// check on the verified claims (see [`require_fresh_login`]) and must still run it before an
+/// exchange RPC is spent.
+pub async fn money_gate(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<Claims, ApiError> {
 	if !first_party_origin(state, headers) || !verify_csrf(state, jar, headers) {
 		return Err(ApiError::Csrf);
 	}
@@ -321,7 +329,22 @@ pub async fn money_mutation(state: &AppState, jar: &CookieJar, headers: &HeaderM
 	if !state.money_mutations.allow(&claims.sub) {
 		return Err(ApiError::Grpc(Status::resource_exhausted("too many money operations; try again shortly")));
 	}
-	money_token_for(state, &claims).await
+	Ok(claims)
+}
+
+/// How recent the user's last interactive sign-in must be for an act that consents to future
+/// debits. Long enough to read the terms, short enough that a script riding a stale session
+/// cannot grant on its own.
+pub const STEP_UP_MAX_AGE_SECS: u64 = 300;
+
+/// `Ok` when the claims carry an `auth_time` within [`STEP_UP_MAX_AGE_SECS`] of `now`, else
+/// [`ApiError::StepUpRequired`]. A token with no `auth_time` (minted before the claim, or by a
+/// session older than it) is "no signal", not "just signed in", so it is refused too.
+pub fn require_fresh_login(claims: &Claims, now: u64) -> Result<(), ApiError> {
+	match claims.auth_time {
+		Some(at) if now.saturating_sub(at) <= STEP_UP_MAX_AGE_SECS => Ok(()),
+		_ => Err(ApiError::StepUpRequired),
+	}
 }
 
 /// The console gate: the verified caller must hold `permission` among what concierge's

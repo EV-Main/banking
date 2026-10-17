@@ -21,6 +21,11 @@ pub const AUDIENCE: &str = "concierge";
 /// A valid `ev_access` cookie value for `user-1` — signed with the key [`ConciergeJwks`]
 /// publishes.
 pub fn access_token() -> String {
+	access_token_at(Some(get_current_timestamp()))
+}
+
+/// [`access_token`] with a chosen `auth_time`, for the step-up gate.
+pub fn access_token_at(auth_time: Option<u64>) -> String {
 	let claims = Claims {
 		sub: "user-1".into(),
 		iss: ISSUER.into(),
@@ -30,6 +35,7 @@ pub fn access_token() -> String {
 		typ: TokenType::Access,
 		jti: None,
 		token_version: 0,
+		auth_time,
 	};
 	let mut header = Header::new(Algorithm::EdDSA);
 	header.kid = Some(TEST_KID.into());
