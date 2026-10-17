@@ -7258,6 +7258,65 @@
         }
       }
     },
+    "/concierge.v1.GovernanceService/DrainLegacyProposals": {
+      "post": {
+        "tags": [
+          "concierge.v1.GovernanceService"
+        ],
+        "summary": "DrainLegacyProposals",
+        "description": "Drain the window (reorganisation, expand step): void the OPEN legacy proposals named in\n the request, so this service's part of the consilia can be emptied before they move to\n ApprovalService. An owner only. Works whether or not new openings are closed\n (GOVERNANCE_NEW_VOTES_CLOSED). A proposal that is not open is reported, not changed.",
+        "operationId": "concierge.v1.GovernanceService.DrainLegacyProposals",
+        "parameters": [
+          {
+            "name": "Connect-Protocol-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/connect-protocol-version"
+            }
+          },
+          {
+            "name": "Connect-Timeout-Ms",
+            "in": "header",
+            "schema": {
+              "$ref": "#/components/schemas/connect-timeout-header"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/concierge.v1.DrainLegacyProposalsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/connect.error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/concierge.v1.DrainLegacyProposalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/concierge.v1.GovernanceService/GetOwnerAdmission": {
       "post": {
         "tags": [
@@ -8379,7 +8438,7 @@
         "tags": [
           "concierge.v1.UserDirectory"
         ],
-        "summary": "DEPRECATED — always refuses, naming HoldUser or\n GovernanceService.OpenUserSuspension.",
+        "summary": "DEPRECATED — always refuses, naming HoldUser or\n ApprovalService.ProposeUserSuspension.",
         "description": "The verb was ambiguous in the one way that mattered: it was both the emergency\n brake (the frozen flag the money plane re-reads at dispatch, which stops a\n withdrawal already in the queue) and a permanent judgement on an account, decided\n by one person with no record of why. Those need opposite treatments — the first\n must stay instant, the second must not be one person's to make — so the caller now\n has to say which one they mean. Kept in the contract rather than deleted so an\n older console gets an explanatory refusal instead of an UNIMPLEMENTED.",
         "operationId": "concierge.v1.UserDirectory.DisableUser",
         "parameters": [
@@ -8617,7 +8676,7 @@
           "concierge.v1.UserDirectory"
         ],
         "summary": "HoldUser",
-        "description": "Admin (UserSuspend): the emergency brake. Freezes the account NOW and lapses on\n its own after 24h unless the owners ratify it with OpenUserSuspension. One actor\n may stop money temporarily; one actor may never stop it permanently. Emits\n SUSPENDED across the cross-plane bridge, and REINSTATED again when it lapses.",
+        "description": "Admin (UserSuspend): the emergency brake. Freezes the account NOW and lapses on\n its own after 24h unless the owners ratify it with ProposeUserSuspension. One actor\n may stop money temporarily; one actor may never stop it permanently. Emits\n SUSPENDED across the cross-plane bridge, and REINSTATED again when it lapses.",
         "operationId": "concierge.v1.UserDirectory.HoldUser",
         "parameters": [
           {
@@ -8794,7 +8853,7 @@
           "concierge.v1.UserDirectory"
         ],
         "summary": "Admin (allowlist): re-enable a disabled user, lifting the sign-in/refresh\n freeze. Emits REINSTATED across the cross-plane bridge.",
-        "description": "Refuses with FAILED_PRECONDITION when the suspension was the owners' verdict,\n naming GovernanceService.OpenUserReinstatement — otherwise one admin could\n overturn a consilium and the consilium would be advisory.",
+        "description": "Refuses with FAILED_PRECONDITION when the suspension was the owners' verdict,\n naming ApprovalService.ProposeUserReinstatement — otherwise one admin could\n overturn a consilium and the consilium would be advisory.",
         "operationId": "concierge.v1.UserDirectory.ReinstateUser",
         "parameters": [
           {
@@ -15187,6 +15246,56 @@
         "title": "DisableUserResponse",
         "additionalProperties": false
       },
+      "concierge.v1.DrainLegacyProposalsRequest": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/concierge.v1.LegacyProposalRef"
+            },
+            "title": "items",
+            "description": "At most 100."
+          },
+          "reason": {
+            "type": "string",
+            "title": "reason",
+            "description": "Required; recorded as the void reason. At most 200 characters."
+          }
+        },
+        "title": "DrainLegacyProposalsRequest",
+        "additionalProperties": false
+      },
+      "concierge.v1.DrainLegacyProposalsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/concierge.v1.DrainedProposal"
+            },
+            "title": "items"
+          }
+        },
+        "title": "DrainLegacyProposalsResponse",
+        "additionalProperties": false
+      },
+      "concierge.v1.DrainedProposal": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "title": "ref",
+            "$ref": "#/components/schemas/concierge.v1.LegacyProposalRef"
+          },
+          "result": {
+            "type": "string",
+            "title": "result",
+            "description": "`voided`, `not_open` (already decided, expired or withdrawn) or `not_found`."
+          }
+        },
+        "title": "DrainedProposal",
+        "additionalProperties": false
+      },
       "concierge.v1.ExchangeCodeRequest": {
         "type": "object",
         "properties": {
@@ -15635,6 +15744,31 @@
           }
         },
         "title": "JwksResponse",
+        "additionalProperties": false
+      },
+      "concierge.v1.LegacyProposalKind": {
+        "type": "string",
+        "title": "LegacyProposalKind",
+        "enum": [
+          "LEGACY_PROPOSAL_KIND_UNSPECIFIED",
+          "LEGACY_PROPOSAL_KIND_OWNER_REMOVAL",
+          "LEGACY_PROPOSAL_KIND_OWNER_ADMISSION",
+          "LEGACY_PROPOSAL_KIND_USER_PROPOSAL"
+        ]
+      },
+      "concierge.v1.LegacyProposalRef": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "title": "kind",
+            "$ref": "#/components/schemas/concierge.v1.LegacyProposalKind"
+          },
+          "id": {
+            "type": "string",
+            "title": "id"
+          }
+        },
+        "title": "LegacyProposalRef",
         "additionalProperties": false
       },
       "concierge.v1.ListGrantsRequest": {
@@ -17283,7 +17417,7 @@
           "suspended_by": {
             "type": "string",
             "title": "suspended_by",
-            "description": "WHY the account is disabled — and therefore who may undo it. Empty on an active\n user, and also on one suspended before this field existed (those keep the old\n one-act, never-lapsing semantics they were actually suspended under).\n   \"admin_hold\"  — one operator's brake; lapses at hold_expires_at; ReinstateUser\n                   lifts it in one act.\n   \"governance\"  — the owners' ratified verdict; never lapses; ReinstateUser\n                   refuses and names OpenUserReinstatement."
+            "description": "WHY the account is disabled — and therefore who may undo it. Empty on an active\n user, and also on one suspended before this field existed (those keep the old\n one-act, never-lapsing semantics they were actually suspended under).\n   \"admin_hold\"  — one operator's brake; lapses at hold_expires_at; ReinstateUser\n                   lifts it in one act.\n   \"governance\"  — the owners' ratified verdict; never lapses; ReinstateUser\n                   refuses and names ProposeUserReinstatement."
           },
           "hold_expires_at": {
             "type": [
