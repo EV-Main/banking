@@ -14,6 +14,7 @@
 // surfaced by `gen-api` instead of going silently stale.
 
 export type {
+  BankingV1PayableInvoice as PayableInvoice,
   BankingV1Wallet as Wallet,
   // Five terms sum to `total`: `available` + `in_orders` (cash escrowed by resting buy
   // orders on the book) + `invested` (units at NAV, those escrowed by resting sells
