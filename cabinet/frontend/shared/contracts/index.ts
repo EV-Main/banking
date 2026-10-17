@@ -51,6 +51,8 @@ export type {
   BankingV1PayoutReviewLine as PayoutReviewLine,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
+  BankingV1CompartmentList as CompartmentList,
+  BankingV1CompartmentMove as CompartmentMove,
   // What a fund charges, and what the caller's holding owes for it right now.
   BankingV1FeePolicy as FeePolicy,
   BankingV1AccruedFees as AccruedFees,
@@ -112,3 +114,6 @@ import type { BankingV1PayoutLinesPage as HubPayoutLinesPage } from "./gen";
  * hub never sees). `false` or absent means the lines are NOT the ones being approved.
  */
 export type PayoutLinesPage = HubPayoutLinesPage & { digest_matches?: boolean };
+
+// Mandates: hand-written for the reason given above.
+export type { Mandate, MandateList, MandateOperation } from "./mandate";
