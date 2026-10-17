@@ -2930,19 +2930,45 @@
       "ui.cancel"
     ],
     "app/[locale]/cabinet/(wallet-action)/wallet/action/mandate/page.tsx": [
+      "approval.expiry.days",
+      "approval.expiry.hours",
+      "approval.expiry.minutes",
+      "approval.expiry.passed",
+      "ui.back",
+      "wallet.chain.bep20",
+      "wallet.chain.polygon",
+      "wallet.chain.ton",
+      "wallet.chain.trc20",
+      "wallet.chain.unknown",
       "walletAction.back",
       "walletAction.cancel",
       "walletAction.cancelled",
+      "walletAction.cap24h",
+      "walletAction.capOutstanding",
+      "walletAction.capPerOp",
       "walletAction.close",
       "walletAction.closeHint",
       "walletAction.closeHintLocal",
       "walletAction.done",
+      "walletAction.expires",
       "walletAction.failed",
-      "walletAction.mandateTitle",
-      "walletAction.moveTitle",
-      "walletAction.unavailable"
+      "walletAction.mandateListTitle",
+      "walletAction.mandateNone",
+      "walletAction.mandateService",
+      "walletAction.opBookFill",
+      "walletAction.opCharge",
+      "walletAction.opReserve",
+      "walletAction.revoke",
+      "walletAction.stepUp",
+      "walletAction.untilRevoked"
     ],
     "app/[locale]/cabinet/(wallet-action)/wallet/action/move/page.tsx": [
+      "ui.back",
+      "wallet.chain.bep20",
+      "wallet.chain.polygon",
+      "wallet.chain.ton",
+      "wallet.chain.trc20",
+      "wallet.chain.unknown",
       "walletAction.back",
       "walletAction.cancel",
       "walletAction.cancelled",
@@ -2951,9 +2977,17 @@
       "walletAction.closeHintLocal",
       "walletAction.done",
       "walletAction.failed",
-      "walletAction.mandateTitle",
-      "walletAction.moveTitle",
-      "walletAction.unavailable"
+      "walletAction.moveAmount",
+      "walletAction.moveAvailable",
+      "walletAction.moveDirection",
+      "walletAction.moveExceeds",
+      "walletAction.moveFailed",
+      "walletAction.moveIn",
+      "walletAction.moveNoScopes",
+      "walletAction.moveNow",
+      "walletAction.moveOut",
+      "walletAction.moveScope",
+      "walletAction.moveTitle"
     ],
     "app/[locale]/cabinet/(wallet-action)/wallet/action/pay/page.tsx": [
       "ui.back",
@@ -2975,14 +3009,11 @@
       "walletAction.invoiceClosed",
       "walletAction.invoiceMissing",
       "walletAction.invoicePaid",
-      "walletAction.mandateTitle",
-      "walletAction.moveTitle",
       "walletAction.payFrom",
       "walletAction.payNow",
       "walletAction.payRefused",
       "walletAction.processing",
-      "walletAction.processingSlow",
-      "walletAction.unavailable"
+      "walletAction.processingSlow"
     ],
     "app/[locale]/cabinet/(wallet-action)/wallet/action/withdraw/page.tsx": [
       "tips.a11y.about",
@@ -3037,10 +3068,7 @@
       "walletAction.closeHint",
       "walletAction.closeHintLocal",
       "walletAction.done",
-      "walletAction.failed",
-      "walletAction.mandateTitle",
-      "walletAction.moveTitle",
-      "walletAction.unavailable"
+      "walletAction.failed"
     ]
   },
   "serverOnly": [

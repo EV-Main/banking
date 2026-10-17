@@ -50,6 +50,8 @@ export type {
   BankingV1OperationList as OperationList,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
+  BankingV1CompartmentList as CompartmentList,
+  BankingV1CompartmentMove as CompartmentMove,
   // What a fund charges, and what the caller's holding owes for it right now.
   BankingV1FeePolicy as FeePolicy,
   BankingV1AccruedFees as AccruedFees,
@@ -102,3 +104,6 @@ export type {
   ConciergeV1GrantHolder as GrantHolder,
   ConciergeV1ListGrantsResponse as GrantHolderList,
 } from "./gen";
+
+// Mandates: hand-written for the reason given above.
+export type { Mandate, MandateList, MandateOperation } from "./mandate";
