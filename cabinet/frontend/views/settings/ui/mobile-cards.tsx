@@ -81,15 +81,15 @@ export function PreferencesCard({
       <ListCardTitle sub={t("settings.preferencesSub", "How the cabinet is displayed to you. Saved to your account, so every device follows")}>{t("settings.nav.preferences", "Preferences")}</ListCardTitle>
       <Hairline />
       <ExpandableRow label={t("lang.switch", "Language")} value={form ? labelOf(LANGUAGES, form.language) : ""} hint={t("settings.hint.language", "Applies as soon as you save; the whole cabinet switches.")} loading={!ready} open={open === "language"} onToggle={() => toggle("language")}>
-        {form && <ThemedSelect value={form.language} onChange={(v) => onChange("language", v)} options={LANGUAGES} placeholder={t("settings.selectLanguage", "Select language")} error={fieldErrors.language} />}
+        {form && <ThemedSelect label={t("lang.switch", "Language")} value={form.language} onChange={(v) => onChange("language", v)} options={LANGUAGES} placeholder={t("settings.selectLanguage", "Select language")} error={fieldErrors.language} />}
       </ExpandableRow>
       <Hairline />
       <ExpandableRow label={t("settings.baseCurrency", "Base currency")} value={form ? labelOf(currencies, form.base_currency) : ""} hint={t("settings.hint.baseCurrency", "Saved to your account. Balances in the cabinet are always shown in USD.")} loading={!ready} open={open === "base_currency"} onToggle={() => toggle("base_currency")}>
-        {form && <ThemedSelect value={form.base_currency} onChange={(v) => onChange("base_currency", v)} options={currencies} placeholder={t("settings.selectCurrency", "Select currency")} error={fieldErrors.base_currency} />}
+        {form && <ThemedSelect label={t("settings.baseCurrency", "Base currency")} value={form.base_currency} onChange={(v) => onChange("base_currency", v)} options={currencies} placeholder={t("settings.selectCurrency", "Select currency")} error={fieldErrors.base_currency} />}
       </ExpandableRow>
       <Hairline />
       <ExpandableRow label={t("settings.timeZone", "Time zone")} value={form ? labelOf(timezones, form.timezone) : ""} hint={t("settings.hint.timeZone", "Saved to your account. The cabinet itself shows times in your device's time zone.")} loading={!ready} open={open === "timezone"} onToggle={() => toggle("timezone")}>
-        {form && <ThemedSelect value={form.timezone} onChange={(v) => onChange("timezone", v)} options={timezones} placeholder={t("settings.selectTimeZone", "Select time zone")} error={fieldErrors.timezone} />}
+        {form && <ThemedSelect label={t("settings.timeZone", "Time zone")} value={form.timezone} onChange={(v) => onChange("timezone", v)} options={timezones} placeholder={t("settings.selectTimeZone", "Select time zone")} error={fieldErrors.timezone} />}
       </ExpandableRow>
     </ListCard>
   );

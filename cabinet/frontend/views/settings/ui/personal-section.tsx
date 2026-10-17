@@ -7,7 +7,7 @@
 
 import { useT } from "@evinvest/i18n/react";
 
-import { Input, Skeleton } from "@evinvest/uikit";
+import { Skeleton } from "@evinvest/uikit";
 
 import { cn } from "@/shared/lib/cn";
 import { TipAnchor } from "@/shared/tips";
@@ -15,7 +15,7 @@ import { CARD, Hairline, ListCard, StackRow } from "@/shared/ui/list-card";
 import { formatEmail } from "@/views/settings/lib/contact";
 import type { Form } from "@/views/settings/lib/form";
 import { PERSONAL } from "@/views/settings/lib/sections";
-import { Field, FieldHint, FieldSkeleton, PhoneField, SectionHeader, VerifiedTag } from "@/views/settings/ui/fields";
+import { Field, FieldHint, FieldInput, FieldSkeleton, PhoneField, SectionHeader, VerifiedTag } from "@/views/settings/ui/fields";
 
 export interface PersonalProps {
   loading: boolean;
@@ -43,7 +43,7 @@ export function PersonalSection({ loading, form, email, verified, onChange, fiel
           </Field>
         ))}
         <Field label={t("ui.emailAddress", "Email address")} hint={t("settings.hint.email", "Comes from your Google account and can't be changed here.")} trailing={verified ? <VerifiedTag /> : undefined}>
-          {loading ? <FieldSkeleton /> : <Input value={formatEmail(email)} readOnly className="border-border bg-secondary text-ink-soft" />}
+          {loading ? <FieldSkeleton /> : <FieldInput value={formatEmail(email)} readOnly className="border-border bg-secondary text-ink-soft" />}
         </Field>
       </div>
     </section>
@@ -97,7 +97,7 @@ function Control({ field, form, error, onChange }: { field: keyof Form; form: Fo
   if (field === "phone") return <PhoneField initial={form.phone} onChange={(v) => onChange("phone", v)} error={error} />;
   return (
     <div className="min-w-0 flex-1">
-      <Input value={form[field]} onChange={(e) => onChange(field, e.target.value)} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
+      <FieldInput value={form[field]} onChange={(e) => onChange(field, e.target.value)} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
       {error && <p className="mt-1 text-xs text-accent-error">{error}</p>}
     </div>
   );
