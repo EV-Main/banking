@@ -7683,6 +7683,14 @@
     "en": "{scope} balance",
     "t": "Guthaben {scope}"
   },
+  "walletAction.grantCurrent": {
+    "en": "Allowed now",
+    "t": "Derzeit erlaubt"
+  },
+  "walletAction.grantEnded": {
+    "en": "This permission has already ended. Ask the service to request it again.",
+    "t": "Diese Erlaubnis ist bereits beendet. Bitten Sie den Dienst, sie erneut anzufordern."
+  },
   "walletAction.grantNow": {
     "en": "Allow",
     "t": "Erlauben"

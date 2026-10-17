@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { capRows, endsWhenRevoked, isRequestAlive, isUnavailable, keepsKeyAfter, replacedBy } from "./request.ts";
+import { capRows, endsWhenRevoked, grantStillHolds, isRequestAlive, isShowable, isUnavailable, keepsKeyAfter, replacedBy } from "./request.ts";
 
 test("a request lives until its expires_at and not a second past it", () => {
   assert.equal(isRequestAlive({ expires_at: "101" }, 100), true);
@@ -54,4 +54,29 @@ test("a 404 reads as an unavailable request", () => {
   assert.equal(isUnavailable({ status: 404 }), true);
   assert.equal(isUnavailable({ status: 500 }), false);
   assert.equal(isUnavailable(null), false);
+});
+
+const shown = { scope: "sa", operations: ["reserve", "charge"], cap_book_fill_24h: "" };
+
+test("a request with an unknown or no operation is not showable", () => {
+  assert.equal(isShowable(shown, null), true);
+  assert.equal(isShowable({ ...shown, operations: ["reserve", "unspecified"] }, null), false);
+  assert.equal(isShowable({ ...shown, operations: [] }, null), false);
+});
+
+test("book_fill needs its cap", () => {
+  assert.equal(isShowable({ ...shown, operations: ["book_fill"] }, null), false);
+  assert.equal(isShowable({ ...shown, operations: ["book_fill"], cap_book_fill_24h: "5" }, null), true);
+});
+
+test("the URL scope must be the request's own scope", () => {
+  assert.equal(isShowable(shown, "sa"), true);
+  assert.equal(isShowable(shown, "invest"), false);
+  assert.equal(isShowable(shown, null), true);
+});
+
+test("a revoked or replaced grant answer does not hold", () => {
+  assert.equal(grantStillHolds({ revoked_at: "0", replaced_at: "0" }), true);
+  assert.equal(grantStillHolds({ revoked_at: "5", replaced_at: "0" }), false);
+  assert.equal(grantStillHolds({ revoked_at: "0", replaced_at: "5" }), false);
 });

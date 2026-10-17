@@ -26,7 +26,7 @@ export function MandateActionView() {
   const done = (mandate: Mandate) => finish("done", mandate.mandate_id);
   return (
     <ActionFrame params={params} finished={finished} finish={finish}>
-      {params.request !== null ? <GrantMandate key={params.request} requestId={params.request} onGranted={done} /> : <Mandates urlScope={params.scope} onRevoked={done} />}
+      {params.request !== null ? <GrantMandate key={params.request} requestId={params.request} urlScope={params.scope} onGranted={done} /> : <Mandates urlScope={params.scope} onRevoked={done} />}
     </ActionFrame>
   );
 }

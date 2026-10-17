@@ -4,7 +4,7 @@ import { useLocale, useT } from "@evinvest/i18n/react";
 
 import { capRows, endsWhenRevoked, type CapKind } from "@/entities/mandate/lib/request";
 import type { MandateOperation } from "@/shared/contracts";
-import { formatDay } from "@/shared/lib/datetime";
+import { formatMoment } from "@/shared/lib/datetime";
 import { formatExactUsdt } from "@/shared/lib/money";
 
 export interface Terms {
@@ -37,7 +37,7 @@ export function MandateTerms({ terms }: { terms: Terms }) {
     bookFill24h: t("walletAction.capBookFill24h", "Trades with other users, per 24 hours"),
   };
   const rows: (readonly [string, string])[] = capRows(terms).map(({ kind, value }) => [labels[kind], `${formatExactUsdt(value, locale)} USDT`]);
-  rows.push([t("walletAction.expires", "Valid until"), endsWhenRevoked(terms.ends_at) ? t("walletAction.untilRevoked", "Until you end it") : formatDay(terms.ends_at, locale)]);
+  rows.push([t("walletAction.expires", "Valid until"), endsWhenRevoked(terms.ends_at) ? t("walletAction.untilRevoked", "Until you end it") : formatMoment(terms.ends_at, locale)]);
   return (
     <>
       <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink">

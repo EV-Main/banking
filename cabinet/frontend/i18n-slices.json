@@ -2985,6 +2985,8 @@
       "walletAction.done",
       "walletAction.expires",
       "walletAction.failed",
+      "walletAction.grantCurrent",
+      "walletAction.grantEnded",
       "walletAction.grantNow",
       "walletAction.grantReplaces",
       "walletAction.grantTitle",

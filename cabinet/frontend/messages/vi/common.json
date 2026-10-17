@@ -7683,6 +7683,14 @@
     "en": "{scope} balance",
     "t": "Số dư {scope}"
   },
+  "walletAction.grantCurrent": {
+    "en": "Allowed now",
+    "t": "Đang được phép"
+  },
+  "walletAction.grantEnded": {
+    "en": "This permission has already ended. Ask the service to request it again.",
+    "t": "Quyền này đã kết thúc. Hãy nhờ dịch vụ gửi yêu cầu lại."
+  },
   "walletAction.grantNow": {
     "en": "Allow",
     "t": "Cho phép"

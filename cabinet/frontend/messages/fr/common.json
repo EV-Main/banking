@@ -7683,6 +7683,14 @@
     "en": "{scope} balance",
     "t": "Solde {scope}"
   },
+  "walletAction.grantCurrent": {
+    "en": "Allowed now",
+    "t": "Actuellement autorisé"
+  },
+  "walletAction.grantEnded": {
+    "en": "This permission has already ended. Ask the service to request it again.",
+    "t": "Cette autorisation est déjà terminée. Demandez au service de la redemander."
+  },
   "walletAction.grantNow": {
     "en": "Allow",
     "t": "Autoriser"

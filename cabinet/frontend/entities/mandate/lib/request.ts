@@ -77,3 +77,22 @@ export function keepsKeyAfter(error: unknown): boolean {
 export function isUnavailable(error: unknown): boolean {
   return typeof error === "object" && error !== null && Reflect.get(error, "status") === 404;
 }
+
+const KNOWN_OPERATIONS: readonly string[] = ["reserve", "charge", "book_fill"];
+
+/**
+ * Whether a request is safe to put in front of the reader. Fails closed: an operation this
+ * page does not know (the BFF writes an unrecognised enum as "unspecified"), no operation
+ * at all, a book-fill grant without its cap, or a request for another scope than the one the
+ * URL (and so the result's host) named — each would show terms the reader cannot judge.
+ */
+export function isShowable(r: { scope: string; operations: readonly string[]; cap_book_fill_24h: string }, urlScope: string | null): boolean {
+  if (urlScope !== null && urlScope !== r.scope) return false;
+  if (r.operations.length === 0 || !r.operations.every((op) => KNOWN_OPERATIONS.includes(op))) return false;
+  return !r.operations.includes("book_fill") || r.cap_book_fill_24h !== "";
+}
+
+/** A grant's answer that is already revoked or replaced is not a permission the reader now holds. */
+export function grantStillHolds(m: { revoked_at: string; replaced_at: string }): boolean {
+  return m.revoked_at === "0" && m.replaced_at === "0";
+}

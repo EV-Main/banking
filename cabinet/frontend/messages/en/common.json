@@ -1920,6 +1920,8 @@
   "walletAction.failed": "That did not go through",
   "walletAction.fromMain": "Main balance",
   "walletAction.fromScope": "{scope} balance",
+  "walletAction.grantCurrent": "Allowed now",
+  "walletAction.grantEnded": "This permission has already ended. Ask the service to request it again.",
   "walletAction.grantNow": "Allow",
   "walletAction.grantReplaces": "{service} already has permission here. Allowing this replaces it.",
   "walletAction.grantTitle": "Allow {service} to use your funds?",
