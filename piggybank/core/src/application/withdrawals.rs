@@ -112,7 +112,44 @@ pub async fn request_withdrawal(
 ) -> Result<Withdrawal, DomainError> {
 	admit_user_withdrawal(gates, user, network).await?;
 	let source = WithdrawalSource::User(user);
-	open_withdrawal(ports, id, source, network, address, amount, true).await
+	open_withdrawal(ports, id, source, network, address, amount, Opening::Immediate).await
+}
+
+/// Longest idempotency key accepted, in bytes (`wallet.proto`).
+pub const MAX_IDEMPOTENCY_KEY: usize = 128;
+
+/// [`request_withdrawal`] under a client-minted idempotency key, unique per user (the withdraw
+/// page mints one per load). A repeat with the same terms returns the first withdrawal as it
+/// stands now and records nothing; the same key with another network, address or amount is a
+/// `Conflict` (ALREADY_EXISTS) — a key names one request, never "whatever comes next".
+pub async fn request_withdrawal_keyed(
+	ports: &WithdrawalPorts<'_>,
+	gates: &AdmissionGates<'_>,
+	user: UserId,
+	network: Network,
+	address: WalletAddress,
+	amount: Usdt,
+	key: &str,
+) -> Result<Withdrawal, DomainError> {
+	if key.is_empty() || key.len() > MAX_IDEMPOTENCY_KEY {
+		return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} bytes")));
+	}
+	// Answered before the admission gates: a retry of a request that went through must get its
+	// answer even if the account has been frozen or the rail paused since.
+	if let Some(first) = ports.withdrawals.find_by_key(user, key).await? {
+		return replay(first, network, &address, amount);
+	}
+	admit_user_withdrawal(gates, user, network).await?;
+	open_withdrawal(ports, WithdrawalId::new(), WithdrawalSource::User(user), network, address, amount, Opening::ImmediateKeyed(key)).await
+}
+
+/// The first withdrawal under a key, if the repeat asks for the same thing.
+fn replay(first: Withdrawal, network: Network, address: &WalletAddress, amount: Usdt) -> Result<Withdrawal, DomainError> {
+	if first.network() == network && first.address() == address && first.amount() == amount {
+		Ok(first)
+	} else {
+		Err(DomainError::Conflict("idempotency_key was already used for a different withdrawal".into()))
+	}
 }
 
 /// [`request_withdrawal`], except that the withdrawal is ALWAYS left `Queued` for the
@@ -137,7 +174,7 @@ pub async fn queue_withdrawal(
 ) -> Result<Withdrawal, DomainError> {
 	admit_user_withdrawal(gates, user, network).await?;
 	let source = WithdrawalSource::User(user);
-	open_withdrawal(ports, id, source, network, address, amount, false).await
+	open_withdrawal(ports, id, source, network, address, amount, Opening::Queued).await
 }
 
 /// The user-facing admission gates, on their own: the rail is run, the account is not
@@ -212,7 +249,7 @@ pub async fn queue_treasury_withdrawal(
 ) -> Result<Withdrawal, DomainError> {
 	require_configured(gates.configured, network)?;
 	require_unfrozen_rail(gates.policy, network).await?;
-	open_withdrawal(ports, id, WithdrawalSource::Treasury { payment }, network, address, amount, false).await
+	open_withdrawal(ports, id, WithdrawalSource::Treasury { payment }, network, address, amount, Opening::Queued).await
 }
 
 /// Would a treasury payout be accepted *right now*, without recording anything? The payment
@@ -255,6 +292,23 @@ async fn require_solvent(ledger: &dyn Ledger, source: WithdrawalSource, amount: 
 	Ok(())
 }
 
+/// How [`open_withdrawal`] records a request.
+#[derive(Clone, Copy)]
+enum Opening<'a> {
+	/// Dispatch at once when the rail can cover it.
+	Immediate,
+	/// [`Opening::Immediate`] under a per-user idempotency key.
+	ImmediateKeyed(&'a str),
+	/// Always left `Queued`.
+	Queued,
+}
+
+impl Opening<'_> {
+	fn dispatches_immediately(self) -> bool {
+		!matches!(self, Self::Queued)
+	}
+}
+
 /// The shared body of every request path: validate the shape, Read-First the **source's**
 /// solvency, then record — dispatching straight away when `dispatch_immediately` is set
 /// and the rail can already cover it, otherwise leaving the row `Queued` for the
@@ -268,14 +322,14 @@ async fn open_withdrawal(
 	network: Network,
 	address: WalletAddress,
 	amount: Usdt,
-	dispatch_immediately: bool,
+	opening: Opening<'_>,
 ) -> Result<Withdrawal, DomainError> {
 	let fee = WithdrawalPolicy::fee_for(source, network);
 	// Validate the request shape (minimum, fee coverage, no on-chain dust, address net).
 	let mut withdrawal = Withdrawal::request(id, source, network, address, amount, fee)?;
 	// Read-First #1 — the source can actually cover the gross.
 	require_solvent(ports.ledger, source, amount).await?;
-	if dispatch_immediately && rail_covers(ports, network, withdrawal.net_amount()).await? {
+	if opening.dispatches_immediately() && rail_covers(ports, network, withdrawal.net_amount()).await? {
 		withdrawal.dispatch()?;
 	}
 	// The same question again under the claim's lock: a move or a buy recorded between the
@@ -286,7 +340,14 @@ async fn open_withdrawal(
 		amount: amount.base_units(),
 		refusal: INSUFFICIENT_TO_WITHDRAW,
 	};
-	ports.withdrawals.open(&mut withdrawal, &guard).await?;
+	if let (Opening::ImmediateKeyed(key), WithdrawalSource::User(user)) = (opening, source) {
+		// A concurrent twin recorded it between the pre-check and the lock: answer with that.
+		if let Some(first) = ports.withdrawals.open_keyed(&mut withdrawal, &guard, user, key).await? {
+			return replay(first, network, withdrawal.address(), amount);
+		}
+	} else {
+		ports.withdrawals.open(&mut withdrawal, &guard).await?;
+	}
 	ports.relay.notify_one();
 	Ok(withdrawal)
 }

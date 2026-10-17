@@ -83,6 +83,12 @@ message Operation {
   // investor's own high-water mark, and is zero except at a crystallization.
   string management = 14;
   string performance = 15;
+
+  // The wallet compartment the row belongs to: `main` for every kind this feed carries
+  // today (deposits and withdrawals are main's; fund subscriptions, redemptions and fees
+  // settle against main's balance). A client in scope mode keeps only the rows whose
+  // `scope` is its own; compartment moves and scope payouts are not in this feed yet.
+  string scope = 16;
 }
 
 message OperationList {

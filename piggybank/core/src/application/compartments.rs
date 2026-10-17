@@ -80,6 +80,20 @@ pub async fn list_compartments(ports: &CompartmentPorts<'_>, user: UserId) -> Re
 	Ok((views, kyc_level))
 }
 
+/// The caller's balance in one compartment. A scope banking does not know — or a closed one
+/// the caller holds nothing in, which `list_compartments` hides — is `NotFound`.
+pub async fn get_compartment(ports: &CompartmentPorts<'_>, user: UserId, scope: &Compartment) -> Result<(CompartmentView, u32), DomainError> {
+	let (views, kyc_level) = list_compartments(ports, user).await?;
+	views
+		.into_iter()
+		.find(|view| view.compartment == *scope)
+		.map(|view| (view, kyc_level))
+		.ok_or_else(|| DomainError::NotFound {
+			entity: "compartment",
+			id: scope.as_str().to_owned(),
+		})
+}
+
 /// What the caller holds in `main` and, summed, in every scope compartment — the split the
 /// wallet and the balance RPCs add up. Every scope banking knows is summed, closed ones
 /// included: money there is still the user's.

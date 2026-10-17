@@ -525,6 +525,8 @@ pub struct Operation {
 	/// on the capital or a share of the gain rather than only how much was taken.
 	pub management: String,
 	pub performance: String,
+	/// The compartment the row belongs to (`main` for every kind the feed carries today).
+	pub scope: String,
 }
 
 impl From<bk::Operation> for Operation {
@@ -545,6 +547,7 @@ impl From<bk::Operation> for Operation {
 			tx_ref: o.tx_ref,
 			management: o.management,
 			performance: o.performance,
+			scope: o.scope,
 		}
 	}
 }

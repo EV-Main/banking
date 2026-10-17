@@ -20,6 +20,9 @@ use crate::{
 	services::support::{caller_id, map_err},
 };
 
+/// The compartment every row of the feed belongs to today.
+const MAIN_SCOPE: &str = "main";
+
 #[derive(Clone)]
 pub struct OperationsSvc {
 	pub state: AppState,
@@ -51,6 +54,9 @@ fn operation_to_proto(operation: &Operation) -> pb::Operation {
 	let base = pb::Operation {
 		kind: operation.kind().to_owned(),
 		created_at: operation.created_at(),
+		// Every kind in the feed moves the caller's main balance; compartment events join the
+		// feed with their own scope when they are projected into it.
+		scope: MAIN_SCOPE.to_owned(),
 		..Default::default()
 	};
 	match operation {
