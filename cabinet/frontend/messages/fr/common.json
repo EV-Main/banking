@@ -2619,6 +2619,82 @@
     "en": "You are answering as {email}.",
     "t": "Vous répondez en tant que {email}."
   },
+  "approval.lines.title": {
+    "en": "Payout lines",
+    "t": "Lignes du paiement"
+  },
+  "approval.lines.description": {
+    "en": "Every recipient and amount of the payout you are asked to approve.",
+    "t": "Chaque destinataire et chaque montant du paiement que l'on vous demande d'approuver."
+  },
+  "approval.lines.unavailable": {
+    "en": "These lines are not available",
+    "t": "Ces lignes ne sont pas disponibles"
+  },
+  "approval.lines.unavailableHint": {
+    "en": "Only the people asked to approve a payout can see its lines. Check that you opened the link from your own approval.",
+    "t": "Seules les personnes chargées d'approuver un paiement peuvent en voir les lignes. Vérifiez que vous avez ouvert le lien depuis votre propre approbation."
+  },
+  "approval.lines.from": {
+    "en": "Paid from",
+    "t": "Débité depuis"
+  },
+  "approval.lines.total": {
+    "en": "Total",
+    "t": "Montant total"
+  },
+  "approval.lines.maxLine": {
+    "en": "Largest line",
+    "t": "Plus grande ligne"
+  },
+  "approval.lines.recipients": {
+    "en": "Recipients",
+    "t": "Destinataires"
+  },
+  "approval.lines.withoutHistory": {
+    "en": "Recipients without history in this scope",
+    "t": "Destinataires sans historique dans ce périmètre"
+  },
+  "approval.lines.digest": {
+    "en": "Lines digest",
+    "t": "Empreinte des lignes"
+  },
+  "approval.lines.distribution": {
+    "en": "Distribution",
+    "t": "Répartition"
+  },
+  "approval.lines.overBudget": {
+    "en": "Over the scope's daily budget",
+    "t": "Au-delà du budget quotidien du périmètre"
+  },
+  "approval.lines.col.recipient": {
+    "en": "Recipient",
+    "t": "Destinataire"
+  },
+  "approval.lines.col.amount": {
+    "en": "Amount (USDT)",
+    "t": "Montant (USDT)"
+  },
+  "approval.lines.noHistory": {
+    "en": "No history in this scope",
+    "t": "Aucun historique dans ce périmètre"
+  },
+  "approval.lines.largest": {
+    "en": "Largest",
+    "t": "Plus grande"
+  },
+  "approval.lines.range": {
+    "en": "{from}–{to} of {total}",
+    "t": "{from}–{to} sur {total}"
+  },
+  "approval.lines.prev": {
+    "en": "Previous",
+    "t": "Précédent"
+  },
+  "approval.lines.next": {
+    "en": "Next",
+    "t": "Suivant"
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Mon espace"

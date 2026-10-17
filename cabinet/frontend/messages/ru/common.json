@@ -2619,6 +2619,82 @@
     "en": "You are answering as {email}.",
     "t": "Вы отвечаете как {email}."
   },
+  "approval.lines.title": {
+    "en": "Payout lines",
+    "t": "Строки выплаты"
+  },
+  "approval.lines.description": {
+    "en": "Every recipient and amount of the payout you are asked to approve.",
+    "t": "Каждый получатель и сумма выплаты, которую вас просят согласовать."
+  },
+  "approval.lines.unavailable": {
+    "en": "These lines are not available",
+    "t": "Эти строки недоступны"
+  },
+  "approval.lines.unavailableHint": {
+    "en": "Only the people asked to approve a payout can see its lines. Check that you opened the link from your own approval.",
+    "t": "Строки выплаты видят только те, кого просят её согласовать. Убедитесь, что открыли ссылку из своего согласования."
+  },
+  "approval.lines.from": {
+    "en": "Paid from",
+    "t": "Списывается с"
+  },
+  "approval.lines.total": {
+    "en": "Total",
+    "t": "Итого"
+  },
+  "approval.lines.maxLine": {
+    "en": "Largest line",
+    "t": "Крупнейшая строка"
+  },
+  "approval.lines.recipients": {
+    "en": "Recipients",
+    "t": "Получатели"
+  },
+  "approval.lines.withoutHistory": {
+    "en": "Recipients without history in this scope",
+    "t": "Получатели без истории в этом скоупе"
+  },
+  "approval.lines.digest": {
+    "en": "Lines digest",
+    "t": "Дайджест строк"
+  },
+  "approval.lines.distribution": {
+    "en": "Distribution",
+    "t": "Распределение"
+  },
+  "approval.lines.overBudget": {
+    "en": "Over the scope's daily budget",
+    "t": "Сверх дневного бюджета скоупа"
+  },
+  "approval.lines.col.recipient": {
+    "en": "Recipient",
+    "t": "Получатель"
+  },
+  "approval.lines.col.amount": {
+    "en": "Amount (USDT)",
+    "t": "Сумма (USDT)"
+  },
+  "approval.lines.noHistory": {
+    "en": "No history in this scope",
+    "t": "Нет истории в этом скоупе"
+  },
+  "approval.lines.largest": {
+    "en": "Largest",
+    "t": "Крупнейшая"
+  },
+  "approval.lines.range": {
+    "en": "{from}–{to} of {total}",
+    "t": "{from}–{to} из {total}"
+  },
+  "approval.lines.prev": {
+    "en": "Previous",
+    "t": "Назад"
+  },
+  "approval.lines.next": {
+    "en": "Next",
+    "t": "Далее"
+  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Кабинет"
