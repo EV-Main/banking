@@ -59,6 +59,10 @@ fn scope_account(scope: &str, label: &str) -> LedgerAccountKey {
 	LedgerAccountKey::ScopeAccount(ScopeId::parse(scope).unwrap(), ScopeAccountLabel::parse(label).unwrap())
 }
 
+async fn rows_closed(pool: &PgPool) -> i64 {
+	sqlx::query_scalar("SELECT count(*) FROM window_closures").fetch_one(pool).await.unwrap()
+}
+
 async fn posted(ledger: &dyn Ledger, key: &LedgerAccountKey) -> u128 {
 	ledger.balance(key).await.unwrap().posted
 }
@@ -175,10 +179,23 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 	fund_claim(ledger.as_ref(), &cash_product, 1000).await;
 	fund_claim(ledger.as_ref(), &ServiceId::fee(), 200).await;
 
+	// The anchor names its people: concierge ids the way the owners know them.
+	let (valera_c, inintel_c) = (Uuid::new_v4(), Uuid::new_v4());
+	for (user, concierge) in [(valera, valera_c), (inintel, inintel_c)] {
+		sqlx::query("UPDATE users SET concierge_user_id = $2 WHERE id = $1")
+			.bind(user.raw())
+			.bind(concierge)
+			.execute(&pool)
+			.await
+			.unwrap();
+	}
+	let anchor = Anchor::new(service_arb.clone(), vec![3250 * UNIT, 13_000 * UNIT])
+		.with_people(vec![(valera_c.to_string(), 13_000 * UNIT), (inintel_c.to_string(), 3250 * UNIT)])
+		.unwrap();
 	let window = Window {
 		pool: pool.clone(),
 		ledger: ledger.clone(),
-		anchor: Anchor::new(service_arb.clone(), vec![3250 * UNIT, 13_000 * UNIT]),
+		anchor,
 	};
 	let cash0 = ledger.cash_invariant().await.unwrap();
 
@@ -203,8 +220,8 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 	drop(first);
 
 	// Step 1: maintenance, idempotent.
-	assert!(maintenance::on(&window).await.unwrap().ok);
-	let again = maintenance::on(&window).await.unwrap();
+	assert!(maintenance::on(&window, Mode::Apply).await.unwrap().ok);
+	let again = maintenance::on(&window, Mode::Apply).await.unwrap();
 	assert!(again.ok && again.text.contains("already on"), "{}", again.text);
 	let status = maintenance::status(&window).await.unwrap();
 	assert!(status.ok && status.text.contains("16250"), "{}", status.text);
@@ -263,7 +280,7 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 	let later = user(&world.users).await;
 	world.issue(&cash_product, UnitHolder::User(later), "1").await;
 	world.relay_drain().await;
-	let stale = close::run(&window, Mode::Apply, &early_export).await.unwrap_err();
+	let stale = close::run(&window, Mode::Apply, &early_export, Some(&early_export.digest)).await.unwrap_err();
 	assert!(format!("{stale:#}").contains("does not list"), "{stale:#}");
 	assert_eq!(
 		posted(ledger.as_ref(), &LedgerAccountKey::SharesOutstanding(service_arb.clone())).await,
@@ -273,7 +290,22 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 
 	let mut file = Vec::new();
 	window_export::export(&pool, ledger.as_ref(), "0", false, &mut file).await.unwrap();
+	let export_bytes = file.clone();
 	let export = close::parse_export(&String::from_utf8(file).unwrap()).unwrap();
+
+	// A compartment move still pending is money in flight: the remap and the close refuse.
+	sqlx::query("INSERT INTO compartment_moves (id, user_id, from_scope, to_scope, amount, idempotency_key) VALUES ($1, $2, 'main', 'invest', '1', 'window-test')")
+		.bind(Uuid::new_v4())
+		.bind(investor.raw())
+		.execute(&pool)
+		.await
+		.unwrap();
+	let blocked = remap::run(&window, Mode::DryRun, remap::Options::default()).await.unwrap_err();
+	assert!(
+		format!("{blocked:#}").contains("not drained") && format!("{blocked:#}").contains("compartment moves pending 1"),
+		"{blocked:#}"
+	);
+	sqlx::query("DELETE FROM compartment_moves WHERE idempotency_key = 'window-test'").execute(&pool).await.unwrap();
 
 	// Step 4: remap. The dry run moves nothing; the treasury carve-out cannot exceed `fee`.
 	let treasury_before = posted(ledger.as_ref(), &scope_account("main", "treasury")).await;
@@ -316,11 +348,31 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 	// against the supply, and the anchor reads the same units from the closure record.
 	let before = window.read_anchor().await.unwrap();
 	assert_eq!((before.live, before.closed), (16_250 * UNIT, 0));
-	let dry = close::run(&window, Mode::DryRun, &export).await.unwrap();
+	let dry = close::run(&window, Mode::DryRun, &export, None).await.unwrap();
 	assert!(dry.ok && dry.text.contains("dry run"), "{}", dry.text);
 	let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM window_closures").fetch_one(&pool).await.unwrap();
 	assert_eq!(rows, 0);
-	let closed = close::run(&window, Mode::Apply, &export).await.unwrap();
+	assert!(
+		dry.text.contains(&format!("export sha256: {}", export.digest)),
+		"the dry run prints the file's digest: {}",
+		dry.text
+	);
+	for (given, why) in [
+		(None, "needs --import-digest"),
+		(Some("ab".repeat(32)), "invest imported a different file"),
+		(Some("xyz".to_owned()), "64 hex"),
+	] {
+		let refused = close::run(&window, Mode::Apply, &export, given.as_deref()).await.unwrap_err();
+		assert!(format!("{refused:#}").contains(why), "{refused:#}");
+	}
+	// The file is checked against the owners' word: a swapped person is refused.
+	let mut swapped = close::parse_export(&String::from_utf8(export_bytes.clone()).unwrap()).unwrap();
+	swapped.users.insert(valera.raw().to_string(), Some(Uuid::new_v4().to_string()));
+	assert!(swapped.check_anchor(&window.anchor).is_err());
+	export.check_anchor(&window.anchor).unwrap();
+	let upper = export.digest.to_uppercase();
+	assert_eq!(rows_closed(&pool).await, 0, "every refusal wrote nothing");
+	let closed = close::run(&window, Mode::Apply, &export, Some(&upper)).await.unwrap();
 	assert!(closed.ok, "{}", closed.text);
 	for service in [&service_arb, &cash_product] {
 		assert!(ledger.share_holdings(&HoldingScope::Product(service.clone())).await.unwrap().iter().all(|(_, units)| *units == 0));
@@ -344,7 +396,7 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 	);
 	let cash2 = ledger.cash_invariant().await.unwrap();
 	assert_eq!((cash2.custody, cash2.claims), (cash0.custody, cash0.claims));
-	let rerun = close::run(&window, Mode::Apply, &export).await.unwrap();
+	let rerun = close::run(&window, Mode::Apply, &export, Some(&export.digest)).await.unwrap();
 	assert!(rerun.ok && rerun.text.contains("close 0 account(s)"), "{}", rerun.text);
 
 	// A crash between the ledger and the rows: the rows are rebuilt from the ledger, and a
@@ -358,7 +410,7 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 		window.read_anchor().await.is_err(),
 		"with the records gone the closed units are not visible, and the anchor says so"
 	);
-	let dry = close::run(&window, Mode::DryRun, &export).await.unwrap();
+	let dry = close::run(&window, Mode::DryRun, &export, None).await.unwrap();
 	assert!(dry.text.contains("have no row") && dry.text.contains("--yes writes them"), "{}", dry.text);
 	let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM window_closures WHERE service = $1")
 		.bind(service_arb.as_str())
@@ -366,7 +418,7 @@ async fn the_window_walks_service_arb_through_every_step_with_the_anchor_unmoved
 		.await
 		.unwrap();
 	assert_eq!(rows, 0, "a dry run writes nothing");
-	let repaired = close::run(&window, Mode::Apply, &export).await.unwrap();
+	let repaired = close::run(&window, Mode::Apply, &export, Some(&export.digest)).await.unwrap();
 	assert!(repaired.ok && repaired.text.contains("written from the ledger"), "{}", repaired.text);
 	window.read_anchor().await.unwrap().same_holders_as(&before).unwrap();
 

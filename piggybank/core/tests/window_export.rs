@@ -10,7 +10,7 @@ use std::sync::Arc;
 use domain::{
 	allocations::{Allocation, AllocationIcon, AllocationId},
 	auth::AuthSubject,
-	balance::ServiceId,
+	balance::{LedgerAccountKey, ServiceId, TransferCode},
 	issuance::{IdempotencyKey, UnitHolder},
 	money::Shares,
 	users::{Email, UserId},
@@ -19,7 +19,10 @@ use domain::{
 use piggybank_core::{
 	application::{funds as funds_app, issuance as issuance_app},
 	infrastructure::{allocations::PgAllocations, custody::StubCustody, issuance::PgUnitIssuances, nav::PgNav, relay::Relay, users::PgUsers, window_export},
-	ports::{AllocationRegistry, UserRepository},
+	ports::{
+		AllocationRegistry, UserRepository,
+		ledger::{Ledger, LedgerTransfer},
+	},
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -115,4 +118,21 @@ async fn the_service_arb_shape_is_exported_exactly_and_nothing_is_written() {
 	assert_eq!(held, expected);
 	let total = trailer.allocations.iter().find(|t| ours(&t.service)).expect("a total for the allocation");
 	assert_eq!((total.held.as_str(), total.balanced), ("16250000000000000000000", true));
+
+	// A leg still pending (a redemption's reserved burn) means the posted balances are not
+	// final: the cut is not clean, and says how much was in flight.
+	let reserve = LedgerTransfer {
+		id: Uuid::new_v4().as_u128(),
+		debit: LedgerAccountKey::SharesOutstanding(service.clone()),
+		credit: LedgerAccountKey::UserShares(service.clone(), investor),
+		amount: 1_000_000_000_000_000_000,
+		code: TransferCode::UnitRetire,
+		reference: 0,
+	};
+	ledger.reserve(&reserve).await.unwrap();
+	let mut again = Vec::new();
+	let pending = window_export::export(&pool, ledger.as_ref(), "0", true, &mut again).await.unwrap();
+	assert!(!pending.trailer.clean, "a pending leg makes the export unclean");
+	assert_ne!(pending.trailer.pending_or_locked, "0");
+	assert_eq!(trailer.pending_or_locked, "0", "the earlier cut had nothing in flight");
 }
