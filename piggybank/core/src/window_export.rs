@@ -49,7 +49,12 @@ async fn main() -> Result<ExitCode> {
 	let summary = match out_path {
 		Some(path) => {
 			// create_new: an export is evidence of one cut, never silently replaced by the next.
-			let file = OpenOptions::new().write(true).create_new(true).open(&path).wrap_err_with(|| format!("create {path}"))?;
+			// Owner-only: the file lists every holder's id and units.
+			let mut options = OpenOptions::new();
+			options.write(true).create_new(true);
+			#[cfg(unix)]
+			std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+			let file = options.open(&path).wrap_err_with(|| format!("create {path}"))?;
 			window_export::export(&pool, &ledger, &cluster_id, allow_live, BufWriter::new(file)).await?
 		}
 		None => window_export::export(&pool, &ledger, &cluster_id, allow_live, BufWriter::new(std::io::stdout().lock())).await?,

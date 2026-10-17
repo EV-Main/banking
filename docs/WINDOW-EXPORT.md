@@ -21,6 +21,7 @@ DATABASE_URL=… TIGERBEETLE_ADDRESS=… TIGERBEETLE_CLUSTER_ID=… \
 - The hub must be in maintenance (`operations_mode.read_only = true`); otherwise the run
   refuses. `--allow-live` overrides for a rehearsal: the header says `"live": true` and the
   file must not be imported.
+- `--out` creates the file with mode `0600` (it lists every holder's id and units).
 - The Σ of units per allocation goes to stderr. Exit code is non-zero when the export is
   not `clean` (a supply its holders do not add up to, or an undrained outbox).
 - Postgres is read in one `REPEATABLE READ` snapshot. TigerBeetle is read after it, so the
@@ -65,7 +66,8 @@ only so the importer can compare.
   (their sum), `shares_outstanding`, `balanced` (`held == shares_outstanding`).
 - `total_held`, `total_outstanding` — Σ over every allocation.
 - `outbox_undispatched` — outbox events neither dispatched nor parked; the window needs 0.
-- `clean` — every allocation balanced and `outbox_undispatched == 0`.
+- `pending_or_locked` — Σ base units shown as pending or locked on the supplies, the cash claims and every unit holding (in-flight two-phase transfers). The window needs `0`. Added to schema 1 with a default (`"0"` when absent), so the version did not change.
+- `clean` — every allocation balanced, `outbox_undispatched == 0` and `pending_or_locked == 0`.
 
 The importer recomputes `allocations[]` from its own tables after import; equality per
 allocation is the "Σ units reconcile" of plan step 3.
