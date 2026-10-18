@@ -41,6 +41,7 @@ use crate::{
 		Custody, OutflowPolicy, WithdrawalRepository,
 		ledger::{ClaimCovers, Ledger},
 		outflow::PayoutStanding,
+		withdrawals::{AddressHold, Opened, Screening},
 	},
 };
 
@@ -95,12 +96,19 @@ pub struct AdmissionGates<'a> {
 	pub kyc: KycGate,
 }
 
-/// The calling user withdraws `amount` (gross) of free balance to `address`. The fee
-/// is the per-network policy fee; the net (`amount − fee`) is what leaves on-chain.
+/// The calling user withdraws `amount` (gross) of free balance to `address`.
+///
+/// NOT THE WALLET'S ENTRY POINT. This path knows nothing of the velocity limits, the address
+/// book hold, the audit columns or the security notice; the gRPC wallet goes through
+/// [`request_withdrawal_screened`]. It stays public only because the integration suites drive
+/// the saga through it — do not call it from a request handler.
+///
+/// The fee is the per-network policy fee; the net (`amount − fee`) is what leaves on-chain.
 ///
 /// `id` is supplied by the caller so a payment order can derive it from itself (`uuid_v5(payment_id, "payment:withdrawal")`) so a retried
 /// execution re-creates the same row instead of a second withdrawal. The self-service wallet
 /// passes a fresh [`WithdrawalId::new`].
+#[doc(hidden)]
 pub async fn request_withdrawal(
 	ports: &WithdrawalPorts<'_>,
 	gates: &AdmissionGates<'_>,
@@ -122,6 +130,10 @@ pub const MAX_IDEMPOTENCY_KEY: usize = 128;
 /// page mints one per load). A repeat with the same terms returns the first withdrawal as it
 /// stands now and records nothing; the same key with another network, address or amount is a
 /// `Conflict` (ALREADY_EXISTS) — a key names one request, never "whatever comes next".
+///
+/// Unscreened like [`request_withdrawal`] — see the warning there; the wallet uses
+/// [`request_withdrawal_screened`].
+#[doc(hidden)]
 pub async fn request_withdrawal_keyed(
 	ports: &WithdrawalPorts<'_>,
 	gates: &AdmissionGates<'_>,
@@ -143,6 +155,65 @@ pub async fn request_withdrawal_keyed(
 	open_withdrawal(ports, WithdrawalId::new(), WithdrawalSource::User(user), network, address, amount, Opening::ImmediateKeyed(key)).await
 }
 
+/// What the user asked for in a self-service withdrawal.
+pub struct SelfServiceRequest<'a> {
+	pub user: UserId,
+	pub network: Network,
+	pub address: WalletAddress,
+	pub amount: Usdt,
+	/// The client's idempotency key; absent or empty = a client that predates it.
+	pub key: Option<&'a str>,
+}
+
+/// The self-service wallet's entry point: [`request_withdrawal`] / [`request_withdrawal_keyed`]
+/// plus the velocity limits of the caller's profile and the audit columns, all recorded under
+/// the claim's lock. `key` empty or absent is a client that predates the idempotency key.
+pub async fn request_withdrawal_screened(
+	ports: &WithdrawalPorts<'_>,
+	gates: &AdmissionGates<'_>,
+	request: SelfServiceRequest<'_>,
+	screening: &Screening<'_>,
+) -> Result<Withdrawal, DomainError> {
+	let SelfServiceRequest {
+		user,
+		network,
+		address,
+		amount,
+		key,
+	} = request;
+	let key = key.filter(|k| !k.is_empty());
+	if let Some(key) = key {
+		if key.len() > MAX_IDEMPOTENCY_KEY {
+			return Err(DomainError::Validation(format!("idempotency_key must be 1..{MAX_IDEMPOTENCY_KEY} bytes")));
+		}
+		// Before the gates and the limits: a retry of a request that went through gets its answer
+		// even if the account was frozen or the day's headroom used up since.
+		if let Some(first) = ports.withdrawals.find_by_key(user, key).await? {
+			return replay(first, network, &address, amount);
+		}
+	}
+	admit_user_withdrawal(gates, user, network).await?;
+	// The cheap half of the limits, before any lock; the sums are checked under the lock.
+	screening.profile.check_op(amount)?;
+	// A destination not yet released is accepted and left `Queued` (cancellable) — never
+	// dispatched at once, whatever the rail holds; the dispatcher waits for `release_at`.
+	let hold = match ports.withdrawals.address_hold(user, network, &address).await? {
+		AddressHold::Released => false,
+		AddressHold::Held => true,
+		AddressHold::New => screening.hold_secs > 0,
+	};
+	open_withdrawal(
+		ports,
+		WithdrawalId::new(),
+		WithdrawalSource::User(user),
+		network,
+		address,
+		amount,
+		Opening::Screened { key, screening, hold },
+	)
+	.await
+}
+
 /// The first withdrawal under a key, if the repeat asks for the same thing.
 fn replay(first: Withdrawal, network: Network, address: &WalletAddress, amount: Usdt) -> Result<Withdrawal, DomainError> {
 	if first.network() == network && first.address() == address && first.amount() == amount {
@@ -154,6 +225,10 @@ fn replay(first: Withdrawal, network: Network, address: &WalletAddress, amount: 
 
 /// [`request_withdrawal`], except that the withdrawal is ALWAYS left `Queued` for the
 /// dispatcher, however liquid the rail is right now.
+///
+/// Deliberately outside the velocity limits and the address hold of
+/// [`request_withdrawal_screened`]: a payment order is authorised by the owners' consilium or
+/// the investor's own confirmation, not by a session, and its delay is its 72 h consent window.
 ///
 /// This is the shape a payment order takes. Its consent was given up to 72 hours before
 /// the order executes, and the execution re-reads the consent pins under the order's lock
@@ -299,13 +374,16 @@ enum Opening<'a> {
 	Immediate,
 	/// [`Opening::Immediate`] under a per-user idempotency key.
 	ImmediateKeyed(&'a str),
+	/// [`Opening::Immediate`] through the self-service screen: velocity limits and audit under
+	/// the claim's lock, with the key's replay when there is one.
+	Screened { key: Option<&'a str>, screening: &'a Screening<'a>, hold: bool },
 	/// Always left `Queued`.
 	Queued,
 }
 
 impl Opening<'_> {
 	fn dispatches_immediately(self) -> bool {
-		!matches!(self, Self::Queued)
+		!matches!(self, Self::Queued | Self::Screened { hold: true, .. })
 	}
 }
 
@@ -340,6 +418,15 @@ async fn open_withdrawal(
 		amount: amount.base_units(),
 		refusal: INSUFFICIENT_TO_WITHDRAW,
 	};
+	if let Opening::Screened { key, screening, .. } = opening {
+		return match ports.withdrawals.open_screened(&mut withdrawal, &guard, key, screening).await? {
+			Opened::Recorded { .. } => {
+				ports.relay.notify_one();
+				Ok(withdrawal)
+			}
+			Opened::Replayed(first) => replay(first, network, withdrawal.address(), amount),
+		};
+	}
 	if let (Opening::ImmediateKeyed(key), WithdrawalSource::User(user)) = (opening, source) {
 		// A concurrent twin recorded it between the pre-check and the lock: answer with that.
 		if let Some(first) = ports.withdrawals.open_keyed(&mut withdrawal, &guard, user, key).await? {

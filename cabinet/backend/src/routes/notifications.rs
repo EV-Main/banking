@@ -21,9 +21,14 @@ use serde::Deserialize;
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{parse_body, require_token, verify_csrf},
+	routes::{parse_body, require_fresh_login, require_identity, require_token, verify_csrf},
 	state::AppState,
+	util::now_secs,
 };
+
+/// `bank:wallet-security` (`domain::scope_operations::WALLET_SECURITY_TOPIC`): spelled out here
+/// because the BFF does not depend on `domain`.
+const WALLET_SECURITY_TOPIC: &str = "bank:wallet-security";
 
 #[derive(Deserialize)]
 pub struct ListQuery {
@@ -94,15 +99,19 @@ pub async fn set_channel(State(st): State<AppState>, jar: CookieJar, headers: He
 	}
 	let token = require_token(&st, &jar).await?;
 	let v = parse_body(&body);
+	let enabled = v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
 	let channel = match v.get("channel").and_then(|x| x.as_str()) {
 		Some("in_app") => cc::Channel::InApp,
 		Some("email") => cc::Channel::Email,
 		_ => return Err(ApiError::BadRequest("channel must be in_app or email".into())),
 	};
-	let req = cc::SetChannelEnabledRequest {
-		channel: channel as i32,
-		enabled: v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false),
-	};
+	// Switching the email channel off silences the wallet-security warnings with it, so it
+	// takes the same fresh sign-in a withdrawal does: a stolen session must not be able to
+	// mute the one message that would tell the owner.
+	if channel == cc::Channel::Email && !enabled {
+		require_fresh_login(&require_identity(&st, &jar).await?.1, now_secs().max(0) as u64)?;
+	}
+	let req = cc::SetChannelEnabledRequest { channel: channel as i32, enabled };
 	Ok(Json(st.grpc.set_notification_channel(&token, req).await?.into()))
 }
 
@@ -117,12 +126,19 @@ pub async fn set_topic(State(st): State<AppState>, jar: CookieJar, headers: Head
 	let Some(topic) = v.get("topic").and_then(|x| x.as_str()).filter(|s| !s.is_empty()) else {
 		return Err(ApiError::BadRequest("topic is required".into()));
 	};
+	let subscribed = v.get("subscribed").and_then(|x| x.as_bool()).unwrap_or(false);
+	let email_enabled = v.get("email_enabled").and_then(|x| x.as_bool()).unwrap_or(true);
+	// Unsubscribing from, or dropping the email copy of, the wallet-security topic is the same
+	// muting as switching the email channel off.
+	if topic == WALLET_SECURITY_TOPIC && (!subscribed || !email_enabled) {
+		require_fresh_login(&require_identity(&st, &jar).await?.1, now_secs().max(0) as u64)?;
+	}
 	let req = cc::SetTopicSubscriptionRequest {
 		topic: topic.to_string(),
-		subscribed: v.get("subscribed").and_then(|x| x.as_bool()).unwrap_or(false),
+		subscribed,
 		// Defaults to true so "follow this fund" from a product page is one click:
 		// following implies wanting the email copy unless the user says otherwise.
-		email_enabled: v.get("email_enabled").and_then(|x| x.as_bool()).unwrap_or(true),
+		email_enabled,
 	};
 	Ok(Json(st.grpc.set_notification_topic(&token, req).await?.into()))
 }

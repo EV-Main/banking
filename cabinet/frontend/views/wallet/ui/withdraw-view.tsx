@@ -7,6 +7,7 @@ import { type ReactNode, useId, useState } from "react";
 
 import { Button, Skeleton, Spinner } from "@evinvest/uikit";
 
+import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
 import { isUnverified } from "@/entities/user/lib/kyc";
 import { profileResource } from "@/entities/user/model/profile-resource";
 import { submitWithdrawal, walletResource } from "@/entities/wallet/model/wallet-resource";
@@ -71,7 +72,10 @@ export function WithdrawView({ initialNetwork, onWithdrawn }: { initialNetwork?:
   const gated = (!profileLoading || profileError !== null) && isUnverified(profile);
   // A failed submit is the interesting error here; a failed wallet read only matters while
   // there is no wallet to show, since a stale balance still beats a blank screen.
-  const error = submitError ? errorMessage(submitError, t) : wallet || !walletError ? null : errorMessage(walletError, t);
+  // A withdrawal needs a recent sign-in; the same wording as consenting to a mandate, since
+  // the way out is the same: sign in again, then repeat the (still unsent) request.
+  const submitMessage = isStepUpRequired(submitError) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : submitError ? errorMessage(submitError, t) : null;
+  const error = submitMessage ?? (wallet || !walletError ? null : errorMessage(walletError, t));
 
   const networks = (wallet?.withdrawable ?? []).map((w) => w.network ?? "").filter(Boolean);
   const network = (selected && networks.includes(selected) ? selected : null) ?? networks[0] ?? "";

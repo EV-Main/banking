@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package banking.v1;
 
+import "banking/v1/wallet.proto";
+
 // InvoicePaymentService — the payer's side of an invoice a scope issued
 // (`scope.v1.InvoiceService`). The user opens it from the scope's link in the wallet
 // page or the `<ev-pay-invoice>` element and pays it straight into the scope's
@@ -55,4 +57,5 @@ message PayInvoiceRequest {
   string invoice_id = 1;
   string pay_from = 2;         // `main`, or the invoice's scope (the caller's compartment there)
   string idempotency_key = 3;  // client-minted, one per click
+  AuditContext audit = 4;
 }

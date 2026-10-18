@@ -2711,7 +2711,8 @@
       "wallet.withdrawalNetwork",
       "wallet.withdrawalQueued",
       "wallet.withdrawalSubmitted",
-      "wallet.youWillReceive"
+      "wallet.youWillReceive",
+      "walletAction.stepUp"
     ],
     "app/[locale]/cabinet/(auth)/loggedout/page.tsx": [],
     "app/[locale]/cabinet/(mfe)/[service]/[[...slug]]/page.tsx": [],
@@ -3054,7 +3055,8 @@
       "walletAction.payNow",
       "walletAction.payRefused",
       "walletAction.processing",
-      "walletAction.processingSlow"
+      "walletAction.processingSlow",
+      "walletAction.stepUp"
     ],
     "app/[locale]/cabinet/(wallet-action)/wallet/action/payment/[id]/page.tsx": [
       "approval.amount",
@@ -3189,7 +3191,8 @@
       "walletAction.closeHint",
       "walletAction.closeHintLocal",
       "walletAction.done",
-      "walletAction.failed"
+      "walletAction.failed",
+      "walletAction.stepUp"
     ]
   },
   "serverOnly": [

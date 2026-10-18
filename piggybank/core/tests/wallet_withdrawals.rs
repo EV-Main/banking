@@ -22,10 +22,19 @@ use domain::{
 	withdrawals::{WithdrawalId, WithdrawalState},
 };
 use piggybank_core::{
-	application::{balance as balance_app, withdrawals as withdrawal_app},
+	application::{
+		balance as balance_app,
+		withdrawal_limits::WithdrawalLimits,
+		withdrawals::{self as withdrawal_app, SelfServiceRequest},
+	},
 	config::KycGate,
 	infrastructure::{custody::StubCustody, deposits::PgDeposits, dispatcher::Dispatcher, operations, outflow::PgOutflowPolicy, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals},
-	ports::{BroadcastRequest, Custody, CustodyError, DepositAddresses, OutflowPolicy, PayoutStanding, UserRepository, WithdrawalRepository, ledger::Ledger},
+	ports::{
+		BroadcastRequest, Custody, CustodyError, DepositAddresses, OutflowPolicy, PayoutStanding, UserRepository, WithdrawalRepository,
+		audit::RequestAudit,
+		ledger::Ledger,
+		withdrawals::{LimitProfile, Screening},
+	},
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -297,6 +306,444 @@ async fn racing_withdrawals_under_one_key_record_one() {
 	let (a, b) = tokio::join!(one, two);
 	assert_eq!(a.unwrap().id(), b.unwrap().id());
 	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+}
+
+/// One self-service request through the screen, as `WalletService.RequestWithdrawal` makes it.
+async fn screened(h: &Harness, user: UserId, amount: &str, key: Option<&str>, profile: &LimitProfile, audit: &RequestAudit) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	let network = Network::Bep20;
+	withdrawal_app::request_withdrawal_screened(
+		&withdrawal_ports(h, &StubCustody),
+		&admission(h, KycGate::ENFORCED),
+		SelfServiceRequest {
+			user,
+			network,
+			address: destination(network),
+			amount: usdt(amount),
+			key,
+		},
+		&Screening {
+			profile,
+			audit,
+			hold_secs: 0,
+			cooloff_secs: 0,
+		},
+	)
+	.await
+}
+
+fn small_profile(per_op: &str, per_24h: &str, max_per_hour: Option<u32>) -> LimitProfile {
+	LimitProfile {
+		per_op: usdt(per_op),
+		per_24h: usdt(per_24h),
+		max_per_hour,
+	}
+}
+
+#[tokio::test]
+async fn the_operation_and_daily_limits_refuse_and_a_failure_frees_the_headroom() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "150", None);
+	let audit = RequestAudit::default();
+
+	let over_op = screened(&h, user, "101", None, &profile, &audit).await;
+	assert!(matches!(over_op, Err(DomainError::Precondition(_))), "{over_op:?}");
+
+	let first = screened(&h, user, "100", None, &profile, &audit).await.unwrap();
+	let over_day = screened(&h, user, "60", None, &profile, &audit).await;
+	assert!(matches!(over_day, Err(DomainError::Precondition(_))), "{over_day:?}");
+	assert!(screened(&h, user, "50", None, &profile, &audit).await.is_ok(), "exactly the remaining headroom fits");
+
+	// A failed withdrawal returned its money, so it no longer weighs on the day. (It shipped at
+	// once on the liquid stub rail, so `fail` is the way back, not `cancel`.)
+	withdrawal_app::fail_withdrawal(h.withdrawals.as_ref(), &h.notify, first.id()).await.unwrap();
+	assert!(screened(&h, user, "100", None, &profile, &audit).await.is_ok());
+}
+
+#[tokio::test]
+async fn the_hourly_cap_counts_requests_not_amounts() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "1000", Some(2));
+	let audit = RequestAudit::default();
+	screened(&h, user, "20", None, &profile, &audit).await.unwrap();
+	screened(&h, user, "20", None, &profile, &audit).await.unwrap();
+	let third = screened(&h, user, "20", None, &profile, &audit).await;
+	assert!(matches!(third, Err(DomainError::Precondition(_))), "{third:?}");
+}
+
+#[tokio::test]
+async fn limits_are_kept_by_racing_requests_and_a_key_replay_outlives_them() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "100", None);
+	let audit = RequestAudit::default();
+	// Two requests that each fit alone and not together: the claim lock lets exactly one in.
+	let (a, b) = tokio::join!(
+		screened(&h, user, "70", Some("race-a"), &profile, &audit),
+		screened(&h, user, "70", Some("race-b"), &profile, &audit)
+	);
+	assert_eq!([a.is_ok(), b.is_ok()].iter().filter(|ok| **ok).count(), 1, "{a:?} / {b:?}");
+	// The winner's key still answers with its withdrawal after the day is used up.
+	let winner = if a.is_ok() { "race-a" } else { "race-b" };
+	let replay = screened(&h, user, "70", Some(winner), &profile, &audit).await.unwrap();
+	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+	assert_eq!(replay.id(), h.withdrawals.list_by_user(user).await.unwrap()[0].id());
+}
+
+#[derive(sqlx::FromRow)]
+struct AuditRow {
+	origin: Option<String>,
+	client_ip: Option<String>,
+	user_agent: Option<String>,
+	intent_id: Option<String>,
+	stepup_method: Option<String>,
+}
+
+#[tokio::test]
+async fn the_audit_context_is_recorded_and_an_unknown_origin_gets_the_host_profile() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "50").await;
+	let audit = RequestAudit::new("https://evinvest.ltd", "203.0.113.9", "test-agent/1.0", "", "fresh_login");
+	let limits = WithdrawalLimits::default();
+	let recorded = screened(&h, user, "20", Some("audit-1"), limits.profile_for(&audit.origin), &audit).await.unwrap();
+	let row: AuditRow = sqlx::query_as("SELECT origin, client_ip, user_agent, intent_id, stepup_method FROM withdrawals WHERE id = $1")
+		.bind(recorded.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(row.origin.as_deref(), Some("https://evinvest.ltd"));
+	assert_eq!(row.client_ip.as_deref(), Some("203.0.113.9"));
+	assert_eq!(row.user_agent.as_deref(), Some("test-agent/1.0"));
+	assert_eq!(row.intent_id, None, "an empty field is stored as NULL");
+	assert_eq!(row.stepup_method.as_deref(), Some("fresh_login"));
+	// A host origin is judged on the host profile: 1001 USDT is over its per-operation ceiling.
+	assert_eq!(limits.profile_for("https://sa.evinvest.ltd").per_op, usdt("1000"));
+	assert_eq!(limits.profile_for("https://evinvest.ltd.evil.example").max_per_hour, Some(6));
+}
+
+/// A screened request to `to` with a given hold, on the profile that never limits these amounts.
+async fn screened_to(h: &Harness, user: UserId, amount: &str, to: &WalletAddress, hold_secs: u64) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	let profile = small_profile("1000", "100000", None);
+	let audit = RequestAudit::default();
+	withdrawal_app::request_withdrawal_screened(
+		&withdrawal_ports(h, &StubCustody),
+		&admission(h, KycGate::ENFORCED),
+		SelfServiceRequest {
+			user,
+			network: to.network(),
+			address: to.clone(),
+			amount: usdt(amount),
+			key: None,
+		},
+		&Screening {
+			profile: &profile,
+			audit: &audit,
+			hold_secs,
+			cooloff_secs: 0,
+		},
+	)
+	.await
+}
+
+async fn dispatch_now(h: &Harness, id: WithdrawalId) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	withdrawal_app::dispatch_withdrawal(h.withdrawals.as_ref(), &StubCustody, &policy(h), KycGate::ENFORCED, &h.notify, id).await
+}
+
+/// Move a destination's release (and its withdrawals') into the past, as the clock would.
+async fn release_now(h: &Harness, user: UserId) {
+	sqlx::query("UPDATE withdrawal_addresses SET release_at = now() - interval '1 second' WHERE user_id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	sqlx::query("UPDATE withdrawals SET release_at = now() - interval '1 second' WHERE user_id = $1 AND release_at IS NOT NULL")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+}
+
+#[tokio::test]
+async fn a_first_seen_address_is_held_queued_until_its_release() {
+	let Some(h) = harness().await else { return };
+	let _sweep = GLOBAL_SWEEP.lock().await;
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "500").await;
+	let to = destination(network);
+
+	// The rail is liquid, yet the first withdrawal to a new address waits.
+	let first = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(first.state(), WithdrawalState::Queued, "held, not dispatched");
+	let release: bool = sqlx::query_scalar("SELECT release_at > now() + interval '59 minutes' FROM withdrawals WHERE id = $1")
+		.bind(first.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert!(release, "release_at is recorded about an hour out");
+
+	// A second one to the same still-held address waits as well.
+	let second = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(second.state(), WithdrawalState::Queued);
+
+	// Neither the sweep nor the operator RPC sends anything before the release.
+	let dispatcher = Dispatcher::new(
+		h.pool.clone(),
+		h.withdrawals.clone(),
+		h.ledger.clone(),
+		Arc::new(StubCustody),
+		h.notify.clone(),
+		KycGate::ENFORCED,
+	);
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(
+		h.withdrawals.find_by_id(first.id()).await.unwrap().unwrap().state(),
+		WithdrawalState::Queued,
+		"the sweep skips a held row"
+	);
+	let refused = dispatch_now(&h, first.id()).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+
+	// After the release the same row dispatches.
+	release_now(&h, user).await;
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(h.withdrawals.find_by_id(first.id()).await.unwrap().unwrap().state(), WithdrawalState::Processing);
+
+	// A released address is no longer new: the next withdrawal goes straight out.
+	let third = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(third.state(), WithdrawalState::Processing, "a released destination dispatches at once");
+}
+
+#[tokio::test]
+async fn no_hold_configured_dispatches_at_once_and_still_remembers_the_address() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "200").await;
+	let to = destination(network);
+	let first = screened_to(&h, user, "50", &to, 0).await.unwrap();
+	assert_eq!(first.state(), WithdrawalState::Processing);
+	let known: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(known, 1);
+	// Turning the hold on later does not hold a destination that was already released.
+	let again = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(again.state(), WithdrawalState::Processing);
+}
+
+#[tokio::test]
+async fn every_screened_withdrawal_tells_the_owner_and_a_new_address_says_so() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "300").await;
+	let to = destination(network);
+
+	let held = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	release_now(&h, user).await;
+	let released = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+
+	let notices = |id: WithdrawalId| {
+		let pool = h.pool.clone();
+		async move {
+			sqlx::query_as::<_, (String, String, String, String)>("SELECT topic, kind, link, body FROM scope_notification_outbox WHERE dedupe_key = $1")
+				.bind(format!("withdrawal:{id}:requested"))
+				.fetch_all(&pool)
+				.await
+				.unwrap()
+		}
+	};
+	let first = notices(held.id()).await;
+	assert_eq!(first.len(), 1, "one notice per withdrawal");
+	let (topic, kind, link, body) = &first[0];
+	assert_eq!(
+		(topic.as_str(), kind.as_str(), link.as_str()),
+		("bank:wallet-security", "withdrawal_new_address", "/cabinet/wallet")
+	);
+	assert!(body.contains(to.as_str()) && body.contains("50 USDT"), "{body}");
+	let second = notices(released.id()).await;
+	assert_eq!(second[0].1, "withdrawal_requested", "a known address is an ordinary withdrawal notice");
+}
+
+#[tokio::test]
+async fn a_new_address_is_refused_after_a_sign_in_change_but_a_known_one_is_not() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "500").await;
+	let known = destination(network);
+	let fresh = WalletAddress::parse(network, "0x1111111111111111111111111111111111111111").unwrap();
+	let profile = small_profile("1000", "100000", None);
+	let audit = RequestAudit::default();
+	let ask = |to: WalletAddress, cooloff_secs: u64| {
+		let (h, profile, audit) = (&h, &profile, &audit);
+		async move {
+			withdrawal_app::request_withdrawal_screened(
+				&withdrawal_ports(h, &StubCustody),
+				&admission(h, KycGate::ENFORCED),
+				SelfServiceRequest {
+					user,
+					network,
+					address: to,
+					amount: usdt("50"),
+					key: None,
+				},
+				&Screening {
+					profile,
+					audit,
+					hold_secs: 0,
+					cooloff_secs,
+				},
+			)
+			.await
+		}
+	};
+	ask(known.clone(), 21_600).await.unwrap();
+
+	sqlx::query("UPDATE users SET credential_changed_at = now() WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let refused = ask(fresh.clone(), 21_600).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+	let in_book: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(in_book, 1, "the refused destination did not enter the book");
+	assert!(ask(known.clone(), 21_600).await.is_ok(), "an address used before still works");
+	assert!(ask(fresh.clone(), 0).await.is_ok(), "switched off, the cooling-off asks nothing");
+
+	sqlx::query("UPDATE users SET credential_changed_at = now() - interval '7 hours' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let other = WalletAddress::parse(network, "0x2222222222222222222222222222222222222222").unwrap();
+	assert!(ask(other, 21_600).await.is_ok(), "after the window a new address is accepted again");
+}
+
+#[tokio::test]
+async fn cancelling_a_held_withdrawal_takes_its_address_back_out_of_the_book() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "300").await;
+	let to = destination(network);
+
+	let first = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, first.id(), user).await.unwrap();
+	let in_book = |pool: sqlx::PgPool| async move {
+		sqlx::query_scalar::<_, i64>("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+			.bind(user.raw())
+			.fetch_one(&pool)
+			.await
+			.unwrap()
+	};
+	assert_eq!(in_book(h.pool.clone()).await, 0, "request-then-cancel does not start the clock");
+
+	// So the real request is a full first-seen one again: held, with a release time and its own mail.
+	let again = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(again.state(), WithdrawalState::Queued);
+	let held: bool = sqlx::query_scalar("SELECT release_at > now() FROM withdrawals WHERE id = $1")
+		.bind(again.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert!(held);
+	let mails: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_notification_outbox WHERE dedupe_key = $1")
+		.bind(format!("withdrawal:{}:requested", again.id()))
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(mails, 1);
+
+	// A destination whose hold has passed stays released when a later withdrawal is cancelled.
+	release_now(&h, user).await;
+	let later = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(later.state(), WithdrawalState::Processing, "released, so it ships");
+	let queued_again = {
+		sqlx::query("UPDATE withdrawal_addresses SET release_at = now() - interval '1 second' WHERE user_id = $1")
+			.bind(user.raw())
+			.execute(&h.pool)
+			.await
+			.unwrap();
+		again.id()
+	};
+	// `again` was queued to a destination now released; cancelling it must not forget the address.
+	withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, queued_again, user).await.unwrap();
+	assert_eq!(in_book(h.pool.clone()).await, 1);
+}
+
+#[tokio::test]
+async fn a_credential_change_after_the_request_keeps_a_held_withdrawal_for_review() {
+	let Some(h) = harness().await else { return };
+	let _sweep = GLOBAL_SWEEP.lock().await;
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "200").await;
+	let held = screened_to(&h, user, "50", &destination(network), 3600).await.unwrap();
+	release_now(&h, user).await;
+	// The sign-in details changed after the request was made.
+	sqlx::query("UPDATE users SET credential_changed_at = now() + interval '1 second' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+
+	let dispatcher = Dispatcher::new(
+		h.pool.clone(),
+		h.withdrawals.clone(),
+		h.ledger.clone(),
+		Arc::new(StubCustody),
+		h.notify.clone(),
+		KycGate::ENFORCED,
+	);
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(
+		h.withdrawals.find_by_id(held.id()).await.unwrap().unwrap().state(),
+		WithdrawalState::Queued,
+		"the sweep leaves it for review"
+	);
+	let refused = dispatch_now(&h, held.id()).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+
+	// A change from before the request does not hold it.
+	sqlx::query("UPDATE users SET credential_changed_at = now() - interval '1 day' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(dispatch_now(&h, held.id()).await.unwrap().state(), WithdrawalState::Processing);
+}
+
+#[tokio::test]
+async fn evm_addresses_are_one_book_entry_whatever_their_letter_case() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "100").await;
+	let mixed = destination(network);
+	let lower = WalletAddress::parse(network, &mixed.as_str().to_ascii_lowercase()).unwrap();
+	screened_to(&h, user, "50", &mixed, 3600).await.unwrap();
+	let second = screened_to(&h, user, "20", &lower, 3600).await.unwrap();
+	let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(rows, 1, "one destination, one entry");
+	assert_eq!(second.state(), WithdrawalState::Queued, "and the respelled one is still held, not 'known and released'");
 }
 
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this
@@ -643,6 +1090,9 @@ async fn an_onchain_liquid_treasury_dispatches_immediately() {
 #[tokio::test]
 async fn a_treasury_read_failure_queues_and_never_rejects() {
 	let Some(h) = harness().await else { return };
+	// It leaves a row queued on a shared rail and cancels it afterwards, so a sibling's sweep
+	// must not run in between.
+	let _sweep = GLOBAL_SWEEP.lock().await;
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	let claim = LedgerAccountKey::UserClaim(user);
@@ -1058,6 +1508,9 @@ impl OutflowPolicy for FrozenRail {
 #[tokio::test]
 async fn a_frozen_rail_refuses_new_withdrawals_and_holds_queued_ones() {
 	let Some(h) = harness().await else { return };
+	// It leaves a row queued on a shared rail and expects it to stay so, so no sibling's sweep
+	// may run in between.
+	let _sweep = GLOBAL_SWEEP.lock().await;
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	deposit(&h, user, network, "100").await;

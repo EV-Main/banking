@@ -170,6 +170,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		tracing::warn!("kyc gate LIFTED (KYC_GATE_ENABLED) — unverified users can be issued deposit addresses and can withdraw; unset the variable to restore the gate");
 	}
 
+	let withdrawal_limits = piggybank_core::application::withdrawal_limits::WithdrawalLimits::from_env().map_err(|err| eyre!("withdrawal limits: {err}"))?;
+
 	let auth_config = AuthConfig::from_env().context("failed to load auth configuration")?;
 	// The auth crate's optional seams (absent ⇒ inert/fail-closed) are a dev/CI
 	// affordance; production must never boot inert. Same for the refresh store's
@@ -597,6 +599,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		compartments,
 		scope_ledger_store.clone(),
 	)
+	.with_withdrawal_limits(withdrawal_limits)
 	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default())
 	.with_payment_approvals(payment_approval_mode, payment_proposer);
 

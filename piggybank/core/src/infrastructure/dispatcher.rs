@@ -109,9 +109,13 @@ impl Dispatcher {
 				return Ok(0);
 			}
 		};
-		let queued: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM withdrawals WHERE state = 'queued' ORDER BY created_at")
-			.fetch_all(&self.pool)
-			.await?;
+		let queued: Vec<Uuid> = sqlx::query_scalar(concat!(
+			"SELECT w.id FROM withdrawals w WHERE w.state = 'queued' AND (w.release_at IS NULL OR w.release_at <= now()) AND NOT ",
+			crate::withdrawal_needs_review!(),
+			" ORDER BY w.created_at"
+		))
+		.fetch_all(&self.pool)
+		.await?;
 		let mut dispatched = 0usize;
 		// Per-rail net already dispatched this sweep — the running deduction both gates
 		// subtract before comparing.

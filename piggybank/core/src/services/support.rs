@@ -28,6 +28,14 @@ use crate::{
 	ports::IssuanceTarget,
 };
 
+/// The wire audit block as the hub's own type; an absent block (a caller that predates it) is
+/// all-empty.
+pub(super) fn audit_of(audit: Option<&evbanking_contracts::banking::v1::AuditContext>) -> crate::ports::audit::RequestAudit {
+	audit
+		.map(|a| crate::ports::audit::RequestAudit::new(&a.origin, &a.client_ip, &a.user_agent, &a.intent_id, &a.stepup_method))
+		.unwrap_or_default()
+}
+
 /// The authenticated caller's own user id (from the access-token `sub`).
 ///
 /// Self-service RPCs act *as a user*, so only a `typ=access` token qualifies — a

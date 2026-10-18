@@ -18,7 +18,7 @@ use crate::{
 	AppState,
 	application::scope_invoices::{self as invoices_app, PayableView, PayerPorts},
 	ports::scope_invoices::PaymentError,
-	services::support::{MoneyGate, caller_id, gated_caller, map_err},
+	services::support::{MoneyGate, audit_of, caller_id, gated_caller, map_err},
 };
 
 #[derive(Clone)]
@@ -63,6 +63,7 @@ impl InvoicePaymentService for InvoicePaymentSvc {
 		let gate = MoneyGate { pause: true, freeze: false };
 		let user = gated_caller(&self.state, &request, gate).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("pay_invoice", user);
 		let id = invoice_id_of(&req.invoice_id)?;
 		let from = Compartment::parse(&req.pay_from).map_err(map_err)?;
 		let view = invoices_app::pay(&self.ports(), user, id, from, &req.idempotency_key).await.map_err(|err| match err {

@@ -60,6 +60,16 @@ ev::settings! {
 		/// balance, never that anyone can move money. Mirrors the origins in
 		/// `cabinet/frontend/shared/config/wallet-scopes.ts`.
 		wallet_cors_origins: Vec<CorsOrigin> = "",
+		/// Paying an invoice above this amount (decimal USDT) needs a sign-in no older than
+		/// `STEP_UP_MAX_AGE_SECS`; at or below it a session is enough. Optional on purpose: the
+		/// default is the product's line, and a malformed value fails the boot rather than
+		/// silently lifting the check.
+		pay_stepup_threshold_usdt: UsdtThreshold = "100",
+		/// How many reverse proxies in front of the BFF append to `X-Forwarded-For` (Traefik
+		/// alone is 1; Traefik plus the Next.js `/api` rewrite is 2). The audit trail takes the
+		/// address that many entries from the RIGHT, because everything left of the trusted hops is
+		/// whatever the browser chose to send. Audit only, never an authorization input.
+		trusted_proxy_hops: u8 = "1",
 		app_env: String,
 		/// Unset ⇒ error monitoring is a silent no-op. Right locally; in
 		/// production it means the BFF's errors reach nobody, so there the boot
@@ -122,6 +132,31 @@ impl std::str::FromStr for IssuanceToken {
 	}
 }
 ev::settings_via_from_str!(IssuanceToken);
+
+/// A non-negative decimal USDT amount (`100`, `99.5`), kept as the string the operator wrote
+/// so the comparison against an invoice's decimal string stays digit-exact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UsdtThreshold(String);
+
+impl UsdtThreshold {
+	pub fn as_str(&self) -> &str {
+		&self.0
+	}
+}
+
+impl std::str::FromStr for UsdtThreshold {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (whole, frac) = s.split_once('.').unwrap_or((s, ""));
+		let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+		if whole.is_empty() || !digits(whole) || !digits(frac) || s.ends_with('.') {
+			return Err(format!("{s:?} is not a plain non-negative decimal amount"));
+		}
+		Ok(Self(s.to_owned()))
+	}
+}
+ev::settings_via_from_str!(UsdtThreshold);
 
 /// One exact `scheme://host[:port]` origin, compared byte for byte against the browser's
 /// `Origin`. Parsed strictly so a typo fails the boot instead of silently never matching,
@@ -202,6 +237,8 @@ mod tests {
 				"MFE_ALLOWED_ORIGINS",
 				"CABINET_WS_ORIGIN",
 				"WALLET_CORS_ORIGINS",
+				"PAY_STEPUP_THRESHOLD_USDT",
+				"TRUSTED_PROXY_HOPS",
 				"APP_ENV",
 				"SENTRY_DSN",
 				"POSTHOG_KEY",
@@ -232,6 +269,21 @@ mod tests {
 
 		let vars: Vec<&str> = error.errors.iter().map(|e| e.var.as_str()).collect();
 		assert_eq!(vars, vec!["CABINET_WS_ORIGIN", "SENTRY_DSN"]);
+	}
+
+	#[test]
+	fn the_pay_step_up_threshold_defaults_to_100_and_refuses_junk() {
+		let config = AppConfig::from_source(|var| minimal_env().get(var).cloned()).expect("minimal env loads");
+		assert_eq!(config.pay_stepup_threshold_usdt.as_str(), "100");
+		for good in ["0", "250", "99.5"] {
+			assert!(good.parse::<UsdtThreshold>().is_ok(), "{good}");
+		}
+		for bad in ["", "-1", "1e3", "1,5", "abc", "5.", ".5", "1 000"] {
+			assert!(bad.parse::<UsdtThreshold>().is_err(), "{bad}");
+		}
+		let mut env = minimal_env();
+		env.insert("PAY_STEPUP_THRESHOLD_USDT".into(), "lots".into());
+		assert!(AppConfig::from_source(|var| env.get(var).cloned()).is_err(), "a malformed threshold must fail the boot");
 	}
 
 	#[test]

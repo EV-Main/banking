@@ -140,6 +140,9 @@ pub struct AppState {
 	/// grant a mandate only to a client these let touch compartments. Empty — every grant
 	/// refused — while the scope ledger is not configured ([`Self::with_scope_grants`]).
 	pub scope_grants: Arc<Grants>,
+	/// The owner's withdrawal limits and holds ([`application::withdrawal_limits`]); the
+	/// defaults unless [`Self::with_withdrawal_limits`] set the deployment's own.
+	pub withdrawal_limits: application::withdrawal_limits::WithdrawalLimits,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
 	/// How a new payment order is seated: over concierge's approvals (the default) or by the
@@ -234,6 +237,7 @@ impl AppState {
 			mandates: scope_ledger.clone(),
 			mandate_requests: scope_ledger,
 			scope_grants: Arc::new(Grants::default()),
+			withdrawal_limits: application::withdrawal_limits::WithdrawalLimits::default(),
 			payment_approvals: config::PaymentApprovalModes::DEFAULT,
 			payment_proposer: None,
 		}
@@ -243,6 +247,11 @@ impl AppState {
 	pub fn with_payment_approvals(mut self, mode: config::PaymentApprovalModes, proposer: Arc<application::payment_approvals::PaymentProposer>) -> Self {
 		self.payment_approvals = mode;
 		self.payment_proposer = Some(proposer);
+		self
+	}
+
+	pub fn with_withdrawal_limits(mut self, limits: application::withdrawal_limits::WithdrawalLimits) -> Self {
+		self.withdrawal_limits = limits;
 		self
 	}
 

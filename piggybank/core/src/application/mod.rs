@@ -68,4 +68,5 @@ pub mod scope_mandates;
 pub mod scope_operations;
 pub mod users;
 pub mod wallet;
+pub mod withdrawal_limits;
 pub mod withdrawals;

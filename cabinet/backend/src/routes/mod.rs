@@ -30,6 +30,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::CookieJar;
 use concierge_iam::{Permission, PermissionSet};
+use evbanking_contracts::banking::v1 as bk;
 use evconcierge_auth::Claims;
 use serde_json::Value;
 use subtle::ConstantTimeEq;
@@ -308,27 +309,18 @@ async fn money_token_for(state: &AppState, claims: &Claims) -> Result<String, Ap
 const MONEY_MUTATIONS_PER_WINDOW: u32 = 20;
 const MONEY_MUTATION_WINDOW: Duration = Duration::from_secs(60);
 
-/// The per-user limiter [`money_mutation`] consults.
+/// The per-user limiter [`money_gate`] consults.
 pub fn money_mutation_limiter() -> AttemptLimiter {
 	AttemptLimiter::new(MONEY_MUTATION_WINDOW, MONEY_MUTATIONS_PER_WINDOW)
 }
 
 /// The preamble of a route that moves the caller's money or consents to it being drawn:
-/// first-party origin and CSRF, then the verified identity, then the per-user bound, and
-/// only then the banking token — so a refused request never costs an exchange RPC. Returns
-/// the money-plane token.
-pub async fn money_mutation(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<String, ApiError> {
-	let claims = money_gate(state, jar, headers).await?;
-	money_token_for(state, &claims).await
-}
-
-/// [`money_mutation`] up to, not including, the banking token: for a route that has one more
-/// check on the verified claims (see [`require_fresh_login`]) and must still run it before an
-/// exchange RPC is spent.
+/// first-party origin, fetch metadata and CSRF, then the verified identity, then the per-user
+/// bound. It stops short of the banking token so a route with one more check on the verified
+/// claims (see [`require_fresh_login`]) runs it before an exchange RPC is spent; the route
+/// then calls `money_token_for`.
 pub async fn money_gate(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<Claims, ApiError> {
-	if !first_party_origin(state, headers) || !verify_csrf(state, jar, headers) {
-		return Err(ApiError::Csrf);
-	}
+	first_party_request(state, jar, headers)?;
 	let (_token, claims) = require_identity(state, jar).await?;
 	if !state.money_mutations.allow(&claims.sub) {
 		return Err(ApiError::Grpc(Status::resource_exhausted("too many money operations; try again shortly")));
@@ -380,6 +372,75 @@ pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
 	state.config.cabinet_ws_origin.as_deref().is_some_and(|expected| ws::origin_is(headers, expected))
 }
 
+/// The audit block the hub records beside a money act. Every field is the BFF's own reading of
+/// the request, never a body field; `stepup_method` is what this route demanded of the session
+/// (`fresh_login`, or `none`), not something the browser claims.
+pub fn audit_context(state: &AppState, headers: &HeaderMap, peer: Option<std::net::SocketAddr>, stepup_method: &str) -> bk::AuditContext {
+	let clamp = |value: &str, max: usize| value.chars().take(max).collect::<String>();
+	bk::AuditContext {
+		origin: clamp(headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or_default(), 128),
+		client_ip: trusted_client_ip(headers, peer, state.config.trusted_proxy_hops),
+		user_agent: clamp(headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default(), 256),
+		intent_id: String::new(),
+		stepup_method: stepup_method.to_owned(),
+	}
+}
+
+/// The browser's address as the trusted proxy chain saw it: the `hops`-th entry of
+/// `X-Forwarded-For` counted from the right. Each trusted proxy appends the peer it accepted
+/// from, so the entries left of those hops are caller-controlled and the leftmost one in
+/// particular is whatever the client typed. Fewer entries than hops (a request that skipped a
+/// proxy) falls back to the socket peer rather than to a forgeable value.
+pub fn trusted_client_ip(headers: &HeaderMap, peer: Option<std::net::SocketAddr>, hops: u8) -> String {
+	let forwarded: Vec<&str> = headers
+		.get_all("x-forwarded-for")
+		.iter()
+		.filter_map(|v| v.to_str().ok())
+		.flat_map(|v| v.split(','))
+		.map(str::trim)
+		.filter(|v| !v.is_empty())
+		.collect();
+	let from_chain = (hops as usize)
+		.checked_sub(1)
+		.filter(|_| hops > 0)
+		.and_then(|back| forwarded.len().checked_sub(back + 1))
+		.and_then(|at| forwarded.get(at))
+		.filter(|ip| ip.parse::<std::net::IpAddr>().is_ok());
+	match from_chain {
+		Some(ip) => (*ip).to_owned(),
+		None => peer.map(|addr| addr.ip().to_string()).unwrap_or_default(),
+	}
+}
+
+/// Everything a first-party mutation must show before its session is even read: the page's
+/// own origin, a browser that says the request is not cross-site, and the CSRF pair.
+///
+/// Not a replacement for [`first_party_origin`] (kept for the routes and tests that name it):
+/// this is that check plus [`fetch_site_allowed`] plus [`verify_csrf`] in one place, so a
+/// mutation cannot take two of the three. A refusal of any of them is the same `csrf` 403.
+pub fn first_party_request(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<(), ApiError> {
+	if first_party_origin(state, headers) && fetch_site_allowed(headers) && verify_csrf(state, jar, headers) {
+		Ok(())
+	} else {
+		Err(ApiError::Csrf)
+	}
+}
+
+/// `Sec-Fetch-Site` as a second, browser-enforced witness next to `Origin`. A browser sets it
+/// and a page cannot forge or strip it, so `cross-site` (or `none`, a navigation, which never
+/// POSTs JSON) is refused even if some future proxy rewrote `Origin`.
+///
+/// A request without the header passes: it comes from a client that predates fetch metadata
+/// or from a non-browser caller, and either way `Origin` and the CSRF pair are still demanded
+/// by [`first_party_request`] — so a missing header cannot open anything those two keep shut.
+pub fn fetch_site_allowed(headers: &HeaderMap) -> bool {
+	match headers.get("sec-fetch-site").map(|v| v.to_str()) {
+		None => true,
+		Some(Ok("same-origin" | "same-site")) => true,
+		Some(_) => false,
+	}
+}
+
 /// CSRF double-submit: the `x-ev-csrf` header must equal the readable `ev_csrf` cookie.
 pub fn verify_csrf(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> bool {
 	let cookie = jar.get(&state.cookies.csrf).map(|c| c.value().to_string());
@@ -391,6 +452,26 @@ pub fn verify_csrf(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> bo
 /// old BFF's `req.json().catch(() => ({}))`.
 pub fn parse_body(body: &Bytes) -> Value {
 	serde_json::from_slice(body).unwrap_or_else(|_| Value::Object(Default::default()))
+}
+/// [`parse_body`] for a first-party money route: a body that is there must be declared
+/// `application/json` (parameters such as `charset` allowed), or the answer is 415.
+///
+/// A form post or a `text/plain` fetch is a "simple" cross-site request a browser sends with
+/// cookies and no preflight; refusing every media type but JSON takes that class off the
+/// table whatever `Origin` did. An EMPTY body is not judged — body-less POSTs (a revoke) send no
+/// `Content-Type`, and with nothing to read there is nothing to smuggle.
+pub fn parse_json_body(headers: &HeaderMap, body: &Bytes) -> Result<Value, ApiError> {
+	if !body.is_empty() {
+		let declared = headers
+			.get(axum::http::header::CONTENT_TYPE)
+			.and_then(|v| v.to_str().ok())
+			.and_then(|v| v.split(';').next())
+			.map(|v| v.trim().to_ascii_lowercase());
+		if declared.as_deref() != Some("application/json") {
+			return Err(ApiError::UnsupportedMediaType);
+		}
+	}
+	Ok(parse_body(body))
 }
 /// A required string field: `None` when missing OR empty (matches the TS `!body?.field`).
 pub fn required(v: &Value, key: &str) -> Option<String> {
@@ -423,6 +504,29 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
 mod tests {
 	use super::*;
 
+	fn forwarded(value: &'static str) -> HeaderMap {
+		let mut headers = HeaderMap::new();
+		headers.insert("x-forwarded-for", axum::http::HeaderValue::from_static(value));
+		headers
+	}
+
+	#[test]
+	fn the_audit_address_is_the_one_the_trusted_hop_appended_never_the_leftmost() {
+		let peer: std::net::SocketAddr = "10.0.0.9:443".parse().unwrap();
+		// The browser typed 6.6.6.6; Traefik appended the address it really saw.
+		assert_eq!(trusted_client_ip(&forwarded("6.6.6.6, 203.0.113.9"), Some(peer), 1), "203.0.113.9");
+		// Two trusted hops: the client is one further left.
+		assert_eq!(trusted_client_ip(&forwarded("6.6.6.6, 203.0.113.9, 10.1.1.1"), Some(peer), 2), "203.0.113.9");
+		// Fewer entries than trusted hops: the request skipped a proxy, so fall back to the socket.
+		assert_eq!(trusted_client_ip(&forwarded("203.0.113.9"), Some(peer), 2), "10.0.0.9");
+		assert_eq!(trusted_client_ip(&HeaderMap::new(), Some(peer), 1), "10.0.0.9");
+		assert_eq!(trusted_client_ip(&HeaderMap::new(), None, 1), "");
+		// A non-address in the trusted slot is not echoed into the audit row.
+		assert_eq!(trusted_client_ip(&forwarded("<script>"), Some(peer), 1), "10.0.0.9");
+		// Zero trusted hops means the header is not trusted at all.
+		assert_eq!(trusted_client_ip(&forwarded("203.0.113.9"), Some(peer), 0), "10.0.0.9");
+	}
+
 	#[test]
 	fn ct_str_eq_matches_plain_equality() {
 		assert!(ct_str_eq("a3f9c0d1-token", "a3f9c0d1-token"));
@@ -441,6 +545,41 @@ mod tests {
 	/// The edges a `<` / `<=` slip would move: exactly the limit passes, one second past it does
 	/// not, and a missing claim is never a pass. A future `auth_time` passes by design — concierge
 	/// signs it, so only its own clock skew can produce one.
+	#[test]
+	fn fetch_metadata_admits_same_site_and_a_missing_header_only() {
+		let with = |value: Option<&str>| {
+			let mut headers = HeaderMap::new();
+			if let Some(value) = value {
+				headers.insert("sec-fetch-site", value.parse().expect("a header value"));
+			}
+			fetch_site_allowed(&headers)
+		};
+		assert!(with(None));
+		assert!(with(Some("same-origin")));
+		assert!(with(Some("same-site")));
+		assert!(!with(Some("cross-site")));
+		assert!(!with(Some("none")));
+		assert!(!with(Some("")));
+	}
+
+	#[test]
+	fn a_body_must_be_declared_json_but_an_empty_one_is_not_judged() {
+		let with = |content_type: Option<&str>, body: &'static str| {
+			let mut headers = HeaderMap::new();
+			if let Some(value) = content_type {
+				headers.insert(axum::http::header::CONTENT_TYPE, value.parse().expect("a header value"));
+			}
+			parse_json_body(&headers, &Bytes::from_static(body.as_bytes())).is_ok()
+		};
+		assert!(with(Some("application/json"), "{}"));
+		assert!(with(Some("Application/JSON; charset=utf-8"), "{}"));
+		assert!(!with(Some("text/plain"), "{}"));
+		assert!(!with(Some("application/x-www-form-urlencoded"), "a=b"));
+		assert!(!with(Some("application/jsonp"), "{}"));
+		assert!(!with(None, "{}"));
+		assert!(with(None, ""));
+	}
+
 	#[test]
 	fn fresh_login_is_judged_at_the_five_minute_edge() {
 		let now = 1_000_000;

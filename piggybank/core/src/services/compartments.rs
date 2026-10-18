@@ -25,11 +25,14 @@ use crate::{
 		compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
 		scope_mandates::{self as mandates_app, MandatePorts, RequestPorts},
 	},
+	infrastructure::scope_notifications,
 	ports::{
 		compartments::{RecordedMove, ScopeRecord},
 		scope_mandates::RecordedMandate,
+		scope_notifications::ScopeNotice,
+		security_notices,
 	},
-	services::support::{MoneyGate, caller_id, gated_caller, map_err},
+	services::support::{MoneyGate, audit_of, caller_id, gated_caller, map_err},
 };
 
 #[derive(Clone)]
@@ -48,6 +51,20 @@ impl CompartmentSvc {
 			ledger: self.state.ledger.as_ref(),
 			policy: self.state.outflow.as_ref(),
 			relay: &self.state.relay_notify,
+		}
+	}
+
+	/// Queue the owner's security notice after the mandate act committed. The act is already
+	/// done and idempotent on its key, so a failure to queue is logged loudly and does not turn
+	/// a success into an error the user would retry.
+	async fn tell_security(&self, notice: &ScopeNotice) {
+		let queued = async {
+			let mut conn = self.state.pool.acquire().await.map_err(|err| err.to_string())?;
+			scope_notifications::enqueue(&mut conn, notice, None).await.map_err(|err| err.to_string())
+		}
+		.await;
+		if let Err(err) = queued {
+			tracing::error!(user = %notice.user, kind = %notice.kind, "could not queue the wallet security notice: {err}");
 		}
 	}
 
@@ -98,6 +115,7 @@ impl CompartmentService for CompartmentSvc {
 		};
 		let user = gated_caller(&self.state, &request, gate).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("move_funds", user);
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
 		let recorded = compartments_app::move_funds(&self.ports(), user, from, to, amount, &req.idempotency_key)
 			.await
@@ -128,14 +146,26 @@ impl CompartmentService for CompartmentSvc {
 	async fn grant_mandate(&self, request: Request<pb::GrantMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
 		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: true }).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("grant_mandate", user);
 		let asked = mandates_app::read_request(&self.request_ports(), request_id_of(&req.request_id)?).await.map_err(map_err)?;
 		let parsed = mandates_app::grant_of(asked, req.idempotency_key);
 		let granted = mandates_app::grant(&self.mandate_ports(), user, parsed).await.map_err(map_err)?;
+		self.tell_security(&security_notices::mandate_changed(
+			user,
+			&granted.mandate.id.to_string(),
+			true,
+			granted.mandate.terms.client.as_str(),
+			granted.mandate.terms.scope.as_str(),
+			granted.mandate.terms.caps.per_op,
+			granted.mandate.terms.caps.per_24h,
+		))
+		.await;
 		Ok(Response::new(mandate_to_proto(&granted)))
 	}
 
 	async fn revoke_mandate(&self, request: Request<pb::RevokeMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
 		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: false }).await?;
+		audit_of(request.get_ref().audit.as_ref()).log("revoke_mandate", user);
 		let raw = &request.get_ref().mandate_id;
 		// Lowercase only, as banking writes it: one mandate, one spelling.
 		let id = uuid::Uuid::parse_str(raw)
@@ -143,6 +173,16 @@ impl CompartmentService for CompartmentSvc {
 			.filter(|id| id.to_string() == *raw)
 			.ok_or_else(|| Status::invalid_argument("mandate_id must be a lowercase uuid"))?;
 		let revoked = mandates_app::revoke(&self.mandate_ports(), user, id).await.map_err(map_err)?;
+		self.tell_security(&security_notices::mandate_changed(
+			user,
+			&revoked.mandate.id.to_string(),
+			false,
+			revoked.mandate.terms.client.as_str(),
+			revoked.mandate.terms.scope.as_str(),
+			revoked.mandate.terms.caps.per_op,
+			revoked.mandate.terms.caps.per_24h,
+		))
+		.await;
 		Ok(Response::new(mandate_to_proto(&revoked)))
 	}
 
