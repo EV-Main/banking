@@ -25,7 +25,7 @@ export function MandateActionView() {
   const { params, finished, finish } = useWalletAction();
   const done = (mandate: Mandate) => finish("done", mandate.mandate_id);
   return (
-    <ActionFrame params={params} finished={finished} finish={finish}>
+    <ActionFrame inlineCancel={params.request !== null} params={params} finished={finished} finish={finish}>
       {params.request !== null ? <GrantMandate key={params.request} requestId={params.request} urlScope={params.scope} onGranted={done} /> : <Mandates urlScope={params.scope} onRevoked={done} />}
     </ActionFrame>
   );
@@ -67,9 +67,9 @@ function Mandates({ urlScope, onRevoked }: { urlScope: string | null; onRevoked:
       </p>
     );
 
-  if (mandates === null) return failure ?? <Skeleton className="mx-4 h-48 sm:mx-8 lg:max-w-140" />;
+  if (mandates === null) return failure ?? <Skeleton className="h-48" />;
   return (
-    <div className="mx-4 flex flex-col gap-4 sm:mx-8 lg:max-w-140">
+    <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-ink">{t("walletAction.mandateListTitle", "Services allowed to charge you")}</h1>
       {mandates.length === 0 ? <p className="text-sm text-ink-soft">{t("walletAction.mandateNone", "No service is allowed to charge you right now.")}</p> : null}
       {mandates.map((m) => (

@@ -9,7 +9,7 @@ import { Button, Skeleton, Spinner } from "@evinvest/uikit";
 import { fetchPayableInvoice, payInvoice } from "@/entities/invoice/api/invoice-client";
 import { invoicePhase, POLL_EVERY_MS, shouldPoll } from "@/entities/invoice/lib/state";
 import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
-import { ActionFrame, useWalletAction } from "@/features/wallet-action";
+import { ActionCancel, ActionFrame, useWalletAction } from "@/features/wallet-action";
 import type { PayableInvoice } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
 import { cn } from "@/shared/lib/cn";
@@ -25,7 +25,7 @@ import { WALLET_CARD } from "@/views/wallet/ui/wallet-chrome";
 export function PayInvoiceActionView() {
   const { params, finished, finish } = useWalletAction();
   return (
-    <ActionFrame params={params} finished={finished} finish={finish}>
+    <ActionFrame inlineCancel params={params} finished={finished} finish={finish}>
       <PayInvoice invoiceId={params.invoice} onPaid={(invoice) => finish("done", invoice.invoice_id ?? null)} />
     </ActionFrame>
   );
@@ -97,7 +97,7 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
     return <Message text={t("walletAction.invoiceMissing", "This link does not name an invoice.")} />;
   }
   if (invoice === null) {
-    return error !== null ? <Message text={errorMessage(error, t)} /> : <Skeleton className="mx-4 h-48 sm:mx-8 lg:max-w-140" />;
+    return error !== null ? <Message text={errorMessage(error, t)} /> : <Skeleton className="h-48" />;
   }
 
   const amount = toBaseUnits(invoice.amount);
@@ -125,7 +125,7 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
   };
 
   return (
-    <div className={cn(WALLET_CARD, "mx-4 flex flex-col gap-4 p-4.5 sm:mx-8 lg:max-w-140 lg:p-6")}>
+    <div className={cn(WALLET_CARD, "flex flex-col gap-4 p-4.5 lg:p-6")}>
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-ink-soft">{invoice.display_name}</span>
         <span className="text-2xl font-semibold text-ink">{formatUsdt(invoice.amount, locale)} USDT</span>
@@ -152,9 +152,12 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
               {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
             </p>
           ) : null}
-          <Button type="button" onClick={pay} disabled={submitting || toBaseUnits(sources.find((s) => s.key === chosen)?.available) < amount}>
-            {submitting ? <Spinner aria-hidden /> : t("walletAction.payNow", "Pay")}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" onClick={pay} disabled={submitting || toBaseUnits(sources.find((s) => s.key === chosen)?.available) < amount} className="flex-1">
+              {submitting ? <Spinner aria-hidden /> : t("walletAction.payNow", "Pay")}
+            </Button>
+            <ActionCancel disabled={submitting} />
+          </div>
         </>
       ) : phase === "processing" ? (
         <p role="status" className="flex items-center gap-2 text-sm text-ink">
@@ -168,12 +171,18 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
           {t("walletAction.invoicePaid", "This invoice is paid.")}
         </p>
       ) : (
-        <p className="text-sm text-ink-soft">{t("walletAction.invoiceClosed", "This invoice can no longer be paid. Nothing has been charged.")}</p>
+        <>
+          <p className="text-sm text-ink-soft">{t("walletAction.invoiceClosed", "This invoice can no longer be paid. Nothing has been charged.")}</p>
+          <ActionCancel />
+        </>
       )}
     </div>
   );
 }
 
 function Message({ text }: { text: string }) {
-  return <p className="mx-4 mt-8 text-sm text-ink-soft sm:mx-8">{text}</p>;
+  return <div className="mt-8 flex flex-col items-start gap-4">
+      <p className="text-sm text-ink-soft">{text}</p>
+      <ActionCancel />
+    </div>;
 }
