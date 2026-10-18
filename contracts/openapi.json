@@ -9538,7 +9538,7 @@
         },
         "title": "AuditContext",
         "additionalProperties": false,
-        "description": "Who asked, and from where, for an act that moves or authorises money. Filled by the BFF\n (never by a browser): recorded beside the act for the audit trail and, for `origin`, the\n input to the limit profile (a first-party origin or a scope host). `client_ip` is the\n address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty\n (a caller that predates the message): the act is then judged as first-party and audited blank."
+        "description": "Who asked, and from where, for an act that moves or authorises money. Filled by the BFF\n (never by a browser): recorded beside the act for the audit trail and, for `origin`, the\n input to the limit profile (a first-party origin or a scope host). `client_ip` is the\n address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty\n (a caller that predates the message): the act is audited blank and, for a withdrawal, judged\n on the tighter host profile — a missing origin fails closed."
       },
       "banking.v1.Balance": {
         "type": "object",

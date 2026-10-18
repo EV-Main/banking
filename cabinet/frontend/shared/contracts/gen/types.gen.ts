@@ -340,7 +340,8 @@ export type BankingV1AnswerPaymentConfirmationRequest = {
  * (never by a browser): recorded beside the act for the audit trail and, for `origin`, the
  * input to the limit profile (a first-party origin or a scope host). `client_ip` is the
  * address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty
- * (a caller that predates the message): the act is then judged as first-party and audited blank.
+ * (a caller that predates the message): the act is audited blank and, for a withdrawal, judged
+ * on the tighter host profile — a missing origin fails closed.
  */
 export type BankingV1AuditContext = {
     /**
