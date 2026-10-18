@@ -19,6 +19,8 @@ const DEFAULT_FIRST_PARTY_ORIGIN: &str = "https://evinvest.ltd";
 /// Six hours: how long a first-seen address waits before money may go to it, and how long
 /// after a sign-in change a new address stays shut.
 const SIX_HOURS: u64 = 21_600;
+/// The reaper auto-cancels a queued withdrawal after 24 h; a hold must end well inside that.
+const MAX_HOLD_SECS: u64 = 23 * 3600;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawalLimits {
@@ -58,10 +60,11 @@ impl Default for WithdrawalLimits {
 }
 
 impl WithdrawalLimits {
-	/// The profile for the origin the request came from. An empty origin is a caller that
-	/// predates the audit block: the BFF, i.e. first-party.
+	/// The profile for the origin the request came from. Only an origin on the first-party list
+	/// gets the first-party profile; an empty one (a caller that sends no audit block, or an
+	/// older BFF) gets the host profile, so a missing origin fails closed.
 	pub fn profile_for(&self, origin: &str) -> &LimitProfile {
-		if origin.is_empty() || self.first_party_origins.iter().any(|known| known == origin) {
+		if self.first_party_origins.iter().any(|known| known == origin) {
 			&self.first_party
 		} else {
 			&self.host
@@ -103,10 +106,16 @@ impl WithdrawalLimits {
 				Err(_) => return Err(format!("WITHDRAWAL_MAX_PER_HOUR={raw:?} is not a whole number")),
 			},
 		};
+		let new_address_hold_secs = secs("WITHDRAWAL_NEW_ADDRESS_HOLD_SECS", defaults.new_address_hold_secs)?;
 		let first_party_origins = match get("WITHDRAWAL_FIRST_PARTY_ORIGINS") {
 			None => defaults.first_party_origins,
 			Some(raw) => raw.split(',').map(|o| o.trim().to_owned()).filter(|o| !o.is_empty()).collect(),
 		};
+		if new_address_hold_secs > MAX_HOLD_SECS {
+			return Err(format!(
+				"WITHDRAWAL_NEW_ADDRESS_HOLD_SECS={new_address_hold_secs} is over {MAX_HOLD_SECS}: the reaper cancels queued withdrawals after 24 h, so a longer hold would be cancelled before it ends"
+			));
+		}
 		Ok(Self {
 			first_party: LimitProfile {
 				per_op: amount("WITHDRAWAL_LIMIT_PER_OP_USDT", defaults.first_party.per_op)?,
@@ -119,7 +128,7 @@ impl WithdrawalLimits {
 				max_per_hour,
 			},
 			first_party_origins,
-			new_address_hold_secs: secs("WITHDRAWAL_NEW_ADDRESS_HOLD_SECS", defaults.new_address_hold_secs)?,
+			new_address_hold_secs,
 			credential_cooloff_secs: secs("WITHDRAWAL_CREDENTIAL_COOLOFF_SECS", defaults.credential_cooloff_secs)?,
 		})
 	}
@@ -165,15 +174,16 @@ mod tests {
 			("WITHDRAWAL_HOST_LIMIT_PER_24H_USDT", "-1"),
 			("WITHDRAWAL_MAX_PER_HOUR", "-3"),
 			("WITHDRAWAL_NEW_ADDRESS_HOLD_SECS", "6h"),
+			("WITHDRAWAL_NEW_ADDRESS_HOLD_SECS", "90000"),
 		] {
 			assert!(from(&[(var, bad)]).is_err(), "{var}={bad}");
 		}
 	}
 
 	#[test]
-	fn only_a_known_or_absent_origin_is_first_party() {
+	fn only_a_listed_origin_is_first_party() {
 		let limits = WithdrawalLimits::default();
-		assert_eq!(limits.profile_for(""), &limits.first_party);
+		assert_eq!(limits.profile_for(""), &limits.host, "no origin fails closed");
 		assert_eq!(limits.profile_for("https://evinvest.ltd"), &limits.first_party);
 		for host in [
 			"https://sa.evinvest.ltd",

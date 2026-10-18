@@ -40,6 +40,33 @@ const SELECT_BY_USER: &str =
 /// Why a queued withdrawal to a first-seen destination does not dispatch yet.
 pub const HELD_FOR_NEW_ADDRESS: &str = "the withdrawal is held until the new-address delay has passed";
 
+/// Why a held withdrawal is not released even though its time has come: the user's sign-in
+/// details changed after it was requested, so a person must look at it first. It stays
+/// `queued` (the user can cancel it; the reaper takes it at 24 h).
+pub const HELD_FOR_REVIEW: &str = "the withdrawal is held for review: the account's sign-in details changed after it was requested";
+
+/// SQL boolean over `withdrawals w`: a held-address withdrawal (`release_at` set) requested
+/// before the owner's last credential change. A macro so the dispatcher's sweep and the
+/// repository splice the same text into a `&'static str` query.
+#[macro_export]
+macro_rules! withdrawal_needs_review {
+	() => {
+		"(w.release_at IS NOT NULL AND EXISTS (SELECT 1 FROM users u WHERE u.id = w.user_id AND u.credential_changed_at > w.created_at))"
+	};
+}
+
+/// The address-book key of a destination. EVM addresses differ only in checksum case, so the
+/// book compares them lowercased — otherwise changing a letter's case would make a held
+/// address look released, or a released one look new. TRON base58 and TON friendly forms are
+/// case-sensitive and kept as written (TON's raw/friendly spellings of one account are not
+/// unified: a follow-up).
+pub fn book_key(network: Network, address: &WalletAddress) -> String {
+	match network {
+		Network::Bep20 | Network::Polygon => address.as_str().to_ascii_lowercase(),
+		Network::Trc20 | Network::Ton => address.as_str().to_owned(),
+	}
+}
+
 pub struct PgWithdrawals {
 	pool: PgPool,
 }
@@ -121,7 +148,7 @@ async fn enter_address_book(conn: &mut PgConnection, user: UserId, withdrawal: &
 	)
 	.bind(user.raw())
 	.bind(withdrawal.network().as_str())
-	.bind(withdrawal.address().as_str())
+	.bind(book_key(withdrawal.network(), withdrawal.address()))
 	.bind(hold_secs as f64)
 	.fetch_optional(&mut *conn)
 	.await
@@ -132,11 +159,33 @@ async fn enter_address_book(conn: &mut PgConnection, user: UserId, withdrawal: &
 	let held: bool = sqlx::query_scalar("SELECT release_at > now() FROM withdrawal_addresses WHERE user_id = $1 AND network = $2 AND address = $3")
 		.bind(user.raw())
 		.bind(withdrawal.network().as_str())
-		.bind(withdrawal.address().as_str())
+		.bind(book_key(withdrawal.network(), withdrawal.address()))
 		.fetch_one(&mut *conn)
 		.await
 		.map_err(repo_err)?;
 	Ok((false, held))
+}
+
+/// A cancelled withdrawal to a destination still inside its hold, with nothing ever completed
+/// there, takes the destination back out of the book: otherwise request-then-cancel would
+/// start the clock for free, and the real request would find the address released and ship at
+/// once. A released destination (its time has passed) or one that has paid out stays.
+async fn forget_unreleased_address(conn: &mut PgConnection, withdrawal: &Withdrawal) -> Result<(), DomainError> {
+	let Some(user) = withdrawal.user() else {
+		return Ok(());
+	};
+	sqlx::query(
+		"DELETE FROM withdrawal_addresses a WHERE a.user_id = $1 AND a.network = $2 AND a.address = $3 AND a.release_at > now() \
+		 AND NOT EXISTS (SELECT 1 FROM withdrawals w WHERE w.user_id = a.user_id AND w.network = a.network AND w.state = 'completed' \
+		   AND CASE WHEN w.network IN ('bep20', 'polygon') THEN lower(w.address) ELSE w.address END = a.address)",
+	)
+	.bind(user.raw())
+	.bind(withdrawal.network().as_str())
+	.bind(book_key(withdrawal.network(), withdrawal.address()))
+	.execute(&mut *conn)
+	.await
+	.map_err(repo_err)?;
+	Ok(())
 }
 
 /// Whether the user's credentials changed within the last `secs` seconds, by database time.
@@ -223,6 +272,7 @@ pub(crate) async fn cancel_on(conn: &mut PgConnection, id: WithdrawalId) -> Resu
 	withdrawal.cancel()?;
 	update_row(conn, &withdrawal).await?;
 	outbox::drain_to_outbox(conn, &mut withdrawal, true).await?;
+	forget_unreleased_address(conn, &withdrawal).await?;
 	Ok(withdrawal)
 }
 
@@ -320,7 +370,7 @@ impl WithdrawalRepository for PgWithdrawals {
 			.bind(withdrawal.id().raw())
 			.bind(user.raw())
 			.bind(withdrawal.network().as_str())
-			.bind(withdrawal.address().as_str())
+			.bind(book_key(withdrawal.network(), withdrawal.address()))
 			.execute(&mut *tx)
 			.await
 			.map_err(repo_err)?;
@@ -338,7 +388,7 @@ impl WithdrawalRepository for PgWithdrawals {
 		let row: Option<bool> = sqlx::query_scalar("SELECT release_at > now() FROM withdrawal_addresses WHERE user_id = $1 AND network = $2 AND address = $3")
 			.bind(user.raw())
 			.bind(network.as_str())
-			.bind(address.as_str())
+			.bind(book_key(network, address))
 			.fetch_optional(&self.pool)
 			.await
 			.map_err(repo_err)?;
@@ -374,13 +424,20 @@ impl WithdrawalRepository for PgWithdrawals {
 			.into_domain()?;
 		// The row lock is held, so the hold cannot move between this read and the transition.
 		// Every payout path funnels through here, which is why the operator RPC cannot skip it.
-		let held: bool = sqlx::query_scalar("SELECT COALESCE(release_at > now(), FALSE) FROM withdrawals WHERE id = $1")
-			.bind(id.raw())
-			.fetch_one(&mut *tx)
-			.await
-			.map_err(repo_err)?;
+		let (held, review): (bool, bool) = sqlx::query_as(concat!(
+			"SELECT COALESCE(w.release_at > now(), FALSE), ",
+			crate::withdrawal_needs_review!(),
+			" FROM withdrawals w WHERE w.id = $1"
+		))
+		.bind(id.raw())
+		.fetch_one(&mut *tx)
+		.await
+		.map_err(repo_err)?;
 		if held {
 			return Err(DomainError::Precondition(HELD_FOR_NEW_ADDRESS.into()));
+		}
+		if review {
+			return Err(DomainError::Precondition(HELD_FOR_REVIEW.into()));
 		}
 		withdrawal.dispatch()?;
 		update_row(&mut tx, &withdrawal).await?;

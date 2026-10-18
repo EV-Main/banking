@@ -58,6 +58,11 @@ SELECT id, state, release_at, release_at > now() AS held FROM withdrawals WHERE 
 SELECT * FROM withdrawal_addresses WHERE user_id = '<user-id>';
 ```
 
+A held row also stays `queued` past its `release_at` when the owner's sign-in details changed
+after the request (`users.credential_changed_at > withdrawals.created_at`): the sweep and the
+operator Dispatch both refuse it ("held for review") until a person has checked with the
+owner. The user can cancel it; the reaper cancels it at 24 h.
+
 To release a held row early on a verified request from the owner, move BOTH release times
 (the address and the row) into the past as `postgres`; the next sweep dispatches it. Do not
 void or fail it: nothing was broadcast.

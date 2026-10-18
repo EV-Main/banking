@@ -32,8 +32,9 @@ CREATE TABLE IF NOT EXISTS withdrawal_addresses (
 );
 
 INSERT INTO withdrawal_addresses (user_id, network, address, first_seen_at, release_at)
-SELECT user_id, network, address, MIN(created_at), MIN(created_at)
+-- EVM addresses are keyed lowercased (see `book_key`); TRON and TON as written.
+SELECT user_id, network, CASE WHEN network IN ('bep20', 'polygon') THEN lower(address) ELSE address END, MIN(created_at), MIN(created_at)
 FROM withdrawals
 WHERE source = 'user' AND state = 'completed'
-GROUP BY user_id, network, address
+GROUP BY user_id, network, CASE WHEN network IN ('bep20', 'polygon') THEN lower(address) ELSE address END
 ON CONFLICT DO NOTHING;

@@ -509,10 +509,6 @@ async fn a_first_seen_address_is_held_queued_until_its_release() {
 	let refused = dispatch_now(&h, first.id()).await;
 	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
 
-	// The user may still cancel a held withdrawal.
-	let cancelled = withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, second.id(), user).await.unwrap();
-	assert_eq!(cancelled.state(), WithdrawalState::Cancelled);
-
 	// After the release the same row dispatches.
 	release_now(&h, user).await;
 	dispatcher.sweep().await.unwrap();
@@ -635,6 +631,119 @@ async fn a_new_address_is_refused_after_a_sign_in_change_but_a_known_one_is_not(
 		.unwrap();
 	let other = WalletAddress::parse(network, "0x2222222222222222222222222222222222222222").unwrap();
 	assert!(ask(other, 21_600).await.is_ok(), "after the window a new address is accepted again");
+}
+
+#[tokio::test]
+async fn cancelling_a_held_withdrawal_takes_its_address_back_out_of_the_book() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "300").await;
+	let to = destination(network);
+
+	let first = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, first.id(), user).await.unwrap();
+	let in_book = |pool: sqlx::PgPool| async move {
+		sqlx::query_scalar::<_, i64>("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+			.bind(user.raw())
+			.fetch_one(&pool)
+			.await
+			.unwrap()
+	};
+	assert_eq!(in_book(h.pool.clone()).await, 0, "request-then-cancel does not start the clock");
+
+	// So the real request is a full first-seen one again: held, with a release time and its own mail.
+	let again = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(again.state(), WithdrawalState::Queued);
+	let held: bool = sqlx::query_scalar("SELECT release_at > now() FROM withdrawals WHERE id = $1")
+		.bind(again.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert!(held);
+	let mails: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_notification_outbox WHERE dedupe_key = $1")
+		.bind(format!("withdrawal:{}:requested", again.id()))
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(mails, 1);
+
+	// A destination whose hold has passed stays released when a later withdrawal is cancelled.
+	release_now(&h, user).await;
+	let later = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(later.state(), WithdrawalState::Processing, "released, so it ships");
+	let queued_again = {
+		sqlx::query("UPDATE withdrawal_addresses SET release_at = now() - interval '1 second' WHERE user_id = $1")
+			.bind(user.raw())
+			.execute(&h.pool)
+			.await
+			.unwrap();
+		again.id()
+	};
+	// `again` was queued to a destination now released; cancelling it must not forget the address.
+	withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, queued_again, user).await.unwrap();
+	assert_eq!(in_book(h.pool.clone()).await, 1);
+}
+
+#[tokio::test]
+async fn a_credential_change_after_the_request_keeps_a_held_withdrawal_for_review() {
+	let Some(h) = harness().await else { return };
+	let _sweep = GLOBAL_SWEEP.lock().await;
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "200").await;
+	let held = screened_to(&h, user, "50", &destination(network), 3600).await.unwrap();
+	release_now(&h, user).await;
+	// The sign-in details changed after the request was made.
+	sqlx::query("UPDATE users SET credential_changed_at = now() + interval '1 second' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+
+	let dispatcher = Dispatcher::new(
+		h.pool.clone(),
+		h.withdrawals.clone(),
+		h.ledger.clone(),
+		Arc::new(StubCustody),
+		h.notify.clone(),
+		KycGate::ENFORCED,
+	);
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(
+		h.withdrawals.find_by_id(held.id()).await.unwrap().unwrap().state(),
+		WithdrawalState::Queued,
+		"the sweep leaves it for review"
+	);
+	let refused = dispatch_now(&h, held.id()).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+
+	// A change from before the request does not hold it.
+	sqlx::query("UPDATE users SET credential_changed_at = now() - interval '1 day' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(dispatch_now(&h, held.id()).await.unwrap().state(), WithdrawalState::Processing);
+}
+
+#[tokio::test]
+async fn evm_addresses_are_one_book_entry_whatever_their_letter_case() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "100").await;
+	let mixed = destination(network);
+	let lower = WalletAddress::parse(network, &mixed.as_str().to_ascii_lowercase()).unwrap();
+	screened_to(&h, user, "50", &mixed, 3600).await.unwrap();
+	let second = screened_to(&h, user, "20", &lower, 3600).await.unwrap();
+	let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(rows, 1, "one destination, one entry");
+	assert_eq!(second.state(), WithdrawalState::Queued, "and the respelled one is still held, not 'known and released'");
 }
 
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this
@@ -1399,6 +1508,9 @@ impl OutflowPolicy for FrozenRail {
 #[tokio::test]
 async fn a_frozen_rail_refuses_new_withdrawals_and_holds_queued_ones() {
 	let Some(h) = harness().await else { return };
+	// It leaves a row queued on a shared rail and expects it to stay so, so no sibling's sweep
+	// may run in between.
+	let _sweep = GLOBAL_SWEEP.lock().await;
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	deposit(&h, user, network, "100").await;

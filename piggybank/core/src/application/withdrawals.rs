@@ -96,12 +96,19 @@ pub struct AdmissionGates<'a> {
 	pub kyc: KycGate,
 }
 
-/// The calling user withdraws `amount` (gross) of free balance to `address`. The fee
-/// is the per-network policy fee; the net (`amount − fee`) is what leaves on-chain.
+/// The calling user withdraws `amount` (gross) of free balance to `address`.
+///
+/// NOT THE WALLET'S ENTRY POINT. This path knows nothing of the velocity limits, the address
+/// book hold, the audit columns or the security notice; the gRPC wallet goes through
+/// [`request_withdrawal_screened`]. It stays public only because the integration suites drive
+/// the saga through it — do not call it from a request handler.
+///
+/// The fee is the per-network policy fee; the net (`amount − fee`) is what leaves on-chain.
 ///
 /// `id` is supplied by the caller so a payment order can derive it from itself (`uuid_v5(payment_id, "payment:withdrawal")`) so a retried
 /// execution re-creates the same row instead of a second withdrawal. The self-service wallet
 /// passes a fresh [`WithdrawalId::new`].
+#[doc(hidden)]
 pub async fn request_withdrawal(
 	ports: &WithdrawalPorts<'_>,
 	gates: &AdmissionGates<'_>,
@@ -123,6 +130,10 @@ pub const MAX_IDEMPOTENCY_KEY: usize = 128;
 /// page mints one per load). A repeat with the same terms returns the first withdrawal as it
 /// stands now and records nothing; the same key with another network, address or amount is a
 /// `Conflict` (ALREADY_EXISTS) — a key names one request, never "whatever comes next".
+///
+/// Unscreened like [`request_withdrawal`] — see the warning there; the wallet uses
+/// [`request_withdrawal_screened`].
+#[doc(hidden)]
 pub async fn request_withdrawal_keyed(
 	ports: &WithdrawalPorts<'_>,
 	gates: &AdmissionGates<'_>,
@@ -214,6 +225,10 @@ fn replay(first: Withdrawal, network: Network, address: &WalletAddress, amount: 
 
 /// [`request_withdrawal`], except that the withdrawal is ALWAYS left `Queued` for the
 /// dispatcher, however liquid the rail is right now.
+///
+/// Deliberately outside the velocity limits and the address hold of
+/// [`request_withdrawal_screened`]: a payment order is authorised by the owners' consilium or
+/// the investor's own confirmation, not by a session, and its delay is its 72 h consent window.
 ///
 /// This is the shape a payment order takes. Its consent was given up to 72 hours before
 /// the order executes, and the execution re-reads the consent pins under the order's lock

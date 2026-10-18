@@ -88,7 +88,8 @@ message DepositAddress {
 // (never by a browser): recorded beside the act for the audit trail and, for `origin`, the
 // input to the limit profile (a first-party origin or a scope host). `client_ip` is the
 // address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty
-// (a caller that predates the message): the act is then judged as first-party and audited blank.
+// (a caller that predates the message): the act is audited blank and, for a withdrawal, judged
+// on the tighter host profile — a missing origin fails closed.
 message AuditContext {
   string origin = 1;          // the request's Origin, e.g. https://evinvest.ltd
   string client_ip = 2;       // browser address as seen by the trusted proxy hop
