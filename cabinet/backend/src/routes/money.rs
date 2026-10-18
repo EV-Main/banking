@@ -337,7 +337,7 @@ pub async fn answer_payment_confirmation(
 		require_fresh_login(&claims, now_secs().max(0) as u64)?;
 	}
 	let token = money_token_for(&st, &claims).await?;
-	let (client_ip, user_agent) = audit_fields(&headers, peer);
+	let (client_ip, user_agent) = audit_fields(&headers, peer, st.config.trusted_proxy_hops);
 	let req = bk::AnswerPaymentConfirmationRequest {
 		payment_id: id,
 		decision: decision as i32,

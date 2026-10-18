@@ -38,7 +38,13 @@ use evconcierge_contracts::concierge::v1 as cc;
 use serde::Serialize;
 use tonic::{Code, Status};
 
-use crate::{dto, error::ApiError, governance::RemovalVote, routes::parse_body, state::AppState};
+use crate::{
+	dto,
+	error::ApiError,
+	governance::RemovalVote,
+	routes::{parse_body, trusted_client_ip},
+	state::AppState,
+};
 
 /// The body every refusal on this surface carries, whatever the token actually was.
 const NOT_FOUND: &str = "invitation not found";
@@ -192,9 +198,9 @@ impl<S: Send + Sync> FromRequestParts<S> for Peer {
 
 /// The audit fields of a signed-in answer: where it came from and with what. Recorded beside
 /// the decision, never an authorization input.
-pub fn audit_fields(headers: &HeaderMap, Peer(peer): Peer) -> (String, String) {
+pub fn audit_fields(headers: &HeaderMap, Peer(peer): Peer, trusted_hops: u8) -> (String, String) {
 	let user_agent = clamp(headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default(), MAX_USER_AGENT);
-	(client_ip(headers, peer), user_agent)
+	(client_ip(headers, peer, trusted_hops), user_agent)
 }
 
 /// The preamble both POSTs share: the per-IP bound, then the ballot, then the audit
@@ -204,7 +210,7 @@ pub fn audit_fields(headers: &HeaderMap, Peer(peer): Peer) -> (String, String) {
 // which is the one thing on this surface that must not be forgettable.
 #[allow(clippy::result_large_err)]
 fn accept(st: &AppState, headers: &HeaderMap, Peer(peer): Peer, body: &Bytes) -> Result<(Ballot, Audit), Response> {
-	let client_ip = client_ip(headers, peer);
+	let client_ip = client_ip(headers, peer, st.config.trusted_proxy_hops);
 	if !st.approvals.allow(&client_ip) {
 		return Err(sealed(ApiError::Grpc(Status::resource_exhausted("too many attempts; try again shortly")).into_response()));
 	}
@@ -261,24 +267,12 @@ fn opaque(status: Status) -> ApiError {
 	}
 }
 
-/// The caller's address for the audit row and the rate-limit key. The BFF sits behind the
-/// same-origin reverse proxy, so the socket peer is that proxy and the forwarded header is
-/// what identifies the browser — spoofable, which is why this is never an authorization
-/// input and why the limiter it keys is not the security boundary.
-fn client_ip(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
-	let forwarded = header_value(headers, "x-forwarded-for")
-		.and_then(|v| v.split(',').next())
-		.map(str::trim)
-		.filter(|v| !v.is_empty())
-		.or_else(|| header_value(headers, "x-real-ip"));
-	match forwarded {
-		Some(ip) => clamp(ip, MAX_IP),
-		None => peer.map(|addr| addr.ip().to_string()).unwrap_or_default(),
-	}
-}
-
-fn header_value<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
-	headers.get(name).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty())
+/// The caller's address for the audit row and the rate-limit key: the entry the trusted proxy
+/// chain appended ([`trusted_client_ip`], `TRUSTED_PROXY_HOPS`), not the leftmost
+/// `X-Forwarded-For` the browser can type. Still never an authorization input, and the limiter
+/// it keys is not the security boundary.
+fn client_ip(headers: &HeaderMap, peer: Option<SocketAddr>, trusted_hops: u8) -> String {
+	clamp(&trusted_client_ip(headers, peer, trusted_hops), MAX_IP)
 }
 
 /// Truncate on a character boundary — a byte slice would panic on multi-byte input, and
@@ -431,13 +425,14 @@ mod tests {
 	}
 
 	#[test]
-	fn the_forwarded_address_wins_over_the_proxy_socket() {
+	fn the_audit_address_counts_trusted_hops_from_the_right() {
 		let mut headers = HeaderMap::new();
 		headers.insert("x-forwarded-for", HeaderValue::from_static("203.0.113.9, 10.0.0.1"));
 		let peer: SocketAddr = "10.0.0.1:443".parse().unwrap();
-		assert_eq!(client_ip(&headers, Some(peer)), "203.0.113.9");
-		assert_eq!(client_ip(&HeaderMap::new(), Some(peer)), "10.0.0.1");
-		assert_eq!(client_ip(&HeaderMap::new(), None), "");
+		assert_eq!(client_ip(&headers, Some(peer), 1), "10.0.0.1");
+		assert_eq!(client_ip(&headers, Some(peer), 2), "203.0.113.9");
+		assert_eq!(client_ip(&HeaderMap::new(), Some(peer), 1), "10.0.0.1");
+		assert_eq!(client_ip(&HeaderMap::new(), None, 1), "");
 	}
 
 	#[test]
