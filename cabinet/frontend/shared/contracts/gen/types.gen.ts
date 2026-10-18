@@ -334,6 +334,48 @@ export type BankingV1AnswerPaymentConfirmationRequest = {
 };
 
 /**
+ * AuditContext
+ *
+ * Who asked, and from where, for an act that moves or authorises money. Filled by the BFF
+ * (never by a browser): recorded beside the act for the audit trail and, for `origin`, the
+ * input to the limit profile (a first-party origin or a scope host). `client_ip` is the
+ * address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty
+ * (a caller that predates the message): the act is then judged as first-party and audited blank.
+ */
+export type BankingV1AuditContext = {
+    /**
+     * origin
+     *
+     * the request's Origin, e.g. https://evinvest.ltd
+     */
+    origin?: string;
+    /**
+     * client_ip
+     *
+     * browser address as seen by the trusted proxy hop
+     */
+    client_ip?: string;
+    /**
+     * user_agent
+     *
+     * clamped to 256 bytes by the hub
+     */
+    user_agent?: string;
+    /**
+     * intent_id
+     *
+     * the wallet intent this act executes (empty before intents exist)
+     */
+    intent_id?: string;
+    /**
+     * stepup_method
+     *
+     * fresh_login | passkey | email_code | none (empty = unknown)
+     */
+    stepup_method?: string;
+};
+
+/**
  * Balance
  *
  * The user's single, network-agnostic balance, segmented by lifecycle. Every figure is
@@ -2115,6 +2157,10 @@ export type BankingV1GrantMandateRequest = {
      * 1..128 chars; a repeat returns the original mandate
      */
     idempotency_key?: string;
+    /**
+     * audit
+     */
+    audit?: BankingV1AuditContext;
 };
 
 /**
@@ -2872,6 +2918,10 @@ export type BankingV1MoveFundsRequest = {
      * client-minted (a UUID per click); a repeat returns the original move
      */
     idempotency_key?: string;
+    /**
+     * audit
+     */
+    audit?: BankingV1AuditContext;
 };
 
 /**
@@ -3397,6 +3447,10 @@ export type BankingV1PayInvoiceRequest = {
      * client-minted, one per click
      */
     idempotency_key?: string;
+    /**
+     * audit
+     */
+    audit?: BankingV1AuditContext;
 };
 
 /**
@@ -4513,6 +4567,10 @@ export type BankingV1RequestWithdrawalRequest = {
      * the field) = no deduplication.
      */
     idempotency_key?: string;
+    /**
+     * audit
+     */
+    audit?: BankingV1AuditContext;
 };
 
 /**
@@ -4588,6 +4646,10 @@ export type BankingV1RevokeMandateRequest = {
      * mandate_id
      */
     mandate_id?: string;
+    /**
+     * audit
+     */
+    audit?: BankingV1AuditContext;
 };
 
 /**

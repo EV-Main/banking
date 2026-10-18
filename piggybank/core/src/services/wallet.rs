@@ -16,7 +16,7 @@ use crate::{
 	AppState,
 	application::{wallet as wallet_app, withdrawals as withdrawal_app},
 	ports::deposits::DepositRecord,
-	services::support::{caller_id, map_err, parse_withdrawal_id, rail_is_testnet, unfrozen_caller},
+	services::support::{audit_of, caller_id, map_err, parse_withdrawal_id, rail_is_testnet, unfrozen_caller},
 };
 
 #[derive(Clone)]
@@ -104,6 +104,7 @@ impl WalletService for WalletSvc {
 	async fn request_withdrawal(&self, request: Request<pb::RequestWithdrawalRequest>) -> Result<Response<pb::Withdrawal>, Status> {
 		let user = unfrozen_caller(&self.state, &request).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("request_withdrawal", user);
 		let network = Network::parse(&req.network).map_err(map_err)?;
 		let address = WalletAddress::parse(network, &req.address).map_err(map_err)?;
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;

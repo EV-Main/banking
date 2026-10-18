@@ -65,6 +65,11 @@ ev::settings! {
 		/// default is the product's line, and a malformed value fails the boot rather than
 		/// silently lifting the check.
 		pay_stepup_threshold_usdt: UsdtThreshold = "100",
+		/// How many reverse proxies in front of the BFF append to `X-Forwarded-For` (Traefik
+		/// alone is 1; Traefik plus the Next.js `/api` rewrite is 2). The audit trail takes the
+		/// address that many entries from the RIGHT, because everything left of the trusted hops is
+		/// whatever the browser chose to send. Audit only, never an authorization input.
+		trusted_proxy_hops: u8 = "1",
 		app_env: String,
 		/// Unset ⇒ error monitoring is a silent no-op. Right locally; in
 		/// production it means the BFF's errors reach nobody, so there the boot
@@ -233,6 +238,7 @@ mod tests {
 				"CABINET_WS_ORIGIN",
 				"WALLET_CORS_ORIGINS",
 				"PAY_STEPUP_THRESHOLD_USDT",
+				"TRUSTED_PROXY_HOPS",
 				"APP_ENV",
 				"SENTRY_DSN",
 				"POSTHOG_KEY",

@@ -282,8 +282,11 @@ impl Grpc {
 		Ok(self.compartments().grant_mandate(bearer(token, req)?).await?.into_inner())
 	}
 
-	pub async fn revoke_mandate(&self, token: &str, mandate_id: &str) -> Result<bk::Mandate, Status> {
-		let req = bk::RevokeMandateRequest { mandate_id: mandate_id.to_string() };
+	pub async fn revoke_mandate(&self, token: &str, mandate_id: &str, audit: bk::AuditContext) -> Result<bk::Mandate, Status> {
+		let req = bk::RevokeMandateRequest {
+			mandate_id: mandate_id.to_string(),
+			audit: Some(audit),
+		};
 		Ok(self.compartments().revoke_mandate(bearer(token, req)?).await?.into_inner())
 	}
 

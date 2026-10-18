@@ -84,6 +84,19 @@ message DepositAddress {
   bool is_testnet = 4;
 }
 
+// Who asked, and from where, for an act that moves or authorises money. Filled by the BFF
+// (never by a browser): recorded beside the act for the audit trail and, for `origin`, the
+// input to the limit profile (a first-party origin or a scope host). `client_ip` is the
+// address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty
+// (a caller that predates the message): the act is then judged as first-party and audited blank.
+message AuditContext {
+  string origin = 1;          // the request's Origin, e.g. https://evinvest.ltd
+  string client_ip = 2;       // browser address as seen by the trusted proxy hop
+  string user_agent = 3;      // clamped to 256 bytes by the hub
+  string intent_id = 4;       // the wallet intent this act executes (empty before intents exist)
+  string stepup_method = 5;   // fresh_login | passkey | email_code | none (empty = unknown)
+}
+
 message RequestWithdrawalRequest {
   string network = 1;  // bep20 | polygon | trc20 | ton — the rail to ship on
   string address = 2;  // destination on-chain address (validated per network)
@@ -93,6 +106,7 @@ message RequestWithdrawalRequest {
   // no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates
   // the field) = no deduplication.
   string idempotency_key = 4;
+  AuditContext audit = 5;
 }
 
 message CancelWithdrawalRequest {
@@ -238,6 +252,7 @@ message MoveFundsRequest {
   string to_scope = 2;         // the other side; one of the two must be `main`
   string amount = 3;           // decimal USDT, > 0
   string idempotency_key = 4;  // client-minted (a UUID per click); a repeat returns the original move
+  AuditContext audit = 5;
 }
 
 message CompartmentMove {
@@ -298,6 +313,7 @@ message GrantMandateRequest {
   reserved "scope", "client_id", "cap_per_op", "cap_24h", "operations", "expires_at", "cap_outstanding", "cap_book_fill_24h";
   string request_id = 10;     // a lowercase uuid, from the service's grant link
   string idempotency_key = 7; // 1..128 chars; a repeat returns the original mandate
+  AuditContext audit = 11;
 }
 
 message GetMandateRequestRequest {
@@ -321,6 +337,7 @@ message MandateRequest {
 
 message RevokeMandateRequest {
   string mandate_id = 1;
+  AuditContext audit = 2;
 }
 
 message ListMandatesRequest {}

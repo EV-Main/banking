@@ -29,7 +29,7 @@ use crate::{
 		compartments::{RecordedMove, ScopeRecord},
 		scope_mandates::RecordedMandate,
 	},
-	services::support::{MoneyGate, caller_id, gated_caller, map_err},
+	services::support::{MoneyGate, audit_of, caller_id, gated_caller, map_err},
 };
 
 #[derive(Clone)]
@@ -98,6 +98,7 @@ impl CompartmentService for CompartmentSvc {
 		};
 		let user = gated_caller(&self.state, &request, gate).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("move_funds", user);
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
 		let recorded = compartments_app::move_funds(&self.ports(), user, from, to, amount, &req.idempotency_key)
 			.await
@@ -128,6 +129,7 @@ impl CompartmentService for CompartmentSvc {
 	async fn grant_mandate(&self, request: Request<pb::GrantMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
 		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: true }).await?;
 		let req = request.into_inner();
+		audit_of(req.audit.as_ref()).log("grant_mandate", user);
 		let asked = mandates_app::read_request(&self.request_ports(), request_id_of(&req.request_id)?).await.map_err(map_err)?;
 		let parsed = mandates_app::grant_of(asked, req.idempotency_key);
 		let granted = mandates_app::grant(&self.mandate_ports(), user, parsed).await.map_err(map_err)?;
@@ -136,6 +138,7 @@ impl CompartmentService for CompartmentSvc {
 
 	async fn revoke_mandate(&self, request: Request<pb::RevokeMandateRequest>) -> Result<Response<pb::Mandate>, Status> {
 		let user = gated_caller(&self.state, &request, MoneyGate { pause: false, freeze: false }).await?;
+		audit_of(request.get_ref().audit.as_ref()).log("revoke_mandate", user);
 		let raw = &request.get_ref().mandate_id;
 		// Lowercase only, as banking writes it: one mandate, one spelling.
 		let id = uuid::Uuid::parse_str(raw)

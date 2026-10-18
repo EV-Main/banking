@@ -14,7 +14,7 @@ use crate::{
 	error::ApiError,
 	routes::{
 		approval::{Peer, audit_fields},
-		first_party_request, money_gate, money_token_for, parse_json_body, require_fresh_login, require_money_token, required,
+		audit_context, first_party_request, money_gate, money_token_for, parse_json_body, require_fresh_login, require_money_token, required,
 	},
 	state::AppState,
 	util::now_secs,
@@ -122,7 +122,7 @@ pub async fn get_compartment(State(st): State<AppState>, jar: CookieJar, Query(q
 /// `POST /api/wallet/compartments/move` — first-party, CSRF-checked and rate-limited: move money
 /// between `main` and one scope. The hub checks the policy, the balance and that one side is
 /// `main`; the BFF only refuses a body that names nothing.
-pub async fn move_funds(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::CompartmentMove>, ApiError> {
+pub async fn move_funds(State(st): State<AppState>, jar: CookieJar, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<dto::CompartmentMove>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	let v = parse_json_body(&headers, &body)?;
 	let token = money_token_for(&st, &claims).await?;
@@ -136,6 +136,7 @@ pub async fn move_funds(State(st): State<AppState>, jar: CookieJar, headers: Hea
 		to_scope,
 		amount,
 		idempotency_key,
+		audit: Some(audit_context(&st, &headers, peer.addr(), "none")),
 	};
 	Ok(Json(st.grpc.move_funds(&token, req).await?.into()))
 }
@@ -160,7 +161,7 @@ pub async fn list_operations(State(st): State<AppState>, jar: CookieJar, Query(q
 /// the session must have signed in interactively within [`STEP_UP_MAX_AGE_SECS`] — a stolen
 /// cookie alone cannot empty the wallet. The `idempotency_key` is mandatory: a withdrawal is
 /// the one act a retried POST must never repeat.
-pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
+pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	require_fresh_login(&claims, now_secs().max(0) as u64)?;
 	let v = parse_json_body(&headers, &body)?;
@@ -176,6 +177,7 @@ pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, head
 		address,
 		amount,
 		idempotency_key,
+		audit: Some(audit_context(&st, &headers, peer.addr(), "fresh_login")),
 	};
 	Ok(Json(st.grpc.request_withdrawal(&token, req).await?.into()))
 }
@@ -204,7 +206,7 @@ pub async fn get_payable_invoice(State(st): State<AppState>, jar: CookieJar, Pat
 /// `POST /api/wallet/invoices/{id}/pay` — first-party, CSRF-checked and rate-limited: pay the invoice from
 /// `main` or from the caller's compartment in its scope. The body names only the source and the
 /// click's idempotency key; what is paid, how much and to whom is the server's invoice.
-pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::PayableInvoice>, ApiError> {
+pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<dto::PayableInvoice>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	let v = parse_json_body(&headers, &body)?;
 	let token = money_token_for(&st, &claims).await?;
@@ -214,13 +216,15 @@ pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): P
 	// The amount is the server's invoice, never the page's: the step-up threshold is judged
 	// on what the hub says will be debited.
 	let invoice = st.grpc.get_payable_invoice(&token, &id).await.map_err(|s| ApiError::read(s, "invoice unavailable"))?;
-	if exceeds(&invoice.amount, st.config.pay_stepup_threshold_usdt.as_str()) {
+	let stepped_up = exceeds(&invoice.amount, st.config.pay_stepup_threshold_usdt.as_str());
+	if stepped_up {
 		require_fresh_login(&claims, now_secs().max(0) as u64)?;
 	}
 	let req = bk::PayInvoiceRequest {
 		invoice_id: id,
 		pay_from,
 		idempotency_key,
+		audit: Some(audit_context(&st, &headers, peer.addr(), if stepped_up { "fresh_login" } else { "none" })),
 	};
 	Ok(Json(st.grpc.pay_invoice(&token, req).await?.into()))
 }
@@ -266,7 +270,7 @@ pub async fn get_mandate_request(State(st): State<AppState>, jar: CookieJar, Pat
 /// scope's service asked for. The body names only the request and the click's idempotency key;
 /// the limits are the stored request's, so a page cannot grant more than the user was shown.
 /// Consent to future debits, so only a page on evinvest.ltd may ask for it — never a scope's own host.
-pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
+pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	require_fresh_login(&claims, now_secs().max(0) as u64)?;
 	let v = parse_json_body(&headers, &body)?;
@@ -274,16 +278,20 @@ pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: 
 	let (Some(request_id), Some(idempotency_key)) = (required(&v, "request_id"), required(&v, "idempotency_key")) else {
 		return Err(ApiError::BadRequest("request_id and idempotency_key are required".into()));
 	};
-	let req = bk::GrantMandateRequest { request_id, idempotency_key };
+	let req = bk::GrantMandateRequest {
+		request_id,
+		idempotency_key,
+		audit: Some(audit_context(&st, &headers, peer.addr(), "fresh_login")),
+	};
 	Ok(Json(st.grpc.grant_mandate(&token, req).await?.into()))
 }
 
 /// `POST /api/wallet/mandates/{id}/revoke` — first-party, CSRF-checked and rate-limited: end a mandate; the
 /// service's holds on the caller's compartment are released.
-pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::Mandate>, ApiError> {
+pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, peer: Peer, headers: HeaderMap) -> Result<Json<dto::Mandate>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	let token = money_token_for(&st, &claims).await?;
-	Ok(Json(st.grpc.revoke_mandate(&token, &id).await?.into()))
+	Ok(Json(st.grpc.revoke_mandate(&token, &id, audit_context(&st, &headers, peer.addr(), "none")).await?.into()))
 }
 
 // ── payments out of the caller's own claim (their say-so, signed in) ──────────

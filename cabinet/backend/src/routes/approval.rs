@@ -176,6 +176,12 @@ struct Audit {
 /// field and not a gate — a missing one may not turn a vote into a 500.
 pub struct Peer(Option<SocketAddr>);
 
+impl Peer {
+	pub fn addr(&self) -> Option<SocketAddr> {
+		self.0
+	}
+}
+
 impl<S: Send + Sync> FromRequestParts<S> for Peer {
 	type Rejection = std::convert::Infallible;
 

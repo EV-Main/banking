@@ -48,6 +48,7 @@
 //! operations that wait on concierge's approval, with the executor that carries them out.
 
 pub mod allocations;
+pub mod audit;
 pub mod auth_sync;
 pub mod balance;
 pub mod book;

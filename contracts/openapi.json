@@ -9507,6 +9507,39 @@
         "title": "AnswerPaymentConfirmationRequest",
         "additionalProperties": false
       },
+      "banking.v1.AuditContext": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "title": "origin",
+            "description": "the request's Origin, e.g. https://evinvest.ltd"
+          },
+          "client_ip": {
+            "type": "string",
+            "title": "client_ip",
+            "description": "browser address as seen by the trusted proxy hop"
+          },
+          "user_agent": {
+            "type": "string",
+            "title": "user_agent",
+            "description": "clamped to 256 bytes by the hub"
+          },
+          "intent_id": {
+            "type": "string",
+            "title": "intent_id",
+            "description": "the wallet intent this act executes (empty before intents exist)"
+          },
+          "stepup_method": {
+            "type": "string",
+            "title": "stepup_method",
+            "description": "fresh_login | passkey | email_code | none (empty = unknown)"
+          }
+        },
+        "title": "AuditContext",
+        "additionalProperties": false,
+        "description": "Who asked, and from where, for an act that moves or authorises money. Filled by the BFF\n (never by a browser): recorded beside the act for the audit trail and, for `origin`, the\n input to the limit profile (a first-party origin or a scope host). `client_ip` is the\n address the trusted proxy hop saw, not a caller-supplied header. Every field may be empty\n (a caller that predates the message): the act is then judged as first-party and audited blank."
+      },
       "banking.v1.Balance": {
         "type": "object",
         "properties": {
@@ -11272,6 +11305,10 @@
             "type": "string",
             "title": "idempotency_key",
             "description": "1..128 chars; a repeat returns the original mandate"
+          },
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "GrantMandateRequest",
@@ -12015,6 +12052,10 @@
             "type": "string",
             "title": "idempotency_key",
             "description": "client-minted (a UUID per click); a repeat returns the original move"
+          },
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "MoveFundsRequest",
@@ -12482,6 +12523,10 @@
             "type": "string",
             "title": "idempotency_key",
             "description": "client-minted, one per click"
+          },
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "PayInvoiceRequest",
@@ -13564,6 +13609,10 @@
             "type": "string",
             "title": "idempotency_key",
             "description": "Client-minted, 1..128 bytes, unique per user (the withdraw page mints one per load). A\n repeat with the same network, address and amount returns the first withdrawal and opens\n no second; the same key with other terms is ALREADY_EXISTS. Empty (a client that predates\n the field) = no deduplication."
+          },
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "RequestWithdrawalRequest",
@@ -13631,6 +13680,10 @@
           "mandate_id": {
             "type": "string",
             "title": "mandate_id"
+          },
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "RevokeMandateRequest",
@@ -17790,6 +17843,14 @@
       "description": "Health surface for the hub's gRPC service plane.\n\n   Check     — liveness: is the process up? Trivial, unauthenticated; backs the\n               `cabinet` BFF smoke path (browser -\u003e BFF -\u003e gRPC) and service checks.\n   Readiness — can this instance actually move money? Pings Postgres + TigerBeetle\n               and inspects the outbox (parked rows / dispatch backlog). An\n               orchestrator/LB drains an instance that is up but not ready instead of\n               routing money-moving traffic to it."
     },
     {
+      "name": "banking.v1.WalletService",
+      "description": "WalletService — a user's own crypto wallet: one unified USDT balance, deposit\n addresses, and withdrawals. Networks (BEP20/Polygon/TRC20/TON) are a transaction attribute\n (where you deposit / where a withdrawal ships), never a balance dimension — the user\n holds a single fungible USDT balance, segmented by lifecycle.\n\n Every RPC acts on the caller's own access-token `sub`. Balances are read live from the\n authoritative TigerBeetle ledger (Read-First); amounts are decimal USDT STRINGS\n (proto3 has no u128; a string is lossless and matches proto-loader's `longs: String`).\n A withdrawal is a queued saga (reserve → dispatch → settle/void): it is accepted even\n when the chosen rail is short on liquidity and queued until the treasury tops it up.\n The operator-driven dispatch/settle/fail RPCs live on BalanceService; the custody\n broadcast and deposit-address derivation sit behind ports (a stub in this scaffold).\n See docs/ARCHITECTURE.md and piggybank/core/PATTERNS.md."
+    },
+    {
+      "name": "banking.v1.CompartmentService",
+      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly. A user is identified by their `auth_subject`.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it, and its `Balance` carries only their sum\n (`in_compartments`). Every RPC acts on the caller's own `sub`.\n\n FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,\n `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and\n `InvoicePaymentService.PayInvoice` — is accepted only from\n `Origin: https://evinvest.ltd`. A scope's host may read balances and history\n cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result\n by `postMessage` with the origin checked. The CSRF token is never in a body a\n cross-origin read can see.\n\n FROZEN. A frozen user's new debits — MoveFunds into a scope, PayInvoice — are\n FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in\n (`scope_frozen`), a CLOSED one neither (`scope_closed`). Credits, reads and MoveFunds\n back to `main` go on: that money never leaves the platform, so neither a freeze nor the\n outflow pause stops it."
+    },
+    {
       "name": "banking.v1.InvoicePaymentService",
       "description": "InvoicePaymentService — the payer's side of an invoice a scope issued\n (`scope.v1.InvoiceService`). The user opens it from the scope's link in the wallet\n page or the `\u003cev-pay-invoice\u003e` element and pays it straight into the scope's\n account from `main` or from their compartment in that scope — no move between\n compartments first. Every RPC acts on the caller's own `sub`.\n\n Paying is first-party: `PayInvoice` is accepted only from\n `Origin: https://evinvest.ltd` (see `CompartmentService`), and an invoice's\n `pay_url` always points there. Whichever source pays, the RECEIVING scope's\n `min_kyc_level` applies to the payer (FAILED_PRECONDITION `kyc_level`); a frozen\n payer is `user_frozen`."
     },
@@ -17816,14 +17877,6 @@
     {
       "name": "banking.v1.UsersService",
       "description": "UsersService — investor accounts and their investments.\n\n Identity metadata is the Postgres control plane; money is read live from the\n authoritative TigerBeetle ledger and is NEVER re-bookkept in Postgres. Every\n RPC is authorized from the verified access-token Claims injected by core's\n inbound auth layer; self-service RPCs act on the caller's own `sub`, admin RPCs\n are gated by the hub's admin allowlist (config). See docs/ARCHITECTURE.md."
-    },
-    {
-      "name": "banking.v1.WalletService",
-      "description": "WalletService — a user's own crypto wallet: one unified USDT balance, deposit\n addresses, and withdrawals. Networks (BEP20/Polygon/TRC20/TON) are a transaction attribute\n (where you deposit / where a withdrawal ships), never a balance dimension — the user\n holds a single fungible USDT balance, segmented by lifecycle.\n\n Every RPC acts on the caller's own access-token `sub`. Balances are read live from the\n authoritative TigerBeetle ledger (Read-First); amounts are decimal USDT STRINGS\n (proto3 has no u128; a string is lossless and matches proto-loader's `longs: String`).\n A withdrawal is a queued saga (reserve → dispatch → settle/void): it is accepted even\n when the chosen rail is short on liquidity and queued until the treasury tops it up.\n The operator-driven dispatch/settle/fail RPCs live on BalanceService; the custody\n broadcast and deposit-address derivation sit behind ports (a stub in this scaffold).\n See docs/ARCHITECTURE.md and piggybank/core/PATTERNS.md."
-    },
-    {
-      "name": "banking.v1.CompartmentService",
-      "description": "CompartmentService — the caller's wallet split by scope (`main`, `invest`, `sa`, …),\n as on an exchange with sub-accounts: `main` is the wallet above (deposits arrive\n there, withdrawals leave from there); every other scope the user has entered holds\n a compartment, money earmarked for that scope's services. Only the user moves money\n between `main` and a compartment — instantly and without a fee — and never between\n two non-main scopes directly. A user is identified by their `auth_subject`.\n\n A separate service, not new fields on `Wallet`: WalletService keeps its shape while\n the compartments are built behind it, and its `Balance` carries only their sum\n (`in_compartments`). Every RPC acts on the caller's own `sub`.\n\n FIRST-PARTY ONLY. Every MUTATING wallet route — `WalletService.RequestWithdrawal`,\n `WalletService.CancelWithdrawal`, `MoveFunds`, `GrantMandate`, `RevokeMandate`, and\n `InvoicePaymentService.PayInvoice` — is accepted only from\n `Origin: https://evinvest.ltd`. A scope's host may read balances and history\n cross-origin; to act it opens the wallet page on evinvest.ltd and learns the result\n by `postMessage` with the origin checked. The CSRF token is never in a body a\n cross-origin read can see.\n\n FROZEN. A frozen user's new debits — MoveFunds into a scope, PayInvoice — are\n FAILED_PRECONDITION `user_frozen`; a FROZEN scope takes no MoveFunds in\n (`scope_frozen`), a CLOSED one neither (`scope_closed`). Credits, reads and MoveFunds\n back to `main` go on: that money never leaves the platform, so neither a freeze nor the\n outflow pause stops it."
     },
     {
       "name": "concierge.v1.UserDirectory",
