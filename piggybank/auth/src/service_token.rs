@@ -4,8 +4,8 @@
 //! calls with a [`TokenType::Service`](crate::claims::TokenType) token whose `aud`
 //! is the hub's service audience — distinct from a user's access token, so the two
 //! can never be confused. For this slice the token is provided out-of-band (config
-//! / env); a real second service obtains it from the reserved `MintServiceToken`
-//! RPC once that lands.
+//! / env); a scope-listener client obtains it from `scope.v1.ScopeAuthService.MintServiceToken`
+//! (mTLS only, on that listener).
 
 use std::{env, sync::Arc};
 

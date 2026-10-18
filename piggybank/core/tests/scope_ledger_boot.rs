@@ -85,11 +85,13 @@ async fn the_listener_handshakes_with_the_provider_main_installs() {
 		issuer: "https://auth.banking.test".into(),
 		client_audience: "banking-core".into(),
 		service_audience: "banking-services".into(),
+		scope_audience: "banking-scope".into(),
 		access_ttl_secs: 900,
 		refresh_ttl_secs: 3600,
 		max_session_secs: 7200,
 		idle_timeout_secs: 0,
 		service_ttl_secs: 300,
+		scope_token_ttl_secs: 300,
 		signing: None,
 		issuance_token: None,
 	};

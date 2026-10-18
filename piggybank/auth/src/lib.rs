@@ -49,7 +49,7 @@ pub mod verifier;
 mod management;
 mod signer;
 
-pub use authorizer::{Authorizer, TokenClass};
+pub use authorizer::{Authorizer, MintService, TokenClass};
 pub use claims::{Claims, TokenType};
 pub use config::{AuthConfig, IssuanceToken, SigningConfig, VerifierConfig};
 pub use interceptor::{AuthLayer, Authenticate, claims_of, grpc_auth_layer};

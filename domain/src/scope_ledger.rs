@@ -48,6 +48,13 @@ impl ClientId {
 		self.0 == BANKING
 	}
 
+	/// A name that belongs to banking's own machinery, never to a service client: `banking`
+	/// and anything starting `piggybank` (the hub's own service-token subject is
+	/// `piggybank-hub`). A client with such a `sub` would hold a token the signer accepts.
+	pub fn is_reserved(&self) -> bool {
+		self.is_banking() || self.0.starts_with("piggybank")
+	}
+
 	pub fn as_str(&self) -> &str {
 		&self.0
 	}
@@ -186,12 +193,18 @@ pub struct ClientDirectory {
 impl ClientDirectory {
 	/// Refuses a fingerprint that is not 64 lowercase hex digits, one listed twice (two
 	/// clients behind one certificate would be one identity), a client with none, and
-	/// `banking` (it would be a caller that owns banking's own accounts).
+	/// `banking` (it would be a caller that owns banking's own accounts) or another name
+	/// reserved for banking's own services (`piggybank*`, see [`ClientId::is_reserved`]).
 	pub fn new(clients: Vec<(ClientId, Vec<String>)>) -> Result<Self, DomainError> {
 		let mut by_fingerprint: Vec<(String, ClientId)> = Vec::new();
 		for (client, fingerprints) in clients {
 			if client.is_banking() {
 				return Err(DomainError::Validation("client_id \"banking\" is banking's own and cannot be a caller".into()));
+			}
+			if client.is_reserved() {
+				return Err(DomainError::Validation(format!(
+					"client_id {client} is reserved for banking's own services and cannot be a caller"
+				)));
 			}
 			if fingerprints.is_empty() {
 				return Err(DomainError::Validation(format!("client {client} has no certificate fingerprint")));
@@ -1181,6 +1194,9 @@ mod tests {
 		assert_eq!(directory.client_for(&"d".repeat(64)), None);
 		assert!(directory.knows(&client("panel")) && !directory.knows(&client("sa")));
 		assert!(ClientDirectory::new(vec![(ClientId::banking(), vec![invest.clone()])]).is_err());
+		for reserved in ["piggybank-hub", "piggybank", "piggybank_signer"] {
+			assert!(ClientDirectory::new(vec![(client(reserved), vec![invest.clone()])]).is_err(), "{reserved} is banking's own");
+		}
 		assert!(ClientDirectory::new(vec![(client("invest"), vec![])]).is_err());
 		assert!(ClientDirectory::new(vec![(client("invest"), vec![invest.to_uppercase()])]).is_err());
 		assert!(

@@ -32,12 +32,8 @@ pub struct Signer {
 	issuer: String,
 	client_audience: String,
 	access_ttl_secs: u64,
-	// Service-token issuance ([`Signer::mint_service`]) is wired and tested but has no
-	// production caller until the reserved `MintServiceToken` RPC lands (see auth.proto).
-	#[allow(dead_code)]
-	service_audience: String,
-	#[allow(dead_code)]
-	service_ttl_secs: u64,
+	scope_audience: String,
+	scope_ttl_secs: u64,
 }
 impl Signer {
 	pub fn try_new(signing: &SigningConfig, config: &AuthConfig) -> Result<Self, AuthError> {
@@ -47,9 +43,9 @@ impl Signer {
 			kid: signing.kid.clone(),
 			issuer: config.issuer.clone(),
 			client_audience: config.client_audience.clone(),
-			service_audience: config.service_audience.clone(),
+			scope_audience: config.scope_audience.clone(),
 			access_ttl_secs: config.access_ttl_secs,
-			service_ttl_secs: config.service_ttl_secs,
+			scope_ttl_secs: config.scope_token_ttl_secs,
 		})
 	}
 
@@ -61,7 +57,8 @@ impl Signer {
 
 	fn mint(&self, sub: &str, audience: &str, typ: TokenType, ttl_secs: u64, token_version: u64) -> Result<(String, u64), AuthError> {
 		let now = get_current_timestamp();
-		let exp = now + ttl_secs;
+		// Saturating: a TTL that overflows must not wrap into the past (the config bounds it anyway).
+		let exp = now.saturating_add(ttl_secs);
 		let claims = Claims {
 			sub: sub.to_owned(),
 			iss: self.issuer.clone(),
@@ -81,11 +78,23 @@ impl Signer {
 		self.mint(user_id, &self.client_audience, TokenType::Access, self.access_ttl_secs, token_version)
 	}
 
-	/// Mint an inter-service token for `service_name`. Returns `(token, exp_unix_secs)`.
-	/// Reserved for the deferred `MintServiceToken` RPC; exercised by tests until then.
-	#[allow(dead_code)]
-	pub fn mint_service(&self, service_name: &str) -> Result<(String, u64), AuthError> {
-		self.mint(service_name, &self.service_audience, TokenType::Service, self.service_ttl_secs, 0)
+	/// Mint a token for a scope-listener client. Returns `(token, exp_unix_secs)`.
+	/// The one production caller is the scope listener's `ScopeAuthService.MintServiceToken`
+	/// (via the auth task), which passes the client id its mTLS certificate maps to: `sub`
+	/// is never a caller-supplied value, so keep it that way. `typ=service` but
+	/// `aud=banking-scope`, NOT the hub's `banking-services`: the signer accepts the latter, so
+	/// a client's token must not carry it. No `token_version`: nothing stores a floor for a
+	/// service; the short TTL and the certificate binding are the bound.
+	pub fn mint_scope(&self, client_id: &str) -> Result<(String, u64), AuthError> {
+		self.mint(client_id, &self.scope_audience, TokenType::Service, self.scope_ttl_secs, 0)
+	}
+
+	/// A token shaped like the hub's own bearer (`aud=banking-services`), for tests that need
+	/// the other trust domain. Production never mints one in-process: the hub's bearer comes
+	/// from `examples/mint_service_token`, offline.
+	#[cfg(test)]
+	pub fn mint_hub_service(&self, service_name: &str) -> Result<(String, u64), AuthError> {
+		self.mint(service_name, "banking-services", TokenType::Service, 300, 0)
 	}
 }
 
@@ -144,11 +153,13 @@ mod tests {
 			issuer: "https://auth.test".into(),
 			client_audience: "banking-core".into(),
 			service_audience: "banking-services".into(),
+			scope_audience: "banking-scope".into(),
 			access_ttl_secs: 900,
 			refresh_ttl_secs: 3600,
 			max_session_secs: 7_776_000,
 			idle_timeout_secs: 0,
 			service_ttl_secs: 300,
+			scope_token_ttl_secs: 300,
 			signing: Some(SigningConfig {
 				signing_key_pem: TEST_PEM.into(),
 				kid: "test-kid".into(),
@@ -233,13 +244,46 @@ mod tests {
 		let signer = Signer::try_new(&signing, &cfg).unwrap();
 		let (cache, _) = load_jwks(&signing).unwrap();
 
-		let (token, _) = signer.mint_service("allocations").unwrap();
+		let (token, _) = signer.mint_hub_service("allocations").unwrap();
 		let claims = verify_token(&token, &cache, &policy("banking-services", vec![TokenType::Service])).unwrap();
 		assert_eq!(claims.typ, TokenType::Service);
 		assert_eq!(claims.sub, "allocations");
 
 		// An access-only client policy must reject the service token.
 		assert!(verify_token(&token, &cache, &policy("banking-services", vec![TokenType::Access])).is_err());
+	}
+
+	// The two trust domains of `typ=service` tokens, both directions. The signer verifies
+	// `aud=banking-services` (its policy below mirrors `piggybank/signer/src/config.rs`); the
+	// scope listener verifies `aud=banking-scope`. Neither verifies the other's.
+	#[test]
+	fn a_scope_token_is_not_the_hubs_bearer_and_the_hubs_bearer_is_not_a_scope_token() {
+		let cfg = config();
+		let signing = cfg.signing.clone().unwrap();
+		let signer = Signer::try_new(&signing, &cfg).unwrap();
+		let (cache, _) = load_jwks(&signing).unwrap();
+		let signer_policy = policy("banking-services", vec![TokenType::Service]);
+		let scope_policy = policy("banking-scope", vec![TokenType::Service]);
+
+		let (scope, _) = signer.mint_scope("invest").unwrap();
+		let claims = verify_token(&scope, &cache, &scope_policy).unwrap();
+		assert_eq!((claims.sub.as_str(), claims.typ, claims.aud.as_str()), ("invest", TokenType::Service, "banking-scope"));
+		assert!(verify_token(&scope, &cache, &signer_policy).is_err(), "a scope client's token must not open the signer");
+
+		let (hub, _) = signer.mint_hub_service("piggybank-hub").unwrap();
+		assert!(verify_token(&hub, &cache, &signer_policy).is_ok());
+		assert!(verify_token(&hub, &cache, &scope_policy).is_err(), "the hub's bearer is no scope client's token");
+	}
+
+	#[test]
+	fn a_ttl_that_overflows_saturates_instead_of_wrapping_into_the_past() {
+		let cfg = config();
+		let signing = cfg.signing.clone().unwrap();
+		let signer = Signer::try_new(&signing, &cfg).unwrap();
+		let (_, exp) = signer.mint("invest", "banking-scope", TokenType::Service, u64::MAX, 0).unwrap();
+		assert_eq!(exp, u64::MAX);
+		let (_, zero) = signer.mint("invest", "banking-scope", TokenType::Service, 0, 0).unwrap();
+		assert!(zero >= get_current_timestamp());
 	}
 
 	#[test]

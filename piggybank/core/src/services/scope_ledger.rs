@@ -8,10 +8,14 @@
 //!     would otherwise be decoded as gRPC: tonic does not look at the content type) and maps
 //!     the certificate the client presented to a [`ClientId`] by its fingerprint
 //!     ([`ClientDirectory`]) — the ONLY source of the caller's identity.
-//!   - the auth layer pinned to [`TokenClass::Service`] (`aud=banking-services`,
+//!   - the auth layer pinned to [`TokenClass::Service`] (`aud=banking-scope`,
 //!     `typ=service`), so a user's access token is refused at the verifier. The token is
 //!     then bound to the certificate: its `sub` must be that client's id, so a service token
 //!     stolen from one client is useless on another client's connection.
+//!
+//! ONE service sits outside the token layer, on purpose: `ScopeAuthService.MintServiceToken`,
+//! where a client gets the token the rest demand. It is behind the certificate layer only, and
+//! issues to the client that layer proved — see [`ScopeAuthSvc`].
 //!
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
 //! `Void`, `GetHold` — a `Reserve` stands on the user's mandate for the client),
@@ -24,28 +28,31 @@
 #![allow(clippy::result_large_err)]
 
 use std::{
+	collections::HashMap,
 	future::Future,
 	net::SocketAddr,
 	pin::Pin,
-	sync::Arc,
+	sync::{Arc, Mutex},
 	task::{Context, Poll},
+	time::{Duration, Instant},
 };
 
 use domain::{
 	error::DomainError,
 	money::Usdt,
 	scope_invoices::InvoiceState,
-	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, MandateOperation, MoneyEventKind, SubjectRef, TransferReason},
+	scope_ledger::{ClientDirectory, ClientId, Grants, HoldState, IDEMPOTENCY_CONFLICT, LedgerRefusal, MandateOperation, MoneyEventKind, SubjectRef, TransferReason},
 	scope_mandates::MandateRequest,
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
-use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of, grpc_auth_layer};
+use evbanking_auth::{Authenticate, Authorizer, MintService, TokenClass, TokenType, claims_of, grpc_auth_layer};
 use evbanking_contracts::scope::v1::{
 	self as pb,
 	invoice_service_server::{InvoiceService, InvoiceServiceServer},
 	mandate_request_service_server::{MandateRequestService, MandateRequestServiceServer},
 	money_events_server::{MoneyEvents, MoneyEventsServer},
+	scope_auth_service_server::{ScopeAuthService, ScopeAuthServiceServer},
 	scope_ledger_service_server::{ScopeLedgerService, ScopeLedgerServiceServer},
 };
 use sha2::{Digest, Sha256};
@@ -232,18 +239,28 @@ impl ScopeLedgerListener {
 }
 
 /// Serve the scope ledger on its own listener until `shutdown` fires, authorizing every call
-/// against the hub's SERVICE token class.
+/// against the hub's SERVICE token class and issuing service tokens through the same handle.
 pub async fn serve(listener: ScopeLedgerListener, authorizer: &Authorizer, shutdown: impl Future<Output = ()>) -> Result<(), tonic::transport::Error> {
-	serve_with(listener, authorizer.for_class(TokenClass::Service), shutdown).await
+	serve_with(listener, authorizer.for_class(TokenClass::Service), authorizer.clone(), shutdown).await
 }
 
-/// [`serve`] over any authenticator — the seam the listener's tests drive. Both layers are
-/// mounted here and nowhere else, so what a test proves about this function is what
-/// production runs.
-pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenticator: A, shutdown: impl Future<Output = ()>) -> Result<(), tonic::transport::Error> {
+/// [`serve`] over any authenticator and minter — the seam the listener's tests drive. Both
+/// layers are mounted here and nowhere else, so what a test proves about this function is
+/// what production runs.
+pub async fn serve_with<A: Authenticate, M: MintService>(
+	listener: ScopeLedgerListener,
+	authenticator: A,
+	minter: M,
+	shutdown: impl Future<Output = ()>,
+) -> Result<(), tonic::transport::Error> {
 	let auth = grpc_auth_layer(authenticator);
 	let identity = ClientIdentityLayer::new(listener.clients);
 	let service = listener.service;
+	let mint = ScopeAuthSvc {
+		minter,
+		grants: service.grants.clone(),
+		limiter: Arc::new(MintLimiter::default()),
+	};
 	// No `accept_http1` (ALPN offers only h2, so an HTTP/1.1 client fails the handshake) and
 	// no `GrpcWebLayer`; a gRPC-Web request sent over h2 anyway is refused by the identity
 	// layer's content-type gate, since tonic itself would decode it as gRPC. The certificate
@@ -253,13 +270,97 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 	// and the client, and what is unexpected at WARN (`refused`).
 	Server::builder()
 		.tls_config(listener.tls)?
+		// A stuck handler or a client opening a flood of streams on one connection holds
+		// resources of a money listener; both are bounded. Every RPC here is a unary call.
+		.timeout(REQUEST_TIMEOUT)
+		.concurrency_limit_per_connection(MAX_CONCURRENT_PER_CONNECTION)
 		.layer(TraceLayer::new_for_grpc().on_failure(DefaultOnFailure::new().level(tracing::Level::DEBUG)))
 		.add_service(identity.layer(auth.layer(ScopeLedgerServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(InvoiceServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MandateRequestServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MoneyEventsServer::new(service))))
+		// The only service without the token layer: a client with no token yet has to be able
+		// to ask for one. The certificate layer still stands in front, so it is mTLS alone.
+		.add_service(identity.layer(ScopeAuthServiceServer::new(mint)))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
+}
+
+/// Longest a request may run before the listener answers CANCELLED/deadline itself.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Most requests in flight on one connection (HTTP/2 streams are otherwise unbounded).
+const MAX_CONCURRENT_PER_CONNECTION: usize = 64;
+/// Fewest seconds between two mints for one client. A token lives minutes, so a client that
+/// mints faster is not caching its token; the cap also bounds what a leaked certificate key
+/// can make the signer do.
+const MINT_MIN_INTERVAL: Duration = Duration::from_secs(5);
+
+/// When each client last minted, to refuse a mint that comes too soon. Bounded by the number
+/// of configured clients: only a certificate the directory knows reaches it.
+#[derive(Default)]
+struct MintLimiter {
+	last: Mutex<HashMap<ClientId, Instant>>,
+}
+
+impl MintLimiter {
+	/// Whether `client` may mint at `now`; if so, the mint is booked.
+	fn admit(&self, client: &ClientId, now: Instant) -> bool {
+		// The map is plain data and nothing panics while it is held, so a poisoned lock is
+		// still a usable map.
+		let mut last = self.last.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+		if last.get(client).is_some_and(|at| now.saturating_duration_since(*at) < MINT_MIN_INTERVAL) {
+			return false;
+		}
+		last.insert(client.clone(), now);
+		true
+	}
+}
+
+/// `ScopeAuthService`: issues a service token to the client the certificate layer proved.
+/// The subject comes from [`CallerClient`] and nowhere else — the request has no fields —
+/// and the token is not logged (client and expiry are).
+#[derive(Clone)]
+struct ScopeAuthSvc<M> {
+	minter: M,
+	grants: Arc<Grants>,
+	limiter: Arc<MintLimiter>,
+}
+
+#[tonic::async_trait]
+impl<M: MintService> ScopeAuthService for ScopeAuthSvc<M> {
+	async fn mint_service_token(&self, request: Request<pb::MintServiceTokenRequest>) -> Result<Response<pb::MintServiceTokenResponse>, Status> {
+		let client = request
+			.extensions()
+			.get::<CallerClient>()
+			.map(|caller| caller.0.clone())
+			.ok_or_else(|| Status::unauthenticated("no client identity"))?;
+		// The grants file refuses `banking` as a caller at load; this keeps the rule at the
+		// point of issue, where a token for banking's own identity would be the worst one.
+		if client.is_reserved() {
+			return Err(Status::permission_denied("not a service client"));
+		}
+		// A certificate in the directory with no grant to its name holds nothing the token
+		// could be used for; do not hand out credentials for it.
+		if self.grants.scopes_of(&client).is_empty() {
+			tracing::info!(rpc = "MintServiceToken", %client, "scope ledger: refused, no grants");
+			return Err(Status::permission_denied(LedgerRefusal::NotGranted.reason()));
+		}
+		if !self.limiter.admit(&client, Instant::now()) {
+			tracing::info!(rpc = "MintServiceToken", %client, "scope ledger: refused, minting too often");
+			return Err(Status::resource_exhausted("minting too often: reuse the token until expires_at"));
+		}
+		let (token, exp) = self.minter.mint_service(client.as_str()).await.map_err(|err| {
+			if err.is_unexpected() {
+				tracing::warn!(rpc = "MintServiceToken", %client, "scope ledger: {err}");
+			}
+			Status::from(err)
+		})?;
+		tracing::info!(rpc = "MintServiceToken", %client, exp, "scope ledger: service token issued");
+		Ok(Response::new(pb::MintServiceTokenResponse {
+			token,
+			expires_at: i64::try_from(exp).unwrap_or(i64::MAX),
+		}))
+	}
 }
 
 #[derive(Clone)]
@@ -998,5 +1099,88 @@ mod tests {
 		let taken = refused("OpenAccount", &client, TransferError::Domain(DomainError::Conflict("label taken".into())));
 		assert_eq!(taken.code(), Code::AlreadyExists);
 		assert_ne!(taken.message(), "idempotency_conflict");
+	}
+
+	use evbanking_auth::AuthError;
+
+	/// Records the `sub` it was asked to issue for, and issues a recognisable token.
+	#[derive(Clone, Default)]
+	struct RecordingMinter(Arc<std::sync::Mutex<Vec<String>>>);
+
+	impl MintService for RecordingMinter {
+		async fn mint_service(&self, sub: &str) -> Result<(String, u64), AuthError> {
+			self.0.lock().unwrap().push(sub.to_owned());
+			Ok((format!("token-for-{sub}"), 1_000))
+		}
+	}
+
+	fn svc(minter: RecordingMinter) -> ScopeAuthSvc<RecordingMinter> {
+		let grant = domain::scope_ledger::Grant {
+			client: ClientId::parse("invest").unwrap(),
+			scope: ScopeId::parse("invest").unwrap(),
+			label_prefix: "alloc:".into(),
+			compartments: false,
+		};
+		ScopeAuthSvc {
+			minter,
+			grants: Arc::new(Grants::new(vec![grant]).unwrap()),
+			limiter: Arc::new(MintLimiter::default()),
+		}
+	}
+
+	fn mint_request(client: Option<ClientId>) -> Request<pb::MintServiceTokenRequest> {
+		let mut request = Request::new(pb::MintServiceTokenRequest {});
+		if let Some(client) = client {
+			request.extensions_mut().insert(CallerClient(client));
+		}
+		request
+	}
+
+	#[tokio::test]
+	async fn mint_issues_to_the_certificates_client_and_to_nobody_else() {
+		let minter = RecordingMinter::default();
+		let svc = svc(minter.clone());
+		let response = svc.mint_service_token(mint_request(Some(ClientId::parse("invest").unwrap()))).await.unwrap().into_inner();
+		assert_eq!((response.token.as_str(), response.expires_at), ("token-for-invest", 1_000));
+		assert_eq!(*minter.0.lock().unwrap(), ["invest"], "the subject is the client the certificate layer proved");
+	}
+
+	#[tokio::test]
+	async fn mint_refuses_reserved_names_ungranted_clients_and_a_call_that_skipped_the_certificate_layer() {
+		let minter = RecordingMinter::default();
+		let svc = svc(minter.clone());
+		for reserved in [ClientId::banking(), ClientId::parse("piggybank-hub").unwrap()] {
+			assert_eq!(svc.mint_service_token(mint_request(Some(reserved))).await.unwrap_err().code(), Code::PermissionDenied);
+		}
+		// A known certificate whose client holds no grant at all.
+		let ungranted = svc.mint_service_token(mint_request(Some(ClientId::parse("panel").unwrap()))).await.unwrap_err();
+		assert_eq!((ungranted.code(), ungranted.message()), (Code::PermissionDenied, "not_granted"));
+		let anonymous = svc.mint_service_token(mint_request(None)).await.unwrap_err();
+		assert_eq!(anonymous.code(), Code::Unauthenticated);
+		assert!(minter.0.lock().unwrap().is_empty(), "none of them reached the signer");
+	}
+
+	#[tokio::test]
+	async fn a_second_mint_inside_the_interval_is_refused_and_does_not_reach_the_signer() {
+		let minter = RecordingMinter::default();
+		let svc = svc(minter.clone());
+		let invest = ClientId::parse("invest").unwrap();
+		svc.mint_service_token(mint_request(Some(invest.clone()))).await.unwrap();
+		let again = svc.mint_service_token(mint_request(Some(invest))).await.unwrap_err();
+		assert_eq!(again.code(), Code::ResourceExhausted);
+		assert!(again.message().contains("reuse the token until expires_at"), "{}", again.message());
+		assert_eq!(minter.0.lock().unwrap().len(), 1);
+	}
+
+	#[test]
+	fn the_limiter_is_per_client_and_opens_again_after_the_interval() {
+		let limiter = MintLimiter::default();
+		let (invest, panel) = (ClientId::parse("invest").unwrap(), ClientId::parse("panel").unwrap());
+		let t0 = Instant::now();
+		assert!(limiter.admit(&invest, t0));
+		assert!(!limiter.admit(&invest, t0 + MINT_MIN_INTERVAL - Duration::from_millis(1)));
+		assert!(limiter.admit(&panel, t0), "another client has its own allowance");
+		assert!(limiter.admit(&invest, t0 + MINT_MIN_INTERVAL));
+		assert!(!limiter.admit(&invest, t0 + MINT_MIN_INTERVAL), "the allowance restarts from the last mint");
 	}
 }

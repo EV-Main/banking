@@ -51,7 +51,8 @@ service AuthService {
 
   // Reserved for later auth slices, declared here to lock the namespace:
   //   rpc Introspect(IntrospectRequest) returns (IntrospectResponse);
-  //   rpc MintServiceToken(MintServiceTokenRequest) returns (TokenResponse);
+  // Service tokens for the scope listener are NOT minted here: `scope.v1.ScopeAuthService`
+  // issues them on that listener, to the client its mTLS certificate names.
 }
 
 message IssueUserTokenRequest {
