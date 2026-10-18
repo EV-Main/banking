@@ -45,6 +45,23 @@ holder's redemption and their own withdrawal, or an owners' payment order from
 `service:fee` to an internal `user:` ([`CONSILIUM.md`](./CONSILIUM.md) §Payments), and a payment order's L1 withdrawal (opened
 out of an investor's own claim) is an ordinary user row here.
 
+## A queued withdrawal that does not move: the new-address hold
+
+A withdrawal to a destination the user never withdrew to is accepted but left `queued`
+until `withdrawals.release_at` (6 h, `WITHDRAWAL_NEW_ADDRESS_HOLD_SECS`). The dispatcher sweep
+skips it and so does the operator **Dispatch** (it answers "held until the new-address delay
+has passed") — that is the control working, not a stuck row. The user can cancel it meanwhile;
+the owner got a `bank:wallet-security` notice at request time. Check before escalating:
+
+```sql
+SELECT id, state, release_at, release_at > now() AS held FROM withdrawals WHERE id = '<withdrawal-id>';
+SELECT * FROM withdrawal_addresses WHERE user_id = '<user-id>';
+```
+
+To release a held row early on a verified request from the owner, move BOTH release times
+(the address and the row) into the past as `postgres`; the next sweep dispatches it. Do not
+void or fail it: nothing was broadcast.
+
 ## Step 1 — prove the broadcast never happened
 
 ```sql
