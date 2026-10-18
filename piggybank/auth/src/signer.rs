@@ -32,11 +32,7 @@ pub struct Signer {
 	issuer: String,
 	client_audience: String,
 	access_ttl_secs: u64,
-	// Service-token issuance ([`Signer::mint_service`]) is wired and tested but has no
-	// production caller until the reserved `MintServiceToken` RPC lands (see auth.proto).
-	#[allow(dead_code)]
 	service_audience: String,
-	#[allow(dead_code)]
 	service_ttl_secs: u64,
 }
 impl Signer {
@@ -82,8 +78,10 @@ impl Signer {
 	}
 
 	/// Mint an inter-service token for `service_name`. Returns `(token, exp_unix_secs)`.
-	/// Reserved for the deferred `MintServiceToken` RPC; exercised by tests until then.
-	#[allow(dead_code)]
+	/// The one production caller is the scope listener's `ScopeAuthService.MintServiceToken`
+	/// (via the auth task), which passes the client id its mTLS certificate maps to: `sub`
+	/// is never a caller-supplied value, so keep it that way. No `token_version`: nothing
+	/// stores a floor for a service; the short TTL and the certificate binding are the bound.
 	pub fn mint_service(&self, service_name: &str) -> Result<(String, u64), AuthError> {
 		self.mint(service_name, &self.service_audience, TokenType::Service, self.service_ttl_secs, 0)
 	}

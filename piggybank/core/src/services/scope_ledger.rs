@@ -13,6 +13,10 @@
 //!     then bound to the certificate: its `sub` must be that client's id, so a service token
 //!     stolen from one client is useless on another client's connection.
 //!
+//! ONE service sits outside the token layer, on purpose: `ScopeAuthService.MintServiceToken`,
+//! where a client gets the token the rest demand. It is behind the certificate layer only, and
+//! issues to the client that layer proved — see [`ScopeAuthSvc`].
+//!
 //! Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds (`Reserve`, `Capture`,
 //! `Void`, `GetHold` — a `Reserve` stands on the user's mandate for the client),
 //! `Charge` (a one-off debit on the user's mandate), `Payout`, the requested
@@ -40,12 +44,13 @@ use domain::{
 	scope_operations::{OperationBody, OperationState, PayoutReason, RequestedLine},
 	scopes::{ScopeAccountLabel, ScopeId},
 };
-use evbanking_auth::{Authenticate, Authorizer, TokenClass, TokenType, claims_of, grpc_auth_layer};
+use evbanking_auth::{Authenticate, Authorizer, MintService, TokenClass, TokenType, claims_of, grpc_auth_layer};
 use evbanking_contracts::scope::v1::{
 	self as pb,
 	invoice_service_server::{InvoiceService, InvoiceServiceServer},
 	mandate_request_service_server::{MandateRequestService, MandateRequestServiceServer},
 	money_events_server::{MoneyEvents, MoneyEventsServer},
+	scope_auth_service_server::{ScopeAuthService, ScopeAuthServiceServer},
 	scope_ledger_service_server::{ScopeLedgerService, ScopeLedgerServiceServer},
 };
 use sha2::{Digest, Sha256};
@@ -232,15 +237,20 @@ impl ScopeLedgerListener {
 }
 
 /// Serve the scope ledger on its own listener until `shutdown` fires, authorizing every call
-/// against the hub's SERVICE token class.
+/// against the hub's SERVICE token class and issuing service tokens through the same handle.
 pub async fn serve(listener: ScopeLedgerListener, authorizer: &Authorizer, shutdown: impl Future<Output = ()>) -> Result<(), tonic::transport::Error> {
-	serve_with(listener, authorizer.for_class(TokenClass::Service), shutdown).await
+	serve_with(listener, authorizer.for_class(TokenClass::Service), authorizer.clone(), shutdown).await
 }
 
-/// [`serve`] over any authenticator — the seam the listener's tests drive. Both layers are
-/// mounted here and nowhere else, so what a test proves about this function is what
-/// production runs.
-pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenticator: A, shutdown: impl Future<Output = ()>) -> Result<(), tonic::transport::Error> {
+/// [`serve`] over any authenticator and minter — the seam the listener's tests drive. Both
+/// layers are mounted here and nowhere else, so what a test proves about this function is
+/// what production runs.
+pub async fn serve_with<A: Authenticate, M: MintService>(
+	listener: ScopeLedgerListener,
+	authenticator: A,
+	minter: M,
+	shutdown: impl Future<Output = ()>,
+) -> Result<(), tonic::transport::Error> {
 	let auth = grpc_auth_layer(authenticator);
 	let identity = ClientIdentityLayer::new(listener.clients);
 	let service = listener.service;
@@ -258,8 +268,46 @@ pub async fn serve_with<A: Authenticate>(listener: ScopeLedgerListener, authenti
 		.add_service(identity.layer(auth.layer(InvoiceServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MandateRequestServiceServer::new(service.clone()))))
 		.add_service(identity.layer(auth.layer(MoneyEventsServer::new(service))))
+		// The only service without the token layer: a client with no token yet has to be able
+		// to ask for one. The certificate layer still stands in front, so it is mTLS alone.
+		.add_service(identity.layer(ScopeAuthServiceServer::new(ScopeAuthSvc { minter })))
 		.serve_with_shutdown(listener.bind, shutdown)
 		.await
+}
+
+/// `ScopeAuthService`: issues a service token to the client the certificate layer proved.
+/// The subject comes from [`CallerClient`] and nowhere else — the request has no fields —
+/// and the token is not logged (client and expiry are).
+#[derive(Clone)]
+struct ScopeAuthSvc<M> {
+	minter: M,
+}
+
+#[tonic::async_trait]
+impl<M: MintService> ScopeAuthService for ScopeAuthSvc<M> {
+	async fn mint_service_token(&self, request: Request<pb::MintServiceTokenRequest>) -> Result<Response<pb::MintServiceTokenResponse>, Status> {
+		let client = request
+			.extensions()
+			.get::<CallerClient>()
+			.map(|caller| caller.0.clone())
+			.ok_or_else(|| Status::unauthenticated("no client identity"))?;
+		// The grants file refuses `banking` as a caller at load; this keeps the rule at the
+		// point of issue, where a token for banking's own identity would be the worst one.
+		if client.is_banking() {
+			return Err(Status::permission_denied("banking is not a service client"));
+		}
+		let (token, exp) = self.minter.mint_service(client.as_str()).await.map_err(|err| {
+			if err.is_unexpected() {
+				tracing::warn!(rpc = "MintServiceToken", %client, "scope ledger: {err}");
+			}
+			Status::from(err)
+		})?;
+		tracing::info!(rpc = "MintServiceToken", %client, exp, "scope ledger: service token issued");
+		Ok(Response::new(pb::MintServiceTokenResponse {
+			token,
+			expires_at: i64::try_from(exp).unwrap_or(i64::MAX),
+		}))
+	}
 }
 
 #[derive(Clone)]
@@ -998,5 +1046,46 @@ mod tests {
 		let taken = refused("OpenAccount", &client, TransferError::Domain(DomainError::Conflict("label taken".into())));
 		assert_eq!(taken.code(), Code::AlreadyExists);
 		assert_ne!(taken.message(), "idempotency_conflict");
+	}
+
+	use evbanking_auth::AuthError;
+
+	/// Records the `sub` it was asked to issue for, and issues a recognisable token.
+	#[derive(Clone, Default)]
+	struct RecordingMinter(Arc<std::sync::Mutex<Vec<String>>>);
+
+	impl MintService for RecordingMinter {
+		async fn mint_service(&self, sub: &str) -> Result<(String, u64), AuthError> {
+			self.0.lock().unwrap().push(sub.to_owned());
+			Ok((format!("token-for-{sub}"), 1_000))
+		}
+	}
+
+	fn mint_request(client: Option<ClientId>) -> Request<pb::MintServiceTokenRequest> {
+		let mut request = Request::new(pb::MintServiceTokenRequest {});
+		if let Some(client) = client {
+			request.extensions_mut().insert(CallerClient(client));
+		}
+		request
+	}
+
+	#[tokio::test]
+	async fn mint_issues_to_the_certificates_client_and_to_nobody_else() {
+		let minter = RecordingMinter::default();
+		let svc = ScopeAuthSvc { minter: minter.clone() };
+		let response = svc.mint_service_token(mint_request(Some(ClientId::parse("invest").unwrap()))).await.unwrap().into_inner();
+		assert_eq!((response.token.as_str(), response.expires_at), ("token-for-invest", 1_000));
+		assert_eq!(*minter.0.lock().unwrap(), ["invest"], "the subject is the client the certificate layer proved");
+	}
+
+	#[tokio::test]
+	async fn mint_refuses_banking_and_a_call_that_skipped_the_certificate_layer() {
+		let minter = RecordingMinter::default();
+		let svc = ScopeAuthSvc { minter: minter.clone() };
+		let banking = svc.mint_service_token(mint_request(Some(ClientId::banking()))).await.unwrap_err();
+		assert_eq!(banking.code(), Code::PermissionDenied);
+		let anonymous = svc.mint_service_token(mint_request(None)).await.unwrap_err();
+		assert_eq!(anonymous.code(), Code::Unauthenticated);
+		assert!(minter.0.lock().unwrap().is_empty(), "neither reached the signer");
 	}
 }

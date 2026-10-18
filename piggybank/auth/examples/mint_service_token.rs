@@ -1,7 +1,7 @@
 //! Mint an out-of-band SERVICE_TOKEN (the hub→signer bearer) from the issuing
 //! env (`AUTH_SIGNING_KEY_PEM`/`AUTH_SIGNING_KID`, issuer/audience/TTL via the
-//! usual `AUTH_*` vars). Stopgap until the reserved `MintServiceToken` RPC
-//! lands — see `service_token.rs`. Prints the JWT to stdout, its expiry to stderr.
+//! usual `AUTH_*` vars). Out of band on purpose: the scope listener's
+//! `MintServiceToken` serves its mTLS clients, not this bearer — see `service_token.rs`. Prints the JWT to stdout, its expiry to stderr.
 
 use evbanking_auth::{AuthConfig, TokenType, claims::Claims};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode, get_current_timestamp};

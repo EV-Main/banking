@@ -1009,9 +1009,22 @@ maps the presented certificate (SHA-256 of its DER, the grants file's `cert_sha2
 the certificate: its `sub` must be that client's id, or the call is PERMISSION_DENIED
 `token is not this client's` — a token copied off one client is useless on another's
 connection. `tests/scope_ledger_listener.rs` is the guard that the service is never
-reachable without them. Production cannot mint `typ=service` tokens yet (no
-`MintServiceToken` RPC): until it can, a client cannot get past the auth layer, which is
-the safe failure.
+reachable without them.
+
+**Getting the token: `ScopeAuthService.MintServiceToken`** (`scope/v1/service_auth.proto`) is
+served on this same listener and is the ONE service outside the token layer — a client with
+no token yet has to be able to ask for one. It sits behind `ClientIdentityLayer` only: the
+certificate must map to a client in the grants file (else UNAUTHENTICATED), the content-type
+gate applies, and the request is empty, so nothing the caller sends chooses the subject. The
+token is signed by the hub's own key (a concierge token is refused by `assert_plane`, which
+is why this is not concierge's to mint) with `sub` = the client id, `aud=banking-services`,
+`typ=service`, and lives `AUTH_SERVICE_TTL_SECS`; there is no `cnf`/`x5t#S256` — the `sub`
+binding above already ties it to the certificate. `banking` is never issued one. core reaches
+the signer over the same in-process channel as authorize (`MintService` on `Authorizer`); a
+user's access token is neither needed nor looked at on this service. Logged: client and `exp`,
+never the token. `tests/scope_ledger_listener.rs` pins it, including
+`the_mint_is_the_only_service_outside_the_token_layer`, which reads every `service` in
+`scope/v1/*.proto` and fails if a new one is mounted without the token layer.
 
 **Revoking a service client** is done on the certificate side, not the token: drop its
 fingerprint from the grants file (or its grants) and roll the hub — the next call is

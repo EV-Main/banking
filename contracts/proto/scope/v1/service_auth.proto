@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package scope.v1;
+
+// ScopeAuthService — where a service client gets the `typ=service` token the rest of the
+// scope listener demands. It is served on the SAME mTLS listener as `ScopeLedgerService`
+// and is the one service there that is NOT behind the token layer: a client that holds no
+// token yet cannot be asked for one.
+//
+// The caller is proven by its client certificate alone (SHA-256 of the DER, pinned in
+// banking's grants file). The token is issued to exactly that client: its `sub` is the
+// client id the certificate maps to, `aud=banking-services`, `typ=service`, signed with the
+// hub's own key (the only issuer the money plane trusts). Nothing the request carries
+// chooses the subject — the request is empty on purpose — and a user's access token is
+// neither needed nor accepted here. A certificate that maps to no client is
+// UNAUTHENTICATED, as on every service of the listener. `banking` itself is never a client.
+//
+// The token lives `AUTH_SERVICE_TTL_SECS` (300 s by default): a client mints again before
+// `expires_at` instead of holding one for long. Minting is not a grant — what the client may
+// do with the token is still banking's grants file, call by call.
+service ScopeAuthService {
+  rpc MintServiceToken(MintServiceTokenRequest) returns (MintServiceTokenResponse);
+}
+
+message MintServiceTokenRequest {}
+
+message MintServiceTokenResponse {
+  // The bearer to send as `authorization: Bearer <token>` on the scope services.
+  string token = 1;
+  // Unix seconds the token stops being valid.
+  int64 expires_at = 2;
+}

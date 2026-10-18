@@ -18,10 +18,11 @@
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use domain::scopes::ScopeId;
-use evbanking_auth::{AuthConfig, AuthError, AuthService, Authenticate, Claims, TokenType, provisioner_channel};
+use evbanking_auth::{AuthConfig, AuthError, AuthService, Authenticate, Claims, MintService, SigningConfig, TokenType, provisioner_channel};
 use evbanking_contracts::scope::v1::{
-	ChargeRequest, CreateMandateRequestRequest, GetBalancesRequest, GetBalancesResponse, GetInvoiceRequest, MandateOperation, PullRequest, invoice_service_client::InvoiceServiceClient,
-	mandate_request_service_client::MandateRequestServiceClient, money_events_client::MoneyEventsClient, scope_ledger_service_client::ScopeLedgerServiceClient,
+	ChargeRequest, CreateMandateRequestRequest, GetBalancesRequest, GetBalancesResponse, GetInvoiceRequest, MandateOperation, MintServiceTokenRequest, MintServiceTokenResponse, PullRequest,
+	invoice_service_client::InvoiceServiceClient, mandate_request_service_client::MandateRequestServiceClient, money_events_client::MoneyEventsClient,
+	scope_auth_service_client::ScopeAuthServiceClient, scope_ledger_service_client::ScopeLedgerServiceClient,
 };
 use piggybank_core::{
 	config::ScopeLedgerSettings,
@@ -73,6 +74,18 @@ impl Authenticate for StubAuthenticator {
 			jti: None,
 			token_version: 0,
 		})
+	}
+}
+
+/// Stands in for the auth task's signer: issues the stub class's own bearer for the `sub` it
+/// is asked for, so a minted token is accepted by [`StubAuthenticator`] exactly as far as the
+/// `sub` is the client's.
+#[derive(Clone)]
+struct StubMinter;
+
+impl MintService for StubMinter {
+	async fn mint_service(&self, sub: &str) -> Result<(String, u64), AuthError> {
+		Ok((format!("service:{sub}"), u64::MAX >> 1))
 	}
 }
 
@@ -192,7 +205,7 @@ async fn get_balances(port: u16, identity: Option<(&str, &str)>, bearer: Option<
 
 async fn serve_stub(h: &Harness, addr: SocketAddr) -> impl FnOnce(CancellationToken) -> std::pin::Pin<Box<dyn Future<Output = Result<(), tonic::transport::Error>>>> {
 	let listener = ScopeLedgerListener::new(settings(addr, &h.scope), h.deps.clone());
-	move |stop: CancellationToken| Box::pin(scope_ledger::serve_with(listener, StubAuthenticator, stop.cancelled_owned())) as std::pin::Pin<Box<dyn Future<Output = _>>>
+	move |stop: CancellationToken| Box::pin(scope_ledger::serve_with(listener, StubAuthenticator, StubMinter, stop.cancelled_owned())) as std::pin::Pin<Box<dyn Future<Output = _>>>
 }
 
 #[tokio::test]
@@ -589,4 +602,239 @@ async fn http1_never_reaches_the_service() {
 	// http/1.1 in the handshake: no HTTP/1.1 response, of any status, ever comes back.
 	let refused = outcome.expect_err("an http/1.1-only client must not complete a request");
 	assert!(refused.to_lowercase().contains("application"), "refused for the protocol, not something else: {refused}");
+}
+
+// ---- ScopeAuthService.MintServiceToken: the one service outside the token layer ----
+
+fn mint_channel(port: u16, identity: Option<(&str, &str)>) -> tonic::transport::Channel {
+	let mut tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(fixture("ca.pem"))).domain_name("localhost");
+	if let Some((cert, key)) = identity {
+		tls = tls.identity(Identity::from_pem(fixture(cert), fixture(key)));
+	}
+	Endpoint::from_shared(format!("https://localhost:{port}"))
+		.unwrap()
+		.connect_timeout(Duration::from_secs(5))
+		.tls_config(tls)
+		.unwrap()
+		.connect_lazy()
+}
+
+/// One `MintServiceToken` over TLS presenting `identity`, with `bearer` if any.
+async fn mint(port: u16, identity: Option<(&str, &str)>, bearer: Option<&str>) -> Result<MintServiceTokenResponse, Status> {
+	let mut request = Request::new(MintServiceTokenRequest {});
+	if let Some(token) = bearer {
+		request.metadata_mut().insert("authorization", format!("Bearer {token}").parse().unwrap());
+	}
+	ScopeAuthServiceClient::new(mint_channel(port, identity))
+		.mint_service_token(request)
+		.await
+		.map(tonic::Response::into_inner)
+}
+
+const INVEST: Option<(&str, &str)> = Some(("invest.pem", "invest.key"));
+const PANEL: Option<(&str, &str)> = Some(("panel.pem", "panel.key"));
+
+// Same throwaway Ed25519 keypair as the auth crate's tests.
+const TEST_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIKolOSMXwE+tafZkX+jkKYJbmJ066f4E12wAwTIkKps6\n-----END PRIVATE KEY-----\n";
+const TEST_JWK_X: &str = "Z6BCmq9-_wo9d7co5CDW84Wn0sAC3BA0XWK2AOstpV4";
+
+/// Production's `serve` over a REAL signing auth task with the given service TTL, run for the
+/// length of `client`.
+async fn with_real_auth<T, F, Fut>(h: &Harness, service_ttl_secs: u64, client: F) -> T
+where
+	F: FnOnce(u16) -> Fut,
+	Fut: Future<Output = T>, {
+	let config = AuthConfig {
+		issuer: "https://auth.banking.test".into(),
+		client_audience: "banking-core".into(),
+		service_audience: "banking-services".into(),
+		access_ttl_secs: 900,
+		refresh_ttl_secs: 3600,
+		max_session_secs: 7200,
+		idle_timeout_secs: 0,
+		service_ttl_secs,
+		signing: Some(SigningConfig {
+			signing_key_pem: TEST_PEM.into(),
+			kid: "test-kid".into(),
+			jwks_json: format!(r#"{{"keys":[{{"kty":"OKP","crv":"Ed25519","x":"{TEST_JWK_X}","kid":"test-kid","alg":"EdDSA","use":"sig"}}]}}"#),
+		}),
+		issuance_token: None,
+	};
+	let (provisioner, _provision_rx) = provisioner_channel();
+	let (auth_service, authorizer) = AuthService::try_new(config, provisioner).await.unwrap();
+	let auth_addr = ephemeral().await;
+	let addr = ephemeral().await;
+	let listener = ScopeLedgerListener::new(settings(addr, &h.scope), h.deps.clone());
+	with_server(
+		addr.port(),
+		move |stop: CancellationToken| async move {
+			let (ledger, auth) = tokio::join!(
+				scope_ledger::serve(listener, &authorizer, stop.clone().cancelled_owned()),
+				auth_service.run(auth_addr, stop.cancelled_owned())
+			);
+			auth.expect("the auth task runs until cancelled");
+			ledger
+		},
+		|| client(addr.port()),
+	)
+	.await
+}
+
+#[tokio::test]
+async fn a_minted_token_passes_the_service_layer_for_the_client_that_minted_it() {
+	let Some(h) = harness().await else { return };
+	let scope = h.scope.clone();
+	let (minted, served, borrowed) = with_real_auth(&h, 120, |port| async move {
+		let before = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+		// No bearer on the mint: the certificate is all it asks for.
+		let minted = mint(port, INVEST, None).await.expect("a known client mints without any token");
+		let served = get_balances(port, INVEST, Some(&minted.token), &scope).await;
+		// The same token on panel's connection: the binding to the certificate refuses it.
+		let borrowed = get_balances(port, PANEL, Some(&minted.token), &scope).await;
+		((before, minted), served, borrowed)
+	})
+	.await;
+	let (before, minted) = minted;
+	assert!(!minted.token.is_empty());
+	assert!(
+		(before + 120..=before + 125).contains(&minted.expires_at),
+		"expires_at {} is now + the configured TTL",
+		minted.expires_at
+	);
+	// `sub == invest`, signed by the hub, `typ=service`: the real verifier accepted it and the
+	// handler found the caller's id in it.
+	assert!(served.expect("the minted token is served").accounts.is_empty());
+	let borrowed = borrowed.expect_err("invest's token on panel's connection");
+	assert_eq!((borrowed.code(), borrowed.message()), (Code::PermissionDenied, "token is not this client's"));
+}
+
+#[tokio::test]
+async fn each_client_is_minted_its_own_token_and_nothing_in_the_call_chooses_the_subject() {
+	let Some(h) = harness().await else { return };
+	let scope = h.scope.clone();
+	let (panel_on_invest, panel_on_panel) = with_real_auth(&h, 300, |port| async move {
+		let panel = mint(port, PANEL, None).await.expect("panel mints");
+		let on_panel = get_balances(port, PANEL, Some(&panel.token), &scope).await;
+		let on_invest = get_balances(port, INVEST, Some(&panel.token), &scope).await;
+		(on_invest, on_panel)
+	})
+	.await;
+	// panel's token is panel's: its own connection reaches the handler (panel holds no grant
+	// there), invest's connection is refused on the binding.
+	let panel_on_panel = panel_on_panel.expect_err("panel holds no grant in the scope");
+	assert_eq!((panel_on_panel.code(), panel_on_panel.message()), (Code::PermissionDenied, "not_granted"));
+	let panel_on_invest = panel_on_invest.expect_err("panel's token on invest's connection");
+	assert_eq!((panel_on_invest.code(), panel_on_invest.message()), (Code::PermissionDenied, "token is not this client's"));
+}
+
+#[tokio::test]
+async fn mint_needs_a_known_certificate_and_no_bearer_substitutes_for_it() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let (stranger, stranger_with_service, stranger_with_access, no_cert) = with_server(addr.port(), server, || async {
+		let stranger = Some(("stranger.pem", "stranger.key"));
+		(
+			mint(addr.port(), stranger, None).await,
+			mint(addr.port(), stranger, Some(SERVICE_TOKEN)).await,
+			mint(addr.port(), stranger, Some(ACCESS_TOKEN)).await,
+			mint(addr.port(), None, Some(ACCESS_TOKEN)).await,
+		)
+	})
+	.await;
+	for outcome in [stranger, stranger_with_service, stranger_with_access] {
+		let status = outcome.expect_err("an unknown certificate");
+		assert_eq!((status.code(), status.message()), (Code::Unauthenticated, "client certificate is not a known client"));
+	}
+	// No certificate at all never crosses the handshake, whatever bearer rides along.
+	let status = no_cert.expect_err("no client certificate");
+	assert!(!matches!(status.code(), Code::Ok | Code::Unauthenticated | Code::PermissionDenied), "{status:?}");
+}
+
+#[tokio::test]
+async fn a_users_access_token_neither_replaces_the_certificate_nor_changes_the_subject() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let minted = with_server(addr.port(), server, || async { mint(addr.port(), INVEST, Some(ACCESS_TOKEN)).await }).await;
+	// The bearer is not read on this service: the subject is the certificate's.
+	assert_eq!(minted.expect("a known client mints").token, "service:invest");
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let other = with_server(addr.port(), server, || async { mint(addr.port(), PANEL, Some(SERVICE_TOKEN)).await }).await;
+	assert_eq!(other.expect("a known client mints").token, "service:panel", "invest's bearer does not make panel invest");
+}
+
+/// A raw gRPC call to `path` over the fixture `invest` identity, no bearer, with the content
+/// type under test; what the listener answered, in the headers (a trailers-only answer).
+async fn raw_call(port: u16, path: &str, content_type: &str) -> http::Response<tonic::body::Body> {
+	use tower::ServiceExt;
+	let request = http::Request::builder()
+		.method("POST")
+		.uri(format!("https://localhost:{port}{path}"))
+		.header("content-type", content_type)
+		.header("te", "trailers")
+		.body(tonic::body::Body::empty())
+		.unwrap();
+	mint_channel(port, INVEST).oneshot(request).await.expect("the request crossed the connection")
+}
+
+fn grpc_status(response: &http::Response<tonic::body::Body>) -> Option<&str> {
+	response.headers().get("grpc-status").and_then(|v| v.to_str().ok())
+}
+
+#[tokio::test]
+async fn grpc_web_never_reaches_the_mint_either() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let web = with_server(addr.port(), server, || async {
+		raw_call(addr.port(), "/scope.v1.ScopeAuthService/MintServiceToken", "application/grpc-web+proto").await
+	})
+	.await;
+	assert_eq!(grpc_status(&web), Some("3"), "{:?}", web.headers());
+	assert_eq!(
+		web.headers().get("grpc-message").and_then(|v| v.to_str().ok()),
+		Some("only%20application/grpc%20is%20served%20here")
+	);
+}
+
+/// Every `service` the scope.v1 protos declare, read from the files so a service added later
+/// is covered without anyone remembering this test.
+fn declared_services() -> Vec<String> {
+	let dir = format!("{}/../../contracts/proto/scope/v1", env!("CARGO_MANIFEST_DIR"));
+	let mut services = Vec::new();
+	for entry in std::fs::read_dir(&dir).unwrap_or_else(|err| panic!("{dir}: {err}")) {
+		let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+		services.extend(text.lines().filter_map(|line| line.strip_prefix("service ")?.split_whitespace().next().map(str::to_owned)));
+	}
+	services.sort();
+	services
+}
+
+// The guard that the token layer cannot be dropped from a service by accident: with a known
+// certificate and NO bearer, every service of the listener answers UNAUTHENTICATED from the
+// token layer, except the mint, which is the one that reaches its own router (an unknown
+// method there is UNIMPLEMENTED). A new service that is mounted bare, or not mounted, fails
+// this list.
+#[tokio::test]
+async fn the_mint_is_the_only_service_outside_the_token_layer() {
+	let Some(h) = harness().await else { return };
+	let services = declared_services();
+	assert!(services.len() >= 5 && services.contains(&"ScopeAuthService".to_owned()), "the proto scan found {services:?}");
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let answers = with_server(addr.port(), server, || async {
+		let mut answers = Vec::new();
+		for service in &services {
+			let response = raw_call(addr.port(), &format!("/scope.v1.{service}/NoSuchMethod"), "application/grpc").await;
+			answers.push((service.clone(), grpc_status(&response).map(str::to_owned)));
+		}
+		answers
+	})
+	.await;
+	for (service, status) in answers {
+		let expected = if service == "ScopeAuthService" { "12" } else { "16" };
+		assert_eq!(status.as_deref(), Some(expected), "{service} without a bearer");
+	}
 }

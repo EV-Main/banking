@@ -29,7 +29,7 @@ use tonic::{Request, Response, Status, transport::Server};
 
 use crate::{
 	AuthError, Claims,
-	authorizer::{AuthorizeRequest, Authorizer, TokenClass},
+	authorizer::{AuthTask, Authorizer, TokenClass},
 	claims::TokenType,
 	config::AuthConfig,
 	jwks::{JwksCache, VerifyPolicy, verify_token},
@@ -40,7 +40,7 @@ use crate::{
 
 /// The auth application: the authorize-channel receiver plus the issuance engine.
 pub struct AuthService {
-	authorize_rx: mpsc::Receiver<AuthorizeRequest>,
+	authorize_rx: mpsc::Receiver<AuthTask>,
 	grpc: AuthGrpc,
 }
 
@@ -61,9 +61,16 @@ impl AuthService {
 		let authorizer = grpc.clone();
 		let issuance = Server::builder().add_service(AuthServiceServer::new(grpc)).serve_with_shutdown(addr, shutdown);
 		let authorize = async move {
-			while let Some(request) = authorize_rx.recv().await {
-				let result = authorizer.authorize_token(&request.token, request.class);
-				let _ = request.respond_to.send(result);
+			while let Some(task) = authorize_rx.recv().await {
+				// A dropped receiver means the caller went away; there is nobody to tell.
+				match task {
+					AuthTask::Authorize(request) => {
+						let _ = request.respond_to.send(authorizer.authorize_token(&request.token, request.class));
+					}
+					AuthTask::MintService(request) => {
+						let _ = request.respond_to.send(authorizer.mint_service_token(&request.sub));
+					}
+				}
 			}
 		};
 		tokio::select! {
@@ -135,6 +142,12 @@ impl AuthGrpc {
 			TokenClass::Service => &engine.service_policy,
 		};
 		verify_token(token, &engine.keyring, policy)
+	}
+
+	/// Issue a service token for `sub`, the client the scope listener's transport proved.
+	/// Inert (`NotConfigured`) without a signing key, like authorize.
+	fn mint_service_token(&self, sub: &str) -> Result<(String, u64), AuthError> {
+		self.engine.signer.as_ref().ok_or(AuthError::NotConfigured)?.mint_service(sub)
 	}
 
 	/// Authenticate the service-to-service caller of `IssueUserToken` against the shared
@@ -350,6 +363,15 @@ mod tests {
 	}
 
 	async fn grpc_with_issuance(issuance_token: Option<&str>) -> AuthGrpc {
+		grpc_with(issuance_token, 300, true).await
+	}
+
+	async fn grpc_with(issuance_token: Option<&str>, service_ttl_secs: u64, signing: bool) -> AuthGrpc {
+		let signing = signing.then(|| SigningConfig {
+			signing_key_pem: TEST_PEM.into(),
+			kid: "test-kid".into(),
+			jwks_json: format!(r#"{{"keys":[{{"kty":"OKP","crv":"Ed25519","x":"{TEST_JWK_X}","kid":"test-kid","alg":"EdDSA","use":"sig"}}]}}"#),
+		});
 		let config = AuthConfig {
 			issuer: "https://auth.test".into(),
 			client_audience: "banking-core".into(),
@@ -358,12 +380,8 @@ mod tests {
 			refresh_ttl_secs: 3600,
 			max_session_secs: 7_776_000,
 			idle_timeout_secs: 0,
-			service_ttl_secs: 300,
-			signing: Some(SigningConfig {
-				signing_key_pem: TEST_PEM.into(),
-				kid: "test-kid".into(),
-				jwks_json: format!(r#"{{"keys":[{{"kty":"OKP","crv":"Ed25519","x":"{TEST_JWK_X}","kid":"test-kid","alg":"EdDSA","use":"sig"}}]}}"#),
-			}),
+			service_ttl_secs,
+			signing,
 			issuance_token: issuance_token.map(|t| crate::config::IssuanceToken(t.to_string())),
 		};
 		let (provisioner, _rx) = provisioner_channel();
@@ -413,5 +431,50 @@ mod tests {
 		let service_claims = grpc.authorize_token(&service, TokenClass::Service).unwrap();
 		assert_eq!(service_claims.typ, TokenType::Service);
 		assert!(grpc.authorize_token(&access, TokenClass::Service).is_err());
+	}
+
+	// The scope listener's mint path: the token verifies on the SERVICE class only, carries
+	// the `sub` it was asked for, and lives the configured TTL.
+	#[tokio::test]
+	async fn minted_service_token_verifies_on_the_service_class_with_the_configured_ttl() {
+		let grpc = grpc_with(None, 120, true).await;
+		let before = jsonwebtoken::get_current_timestamp();
+		let (token, exp) = grpc.mint_service_token("invest").unwrap();
+		assert!((before + 120..=before + 122).contains(&exp), "exp {exp} is now + AUTH_SERVICE_TTL_SECS");
+
+		let claims = grpc.authorize_token(&token, TokenClass::Service).unwrap();
+		assert_eq!((claims.sub.as_str(), claims.typ, claims.exp), ("invest", TokenType::Service, exp));
+		assert!(grpc.authorize_token(&token, TokenClass::Client).is_err(), "a service token is no user token");
+	}
+
+	// Expiry is enforced on the service class too: a token past its `exp` (beyond the
+	// verifier's leeway) is refused, however it was signed.
+	#[tokio::test]
+	async fn an_expired_service_token_is_refused() {
+		use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+
+		let grpc = configured_grpc().await;
+		let now = jsonwebtoken::get_current_timestamp();
+		let claims = Claims {
+			sub: "invest".into(),
+			iss: "https://auth.test".into(),
+			aud: "banking-services".into(),
+			exp: now - 3600,
+			iat: now - 3900,
+			typ: TokenType::Service,
+			jti: None,
+			token_version: 0,
+		};
+		let mut header = Header::new(Algorithm::EdDSA);
+		header.kid = Some("test-kid".into());
+		let expired = encode(&header, &claims, &EncodingKey::from_ed_pem(TEST_PEM.as_bytes()).unwrap()).unwrap();
+		assert!(grpc.authorize_token(&expired, TokenClass::Service).is_err());
+	}
+
+	// Without a signing key nothing is issued (dev/CI): the same inert answer as authorize.
+	#[tokio::test]
+	async fn minting_without_a_signing_key_is_not_configured() {
+		let grpc = grpc_with(None, 300, false).await;
+		assert!(matches!(grpc.mint_service_token("invest"), Err(AuthError::NotConfigured)));
 	}
 }
