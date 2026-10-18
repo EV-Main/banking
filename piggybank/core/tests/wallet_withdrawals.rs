@@ -22,7 +22,11 @@ use domain::{
 	withdrawals::{WithdrawalId, WithdrawalState},
 };
 use piggybank_core::{
-	application::{balance as balance_app, withdrawal_limits::WithdrawalLimits, withdrawals as withdrawal_app},
+	application::{
+		balance as balance_app,
+		withdrawal_limits::WithdrawalLimits,
+		withdrawals::{self as withdrawal_app, SelfServiceRequest},
+	},
 	config::KycGate,
 	infrastructure::{custody::StubCustody, deposits::PgDeposits, dispatcher::Dispatcher, operations, outflow::PgOutflowPolicy, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals},
 	ports::{
@@ -310,11 +314,13 @@ async fn screened(h: &Harness, user: UserId, amount: &str, key: Option<&str>, pr
 	withdrawal_app::request_withdrawal_screened(
 		&withdrawal_ports(h, &StubCustody),
 		&admission(h, KycGate::ENFORCED),
-		user,
-		network,
-		destination(network),
-		usdt(amount),
-		key,
+		SelfServiceRequest {
+			user,
+			network,
+			address: destination(network),
+			amount: usdt(amount),
+			key,
+		},
 		&Screening {
 			profile,
 			audit,
@@ -388,6 +394,15 @@ async fn limits_are_kept_by_racing_requests_and_a_key_replay_outlives_them() {
 	assert_eq!(replay.id(), h.withdrawals.list_by_user(user).await.unwrap()[0].id());
 }
 
+#[derive(sqlx::FromRow)]
+struct AuditRow {
+	origin: Option<String>,
+	client_ip: Option<String>,
+	user_agent: Option<String>,
+	intent_id: Option<String>,
+	stepup_method: Option<String>,
+}
+
 #[tokio::test]
 async fn the_audit_context_is_recorded_and_an_unknown_origin_gets_the_host_profile() {
 	let Some(h) = harness().await else { return };
@@ -396,22 +411,16 @@ async fn the_audit_context_is_recorded_and_an_unknown_origin_gets_the_host_profi
 	let audit = RequestAudit::new("https://evinvest.ltd", "203.0.113.9", "test-agent/1.0", "", "fresh_login");
 	let limits = WithdrawalLimits::default();
 	let recorded = screened(&h, user, "20", Some("audit-1"), limits.profile_for(&audit.origin), &audit).await.unwrap();
-	let row: (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) =
-		sqlx::query_as("SELECT origin, client_ip, user_agent, intent_id, stepup_method FROM withdrawals WHERE id = $1")
-			.bind(recorded.id().raw())
-			.fetch_one(&h.pool)
-			.await
-			.unwrap();
-	assert_eq!(
-		row,
-		(
-			Some("https://evinvest.ltd".into()),
-			Some("203.0.113.9".into()),
-			Some("test-agent/1.0".into()),
-			None,
-			Some("fresh_login".into())
-		)
-	);
+	let row: AuditRow = sqlx::query_as("SELECT origin, client_ip, user_agent, intent_id, stepup_method FROM withdrawals WHERE id = $1")
+		.bind(recorded.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(row.origin.as_deref(), Some("https://evinvest.ltd"));
+	assert_eq!(row.client_ip.as_deref(), Some("203.0.113.9"));
+	assert_eq!(row.user_agent.as_deref(), Some("test-agent/1.0"));
+	assert_eq!(row.intent_id, None, "an empty field is stored as NULL");
+	assert_eq!(row.stepup_method.as_deref(), Some("fresh_login"));
 	// A host origin is judged on the host profile: 1001 USDT is over its per-operation ceiling.
 	assert_eq!(limits.profile_for("https://sa.evinvest.ltd").per_op, usdt("1000"));
 	assert_eq!(limits.profile_for("https://evinvest.ltd.evil.example").max_per_hour, Some(6));
@@ -424,11 +433,13 @@ async fn screened_to(h: &Harness, user: UserId, amount: &str, to: &WalletAddress
 	withdrawal_app::request_withdrawal_screened(
 		&withdrawal_ports(h, &StubCustody),
 		&admission(h, KycGate::ENFORCED),
-		user,
-		to.network(),
-		to.clone(),
-		usdt(amount),
-		None,
+		SelfServiceRequest {
+			user,
+			network: to.network(),
+			address: to.clone(),
+			amount: usdt(amount),
+			key: None,
+		},
 		&Screening {
 			profile: &profile,
 			audit: &audit,
@@ -582,11 +593,13 @@ async fn a_new_address_is_refused_after_a_sign_in_change_but_a_known_one_is_not(
 			withdrawal_app::request_withdrawal_screened(
 				&withdrawal_ports(h, &StubCustody),
 				&admission(h, KycGate::ENFORCED),
-				user,
-				network,
-				to,
-				usdt("50"),
-				None,
+				SelfServiceRequest {
+					user,
+					network,
+					address: to,
+					amount: usdt("50"),
+					key: None,
+				},
 				&Screening {
 					profile,
 					audit,

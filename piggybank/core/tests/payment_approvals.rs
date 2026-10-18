@@ -22,7 +22,7 @@ use domain::{
 	error::DomainError,
 	money::{Network, Usdt},
 	payments::{CONCIERGE_TTL_SECS, PaymentDestination, PaymentId, PaymentReason, PaymentState, PaymentTerms, TTL_SECS, approval_subject_ref},
-	scope_operations::{BANK_CATALOG_VERSION, KindSpec, MONEY_MOVEMENT_TOPIC, PAYMENT_KIND, TopicSpec, approval_payload},
+	scope_operations::{BANK_CATALOG_VERSION, KindSpec, MONEY_MOVEMENT_TOPIC, PAYMENT_KIND, TopicSpec, WALLET_SECURITY_TOPIC, approval_payload},
 	users::{Email, UserId},
 };
 use piggybank_core::{
@@ -542,7 +542,7 @@ async fn a_fund_payment_is_decided_over_a_concierge_approval_and_moves_money_onc
 	let (version, kinds, topics) = a.concierge.with(|s| s.catalog.clone()).expect("the catalog was published");
 	assert_eq!(version, BANK_CATALOG_VERSION);
 	assert!(kinds.iter().any(|kind| kind == PAYMENT_KIND), "{kinds:?}");
-	assert_eq!(topics, vec![MONEY_MOVEMENT_TOPIC.to_owned()]);
+	assert_eq!(topics, vec![MONEY_MOVEMENT_TOPIC.to_owned(), WALLET_SECURITY_TOPIC.to_owned()]);
 	let approval = approval_id_of(&a, id).await;
 	assert_eq!(a.concierge.with(|s| s.unproven), 0, "never proposed without the proof of who asked");
 	assert_eq!(a.concierge.requested_by(&approval), Some(subject_of(&a.pool, initiator).await));

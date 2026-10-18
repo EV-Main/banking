@@ -144,19 +144,32 @@ pub async fn request_withdrawal_keyed(
 	open_withdrawal(ports, WithdrawalId::new(), WithdrawalSource::User(user), network, address, amount, Opening::ImmediateKeyed(key)).await
 }
 
+/// What the user asked for in a self-service withdrawal.
+pub struct SelfServiceRequest<'a> {
+	pub user: UserId,
+	pub network: Network,
+	pub address: WalletAddress,
+	pub amount: Usdt,
+	/// The client's idempotency key; absent or empty = a client that predates it.
+	pub key: Option<&'a str>,
+}
+
 /// The self-service wallet's entry point: [`request_withdrawal`] / [`request_withdrawal_keyed`]
 /// plus the velocity limits of the caller's profile and the audit columns, all recorded under
 /// the claim's lock. `key` empty or absent is a client that predates the idempotency key.
 pub async fn request_withdrawal_screened(
 	ports: &WithdrawalPorts<'_>,
 	gates: &AdmissionGates<'_>,
-	user: UserId,
-	network: Network,
-	address: WalletAddress,
-	amount: Usdt,
-	key: Option<&str>,
+	request: SelfServiceRequest<'_>,
 	screening: &Screening<'_>,
 ) -> Result<Withdrawal, DomainError> {
+	let SelfServiceRequest {
+		user,
+		network,
+		address,
+		amount,
+		key,
+	} = request;
 	let key = key.filter(|k| !k.is_empty());
 	if let Some(key) = key {
 		if key.len() > MAX_IDEMPOTENCY_KEY {
