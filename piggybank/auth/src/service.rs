@@ -103,9 +103,9 @@ impl AuthGrpc {
 			audiences: vec![config.client_audience.clone()],
 			allowed_types: vec![TokenType::Access],
 		};
-		let service_policy = VerifyPolicy {
+		let scope_policy = VerifyPolicy {
 			issuer: config.issuer.clone(),
-			audiences: vec![config.service_audience.clone()],
+			audiences: vec![config.scope_audience.clone()],
 			allowed_types: vec![TokenType::Service],
 		};
 		Ok(Self {
@@ -113,7 +113,7 @@ impl AuthGrpc {
 				signer,
 				keyring,
 				client_policy,
-				service_policy,
+				scope_policy,
 				issuance_token,
 				refresh: RefreshStore::from_env().await?,
 				provisioner,
@@ -139,7 +139,7 @@ impl AuthGrpc {
 		}
 		let policy = match class {
 			TokenClass::Client => &engine.client_policy,
-			TokenClass::Service => &engine.service_policy,
+			TokenClass::Service => &engine.scope_policy,
 		};
 		verify_token(token, &engine.keyring, policy)
 	}
@@ -147,7 +147,7 @@ impl AuthGrpc {
 	/// Issue a service token for `sub`, the client the scope listener's transport proved.
 	/// Inert (`NotConfigured`) without a signing key, like authorize.
 	fn mint_service_token(&self, sub: &str) -> Result<(String, u64), AuthError> {
-		self.engine.signer.as_ref().ok_or(AuthError::NotConfigured)?.mint_service(sub)
+		self.engine.signer.as_ref().ok_or(AuthError::NotConfigured)?.mint_scope(sub)
 	}
 
 	/// Authenticate the service-to-service caller of `IssueUserToken` against the shared
@@ -182,9 +182,11 @@ struct AuthEngine {
 	/// In-process authorize policy for user-facing data services: pins the client
 	/// audience and `typ=access` only, so an inter-service token is rejected here.
 	client_policy: VerifyPolicy,
-	/// In-process authorize policy reserved for genuinely inter-service surfaces:
-	/// pins the service audience and `typ=service` only.
-	service_policy: VerifyPolicy,
+	/// In-process authorize policy of [`TokenClass::Service`], i.e. the scope listener: pins
+	/// the SCOPE audience (`banking-scope`) and `typ=service`. Deliberately not the hub's
+	/// `banking-services`, which the signer accepts: a token minted for a scope client must
+	/// not open the signer, and the hub's own bearer must not pass as a scope client's.
+	scope_policy: VerifyPolicy,
 	/// Shared bearer the BFF presents on `IssueUserToken` (the concierge→banking seam).
 	/// `None` ⇒ issuance is not configured and every call fails closed.
 	issuance_token: Option<Arc<str>>,
@@ -366,7 +368,7 @@ mod tests {
 		grpc_with(issuance_token, 300, true).await
 	}
 
-	async fn grpc_with(issuance_token: Option<&str>, service_ttl_secs: u64, signing: bool) -> AuthGrpc {
+	async fn grpc_with(issuance_token: Option<&str>, scope_token_ttl_secs: u64, signing: bool) -> AuthGrpc {
 		let signing = signing.then(|| SigningConfig {
 			signing_key_pem: TEST_PEM.into(),
 			kid: "test-kid".into(),
@@ -376,11 +378,13 @@ mod tests {
 			issuer: "https://auth.test".into(),
 			client_audience: "banking-core".into(),
 			service_audience: "banking-services".into(),
+			scope_audience: "banking-scope".into(),
 			access_ttl_secs: 900,
 			refresh_ttl_secs: 3600,
 			max_session_secs: 7_776_000,
 			idle_timeout_secs: 0,
-			service_ttl_secs,
+			service_ttl_secs: 300,
+			scope_token_ttl_secs,
 			signing,
 			issuance_token: issuance_token.map(|t| crate::config::IssuanceToken(t.to_string())),
 		};
@@ -412,25 +416,39 @@ mod tests {
 		assert!(configured.authenticate_issuer(&request_with_bearer(Some("s3cret-issuance"))).is_ok());
 	}
 
-	// The hub's mounted authorize path — not just the verify policy in isolation —
-	// keeps the two principal classes apart: a `mint_service` token is rejected on the
-	// client (user-facing) layer, and a client access token is rejected on the
-	// service layer.
+	// The hub's mounted authorize path — not just the verify policy in isolation — keeps the
+	// principal classes apart in both directions: a client access token is rejected on the
+	// service (scope) layer, a scope token on the client layer, and the hub's own
+	// `banking-services` bearer (what the signer accepts) is no scope client's token, nor a
+	// scope client's token the signer's.
 	#[tokio::test]
 	async fn authorize_token_separates_client_and_service_classes() {
 		let grpc = configured_grpc().await;
 		let signer = grpc.engine.signer.as_ref().unwrap();
 
 		let (access, _) = signer.mint_access("00000000-0000-0000-0000-000000000001", 0).unwrap();
-		let (service, _) = signer.mint_service("allocations").unwrap();
+		let (hub, _) = signer.mint_hub_service("allocations").unwrap();
+		let (scope, _) = grpc.mint_service_token("invest").unwrap();
 
 		let client_claims = grpc.authorize_token(&access, TokenClass::Client).unwrap();
 		assert!(client_claims.is_access());
-		assert!(grpc.authorize_token(&service, TokenClass::Client).is_err());
+		assert!(grpc.authorize_token(&hub, TokenClass::Client).is_err());
+		assert!(grpc.authorize_token(&scope, TokenClass::Client).is_err());
 
-		let service_claims = grpc.authorize_token(&service, TokenClass::Service).unwrap();
-		assert_eq!(service_claims.typ, TokenType::Service);
+		let scope_claims = grpc.authorize_token(&scope, TokenClass::Service).unwrap();
+		assert_eq!(scope_claims.typ, TokenType::Service);
 		assert!(grpc.authorize_token(&access, TokenClass::Service).is_err());
+		assert!(grpc.authorize_token(&hub, TokenClass::Service).is_err(), "the hub's bearer is not a scope client's token");
+
+		// And the signer's side of the same wall, with the policy `piggybank/signer` builds
+		// from `AUTH_SERVICE_AUDIENCE`.
+		let signer_policy = VerifyPolicy {
+			issuer: "https://auth.test".into(),
+			audiences: vec!["banking-services".into()],
+			allowed_types: vec![TokenType::Service],
+		};
+		assert!(verify_token(&scope, &grpc.engine.keyring, &signer_policy).is_err(), "a scope token must not open the signer");
+		assert!(verify_token(&hub, &grpc.engine.keyring, &signer_policy).is_ok());
 	}
 
 	// The scope listener's mint path: the token verifies on the SERVICE class only, carries
@@ -440,7 +458,7 @@ mod tests {
 		let grpc = grpc_with(None, 120, true).await;
 		let before = jsonwebtoken::get_current_timestamp();
 		let (token, exp) = grpc.mint_service_token("invest").unwrap();
-		assert!((before + 120..=before + 122).contains(&exp), "exp {exp} is now + AUTH_SERVICE_TTL_SECS");
+		assert!((before + 120..=before + 122).contains(&exp), "exp {exp} is now + AUTH_SCOPE_TOKEN_TTL_SECS");
 
 		let claims = grpc.authorize_token(&token, TokenClass::Service).unwrap();
 		assert_eq!((claims.sub.as_str(), claims.typ, claims.exp), ("invest", TokenType::Service, exp));

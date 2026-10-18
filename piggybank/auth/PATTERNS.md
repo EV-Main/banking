@@ -18,7 +18,8 @@ Each **signed JWT** carries a `typ` (`access` | `service`) and a distinct audien
 | Token | `typ` | `aud` | `sub` | reaches |
 | ----- | ----- | ----- | ----- | ------- |
 | client access | `access` | `banking-core` | user UUID | the data plane |
-| inter-service | `service` | `banking-services` | service name | the data plane |
+| inter-service | `service` | `banking-services` | service name | the hub's own services (the signer) |
+| scope client | `service` | `banking-scope` | client id (from its mTLS certificate) | the scope listener only |
 | refresh | _(opaque handle, not a JWT)_ | — | — | only the auth service |
 
 A [`VerifyPolicy`](src/jwks.rs) names the accepted issuer, the accepted **audience

@@ -16,12 +16,12 @@ use crate::{AuthError, Claims};
 /// matching verify policy. The hub keeps the two classes cryptographically apart
 /// at the verifier (distinct `aud` + `typ`), not by incidental downstream parsing:
 /// user-facing data services accept only [`Client`](TokenClass::Client) tokens; a
-/// genuinely inter-service surface accepts only [`Service`](TokenClass::Service).
+/// scope-client surface (the scope listener) accepts only [`Service`](TokenClass::Service).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TokenClass {
 	/// A client access token (`aud=banking-core`, `typ=access`) — the user data plane.
 	Client,
-	/// An inter-service token (`aud=banking-services`, `typ=service`).
+	/// A scope-listener client token (`aud=banking-scope`, `typ=service`) — not the hub's own `banking-services` bearer.
 	Service,
 }
 

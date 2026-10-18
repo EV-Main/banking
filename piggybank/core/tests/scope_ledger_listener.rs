@@ -126,10 +126,22 @@ async fn harness() -> Option<Harness> {
 /// The settings production would load: the fixture server identity, the fixture CA, and a
 /// grants file that knows `invest` and `panel` by their certificate fingerprints.
 fn settings(bind: SocketAddr, scope: &ScopeId) -> ScopeLedgerSettings {
+	settings_with(bind, scope, &[])
+}
+
+/// [`settings`] with `invest` carrying more fingerprints too (a certificate rotation in
+/// progress). `panel` holds a grant elsewhere, so it is a client that may mint yet has none in
+/// the harness's scope.
+fn settings_with(bind: SocketAddr, scope: &ScopeId, invest_also: &[&str]) -> ScopeLedgerSettings {
+	let invest_prints = std::iter::once(fixture("invest.sha256").trim().to_owned())
+		.chain(invest_also.iter().map(|name| fixture(name).trim().to_owned()))
+		.map(|print| format!("\"{print}\""))
+		.collect::<Vec<_>>()
+		.join(",");
 	let grants = format!(
-		r#"{{"clients":[{{"client_id":"invest","cert_sha256":["{}"]}},{{"client_id":"panel","cert_sha256":["{}"]}}],
-		    "grants":[{{"client_id":"invest","scope":"{scope}","label_prefix":"alloc:"}}]}}"#,
-		fixture("invest.sha256").trim(),
+		r#"{{"clients":[{{"client_id":"invest","cert_sha256":[{invest_prints}]}},{{"client_id":"panel","cert_sha256":["{}"]}}],
+		    "grants":[{{"client_id":"invest","scope":"{scope}","label_prefix":"alloc:"}},
+		              {{"client_id":"panel","scope":"elsewhere","label_prefix":"panel:"}}]}}"#,
 		fixture("panel.sha256").trim()
 	);
 	let (clients, grants) = ScopeLedgerSettings::parse_grants(&grants).expect("the test grants are valid");
@@ -297,15 +309,22 @@ async fn no_certificate_or_one_from_another_ca_fails_the_handshake() {
 		)
 	})
 	.await;
-	// A refused handshake surfaces as a transport failure, never as an answer of the service
-	// or of either layer (those are UNAUTHENTICATED / PERMISSION_DENIED / OK).
-	for (outcome, why) in [(anonymous, "no client certificate"), (foreign, "a certificate from another CA")] {
-		let status = outcome.expect_err(why);
-		assert!(
-			!matches!(status.code(), Code::Ok | Code::Unauthenticated | Code::PermissionDenied | Code::NotFound),
-			"{why}: the request must not have crossed the handshake: {status:?}"
-		);
-	}
+	assert_handshake_refused(&anonymous.expect_err("no client certificate"), "CertificateRequired", "no client certificate");
+	assert_handshake_refused(&foreign.expect_err("another CA"), "UnknownCA", "a certificate from another CA");
+}
+
+/// A refused handshake surfaces as a transport failure (code UNKNOWN, "transport error"),
+/// never as an answer of the service or of either layer (those are UNAUTHENTICATED /
+/// PERMISSION_DENIED / OK), and the cause is the TLS alert the server sent: `alert` names it,
+/// so a listener that fails for some other reason does not pass for one that refused the
+/// certificate.
+fn assert_handshake_refused(status: &Status, alert: &str, why: &str) {
+	assert_eq!(
+		(status.code(), status.message()),
+		(Code::Unknown, "transport error"),
+		"{why}: must not have crossed the handshake: {status:?}"
+	);
+	assert!(format!("{status:?}").contains(alert), "{why}: expected the TLS alert {alert}, got {status:?}");
 }
 
 #[tokio::test]
@@ -317,11 +336,13 @@ async fn production_serve_mounts_the_hubs_authorizer() {
 		issuer: "https://auth.banking.test".into(),
 		client_audience: "banking-core".into(),
 		service_audience: "banking-services".into(),
+		scope_audience: "banking-scope".into(),
 		access_ttl_secs: 900,
 		refresh_ttl_secs: 3600,
 		max_session_secs: 7200,
 		idle_timeout_secs: 0,
 		service_ttl_secs: 300,
+		scope_token_ttl_secs: 300,
 		signing: None,
 		issuance_token: None,
 	};
@@ -640,7 +661,7 @@ const TEST_JWK_X: &str = "Z6BCmq9-_wo9d7co5CDW84Wn0sAC3BA0XWK2AOstpV4";
 
 /// Production's `serve` over a REAL signing auth task with the given service TTL, run for the
 /// length of `client`.
-async fn with_real_auth<T, F, Fut>(h: &Harness, service_ttl_secs: u64, client: F) -> T
+async fn with_real_auth<T, F, Fut>(h: &Harness, scope_token_ttl_secs: u64, client: F) -> T
 where
 	F: FnOnce(u16) -> Fut,
 	Fut: Future<Output = T>, {
@@ -648,11 +669,13 @@ where
 		issuer: "https://auth.banking.test".into(),
 		client_audience: "banking-core".into(),
 		service_audience: "banking-services".into(),
+		scope_audience: "banking-scope".into(),
 		access_ttl_secs: 900,
 		refresh_ttl_secs: 3600,
 		max_session_secs: 7200,
 		idle_timeout_secs: 0,
-		service_ttl_secs,
+		service_ttl_secs: 300,
+		scope_token_ttl_secs,
 		signing: Some(SigningConfig {
 			signing_key_pem: TEST_PEM.into(),
 			kid: "test-kid".into(),
@@ -747,8 +770,7 @@ async fn mint_needs_a_known_certificate_and_no_bearer_substitutes_for_it() {
 		assert_eq!((status.code(), status.message()), (Code::Unauthenticated, "client certificate is not a known client"));
 	}
 	// No certificate at all never crosses the handshake, whatever bearer rides along.
-	let status = no_cert.expect_err("no client certificate");
-	assert!(!matches!(status.code(), Code::Ok | Code::Unauthenticated | Code::PermissionDenied), "{status:?}");
+	assert_handshake_refused(&no_cert.expect_err("no client certificate"), "CertificateRequired", "no certificate on the mint");
 }
 
 #[tokio::test]
@@ -799,17 +821,59 @@ async fn grpc_web_never_reaches_the_mint_either() {
 	);
 }
 
+fn scope_protos() -> Vec<(String, String)> {
+	let dir = format!("{}/../../contracts/proto/scope/v1", env!("CARGO_MANIFEST_DIR"));
+	std::fs::read_dir(&dir)
+		.unwrap_or_else(|err| panic!("{dir}: {err}"))
+		.map(|entry| {
+			let path = entry.unwrap().path();
+			(path.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&path).unwrap())
+		})
+		.collect()
+}
+
+/// The service name on a `service Name {` line, however it is indented or spaced
+/// (`service Name{` too); `None` for anything else, comments included.
+fn service_name(line: &str) -> Option<&str> {
+	let rest = line.trim_start().strip_prefix("service")?;
+	// `servicefoo` is not a declaration; the keyword is followed by whitespace.
+	let rest = rest.strip_prefix(char::is_whitespace)?;
+	let name = rest.trim_start().split(|c: char| c.is_whitespace() || c == '{').next()?;
+	(!name.is_empty()).then_some(name)
+}
+
 /// Every `service` the scope.v1 protos declare, read from the files so a service added later
 /// is covered without anyone remembering this test.
 fn declared_services() -> Vec<String> {
-	let dir = format!("{}/../../contracts/proto/scope/v1", env!("CARGO_MANIFEST_DIR"));
-	let mut services = Vec::new();
-	for entry in std::fs::read_dir(&dir).unwrap_or_else(|err| panic!("{dir}: {err}")) {
-		let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
-		services.extend(text.lines().filter_map(|line| line.strip_prefix("service ")?.split_whitespace().next().map(str::to_owned)));
-	}
+	let mut services: Vec<String> = scope_protos()
+		.iter()
+		.flat_map(|(_, text)| text.lines().filter_map(service_name).map(str::to_owned).collect::<Vec<_>>())
+		.collect();
 	services.sort();
 	services
+}
+
+#[test]
+fn the_service_scan_reads_declarations_however_they_are_spaced() {
+	assert_eq!(service_name("service Foo {"), Some("Foo"));
+	assert_eq!(service_name("service Foo{"), Some("Foo"));
+	assert_eq!(service_name("\t  service   Foo  {"), Some("Foo"));
+	assert_eq!(service_name("// service Foo {"), None);
+	assert_eq!(service_name("servicefoo {"), None);
+	assert_eq!(service_name("  rpc Pull(PullRequest) returns (PullResponse);"), None);
+}
+
+// The mint file carries exactly one RPC and it is the mint: whatever else is added to this
+// service would also be served with no token.
+#[test]
+fn the_service_outside_the_token_layer_declares_exactly_one_rpc_the_mint() {
+	let protos = scope_protos();
+	let (_, text) = protos.iter().find(|(name, _)| name == "service_auth.proto").expect("service_auth.proto");
+	let rpcs: Vec<&str> = text.lines().map(str::trim_start).filter(|line| line.starts_with("rpc ")).collect();
+	assert_eq!(rpcs.len(), 1, "{rpcs:?}");
+	assert!(rpcs[0].starts_with("rpc MintServiceToken("), "{rpcs:?}");
+	let services: Vec<&str> = text.lines().filter_map(service_name).collect();
+	assert_eq!(services, ["ScopeAuthService"], "no other service shares the file");
 }
 
 // The guard that the token layer cannot be dropped from a service by accident: with a known
@@ -837,4 +901,122 @@ async fn the_mint_is_the_only_service_outside_the_token_layer() {
 		let expected = if service == "ScopeAuthService" { "12" } else { "16" };
 		assert_eq!(status.as_deref(), Some(expected), "{service} without a bearer");
 	}
+}
+
+// The listener serves the scope services and nothing else: the hub's health probe and
+// server reflection live on the other listeners and must not be reachable here (reflection
+// would list every method to any certificate holder).
+#[tokio::test]
+async fn health_and_reflection_are_not_served_on_this_listener() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let answers = with_server(addr.port(), server, || async {
+		let mut answers = Vec::new();
+		for path in [
+			"/grpc.health.v1.Health/Check",
+			"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+			"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+		] {
+			let response = raw_call(addr.port(), path, "application/grpc").await;
+			answers.push((path, grpc_status(&response).map(str::to_owned)));
+		}
+		answers
+	})
+	.await;
+	for (path, status) in answers {
+		assert_eq!(status.as_deref(), Some("12"), "{path} must be UNIMPLEMENTED here");
+	}
+}
+
+// A certificate rotation lists two fingerprints for one client: either certificate is that
+// client, so a token minted over one is the same `sub` as over the other.
+#[tokio::test]
+async fn two_fingerprints_of_one_client_mint_the_same_subject() {
+	let Some(h) = harness().await else { return };
+	let scope = h.scope.clone();
+	let second = Some(("stranger.pem", "stranger.key"));
+	let mut minted = Vec::new();
+	for (via, also) in [(INVEST, "stranger.sha256"), (second, "stranger.sha256")] {
+		let addr = ephemeral().await;
+		let listener = ScopeLedgerListener::new(settings_with(addr, &h.scope, &[also]), h.deps.clone());
+		let server =
+			move |stop: CancellationToken| Box::pin(scope_ledger::serve_with(listener, StubAuthenticator, StubMinter, stop.cancelled_owned())) as std::pin::Pin<Box<dyn Future<Output = _>>>;
+		let (token, on_the_other) = with_server(addr.port(), server, || async {
+			let token = mint(addr.port(), via, None).await.expect("both certificates are the client");
+			// The token minted over one certificate is accepted on the other's connection.
+			let other = if via == INVEST { second } else { INVEST };
+			(token.token.clone(), get_balances(addr.port(), other, Some(&token.token), &scope).await)
+		})
+		.await;
+		on_the_other.expect("the same client, so the same sub");
+		minted.push(token);
+	}
+	assert_eq!(minted, ["service:invest", "service:invest"]);
+}
+
+// The rate limit is per client, not per certificate: a second fingerprint is not a second
+// allowance.
+#[tokio::test]
+async fn minting_again_inside_the_interval_is_resource_exhausted_whatever_the_certificate() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let listener = ScopeLedgerListener::new(settings_with(addr, &h.scope, &["stranger.sha256"]), h.deps.clone());
+	let server =
+		move |stop: CancellationToken| Box::pin(scope_ledger::serve_with(listener, StubAuthenticator, StubMinter, stop.cancelled_owned())) as std::pin::Pin<Box<dyn Future<Output = _>>>;
+	let (first, again, other_cert, panel) = with_server(addr.port(), server, || async {
+		(
+			mint(addr.port(), INVEST, None).await,
+			mint(addr.port(), INVEST, None).await,
+			mint(addr.port(), Some(("stranger.pem", "stranger.key")), None).await,
+			mint(addr.port(), PANEL, None).await,
+		)
+	})
+	.await;
+	first.expect("the first mint is served");
+	for refused in [again, other_cert] {
+		let status = refused.expect_err("a second mint inside the interval");
+		assert_eq!(status.code(), Code::ResourceExhausted);
+		assert!(status.message().contains("reuse the token until expires_at"), "{}", status.message());
+	}
+	panel.expect("another client has its own allowance");
+}
+
+// A certificate the CA signed and the directory knows, but whose client holds no grant, gets
+// no token. (`panel` holds one elsewhere, which is why it can mint in the other tests.)
+#[tokio::test]
+async fn a_client_with_no_grants_at_all_gets_no_token() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let grants = format!(
+		r#"{{"clients":[{{"client_id":"invest","cert_sha256":["{}"]}},{{"client_id":"panel","cert_sha256":["{}"]}}],
+		    "grants":[{{"client_id":"invest","scope":"{}","label_prefix":"alloc:"}}]}}"#,
+		fixture("invest.sha256").trim(),
+		fixture("panel.sha256").trim(),
+		h.scope
+	);
+	let (clients, grants) = ScopeLedgerSettings::parse_grants(&grants).expect("valid");
+	let mut config = settings(addr, &h.scope);
+	config.clients = clients;
+	config.grants = grants;
+	let listener = ScopeLedgerListener::new(config, h.deps.clone());
+	let server =
+		move |stop: CancellationToken| Box::pin(scope_ledger::serve_with(listener, StubAuthenticator, StubMinter, stop.cancelled_owned())) as std::pin::Pin<Box<dyn Future<Output = _>>>;
+	let status = with_server(addr.port(), server, || async { mint(addr.port(), PANEL, None).await })
+		.await
+		.expect_err("panel holds no grant");
+	assert_eq!((status.code(), status.message()), (Code::PermissionDenied, "not_granted"));
+}
+
+// A certificate from a CA nothing here trusts, even one that names itself `invest`, never
+// completes the handshake, so there is nothing to mint for.
+#[tokio::test]
+async fn a_foreign_ca_certificate_named_invest_mints_nothing() {
+	let Some(h) = harness().await else { return };
+	let addr = ephemeral().await;
+	let server = serve_stub(&h, addr).await;
+	let status = with_server(addr.port(), server, || async { mint(addr.port(), Some(("foreign.pem", "foreign.key")), None).await })
+		.await
+		.expect_err("the foreign certificate must not be accepted");
+	assert_handshake_refused(&status, "UnknownCA", "a certificate from another CA, CN=invest");
 }

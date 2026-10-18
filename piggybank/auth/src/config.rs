@@ -30,8 +30,13 @@ pub struct AuthConfig {
 	pub issuer: String,
 	/// Audience for client access tokens (the hub data plane).
 	pub client_audience: String,
-	/// Audience for inter-service tokens.
+	/// Audience of the hub's own inter-service bearer (the hub → signer token, minted offline
+	/// by `examples/mint_service_token`). The hub never mints one in-process.
 	pub service_audience: String,
+	/// Audience of the tokens the scope listener issues to its mTLS clients. Distinct from
+	/// [`service_audience`](Self::service_audience) on purpose: the signer accepts
+	/// `banking-services` tokens, so a scope client's token must never carry it.
+	pub scope_audience: String,
 	/// Access-token TTL (seconds). Short by design (5–15 min).
 	pub access_ttl_secs: u64,
 	/// Refresh-token TTL (seconds) — the sliding window reset on each rotation.
@@ -42,8 +47,10 @@ pub struct AuthConfig {
 	/// Idle/inactivity timeout (seconds): a family is rejected once `now - last_seen`
 	/// exceeds it. `0` disables the idle check (the absolute cap still applies).
 	pub idle_timeout_secs: u64,
-	/// Service-token TTL (seconds).
+	/// TTL (seconds) of the hub's own service bearer. Only the offline example reads it.
 	pub service_ttl_secs: u64,
+	/// TTL (seconds) of the tokens the scope listener issues; [`SCOPE_TOKEN_TTL_BOUNDS`].
+	pub scope_token_ttl_secs: u64,
 	/// Signing/verification key material. `None` ⇒ auth disabled (dev/CI).
 	pub signing: Option<SigningConfig>,
 	/// Shared bearer the cabinet BFF presents on `IssueUserToken` (the concierge→banking
@@ -66,11 +73,13 @@ impl AuthConfig {
 			issuer: env::var("AUTH_ISSUER").unwrap_or_else(|_| "https://auth.banking.ev".to_string()),
 			client_audience: env::var("AUTH_CLIENT_AUDIENCE").unwrap_or_else(|_| "banking-core".to_string()),
 			service_audience: env::var("AUTH_SERVICE_AUDIENCE").unwrap_or_else(|_| "banking-services".to_string()),
+			scope_audience: env::var("AUTH_SCOPE_AUDIENCE").unwrap_or_else(|_| "banking-scope".to_string()),
 			access_ttl_secs: parse_secs("AUTH_ACCESS_TTL_SECS", 900)?,
 			refresh_ttl_secs: parse_secs("AUTH_REFRESH_TTL_SECS", 2_592_000)?,
 			max_session_secs: parse_secs("AUTH_MAX_SESSION_SECS", 7_776_000)?,
 			idle_timeout_secs: parse_secs("AUTH_IDLE_TIMEOUT_SECS", 0)?,
 			service_ttl_secs: parse_secs("AUTH_SERVICE_TTL_SECS", 300)?,
+			scope_token_ttl_secs: scope_token_ttl(env::var("AUTH_SCOPE_TOKEN_TTL_SECS").ok().as_deref())?,
 			signing,
 			issuance_token,
 		};
@@ -85,7 +94,16 @@ impl AuthConfig {
 	pub fn assert_plane(&self) -> color_eyre::Result<()> {
 		assert_plane("AUTH_ISSUER", &self.issuer)?;
 		assert_plane("AUTH_CLIENT_AUDIENCE", &self.client_audience)?;
-		assert_plane("AUTH_SERVICE_AUDIENCE", &self.service_audience)
+		assert_plane("AUTH_SERVICE_AUDIENCE", &self.service_audience)?;
+		assert_plane("AUTH_SCOPE_AUDIENCE", &self.scope_audience)?;
+		// The three audiences are three trust domains: a scope client's token must not verify
+		// as the hub's bearer (the signer) nor as a user's access token, whatever the env says.
+		ensure!(
+			self.scope_audience != self.service_audience && self.scope_audience != self.client_audience,
+			"AUTH_SCOPE_AUDIENCE {:?} must differ from AUTH_SERVICE_AUDIENCE and AUTH_CLIENT_AUDIENCE",
+			self.scope_audience
+		);
+		Ok(())
 	}
 }
 
@@ -178,6 +196,29 @@ impl std::fmt::Debug for IssuanceToken {
 	}
 }
 
+/// Bounds, in seconds, of `AUTH_SCOPE_TOKEN_TTL_SECS`: long enough that a client is not
+/// minting every few seconds, short enough that a leaked token is not a standing credential.
+pub const SCOPE_TOKEN_TTL_BOUNDS: std::ops::RangeInclusive<u64> = 30..=900;
+
+/// `AUTH_SCOPE_TOKEN_TTL_SECS`: unset or empty is 300; anything else must be an integer
+/// inside [`SCOPE_TOKEN_TTL_BOUNDS`], so a typo (`0`, `3000000`) stops the boot instead of
+/// minting tokens that are dead on arrival or live for weeks.
+fn scope_token_ttl(raw: Option<&str>) -> color_eyre::Result<u64> {
+	let Some(raw) = raw.filter(|v| !v.is_empty()) else {
+		return Ok(300);
+	};
+	let ttl: u64 = raw
+		.parse()
+		.with_context(|| format!("AUTH_SCOPE_TOKEN_TTL_SECS must be an integer number of seconds, got {raw:?}"))?;
+	ensure!(
+		SCOPE_TOKEN_TTL_BOUNDS.contains(&ttl),
+		"AUTH_SCOPE_TOKEN_TTL_SECS must be within {}..={} seconds, got {ttl}",
+		SCOPE_TOKEN_TTL_BOUNDS.start(),
+		SCOPE_TOKEN_TTL_BOUNDS.end()
+	);
+	Ok(ttl)
+}
+
 fn parse_secs(key: &str, default: u64) -> color_eyre::Result<u64> {
 	match env::var(key) {
 		Ok(v) if !v.is_empty() => v.parse().with_context(|| format!("{key} must be a positive integer (seconds)")),
@@ -224,11 +265,13 @@ mod tests {
 			issuer: issuer.into(),
 			client_audience: client_audience.into(),
 			service_audience: service_audience.into(),
+			scope_audience: "banking-scope".into(),
 			access_ttl_secs: 900,
 			refresh_ttl_secs: 2_592_000,
 			max_session_secs: 7_776_000,
 			idle_timeout_secs: 0,
 			service_ttl_secs: 300,
+			scope_token_ttl_secs: 300,
 			signing: None,
 			issuance_token: None,
 		}
@@ -259,6 +302,28 @@ mod tests {
 			issuing("https://auth.banking.ev", "banking-core", "concierge-services").assert_plane().is_err(),
 			"a concierge service audience must be refused"
 		);
+	}
+
+	#[test]
+	fn the_scope_audience_carries_the_plane_and_differs_from_the_other_two() {
+		let with = |scope: &str| AuthConfig {
+			scope_audience: scope.into(),
+			..issuing("https://auth.banking.ev", "banking-core", "banking-services")
+		};
+		with("banking-scope").assert_plane().expect("the default");
+		assert!(with("concierge-scope").assert_plane().is_err(), "a concierge scope audience must be refused");
+		assert!(with("banking-services").assert_plane().is_err(), "the signer's audience is not a scope client's");
+		assert!(with("banking-core").assert_plane().is_err(), "nor is the user data plane's");
+	}
+
+	#[test]
+	fn the_scope_token_ttl_is_bounded_and_defaults_to_300() {
+		assert_eq!(scope_token_ttl(None).unwrap(), 300);
+		assert_eq!(scope_token_ttl(Some("")).unwrap(), 300);
+		assert_eq!((scope_token_ttl(Some("30")).unwrap(), scope_token_ttl(Some("900")).unwrap()), (30, 900));
+		for refused in ["0", "29", "901", "3000000", "18446744073709551615", "18446744073709551616", "-1", "5m", " 300"] {
+			assert!(scope_token_ttl(Some(refused)).is_err(), "{refused:?} must stop the boot");
+		}
 	}
 
 	#[test]
