@@ -315,7 +315,7 @@ async fn screened(h: &Harness, user: UserId, amount: &str, key: Option<&str>, pr
 		destination(network),
 		usdt(amount),
 		key,
-		&Screening { profile, audit },
+		&Screening { profile, audit, hold_secs: 0 },
 	)
 	.await
 }
@@ -410,6 +410,120 @@ async fn the_audit_context_is_recorded_and_an_unknown_origin_gets_the_host_profi
 	// A host origin is judged on the host profile: 1001 USDT is over its per-operation ceiling.
 	assert_eq!(limits.profile_for("https://sa.evinvest.ltd").per_op, usdt("1000"));
 	assert_eq!(limits.profile_for("https://evinvest.ltd.evil.example").max_per_hour, Some(6));
+}
+
+/// A screened request to `to` with a given hold, on the profile that never limits these amounts.
+async fn screened_to(h: &Harness, user: UserId, amount: &str, to: &WalletAddress, hold_secs: u64) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	let profile = small_profile("1000", "100000", None);
+	let audit = RequestAudit::default();
+	withdrawal_app::request_withdrawal_screened(
+		&withdrawal_ports(h, &StubCustody),
+		&admission(h, KycGate::ENFORCED),
+		user,
+		to.network(),
+		to.clone(),
+		usdt(amount),
+		None,
+		&Screening {
+			profile: &profile,
+			audit: &audit,
+			hold_secs,
+		},
+	)
+	.await
+}
+
+async fn dispatch_now(h: &Harness, id: WithdrawalId) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	withdrawal_app::dispatch_withdrawal(h.withdrawals.as_ref(), &StubCustody, &policy(h), KycGate::ENFORCED, &h.notify, id).await
+}
+
+/// Move a destination's release (and its withdrawals') into the past, as the clock would.
+async fn release_now(h: &Harness, user: UserId) {
+	sqlx::query("UPDATE withdrawal_addresses SET release_at = now() - interval '1 second' WHERE user_id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	sqlx::query("UPDATE withdrawals SET release_at = now() - interval '1 second' WHERE user_id = $1 AND release_at IS NOT NULL")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+}
+
+#[tokio::test]
+async fn a_first_seen_address_is_held_queued_until_its_release() {
+	let Some(h) = harness().await else { return };
+	let _sweep = GLOBAL_SWEEP.lock().await;
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "500").await;
+	let to = destination(network);
+
+	// The rail is liquid, yet the first withdrawal to a new address waits.
+	let first = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(first.state(), WithdrawalState::Queued, "held, not dispatched");
+	let release: bool = sqlx::query_scalar("SELECT release_at > now() + interval '59 minutes' FROM withdrawals WHERE id = $1")
+		.bind(first.id().raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert!(release, "release_at is recorded about an hour out");
+
+	// A second one to the same still-held address waits as well.
+	let second = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(second.state(), WithdrawalState::Queued);
+
+	// Neither the sweep nor the operator RPC sends anything before the release.
+	let dispatcher = Dispatcher::new(
+		h.pool.clone(),
+		h.withdrawals.clone(),
+		h.ledger.clone(),
+		Arc::new(StubCustody),
+		h.notify.clone(),
+		KycGate::ENFORCED,
+	);
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(
+		h.withdrawals.find_by_id(first.id()).await.unwrap().unwrap().state(),
+		WithdrawalState::Queued,
+		"the sweep skips a held row"
+	);
+	let refused = dispatch_now(&h, first.id()).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+
+	// The user may still cancel a held withdrawal.
+	let cancelled = withdrawal_app::cancel_withdrawal(h.withdrawals.as_ref(), &h.notify, second.id(), user).await.unwrap();
+	assert_eq!(cancelled.state(), WithdrawalState::Cancelled);
+
+	// After the release the same row dispatches.
+	release_now(&h, user).await;
+	dispatcher.sweep().await.unwrap();
+	assert_eq!(h.withdrawals.find_by_id(first.id()).await.unwrap().unwrap().state(), WithdrawalState::Processing);
+
+	// A released address is no longer new: the next withdrawal goes straight out.
+	let third = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(third.state(), WithdrawalState::Processing, "a released destination dispatches at once");
+}
+
+#[tokio::test]
+async fn no_hold_configured_dispatches_at_once_and_still_remembers_the_address() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "200").await;
+	let to = destination(network);
+	let first = screened_to(&h, user, "50", &to, 0).await.unwrap();
+	assert_eq!(first.state(), WithdrawalState::Processing);
+	let known: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(known, 1);
+	// Turning the hold on later does not hold a destination that was already released.
+	let again = screened_to(&h, user, "50", &to, 3600).await.unwrap();
+	assert_eq!(again.state(), WithdrawalState::Processing);
 }
 
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this

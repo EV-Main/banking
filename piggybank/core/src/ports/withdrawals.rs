@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use domain::{
 	architecture::{Reader, Repository},
 	error::DomainError,
-	money::{Network, TxRef, Usdt},
+	money::{Network, TxRef, Usdt, WalletAddress},
 	users::UserId,
 	withdrawals::{Withdrawal, WithdrawalId, WithdrawalSource},
 };
@@ -37,6 +37,12 @@ pub trait WithdrawalRepository: Repository<Aggregate = Withdrawal> + Reader<Aggr
 	/// profile's velocity limits over the user's recent withdrawals, and the audit columns.
 	/// `Replayed` carries the first withdrawal under `key` and records nothing.
 	async fn open_screened(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard, key: Option<&str>, screening: &Screening<'_>) -> Result<Opened, DomainError>;
+
+	/// Where `address` stands in the user's address book, read before the claim lock to decide
+	/// whether the withdrawal may dispatch at once. [`open_screened`](Self::open_screened) asks
+	/// again under the lock and refuses to record a dispatched withdrawal the answer has since
+	/// turned into a held one.
+	async fn address_hold(&self, user: UserId, network: Network, address: &WalletAddress) -> Result<AddressHold, DomainError>;
 
 	/// The user's withdrawal recorded under `key`, if any.
 	async fn find_by_key(&self, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError>;
@@ -75,8 +81,22 @@ pub trait WithdrawalRepository: Repository<Aggregate = Withdrawal> + Reader<Aggr
 /// What [`WithdrawalRepository::open_screened`] did.
 #[derive(Debug)]
 pub enum Opened {
-	Recorded,
+	/// Recorded. `new_address` is true when this request put the destination into the book.
+	Recorded {
+		new_address: bool,
+	},
 	Replayed(Withdrawal),
+}
+
+/// A destination's standing in the user's address book.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressHold {
+	/// Never withdrawn to: seen for the first time by this request.
+	New,
+	/// In the book, but its release time is still ahead.
+	Held,
+	/// In the book and released: money may go there at once.
+	Released,
 }
 
 /// The velocity limits one request is judged against: the per-operation ceiling, the ceiling
@@ -133,6 +153,8 @@ impl LimitProfile {
 pub struct Screening<'a> {
 	pub profile: &'a LimitProfile,
 	pub audit: &'a RequestAudit,
+	/// Seconds a first-seen destination is held; 0 = no hold.
+	pub hold_secs: u64,
 }
 
 /// A lightweight cross-user row for the operator withdrawal queue: a withdrawal

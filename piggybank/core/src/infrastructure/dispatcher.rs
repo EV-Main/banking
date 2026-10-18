@@ -109,7 +109,7 @@ impl Dispatcher {
 				return Ok(0);
 			}
 		};
-		let queued: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM withdrawals WHERE state = 'queued' ORDER BY created_at")
+		let queued: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM withdrawals WHERE state = 'queued' AND (release_at IS NULL OR release_at <= now()) ORDER BY created_at")
 			.fetch_all(&self.pool)
 			.await?;
 		let mut dispatched = 0usize;

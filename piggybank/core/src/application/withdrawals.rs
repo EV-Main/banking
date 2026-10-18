@@ -41,7 +41,7 @@ use crate::{
 		Custody, OutflowPolicy, WithdrawalRepository,
 		ledger::{ClaimCovers, Ledger},
 		outflow::PayoutStanding,
-		withdrawals::{Opened, Screening},
+		withdrawals::{AddressHold, Opened, Screening},
 	},
 };
 
@@ -171,6 +171,13 @@ pub async fn request_withdrawal_screened(
 	admit_user_withdrawal(gates, user, network).await?;
 	// The cheap half of the limits, before any lock; the sums are checked under the lock.
 	screening.profile.check_op(amount)?;
+	// A destination not yet released is accepted and left `Queued` (cancellable) — never
+	// dispatched at once, whatever the rail holds; the dispatcher waits for `release_at`.
+	let hold = match ports.withdrawals.address_hold(user, network, &address).await? {
+		AddressHold::Released => false,
+		AddressHold::Held => true,
+		AddressHold::New => screening.hold_secs > 0,
+	};
 	open_withdrawal(
 		ports,
 		WithdrawalId::new(),
@@ -178,7 +185,7 @@ pub async fn request_withdrawal_screened(
 		network,
 		address,
 		amount,
-		Opening::Screened { key, screening },
+		Opening::Screened { key, screening, hold },
 	)
 	.await
 }
@@ -341,14 +348,14 @@ enum Opening<'a> {
 	ImmediateKeyed(&'a str),
 	/// [`Opening::Immediate`] through the self-service screen: velocity limits and audit under
 	/// the claim's lock, with the key's replay when there is one.
-	Screened { key: Option<&'a str>, screening: &'a Screening<'a> },
+	Screened { key: Option<&'a str>, screening: &'a Screening<'a>, hold: bool },
 	/// Always left `Queued`.
 	Queued,
 }
 
 impl Opening<'_> {
 	fn dispatches_immediately(self) -> bool {
-		!matches!(self, Self::Queued)
+		!matches!(self, Self::Queued | Self::Screened { hold: true, .. })
 	}
 }
 
@@ -383,9 +390,9 @@ async fn open_withdrawal(
 		amount: amount.base_units(),
 		refusal: INSUFFICIENT_TO_WITHDRAW,
 	};
-	if let Opening::Screened { key, screening } = opening {
+	if let Opening::Screened { key, screening, .. } = opening {
 		return match ports.withdrawals.open_screened(&mut withdrawal, &guard, key, screening).await? {
-			Opened::Recorded => {
+			Opened::Recorded { .. } => {
 				ports.relay.notify_one();
 				Ok(withdrawal)
 			}

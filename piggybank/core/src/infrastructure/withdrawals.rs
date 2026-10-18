@@ -26,7 +26,7 @@ use crate::{
 		WithdrawalRepository,
 		audit::RequestAudit,
 		ledger::SpendGuard,
-		withdrawals::{Opened, QueuedWithdrawal, Screening, Usage},
+		withdrawals::{AddressHold, Opened, QueuedWithdrawal, Screening, Usage},
 	},
 };
 
@@ -35,6 +35,9 @@ const SELECT_BY_ID_FOR_UPDATE: &str = "SELECT id, source, user_id, payment_id, n
 const SELECT_BY_KEY: &str = "SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE user_id = $1 AND idempotency_key = $2";
 const SELECT_BY_USER: &str =
 	"SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE user_id = $1 AND source = 'user' ORDER BY created_at DESC";
+
+/// Why a queued withdrawal to a first-seen destination does not dispatch yet.
+pub const HELD_FOR_NEW_ADDRESS: &str = "the withdrawal is held until the new-address delay has passed";
 
 pub struct PgWithdrawals {
 	pool: PgPool,
@@ -104,6 +107,35 @@ fn source_of(id: Uuid, source: &str, user_id: Option<Uuid>, payment_id: Option<U
 		}),
 		_ => Err(DomainError::Repository(format!("withdrawal {id} has an inconsistent source"))),
 	}
+}
+
+/// Put the destination into the user's book if it is not there, under the claim lock.
+/// Returns `(new, held)`: whether this request added it, and whether its release time is still
+/// ahead (always for a new one when `hold_secs > 0`). Database time throughout — the release
+/// is compared with the dispatcher's clock, which is the same one.
+async fn enter_address_book(conn: &mut PgConnection, user: UserId, withdrawal: &Withdrawal, hold_secs: u64) -> Result<(bool, bool), DomainError> {
+	let inserted: Option<bool> = sqlx::query_scalar(
+		"INSERT INTO withdrawal_addresses (user_id, network, address, release_at) VALUES ($1, $2, $3, now() + make_interval(secs => $4)) \
+		 ON CONFLICT (user_id, network, address) DO NOTHING RETURNING release_at > now()",
+	)
+	.bind(user.raw())
+	.bind(withdrawal.network().as_str())
+	.bind(withdrawal.address().as_str())
+	.bind(hold_secs as f64)
+	.fetch_optional(&mut *conn)
+	.await
+	.map_err(repo_err)?;
+	if let Some(held) = inserted {
+		return Ok((true, held));
+	}
+	let held: bool = sqlx::query_scalar("SELECT release_at > now() FROM withdrawal_addresses WHERE user_id = $1 AND network = $2 AND address = $3")
+		.bind(user.raw())
+		.bind(withdrawal.network().as_str())
+		.bind(withdrawal.address().as_str())
+		.fetch_one(&mut *conn)
+		.await
+		.map_err(repo_err)?;
+	Ok((false, held))
 }
 
 /// The user's gross over the last 24 hours and the count over the last hour, failed and
@@ -256,10 +288,44 @@ impl WithdrawalRepository for PgWithdrawals {
 		// Under the claim lock, so two racing requests cannot both read the same headroom.
 		let usage = recent_usage(&mut tx, user).await?;
 		screening.profile.check(withdrawal.amount(), usage)?;
+		let (new_address, held) = enter_address_book(&mut tx, user, withdrawal, screening.hold_secs).await?;
+		if held && withdrawal.state() != WithdrawalState::Queued {
+			// The caller read the book before the lock and a twin request put the destination in
+			// since: a dispatched withdrawal cannot be taken back, so nothing is recorded.
+			return Err(DomainError::Precondition("this destination was just added to your address book; try again".into()));
+		}
 		insert_row(&mut tx, withdrawal, key, Some(screening.audit)).await?;
+		if held {
+			sqlx::query(
+				"UPDATE withdrawals w SET release_at = a.release_at FROM withdrawal_addresses a \
+				 WHERE w.id = $1 AND a.user_id = $2 AND a.network = $3 AND a.address = $4",
+			)
+			.bind(withdrawal.id().raw())
+			.bind(user.raw())
+			.bind(withdrawal.network().as_str())
+			.bind(withdrawal.address().as_str())
+			.execute(&mut *tx)
+			.await
+			.map_err(repo_err)?;
+		}
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
 		tx.commit().await.map_err(repo_err)?;
-		Ok(Opened::Recorded)
+		Ok(Opened::Recorded { new_address })
+	}
+
+	async fn address_hold(&self, user: UserId, network: Network, address: &WalletAddress) -> Result<AddressHold, DomainError> {
+		let row: Option<bool> = sqlx::query_scalar("SELECT release_at > now() FROM withdrawal_addresses WHERE user_id = $1 AND network = $2 AND address = $3")
+			.bind(user.raw())
+			.bind(network.as_str())
+			.bind(address.as_str())
+			.fetch_optional(&self.pool)
+			.await
+			.map_err(repo_err)?;
+		Ok(match row {
+			None => AddressHold::New,
+			Some(true) => AddressHold::Held,
+			Some(false) => AddressHold::Released,
+		})
 	}
 
 	async fn find_by_key(&self, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError> {
@@ -285,6 +351,16 @@ impl WithdrawalRepository for PgWithdrawals {
 				id: id.to_string(),
 			})?
 			.into_domain()?;
+		// The row lock is held, so the hold cannot move between this read and the transition.
+		// Every payout path funnels through here, which is why the operator RPC cannot skip it.
+		let held: bool = sqlx::query_scalar("SELECT COALESCE(release_at > now(), FALSE) FROM withdrawals WHERE id = $1")
+			.bind(id.raw())
+			.fetch_one(&mut *tx)
+			.await
+			.map_err(repo_err)?;
+		if held {
+			return Err(DomainError::Precondition(HELD_FOR_NEW_ADDRESS.into()));
+		}
 		withdrawal.dispatch()?;
 		update_row(&mut tx, &withdrawal).await?;
 		outbox::drain_to_outbox(&mut tx, &mut withdrawal, true).await?;
