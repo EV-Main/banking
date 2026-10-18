@@ -7,7 +7,7 @@
 
 use domain::{
 	money::{Network, Usdt, WalletAddress},
-	withdrawals::{Withdrawal, WithdrawalId},
+	withdrawals::Withdrawal,
 };
 use evbanking_contracts::banking::v1::{self as pb, wallet_service_server::WalletService};
 use tonic::{Request, Response, Status};
@@ -15,7 +15,7 @@ use tonic::{Request, Response, Status};
 use crate::{
 	AppState,
 	application::{wallet as wallet_app, withdrawals as withdrawal_app},
-	ports::deposits::DepositRecord,
+	ports::{deposits::DepositRecord, withdrawals::Screening},
 	services::support::{audit_of, caller_id, map_err, parse_withdrawal_id, rail_is_testnet, unfrozen_caller},
 };
 
@@ -104,7 +104,7 @@ impl WalletService for WalletSvc {
 	async fn request_withdrawal(&self, request: Request<pb::RequestWithdrawalRequest>) -> Result<Response<pb::Withdrawal>, Status> {
 		let user = unfrozen_caller(&self.state, &request).await?;
 		let req = request.into_inner();
-		audit_of(req.audit.as_ref()).log("request_withdrawal", user);
+		let audit = audit_of(req.audit.as_ref());
 		let network = Network::parse(&req.network).map_err(map_err)?;
 		let address = WalletAddress::parse(network, &req.address).map_err(map_err)?;
 		let amount = Usdt::parse_decimal(&req.amount).map_err(map_err)?;
@@ -119,13 +119,14 @@ impl WalletService for WalletSvc {
 			configured: &self.state.configured_networks,
 			kyc: self.state.kyc_gate,
 		};
+		let screening = Screening {
+			profile: self.state.withdrawal_limits.profile_for(&audit.origin),
+			audit: &audit,
+		};
 		// An empty key is a client that predates the field: the earlier behaviour, no dedupe.
-		let withdrawal = if req.idempotency_key.is_empty() {
-			withdrawal_app::request_withdrawal(&ports, &gates, WithdrawalId::new(), user, network, address, amount).await
-		} else {
-			withdrawal_app::request_withdrawal_keyed(&ports, &gates, user, network, address, amount, &req.idempotency_key).await
-		}
-		.map_err(map_err)?;
+		let withdrawal = withdrawal_app::request_withdrawal_screened(&ports, &gates, user, network, address, amount, Some(req.idempotency_key.as_str()), &screening)
+			.await
+			.map_err(map_err)?;
 		Ok(Response::new(withdrawal_to_proto(&withdrawal)))
 	}
 

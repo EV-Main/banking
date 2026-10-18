@@ -22,7 +22,12 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{claims::TxReads, outbox},
-	ports::{WithdrawalRepository, ledger::SpendGuard, withdrawals::QueuedWithdrawal},
+	ports::{
+		WithdrawalRepository,
+		audit::RequestAudit,
+		ledger::SpendGuard,
+		withdrawals::{Opened, QueuedWithdrawal, Screening, Usage},
+	},
 };
 
 const SELECT_BY_ID: &str = "SELECT id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref FROM withdrawals WHERE id = $1";
@@ -101,13 +106,34 @@ fn source_of(id: Uuid, source: &str, user_id: Option<Uuid>, payment_id: Option<U
 	}
 }
 
+/// The user's gross over the last 24 hours and the count over the last hour, failed and
+/// cancelled withdrawals excluded: their money came back, so they no longer weigh on the limit.
+async fn recent_usage(conn: &mut PgConnection, user: UserId) -> Result<Usage, DomainError> {
+	let (gross, count): (String, i64) = sqlx::query_as(
+		"SELECT COALESCE(SUM(amount::numeric), 0)::text, COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour') \
+		 FROM withdrawals WHERE user_id = $1 AND source = 'user' AND created_at > now() - interval '24 hours' AND state NOT IN ('failed', 'cancelled')",
+	)
+	.bind(user.raw())
+	.fetch_one(&mut *conn)
+	.await
+	.map_err(repo_err)?;
+	let gross = gross.parse::<u128>().map_err(|_| DomainError::Repository("malformed withdrawal sum".into()))?;
+	Ok(Usage {
+		gross_24h: Usdt::from_base_units(gross),
+		count_1h: u32::try_from(count).unwrap_or(u32::MAX),
+	})
+}
+
 fn repo_err(err: sqlx::Error) -> DomainError {
 	DomainError::Repository(err.to_string())
 }
 
-async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal, idempotency_key: Option<&str>) -> Result<(), DomainError> {
+async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal, idempotency_key: Option<&str>, audit: Option<&RequestAudit>) -> Result<(), DomainError> {
+	// Empty means "the caller said nothing", which the table keeps as NULL.
+	let audited = |value: fn(&RequestAudit) -> &String| audit.map(value).filter(|v| !v.is_empty());
 	sqlx::query(
-		"INSERT INTO withdrawals (id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref, idempotency_key) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+		"INSERT INTO withdrawals (id, source, user_id, payment_id, network, address, amount, fee, state, tx_ref, idempotency_key, origin, client_ip, user_agent, intent_id, stepup_method) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)",
 	)
 	.bind(withdrawal.id().raw())
 	.bind(withdrawal.source().column())
@@ -120,6 +146,11 @@ async fn insert_row(conn: &mut PgConnection, withdrawal: &Withdrawal, idempotenc
 	.bind(withdrawal.state().as_str())
 	.bind(withdrawal.tx_ref().map(TxRef::as_str))
 	.bind(idempotency_key)
+	.bind(audited(|a| &a.origin))
+	.bind(audited(|a| &a.client_ip))
+	.bind(audited(|a| &a.user_agent))
+	.bind(audited(|a| &a.intent_id))
+	.bind(audited(|a| &a.stepup_method))
 	.execute(&mut *conn)
 	.await
 	.map_err(repo_err)?;
@@ -177,7 +208,7 @@ impl WithdrawalRepository for PgWithdrawals {
 		// unified claim.
 		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
 		guard.check(&mut TxReads::new(&mut tx)).await?;
-		insert_row(&mut tx, withdrawal, None).await?;
+		insert_row(&mut tx, withdrawal, None, None).await?;
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
 		tx.commit().await.map_err(repo_err)?;
 		Ok(())
@@ -198,10 +229,37 @@ impl WithdrawalRepository for PgWithdrawals {
 			return row.into_domain().map(Some);
 		}
 		guard.check(&mut TxReads::new(&mut tx)).await?;
-		insert_row(&mut tx, withdrawal, Some(key)).await?;
+		insert_row(&mut tx, withdrawal, Some(key), None).await?;
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
 		tx.commit().await.map_err(repo_err)?;
 		Ok(None)
+	}
+
+	async fn open_screened(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard, key: Option<&str>, screening: &Screening<'_>) -> Result<Opened, DomainError> {
+		let WithdrawalSource::User(user) = withdrawal.source() else {
+			return Err(DomainError::Validation("only a user's withdrawal is screened".into()));
+		};
+		let mut tx = self.pool.begin().await.map_err(repo_err)?;
+		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
+		if let Some(key) = key {
+			let existing = sqlx::query_as::<_, WithdrawalRow>(SELECT_BY_KEY)
+				.bind(user.raw())
+				.bind(key)
+				.fetch_optional(&mut *tx)
+				.await
+				.map_err(repo_err)?;
+			if let Some(row) = existing {
+				return row.into_domain().map(Opened::Replayed);
+			}
+		}
+		guard.check(&mut TxReads::new(&mut tx)).await?;
+		// Under the claim lock, so two racing requests cannot both read the same headroom.
+		let usage = recent_usage(&mut tx, user).await?;
+		screening.profile.check(withdrawal.amount(), usage)?;
+		insert_row(&mut tx, withdrawal, key, Some(screening.audit)).await?;
+		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
+		tx.commit().await.map_err(repo_err)?;
+		Ok(Opened::Recorded)
 	}
 
 	async fn find_by_key(&self, user: UserId, key: &str) -> Result<Option<Withdrawal>, DomainError> {

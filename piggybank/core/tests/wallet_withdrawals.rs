@@ -22,10 +22,15 @@ use domain::{
 	withdrawals::{WithdrawalId, WithdrawalState},
 };
 use piggybank_core::{
-	application::{balance as balance_app, withdrawals as withdrawal_app},
+	application::{balance as balance_app, withdrawal_limits::WithdrawalLimits, withdrawals as withdrawal_app},
 	config::KycGate,
 	infrastructure::{custody::StubCustody, deposits::PgDeposits, dispatcher::Dispatcher, operations, outflow::PgOutflowPolicy, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals},
-	ports::{BroadcastRequest, Custody, CustodyError, DepositAddresses, OutflowPolicy, PayoutStanding, UserRepository, WithdrawalRepository, ledger::Ledger},
+	ports::{
+		BroadcastRequest, Custody, CustodyError, DepositAddresses, OutflowPolicy, PayoutStanding, UserRepository, WithdrawalRepository,
+		audit::RequestAudit,
+		ledger::Ledger,
+		withdrawals::{LimitProfile, Screening},
+	},
 };
 use sqlx::PgPool;
 use tokio::sync::Notify;
@@ -297,6 +302,114 @@ async fn racing_withdrawals_under_one_key_record_one() {
 	let (a, b) = tokio::join!(one, two);
 	assert_eq!(a.unwrap().id(), b.unwrap().id());
 	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+}
+
+/// One self-service request through the screen, as `WalletService.RequestWithdrawal` makes it.
+async fn screened(h: &Harness, user: UserId, amount: &str, key: Option<&str>, profile: &LimitProfile, audit: &RequestAudit) -> Result<domain::withdrawals::Withdrawal, DomainError> {
+	let network = Network::Bep20;
+	withdrawal_app::request_withdrawal_screened(
+		&withdrawal_ports(h, &StubCustody),
+		&admission(h, KycGate::ENFORCED),
+		user,
+		network,
+		destination(network),
+		usdt(amount),
+		key,
+		&Screening { profile, audit },
+	)
+	.await
+}
+
+fn small_profile(per_op: &str, per_24h: &str, max_per_hour: Option<u32>) -> LimitProfile {
+	LimitProfile {
+		per_op: usdt(per_op),
+		per_24h: usdt(per_24h),
+		max_per_hour,
+	}
+}
+
+#[tokio::test]
+async fn the_operation_and_daily_limits_refuse_and_a_failure_frees_the_headroom() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "150", None);
+	let audit = RequestAudit::default();
+
+	let over_op = screened(&h, user, "101", None, &profile, &audit).await;
+	assert!(matches!(over_op, Err(DomainError::Precondition(_))), "{over_op:?}");
+
+	let first = screened(&h, user, "100", None, &profile, &audit).await.unwrap();
+	let over_day = screened(&h, user, "60", None, &profile, &audit).await;
+	assert!(matches!(over_day, Err(DomainError::Precondition(_))), "{over_day:?}");
+	assert!(screened(&h, user, "50", None, &profile, &audit).await.is_ok(), "exactly the remaining headroom fits");
+
+	// A failed withdrawal returned its money, so it no longer weighs on the day. (It shipped at
+	// once on the liquid stub rail, so `fail` is the way back, not `cancel`.)
+	withdrawal_app::fail_withdrawal(h.withdrawals.as_ref(), &h.notify, first.id()).await.unwrap();
+	assert!(screened(&h, user, "100", None, &profile, &audit).await.is_ok());
+}
+
+#[tokio::test]
+async fn the_hourly_cap_counts_requests_not_amounts() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "1000", Some(2));
+	let audit = RequestAudit::default();
+	screened(&h, user, "20", None, &profile, &audit).await.unwrap();
+	screened(&h, user, "20", None, &profile, &audit).await.unwrap();
+	let third = screened(&h, user, "20", None, &profile, &audit).await;
+	assert!(matches!(third, Err(DomainError::Precondition(_))), "{third:?}");
+}
+
+#[tokio::test]
+async fn limits_are_kept_by_racing_requests_and_a_key_replay_outlives_them() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "500").await;
+	let profile = small_profile("100", "100", None);
+	let audit = RequestAudit::default();
+	// Two requests that each fit alone and not together: the claim lock lets exactly one in.
+	let (a, b) = tokio::join!(
+		screened(&h, user, "70", Some("race-a"), &profile, &audit),
+		screened(&h, user, "70", Some("race-b"), &profile, &audit)
+	);
+	assert_eq!([a.is_ok(), b.is_ok()].iter().filter(|ok| **ok).count(), 1, "{a:?} / {b:?}");
+	// The winner's key still answers with its withdrawal after the day is used up.
+	let winner = if a.is_ok() { "race-a" } else { "race-b" };
+	let replay = screened(&h, user, "70", Some(winner), &profile, &audit).await.unwrap();
+	assert_eq!(h.withdrawals.list_by_user(user).await.unwrap().len(), 1);
+	assert_eq!(replay.id(), h.withdrawals.list_by_user(user).await.unwrap()[0].id());
+}
+
+#[tokio::test]
+async fn the_audit_context_is_recorded_and_an_unknown_origin_gets_the_host_profile() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	deposit(&h, user, Network::Bep20, "50").await;
+	let audit = RequestAudit::new("https://evinvest.ltd", "203.0.113.9", "test-agent/1.0", "", "fresh_login");
+	let limits = WithdrawalLimits::default();
+	let recorded = screened(&h, user, "20", Some("audit-1"), limits.profile_for(&audit.origin), &audit).await.unwrap();
+	let row: (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) =
+		sqlx::query_as("SELECT origin, client_ip, user_agent, intent_id, stepup_method FROM withdrawals WHERE id = $1")
+			.bind(recorded.id().raw())
+			.fetch_one(&h.pool)
+			.await
+			.unwrap();
+	assert_eq!(
+		row,
+		(
+			Some("https://evinvest.ltd".into()),
+			Some("203.0.113.9".into()),
+			Some("test-agent/1.0".into()),
+			None,
+			Some("fresh_login".into())
+		)
+	);
+	// A host origin is judged on the host profile: 1001 USDT is over its per-operation ceiling.
+	assert_eq!(limits.profile_for("https://sa.evinvest.ltd").per_op, usdt("1000"));
+	assert_eq!(limits.profile_for("https://evinvest.ltd.evil.example").max_per_hour, Some(6));
 }
 
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this

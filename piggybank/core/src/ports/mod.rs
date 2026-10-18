@@ -31,6 +31,7 @@
 //! their payouts, the operations that wait on an approval, and concierge's approvals seam.
 
 pub mod allocations;
+pub mod audit;
 pub mod book;
 pub mod compartments;
 pub mod consilium;

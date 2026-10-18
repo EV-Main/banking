@@ -1,7 +1,7 @@
 //! Who asked for a money act, and from where — the BFF's reading of the request, carried on
 //! the wire as `banking.v1.AuditContext`. Recorded beside the act and never an authorization
 //! input, except that [`RequestAudit::origin`] picks a limit profile (see
-//! [`withdrawal_limits`](super::withdrawal_limits)), which can only ever tighten a limit.
+//! [`WithdrawalLimits`](crate::application::withdrawal_limits::WithdrawalLimits)), which can only ever tighten a limit.
 
 use domain::users::UserId;
 use tracing::info;
