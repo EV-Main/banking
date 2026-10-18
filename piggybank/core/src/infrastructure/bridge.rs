@@ -596,12 +596,18 @@ impl BridgeConsumer {
 			Kind::SessionsRevoked => {
 				// The revoke FLOOR only ratchets up — GREATEST guards against an out-of-order
 				// lower value (the sequence guard already orders, this is belt-and-suspenders).
-				sqlx::query("UPDATE users SET concierge_token_version = GREATEST(concierge_token_version, $2), last_lifecycle_sequence = $3, updated_at = now() WHERE auth_subject = $1")
-					.bind(subject)
-					.bind(event.token_version as i64)
-					.bind(sequence)
-					.execute(&mut *tx)
-					.await?;
+				// A raised floor is the one credential-change signal concierge emits (password
+				// reset, "sign out everywhere"): it starts the new-address cooling-off. A passkey
+				// added or removed with no revoke has no event at all, so it cannot start one.
+				sqlx::query(
+					"UPDATE users SET concierge_token_version = GREATEST(concierge_token_version, $2), last_lifecycle_sequence = $3, updated_at = now(), \
+					 credential_changed_at = CASE WHEN $2 > concierge_token_version THEN now() ELSE credential_changed_at END WHERE auth_subject = $1",
+				)
+				.bind(subject)
+				.bind(event.token_version as i64)
+				.bind(sequence)
+				.execute(&mut *tx)
+				.await?;
 			}
 			// Already refused at the top of this function, before any write. Repeated rather
 			// than made `unreachable!()`: this arm decides whether a freeze or a tier
@@ -648,7 +654,8 @@ async fn refresh_profile_snapshot(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>
 		return Ok(());
 	};
 	sqlx::query(
-		"UPDATE users SET email = $2, email_verified = $3, updated_at = now() \
+		"UPDATE users SET email = $2, email_verified = $3, updated_at = now(), \
+		 credential_changed_at = CASE WHEN email IS DISTINCT FROM $2 THEN now() ELSE credential_changed_at END \
 		 WHERE auth_subject = $1 AND (email IS DISTINCT FROM $2 OR email_verified IS DISTINCT FROM $3)",
 	)
 	.bind(subject)

@@ -139,6 +139,16 @@ async fn enter_address_book(conn: &mut PgConnection, user: UserId, withdrawal: &
 	Ok((false, held))
 }
 
+/// Whether the user's credentials changed within the last `secs` seconds, by database time.
+async fn in_cooloff(conn: &mut PgConnection, user: UserId, secs: u64) -> Result<bool, DomainError> {
+	sqlx::query_scalar("SELECT COALESCE(credential_changed_at > now() - make_interval(secs => $2), FALSE) FROM users WHERE id = $1")
+		.bind(user.raw())
+		.bind(secs as f64)
+		.fetch_one(&mut *conn)
+		.await
+		.map_err(repo_err)
+}
+
 /// The user's gross over the last 24 hours and the count over the last hour, failed and
 /// cancelled withdrawals excluded: their money came back, so they no longer weigh on the limit.
 async fn recent_usage(conn: &mut PgConnection, user: UserId) -> Result<Usage, DomainError> {
@@ -290,6 +300,12 @@ impl WithdrawalRepository for PgWithdrawals {
 		let usage = recent_usage(&mut tx, user).await?;
 		screening.profile.check(withdrawal.amount(), usage)?;
 		let (new_address, held) = enter_address_book(&mut tx, user, withdrawal, screening.hold_secs).await?;
+		if new_address && screening.cooloff_secs > 0 && in_cooloff(&mut tx, user, screening.cooloff_secs).await? {
+			// Dropping the transaction takes the address-book row back out with it.
+			return Err(DomainError::Precondition(
+				"withdrawals to a new address are paused for a while after your sign-in details changed; use an address you have withdrawn to before, or try again later".into(),
+			));
+		}
 		if held && withdrawal.state() != WithdrawalState::Queued {
 			// The caller read the book before the lock and a twin request put the destination in
 			// since: a dispatched withdrawal cannot be taken back, so nothing is recorded.

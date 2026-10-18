@@ -155,6 +155,8 @@ pub struct Screening<'a> {
 	pub audit: &'a RequestAudit,
 	/// Seconds a first-seen destination is held; 0 = no hold.
 	pub hold_secs: u64,
+	/// Seconds after a sign-in change during which a first-seen destination is refused; 0 = off.
+	pub cooloff_secs: u64,
 }
 
 /// A lightweight cross-user row for the operator withdrawal queue: a withdrawal

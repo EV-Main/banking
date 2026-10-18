@@ -754,6 +754,56 @@ async fn a_changed_address_arrives_on_the_next_lifecycle_event() {
 	.await;
 }
 
+async fn credential_changed(pool: &PgPool, subject: &str) -> bool {
+	sqlx::query_scalar("SELECT credential_changed_at IS NOT NULL FROM users WHERE auth_subject = $1")
+		.bind(subject)
+		.fetch_one(pool)
+		.await
+		.unwrap()
+}
+
+/// The new-address cooling-off clock starts on the two credential signals concierge gives: a
+/// changed address and a raised revoke floor. An ordinary event, and a floor that did not rise,
+/// start nothing. (A passkey or password change that revokes no session has no event, so it is
+/// the one change this cannot see.)
+#[tokio::test]
+async fn a_changed_address_or_a_raised_revoke_floor_marks_a_credential_change() {
+	let Some(pool) = pool().await else {
+		eprintln!("DATABASE_URL unset — skipping real-DB test");
+		return;
+	};
+	let (by_email, by_revoke) = (unique_subject(), unique_subject());
+	let with_email = |subject: &str, kind: Kind, sequence: u64, email: &str, token_version: u64| {
+		let mut e = event(subject, kind, sequence);
+		e.email = email.into();
+		e.token_version = token_version;
+		e
+	};
+	let before = |a: &str, b: &str| {
+		vec![
+			with_email(a, Kind::Created, 1, "same@example.com", 0),
+			with_email(a, Kind::KycChanged, 2, "same@example.com", 0),
+			with_email(b, Kind::Created, 1, "revoker@example.com", 0),
+			with_email(b, Kind::SessionsRevoked, 2, "revoker@example.com", 0),
+		]
+	};
+	let (a, b) = (by_email.clone(), by_revoke.clone());
+	drive(&pool, before(&a, &b), |pool| async move {
+		assert!(!credential_changed(&pool, &a).await, "a snapshot that did not change starts nothing");
+		assert!(!credential_changed(&pool, &b).await, "a revoke that did not raise the floor starts nothing");
+	})
+	.await;
+
+	let mut later = before(&by_email, &by_revoke);
+	later.push(with_email(&by_email, Kind::KycChanged, 3, "moved@example.com", 0));
+	later.push(with_email(&by_revoke, Kind::SessionsRevoked, 3, "revoker@example.com", 4));
+	drive(&pool, later, |pool| async move {
+		assert!(credential_changed(&pool, &by_email).await, "a changed address starts the clock");
+		assert!(credential_changed(&pool, &by_revoke).await, "a raised floor starts the clock");
+	})
+	.await;
+}
+
 /// The verification flag rides the same snapshot, and on a kind that has nothing to do with
 /// either — the refresh is kind-independent by construction, not a KYC_CHANGED special case.
 #[tokio::test]

@@ -123,6 +123,7 @@ impl WalletService for WalletSvc {
 			profile: self.state.withdrawal_limits.profile_for(&audit.origin),
 			audit: &audit,
 			hold_secs: self.state.withdrawal_limits.new_address_hold_secs,
+			cooloff_secs: self.state.withdrawal_limits.credential_cooloff_secs,
 		};
 		// An empty key is a client that predates the field: the earlier behaviour, no dedupe.
 		let withdrawal = withdrawal_app::request_withdrawal_screened(&ports, &gates, user, network, address, amount, Some(req.idempotency_key.as_str()), &screening)

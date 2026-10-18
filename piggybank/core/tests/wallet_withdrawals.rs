@@ -315,7 +315,12 @@ async fn screened(h: &Harness, user: UserId, amount: &str, key: Option<&str>, pr
 		destination(network),
 		usdt(amount),
 		key,
-		&Screening { profile, audit, hold_secs: 0 },
+		&Screening {
+			profile,
+			audit,
+			hold_secs: 0,
+			cooloff_secs: 0,
+		},
 	)
 	.await
 }
@@ -428,6 +433,7 @@ async fn screened_to(h: &Harness, user: UserId, amount: &str, to: &WalletAddress
 			profile: &profile,
 			audit: &audit,
 			hold_secs,
+			cooloff_secs: 0,
 		},
 	)
 	.await
@@ -558,6 +564,64 @@ async fn every_screened_withdrawal_tells_the_owner_and_a_new_address_says_so() {
 	assert!(body.contains(to.as_str()) && body.contains("50 USDT"), "{body}");
 	let second = notices(released.id()).await;
 	assert_eq!(second[0].1, "withdrawal_requested", "a known address is an ordinary withdrawal notice");
+}
+
+#[tokio::test]
+async fn a_new_address_is_refused_after_a_sign_in_change_but_a_known_one_is_not() {
+	let Some(h) = harness().await else { return };
+	let user = active_user(&h).await;
+	let network = Network::Bep20;
+	deposit(&h, user, network, "500").await;
+	let known = destination(network);
+	let fresh = WalletAddress::parse(network, "0x1111111111111111111111111111111111111111").unwrap();
+	let profile = small_profile("1000", "100000", None);
+	let audit = RequestAudit::default();
+	let ask = |to: WalletAddress, cooloff_secs: u64| {
+		let (h, profile, audit) = (&h, &profile, &audit);
+		async move {
+			withdrawal_app::request_withdrawal_screened(
+				&withdrawal_ports(h, &StubCustody),
+				&admission(h, KycGate::ENFORCED),
+				user,
+				network,
+				to,
+				usdt("50"),
+				None,
+				&Screening {
+					profile,
+					audit,
+					hold_secs: 0,
+					cooloff_secs,
+				},
+			)
+			.await
+		}
+	};
+	ask(known.clone(), 21_600).await.unwrap();
+
+	sqlx::query("UPDATE users SET credential_changed_at = now() WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let refused = ask(fresh.clone(), 21_600).await;
+	assert!(matches!(refused, Err(DomainError::Precondition(_))), "{refused:?}");
+	let in_book: i64 = sqlx::query_scalar("SELECT count(*) FROM withdrawal_addresses WHERE user_id = $1")
+		.bind(user.raw())
+		.fetch_one(&h.pool)
+		.await
+		.unwrap();
+	assert_eq!(in_book, 1, "the refused destination did not enter the book");
+	assert!(ask(known.clone(), 21_600).await.is_ok(), "an address used before still works");
+	assert!(ask(fresh.clone(), 0).await.is_ok(), "switched off, the cooling-off asks nothing");
+
+	sqlx::query("UPDATE users SET credential_changed_at = now() - interval '7 hours' WHERE id = $1")
+		.bind(user.raw())
+		.execute(&h.pool)
+		.await
+		.unwrap();
+	let other = WalletAddress::parse(network, "0x2222222222222222222222222222222222222222").unwrap();
+	assert!(ask(other, 21_600).await.is_ok(), "after the window a new address is accepted again");
 }
 
 /// Polygon is the second EVM rail but carries USDT at 6-dp (unlike BEP20's 18-dp), so this
@@ -904,6 +968,9 @@ async fn an_onchain_liquid_treasury_dispatches_immediately() {
 #[tokio::test]
 async fn a_treasury_read_failure_queues_and_never_rejects() {
 	let Some(h) = harness().await else { return };
+	// It leaves a row queued on a shared rail and cancels it afterwards, so a sibling's sweep
+	// must not run in between.
+	let _sweep = GLOBAL_SWEEP.lock().await;
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	let claim = LedgerAccountKey::UserClaim(user);
