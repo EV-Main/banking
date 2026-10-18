@@ -9,13 +9,13 @@ import { Button, Skeleton, Spinner } from "@evinvest/uikit";
 import { fetchMandateRequest, fetchMandates, grantMandate } from "@/entities/mandate/api/mandate-client";
 import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
 import { grantStillHolds, isRequestAlive, isShowable, isUnavailable, keepsKeyAfter, replacedBy } from "@/entities/mandate/lib/request";
+import { ActionCancel } from "@/features/wallet-action";
 import type { Mandate, MandateRequest } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
 import { cn } from "@/shared/lib/cn";
 import { MandateTerms } from "@/views/wallet/ui/mandate-terms";
 import { WALLET_CARD } from "@/views/wallet/ui/wallet-chrome";
 
-const COLUMN = "mx-4 sm:mx-8 lg:max-w-140";
 
 /**
  * Granting a service the permission it asked for. The URL names only the request; the
@@ -81,14 +81,28 @@ export function GrantMandate({ requestId, urlScope, onGranted }: { requestId: st
     }
   };
 
-  if (unavailable) return <p className={cn(COLUMN, "mt-8 text-sm text-ink-soft")}>{t("walletAction.requestUnavailable", "This request is not available. It may have expired — ask the service to send a new one.")}</p>;
+  if (unavailable) {
+    return (
+      <div className="mt-8 flex flex-col items-start gap-4">
+        <p className="text-sm text-ink-soft">{t("walletAction.requestUnavailable", "This request is not available. It may have expired — ask the service to send a new one.")}</p>
+        <ActionCancel />
+      </div>
+    );
+  }
   if (request === null) {
-    return error !== null ? <p role="alert" className={cn(COLUMN, "mt-8 text-sm text-accent-error")}>{errorMessage(error, t)}</p> : <Skeleton className={cn(COLUMN, "h-64")} />;
+    return error !== null ? (
+      <div className="mt-8 flex flex-col items-start gap-4">
+        <p role="alert" className="text-sm text-accent-error">{errorMessage(error, t)}</p>
+        <ActionCancel />
+      </div>
+    ) : (
+      <Skeleton className="h-64" />
+    );
   }
 
   const service = request.client_display_name || request.client_id;
   return (
-    <section className={cn(WALLET_CARD, COLUMN, "flex flex-col gap-4 p-4.5 lg:p-6")}>
+    <section className={cn(WALLET_CARD, "flex flex-col gap-4 p-4.5 lg:p-6")}>
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-ink-soft">{t("walletAction.mandateService", "Service in {scope}", { scope: request.scope })}</span>
         <h1 className="text-lg font-semibold text-ink">{t("walletAction.grantTitle", "Allow {service} to use your funds?", { service })}</h1>
@@ -109,9 +123,12 @@ export function GrantMandate({ requestId, urlScope, onGranted }: { requestId: st
           {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
         </p>
       ) : null}
-      <Button type="button" onClick={() => void grant()} disabled={submitting}>
-        {submitting ? <Spinner aria-hidden /> : t("walletAction.grantNow", "Allow")}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => void grant()} disabled={submitting} className="flex-1">
+          {submitting ? <Spinner aria-hidden /> : t("walletAction.grantNow", "Allow")}
+        </Button>
+        <ActionCancel disabled={submitting} />
+      </div>
     </section>
   );
 }

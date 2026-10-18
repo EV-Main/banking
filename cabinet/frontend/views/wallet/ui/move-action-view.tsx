@@ -8,7 +8,7 @@ import { Button, Field, FieldLabel, Input, Skeleton, Spinner } from "@evinvest/u
 
 import { fetchCompartments, moveFunds } from "@/entities/compartment/api/compartment-client";
 import { amountProblem, type Direction, MAIN, movableScopes, moveEnds, preselectedScope } from "@/entities/compartment/lib/move";
-import { ActionFrame, useWalletAction } from "@/features/wallet-action";
+import { ActionCancel, ActionFrame, useWalletAction } from "@/features/wallet-action";
 import type { Compartment } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
 import { cn } from "@/shared/lib/cn";
@@ -24,7 +24,7 @@ import { WALLET_CARD } from "@/views/wallet/ui/wallet-chrome";
 export function MoveActionView() {
   const { params, finished, finish } = useWalletAction();
   return (
-    <ActionFrame params={params} finished={finished} finish={finish}>
+    <ActionFrame inlineCancel params={params} finished={finished} finish={finish}>
       <MoveFunds urlScope={params.scope} onMoved={(id) => finish("done", id)} />
     </ActionFrame>
   );
@@ -62,7 +62,7 @@ function MoveFunds({ urlScope, onMoved }: { urlScope: string | null; onMoved: (i
   }, []);
 
   if (compartments === null) {
-    return error !== null ? <Message text={errorMessage(error, t)} /> : <Skeleton className="mx-4 h-56 sm:mx-8 lg:max-w-140" />;
+    return error !== null ? <Message text={errorMessage(error, t)} /> : <Skeleton className="h-56" />;
   }
   const scopes = movableScopes(compartments);
   if (scopes.length === 0) return <Message text={t("walletAction.moveNoScopes", "There is no balance to move to or from yet.")} />;
@@ -92,7 +92,7 @@ function MoveFunds({ urlScope, onMoved }: { urlScope: string | null; onMoved: (i
   };
 
   return (
-    <div className={cn(WALLET_CARD, "mx-4 flex flex-col gap-4 p-4.5 sm:mx-8 lg:max-w-140 lg:p-6")}>
+    <div className={cn(WALLET_CARD, "flex flex-col gap-4 p-4.5 lg:p-6")}>
       <h1 className="text-lg font-semibold text-ink">{t("walletAction.moveTitle", "Move funds")}</h1>
       <div role="group" aria-label={t("walletAction.moveScope", "Balance")} className="flex flex-col gap-2">
         {scopes.map((c) => (
@@ -117,13 +117,19 @@ function MoveFunds({ urlScope, onMoved }: { urlScope: string | null; onMoved: (i
       {amount !== "" && problem === "exceeds" ? <p role="alert" className="text-sm text-accent-error">{t("walletAction.moveExceeds", "That is more than is available.")}</p> : null}
       {failed ? <p role="alert" className="text-sm text-accent-error">{t("walletAction.moveFailed", "The move did not go through. Nothing was moved — you can try again.")}</p> : null}
       {error !== null ? <p role="alert" className="text-sm text-accent-error">{errorMessage(error, t)}</p> : null}
-      <Button type="button" onClick={submit} disabled={submitting || problem !== null}>
-        {submitting ? <Spinner aria-hidden /> : t("walletAction.moveNow", "Move")}
-      </Button>
+      <div className="flex gap-2">
+        <Button type="button" onClick={submit} disabled={submitting || problem !== null} className="flex-1">
+          {submitting ? <Spinner aria-hidden /> : t("walletAction.moveNow", "Move")}
+        </Button>
+        <ActionCancel disabled={submitting} />
+      </div>
     </div>
   );
 }
 
 function Message({ text }: { text: string }) {
-  return <p className="mx-4 mt-8 text-sm text-ink-soft sm:mx-8">{text}</p>;
+  return <div className="mt-8 flex flex-col items-start gap-4">
+      <p className="text-sm text-ink-soft">{text}</p>
+      <ActionCancel />
+    </div>;
 }
