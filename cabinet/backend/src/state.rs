@@ -33,7 +33,7 @@ pub struct AppState {
 	/// Not a session and not a credential: the only state here that no cookie reaches.
 	pub approvals: Arc<AttemptLimiter>,
 	/// The per-user bound on the money mutations, keyed by the verified subject — see
-	/// [`crate::routes::money_mutation`].
+	/// [`crate::routes::money_gate`].
 	pub money_mutations: Arc<AttemptLimiter>,
 	/// Local verifier for the shared concierge access JWT (JWKS-cached — no
 	/// per-request round trip).

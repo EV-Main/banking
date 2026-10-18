@@ -27,7 +27,7 @@ use serde_json::Value;
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{editable, parse_body, require_money_token, required, verify_csrf},
+	routes::{editable, first_party_request, money_gate, money_token_for, parse_json_body, require_money_token, required},
 	state::AppState,
 };
 
@@ -138,15 +138,13 @@ pub async fn get_policy(State(st): State<AppState>, jar: CookieJar, Query(q): Qu
 
 // ── the caller's orders ──────────────────────────────────────────────────────
 
-/// `POST /api/book/orders` — CSRF-checked: place an order. Body
+/// `POST /api/book/orders` — first-party, CSRF-checked and rate-limited: place an order. Body
 /// `{service, side, kind, tif?, price?, size, client_order_id}`. `tif` may be left out on
 /// a market order (always `ioc`); a limit order has to say. `price` is empty for a market
 /// order. Idempotent by `client_order_id`: a retry returns the order the id already names.
 pub async fn place_order(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Order>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_json_body(&headers, &body)?;
 	let Some(service) = required(&v, "service") else {
 		return Err(ApiError::BadRequest("service is required".into()));
 	};
@@ -160,7 +158,7 @@ pub async fn place_order(State(st): State<AppState>, jar: CookieJar, headers: He
 	let (Some(size), Some(client_order_id)) = (required(&v, "size"), required(&v, "client_order_id")) else {
 		return Err(ApiError::BadRequest("size and client_order_id are required".into()));
 	};
-	let token = require_money_token(&st, &jar).await?;
+	let token = money_token_for(&st, &claims).await?;
 	let req = bk::PlaceOrderRequest {
 		service,
 		side,
@@ -173,13 +171,13 @@ pub async fn place_order(State(st): State<AppState>, jar: CookieJar, headers: He
 	Ok(Json(st.grpc.place_order(&token, req).await?.into()))
 }
 
-/// `POST /api/book/orders/cancel` — CSRF-checked: take the caller's resting order off the
+/// `POST /api/book/orders/cancel` — first-party and CSRF-checked: take the caller's resting order off the
 /// book; its unspent escrow is released. Never refused for a frozen caller.
 pub async fn cancel_order(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Order>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let Some(order_id) = required(&parse_body(&body), "order_id") else {
+	// Taking an order off the book only releases the caller's own escrow, so it is first-party
+	// and CSRF-checked but kept out of the per-user budget.
+	first_party_request(&st, &jar, &headers)?;
+	let Some(order_id) = required(&parse_json_body(&headers, &body)?, "order_id") else {
 		return Err(ApiError::BadRequest("order_id is required".into()));
 	};
 	let token = require_money_token(&st, &jar).await?;
@@ -696,12 +694,12 @@ mod book_route_tests {
 	}
 
 	/// A request carrying the signed session cookie (and, for mutations, the matching
-	/// CSRF pair) — what the browser actually sends.
+	/// CSRF pair and the page's own `Origin`) — what the browser actually sends.
 	fn signed(method: &str, uri: &str, body: Option<&str>, csrf: bool) -> Request<Body> {
 		let cookie = format!("ev_access={}; ev_csrf={CSRF}", access_token());
 		let mut builder = Request::builder().method(method).uri(uri).header(header::COOKIE, cookie);
 		if csrf {
-			builder = builder.header("x-ev-csrf", CSRF);
+			builder = builder.header("x-ev-csrf", CSRF).header(header::ORIGIN, WS_ORIGIN);
 		}
 		match body {
 			Some(json) => builder.header(header::CONTENT_TYPE, "application/json").body(Body::from(json.to_owned())),
@@ -805,13 +803,15 @@ mod book_route_tests {
 			("POST", "/api/book/orders/cancel", Some(r#"{"order_id":"x"}"#)),
 			("POST", "/api/admin/allocations/book", Some(r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":25}"#)),
 		] {
-			// The CSRF pair is present so the mutations get past the double-submit gate (which
-			// runs first) and are refused on the SESSION, the thing this test is about.
+			// The CSRF pair and the page's origin are present so the mutations get past the
+			// first-party gate (which runs first) and are refused on the SESSION, the thing
+			// this test is about.
 			let mut builder = Request::builder()
 				.method(method)
 				.uri(uri)
 				.header(header::COOKIE, format!("ev_csrf={CSRF}"))
-				.header("x-ev-csrf", CSRF);
+				.header("x-ev-csrf", CSRF)
+				.header(header::ORIGIN, WS_ORIGIN);
 			if body.is_some() {
 				builder = builder.header(header::CONTENT_TYPE, "application/json");
 			}
@@ -850,6 +850,36 @@ mod book_route_tests {
 			"a CSRF failure must be decided before the hub is called"
 		);
 		assert_eq!(seen.money_tokens_issued, 0, "a request refused on CSRF must not cost a money-token mint");
+	}
+
+	/// Trading moves money, so the order routes are first-party like the wallet's: a valid
+	/// session and a correct CSRF pair from any other page — a scope's host, a look-alike, a
+	/// fetch the browser marks cross-site — are refused before the hub or a mint is reached.
+	#[tokio::test]
+	async fn the_order_routes_are_first_party_only() {
+		let hub = Hub::new("investor");
+		let seen = hub.seen.clone();
+		let app = app(serve(hub).await);
+
+		for (uri, body) in [("/api/book/orders", PLACE), ("/api/book/orders/cancel", r#"{"order_id":"x"}"#)] {
+			for origin in ["https://sa.evinvest.ltd", "https://evil.test", "https://cabinet.test.evil.test", "https://cabinet.test/", "null"] {
+				let mut request = signed("POST", uri, Some(body), true);
+				request.headers_mut().insert(header::ORIGIN, origin.parse().unwrap());
+				let (status, _) = send(&app, request).await;
+				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} from {origin}");
+			}
+			let mut cross_site = signed("POST", uri, Some(body), true);
+			cross_site.headers_mut().insert("sec-fetch-site", "cross-site".parse().unwrap());
+			let (status, _) = send(&app, cross_site).await;
+			assert_eq!(status, StatusCode::FORBIDDEN, "{uri} marked cross-site");
+
+			let mut plain = signed("POST", uri, Some(body), true);
+			plain.headers_mut().insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+			let (status, _) = send(&app, plain).await;
+			assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{uri} as text/plain");
+		}
+		let seen = seen.lock().unwrap();
+		assert!(seen.place.is_none() && seen.cancel.is_none(), "a refused order must never reach the hub");
 	}
 
 	/// The socket's half of CSRF: a handshake from any origin but the cabinet's is refused,

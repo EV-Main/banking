@@ -8,6 +8,7 @@ import { Button, Skeleton, Spinner } from "@evinvest/uikit";
 
 import { fetchPayableInvoice, payInvoice } from "@/entities/invoice/api/invoice-client";
 import { invoicePhase, POLL_EVERY_MS, shouldPoll } from "@/entities/invoice/lib/state";
+import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
 import { ActionFrame, useWalletAction } from "@/features/wallet-action";
 import type { PayableInvoice } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
@@ -148,7 +149,7 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
           ) : null}
           {error !== null ? (
             <p role="alert" className="text-sm text-accent-error">
-              {errorMessage(error, t)}
+              {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
             </p>
           ) : null}
           <Button type="button" onClick={pay} disabled={submitting || toBaseUnits(sources.find((s) => s.key === chosen)?.available) < amount}>

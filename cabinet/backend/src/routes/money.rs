@@ -14,7 +14,7 @@ use crate::{
 	error::ApiError,
 	routes::{
 		approval::{Peer, audit_fields},
-		first_party_origin, money_gate, money_mutation, money_token_for, parse_body, require_fresh_login, require_money_token, required, verify_csrf,
+		first_party_request, money_gate, money_token_for, parse_json_body, require_fresh_login, require_money_token, required,
 	},
 	state::AppState,
 	util::now_secs,
@@ -123,8 +123,9 @@ pub async fn get_compartment(State(st): State<AppState>, jar: CookieJar, Query(q
 /// between `main` and one scope. The hub checks the policy, the balance and that one side is
 /// `main`; the BFF only refuses a body that names nothing.
 pub async fn move_funds(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::CompartmentMove>, ApiError> {
-	let token = money_mutation(&st, &jar, &headers).await?;
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_json_body(&headers, &body)?;
+	let token = money_token_for(&st, &claims).await?;
 	let (Some(from_scope), Some(to_scope), Some(amount), Some(idempotency_key)) =
 		(required(&v, "from_scope"), required(&v, "to_scope"), required(&v, "amount"), required(&v, "idempotency_key"))
 	else {
@@ -155,16 +156,21 @@ pub async fn list_operations(State(st): State<AppState>, jar: CookieJar, Query(q
 }
 
 /// `POST /api/wallet/withdrawals` — first-party, CSRF-checked and rate-limited: open a
-/// withdrawal of free balance. Money leaving the platform, so a scope's host never asks.
+/// withdrawal of free balance. Money leaving the platform, so a scope's host never asks, and
+/// the session must have signed in interactively within [`STEP_UP_MAX_AGE_SECS`] — a stolen
+/// cookie alone cannot empty the wallet. The `idempotency_key` is mandatory: a withdrawal is
+/// the one act a retried POST must never repeat.
 pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
-	let token = money_mutation(&st, &jar, &headers).await?;
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	require_fresh_login(&claims, now_secs().max(0) as u64)?;
+	let v = parse_json_body(&headers, &body)?;
 	let (Some(network), Some(address), Some(amount)) = (required(&v, "network"), required(&v, "address"), required(&v, "amount")) else {
 		return Err(ApiError::BadRequest("network, address and amount are required".into()));
 	};
-	// Minted by the withdraw page on load; absent from older clients, which keep the earlier
-	// no-dedupe behaviour at the hub.
-	let idempotency_key = required(&v, "idempotency_key").unwrap_or_default();
+	let Some(idempotency_key) = required(&v, "idempotency_key") else {
+		return Err(ApiError::BadRequest("idempotency_key is required".into()));
+	};
+	let token = money_token_for(&st, &claims).await?;
 	let req = bk::RequestWithdrawalRequest {
 		network,
 		address,
@@ -177,11 +183,9 @@ pub async fn request_withdrawal(State(st): State<AppState>, jar: CookieJar, head
 /// `POST /api/wallet/withdrawals/cancel` — first-party and CSRF-checked: cancel a still-queued
 /// withdrawal. Not rate-limited: it only ever returns money to the caller.
 pub async fn cancel_withdrawal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Withdrawal>, ApiError> {
-	if !first_party_origin(&st, &headers) || !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
+	first_party_request(&st, &jar, &headers)?;
 	let token = require_money_token(&st, &jar).await?;
-	let Some(withdrawal_id) = required(&parse_body(&body), "withdrawal_id") else {
+	let Some(withdrawal_id) = required(&parse_json_body(&headers, &body)?, "withdrawal_id") else {
 		return Err(ApiError::BadRequest("withdrawal_id is required".into()));
 	};
 	Ok(Json(st.grpc.cancel_withdrawal(&token, &withdrawal_id).await?.into()))
@@ -201,17 +205,44 @@ pub async fn get_payable_invoice(State(st): State<AppState>, jar: CookieJar, Pat
 /// `main` or from the caller's compartment in its scope. The body names only the source and the
 /// click's idempotency key; what is paid, how much and to whom is the server's invoice.
 pub async fn pay_invoice(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::PayableInvoice>, ApiError> {
-	let token = money_mutation(&st, &jar, &headers).await?;
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_json_body(&headers, &body)?;
+	let token = money_token_for(&st, &claims).await?;
 	let (Some(pay_from), Some(idempotency_key)) = (required(&v, "pay_from"), required(&v, "idempotency_key")) else {
 		return Err(ApiError::BadRequest("pay_from and idempotency_key are required".into()));
 	};
+	// The amount is the server's invoice, never the page's: the step-up threshold is judged
+	// on what the hub says will be debited.
+	let invoice = st.grpc.get_payable_invoice(&token, &id).await.map_err(|s| ApiError::read(s, "invoice unavailable"))?;
+	if exceeds(&invoice.amount, st.config.pay_stepup_threshold_usdt.as_str()) {
+		require_fresh_login(&claims, now_secs().max(0) as u64)?;
+	}
 	let req = bk::PayInvoiceRequest {
 		invoice_id: id,
 		pay_from,
 		idempotency_key,
 	};
 	Ok(Json(st.grpc.pay_invoice(&token, req).await?.into()))
+}
+
+/// Whether the decimal USDT string `amount` is strictly above `threshold`. Compared as
+/// digits, never through a float: both are money strings. An amount that is not a plain
+/// non-negative decimal counts as above — the step-up is the safe side of a value this layer
+/// cannot read.
+fn exceeds(amount: &str, threshold: &str) -> bool {
+	fn split(raw: &str) -> Option<(&str, &str)> {
+		let (whole, frac) = raw.split_once('.').unwrap_or((raw, ""));
+		let digits = |part: &str| part.bytes().all(|b| b.is_ascii_digit());
+		(!whole.is_empty() && digits(whole) && digits(frac)).then_some((whole, frac))
+	}
+	let (Some((aw, af)), Some((tw, tf))) = (split(amount), split(threshold)) else {
+		return true;
+	};
+	let (aw, tw) = (aw.trim_start_matches('0'), tw.trim_start_matches('0'));
+	let (af, tf) = (af.trim_end_matches('0'), tf.trim_end_matches('0'));
+	let width = af.len().max(tf.len());
+	let pad = |frac: &str| format!("{frac:0<width$}");
+	(aw.len(), aw, pad(af)) > (tw.len(), tw, pad(tf))
 }
 
 // ── mandates (what a scope's service may draw on the caller's compartment) ──────
@@ -238,8 +269,8 @@ pub async fn get_mandate_request(State(st): State<AppState>, jar: CookieJar, Pat
 pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Mandate>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
 	require_fresh_login(&claims, now_secs().max(0) as u64)?;
+	let v = parse_json_body(&headers, &body)?;
 	let token = money_token_for(&st, &claims).await?;
-	let v = parse_body(&body);
 	let (Some(request_id), Some(idempotency_key)) = (required(&v, "request_id"), required(&v, "idempotency_key")) else {
 		return Err(ApiError::BadRequest("request_id and idempotency_key are required".into()));
 	};
@@ -250,7 +281,8 @@ pub async fn grant_mandate(State(st): State<AppState>, jar: CookieJar, headers: 
 /// `POST /api/wallet/mandates/{id}/revoke` — first-party, CSRF-checked and rate-limited: end a mandate; the
 /// service's holds on the caller's compartment are released.
 pub async fn revoke_mandate(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::Mandate>, ApiError> {
-	let token = money_mutation(&st, &jar, &headers).await?;
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let token = money_token_for(&st, &claims).await?;
 	Ok(Json(st.grpc.revoke_mandate(&token, &id).await?.into()))
 }
 
@@ -287,7 +319,7 @@ pub async fn answer_payment_confirmation(
 	body: Bytes,
 ) -> Result<Json<dto::PaymentConfirmation>, ApiError> {
 	let claims = money_gate(&st, &jar, &headers).await?;
-	let v = parse_body(&body);
+	let v = parse_json_body(&headers, &body)?;
 	let decision = match required(&v, "decision").as_deref() {
 		Some("approve") => bk::ConsentDecision::Approve,
 		Some("reject") => bk::ConsentDecision::Reject,
@@ -400,13 +432,11 @@ pub async fn list_redemptions(State(st): State<AppState>, jar: CookieJar) -> Res
 	Ok(Json(list.into()))
 }
 
-/// `POST /api/funds/subscribe` — CSRF-checked: subscribe free balance into a fund (mint units).
+/// `POST /api/funds/subscribe` — first-party, CSRF-checked and rate-limited: subscribe free balance into a fund (mint units).
 pub async fn subscribe(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Subscription>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_json_body(&headers, &body)?;
+	let token = money_token_for(&st, &claims).await?;
 	let (Some(service), Some(amount)) = (required(&v, "service"), required(&v, "amount")) else {
 		return Err(ApiError::BadRequest("service and amount are required".into()));
 	};
@@ -414,13 +444,11 @@ pub async fn subscribe(State(st): State<AppState>, jar: CookieJar, headers: Head
 	Ok(Json(st.grpc.subscribe(&token, req).await?.into()))
 }
 
-/// `POST /api/funds/redeem` — CSRF-checked: redeem units back to cash (accept-and-queue).
+/// `POST /api/funds/redeem` — first-party, CSRF-checked and rate-limited: redeem units back to cash (accept-and-queue).
 pub async fn redeem(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Redemption>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_money_token(&st, &jar).await?;
-	let v = parse_body(&body);
+	let claims = money_gate(&st, &jar, &headers).await?;
+	let v = parse_json_body(&headers, &body)?;
+	let token = money_token_for(&st, &claims).await?;
 	let (Some(service), Some(units)) = (required(&v, "service"), required(&v, "units")) else {
 		return Err(ApiError::BadRequest("service and units are required".into()));
 	};
@@ -428,13 +456,13 @@ pub async fn redeem(State(st): State<AppState>, jar: CookieJar, headers: HeaderM
 	Ok(Json(st.grpc.redeem(&token, req).await?.into()))
 }
 
-/// `POST /api/funds/redemptions/cancel` — CSRF-checked: cancel a still-queued redemption.
+/// `POST /api/funds/redemptions/cancel` — first-party and CSRF-checked: cancel a still-queued redemption.
 pub async fn cancel_redemption(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Redemption>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
+	// Cancelling only returns money to the caller, so it is gated like the other first-party
+	// mutations but, like `cancel_withdrawal`, kept out of the per-user budget.
+	first_party_request(&st, &jar, &headers)?;
 	let token = require_money_token(&st, &jar).await?;
-	let Some(redemption_id) = required(&parse_body(&body), "redemption_id") else {
+	let Some(redemption_id) = required(&parse_json_body(&headers, &body)?, "redemption_id") else {
 		return Err(ApiError::BadRequest("redemption_id is required".into()));
 	};
 	Ok(Json(st.grpc.cancel_redemption(&token, &redemption_id).await?.into()))
@@ -492,6 +520,7 @@ mod wallet_gate_tests {
 		body::{Body, to_bytes},
 		http::{HeaderMap, Request, StatusCode, header},
 	};
+	use evbanking_contracts::banking::v1 as bk;
 	use evconcierge_auth::{TokenType, Verifier, VerifierConfig};
 	use evconcierge_contracts::concierge::v1::auth_service_server::AuthServiceServer;
 	use tokio::net::TcpListener;
@@ -499,6 +528,7 @@ mod wallet_gate_tests {
 	use tonic::transport::Server;
 	use tower::ServiceExt;
 
+	use super::exceeds;
 	use crate::{
 		config::AppConfig,
 		cookies::CookieNames,
@@ -510,6 +540,7 @@ mod wallet_gate_tests {
 		},
 		session::BankingTokens,
 		state::{AppState, Grpc},
+		util::now_secs,
 	};
 
 	const BLACK_HOLE: &str = "http://127.0.0.1:1";
@@ -518,13 +549,14 @@ mod wallet_gate_tests {
 	const SCOPE_HOSTS: &str = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
 	const CSRF: &str = "csrf-token";
 	const MANDATE: &str = r#"{"request_id":"4f0c2d1e-0000-4000-8000-0123456789ab","idempotency_key":"k-1"}"#;
+	const WITHDRAW: &str = r#"{"network":"bep20","address":"0xabc","amount":"1","idempotency_key":"k-1"}"#;
 	const MOVE: &str = r#"{"from_scope":"main","to_scope":"sa","amount":"1","idempotency_key":"k-1"}"#;
 
 	/// Every route that moves money or consents to it being drawn, with a body that passes
 	/// the BFF's own field checks.
 	const MONEY_MUTATIONS: [(&str, &str); 6] = [
 		("/api/wallet/compartments/move", MOVE),
-		("/api/wallet/withdrawals", r#"{"network":"bep20","address":"0xabc","amount":"1"}"#),
+		("/api/wallet/withdrawals", WITHDRAW),
 		("/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay", r#"{"pay_from":"main","idempotency_key":"k-1"}"#),
 		("/api/wallet/mandates", MANDATE),
 		("/api/wallet/mandates/4f0c2d1e-0000-4000-8000-0123456789ab/revoke", ""),
@@ -535,6 +567,8 @@ mod wallet_gate_tests {
 		ws_origin: Option<&'static str>,
 		cors: &'static str,
 		concierge: String,
+		/// The stub hub serving both the money plane and the banking token exchange.
+		hub: String,
 	}
 
 	impl Default for Env {
@@ -543,14 +577,15 @@ mod wallet_gate_tests {
 				ws_origin: Some(FIRST_PARTY),
 				cors: "",
 				concierge: BLACK_HOLE.into(),
+				hub: BLACK_HOLE.into(),
 			}
 		}
 	}
 
 	fn state(env: Env) -> AppState {
 		let mut vars = HashMap::from([
-			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE.to_string()),
-			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE.to_string()),
+			("PIGGYBANK_GRPC_ADDR", env.hub.clone()),
+			("BANKING_AUTH_GRPC_ADDR", env.hub.clone()),
 			("CONCIERGE_GRPC_ADDR", env.concierge.clone()),
 			("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
 			("AUTH_ISSUER", ISSUER.into()),
@@ -576,9 +611,160 @@ mod wallet_gate_tests {
 			approvals: Arc::new(AttemptLimiter::default()),
 			money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 			verifier,
-			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, &env.concierge, Some("test-issuance".into())).expect("build the lazy channels"),
+			grpc: Grpc::connect_lazy(&env.hub, &env.hub, &env.concierge, Some("test-issuance".into())).expect("build the lazy channels"),
 			config: Arc::new(config),
 		}
+	}
+
+	/// The money plane as the BFF reaches it, for the routes whose verdict depends on what the
+	/// hub says or on what reaches it: the banking token exchange, an invoice with a chosen
+	/// amount, and a withdrawal that is only recorded. Everything else is unimplemented, so a
+	/// route that strays past its gate onto another RPC fails loudly.
+	#[derive(Clone)]
+	struct StubHub {
+		invoice_amount: &'static str,
+		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
+		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
+	}
+
+	// `Status` is a large error type tonic mandates in handler signatures.
+	#[allow(clippy::result_large_err)]
+	fn unimplemented_rpc<T>() -> Result<tonic::Response<T>, tonic::Status> {
+		Err(tonic::Status::unimplemented("not part of this stub"))
+	}
+
+	#[tonic::async_trait]
+	impl bk::auth_service_server::AuthService for StubHub {
+		async fn issue_user_token(&self, _: tonic::Request<bk::IssueUserTokenRequest>) -> Result<tonic::Response<bk::TokenResponse>, tonic::Status> {
+			let now = now_secs();
+			Ok(tonic::Response::new(bk::TokenResponse {
+				access_token: "stub-money-token".into(),
+				access_expires_at: now + 900,
+				refresh_token: "stub-refresh".into(),
+				refresh_expires_at: now + 3600,
+				user: None,
+			}))
+		}
+
+		async fn refresh(&self, _: tonic::Request<bk::RefreshRequest>) -> Result<tonic::Response<bk::TokenResponse>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn logout(&self, _: tonic::Request<bk::LogoutRequest>) -> Result<tonic::Response<bk::LogoutResponse>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn list_sessions(&self, _: tonic::Request<bk::ListSessionsRequest>) -> Result<tonic::Response<bk::ListSessionsResponse>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn revoke_session(&self, _: tonic::Request<bk::RevokeSessionRequest>) -> Result<tonic::Response<bk::RevokeSessionResponse>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn jwks(&self, _: tonic::Request<bk::JwksRequest>) -> Result<tonic::Response<bk::JwksResponse>, tonic::Status> {
+			unimplemented_rpc()
+		}
+	}
+
+	#[tonic::async_trait]
+	impl bk::invoice_payment_service_server::InvoicePaymentService for StubHub {
+		async fn get_payable_invoice(&self, request: tonic::Request<bk::GetPayableInvoiceRequest>) -> Result<tonic::Response<bk::PayableInvoice>, tonic::Status> {
+			Ok(tonic::Response::new(bk::PayableInvoice {
+				invoice_id: request.into_inner().invoice_id,
+				amount: self.invoice_amount.into(),
+				state: "open".into(),
+				..Default::default()
+			}))
+		}
+
+		async fn pay_invoice(&self, request: tonic::Request<bk::PayInvoiceRequest>) -> Result<tonic::Response<bk::PayableInvoice>, tonic::Status> {
+			let request = request.into_inner();
+			let invoice_id = request.invoice_id.clone();
+			self.payments.lock().expect("the stub's lock").push(request);
+			Ok(tonic::Response::new(bk::PayableInvoice {
+				invoice_id,
+				amount: self.invoice_amount.into(),
+				state: "processing".into(),
+				..Default::default()
+			}))
+		}
+	}
+
+	#[tonic::async_trait]
+	impl bk::wallet_service_server::WalletService for StubHub {
+		async fn get_wallet(&self, _: tonic::Request<bk::GetWalletRequest>) -> Result<tonic::Response<bk::Wallet>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn get_deposit_address(&self, _: tonic::Request<bk::GetDepositAddressRequest>) -> Result<tonic::Response<bk::DepositAddress>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn request_withdrawal(&self, request: tonic::Request<bk::RequestWithdrawalRequest>) -> Result<tonic::Response<bk::Withdrawal>, tonic::Status> {
+			let request = request.into_inner();
+			let reply = bk::Withdrawal {
+				id: "w-1".into(),
+				network: request.network.clone(),
+				address: request.address.clone(),
+				amount: request.amount.clone(),
+				state: "queued".into(),
+				..Default::default()
+			};
+			self.withdrawals.lock().expect("the stub's lock").push(request);
+			Ok(tonic::Response::new(reply))
+		}
+
+		async fn cancel_withdrawal(&self, _: tonic::Request<bk::CancelWithdrawalRequest>) -> Result<tonic::Response<bk::Withdrawal>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn list_withdrawals(&self, _: tonic::Request<bk::ListWithdrawalsRequest>) -> Result<tonic::Response<bk::WithdrawalList>, tonic::Status> {
+			unimplemented_rpc()
+		}
+
+		async fn list_deposits(&self, _: tonic::Request<bk::ListDepositsRequest>) -> Result<tonic::Response<bk::DepositList>, tonic::Status> {
+			unimplemented_rpc()
+		}
+	}
+
+	struct Hub {
+		addr: SocketAddr,
+		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
+		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
+	}
+
+	async fn stub_hub(invoice_amount: &'static str) -> Hub {
+		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
+		let addr = listener.local_addr().expect("the listener has an address");
+		let hub = StubHub {
+			invoice_amount,
+			withdrawals: Arc::default(),
+			payments: Arc::default(),
+		};
+		let (withdrawals, payments) = (hub.withdrawals.clone(), hub.payments.clone());
+		tokio::spawn(async move {
+			Server::builder()
+				.add_service(bk::auth_service_server::AuthServiceServer::new(hub.clone()))
+				.add_service(bk::invoice_payment_service_server::InvoicePaymentServiceServer::new(hub.clone()))
+				.add_service(bk::wallet_service_server::WalletServiceServer::new(hub))
+				.serve_with_incoming(TcpListenerStream::new(listener))
+				.await
+				.expect("the stub hub serves");
+		});
+		Hub { addr, withdrawals, payments }
+	}
+
+	/// An app wired to a stub concierge (for the session) and a stub hub (for the money plane).
+	async fn app_with_hub(invoice_amount: &'static str) -> (axum::Router, Hub) {
+		let concierge = jwks().await;
+		let hub = stub_hub(invoice_amount).await;
+		let app = router(state(Env {
+			concierge: format!("http://{concierge}"),
+			hub: format!("http://{}", hub.addr),
+			..Env::default()
+		}));
+		(app, hub)
 	}
 
 	fn app() -> axum::Router {
@@ -710,6 +896,228 @@ mod wallet_gate_tests {
 		let fresh = request_with("POST", uri, r#"{"decision":"approve"}"#, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
 		let (_, _, response) = send(&app, fresh).await;
 		assert!(!response.contains("step_up_required"), "a fresh login passes the gate: {response}");
+	}
+
+	/// Money leaving the platform needs a recent interactive sign-in, like consent to future
+	/// debits: a stale or absent `auth_time` is a `step_up_required` before any hub RPC, a fresh
+	/// one reaches the hub with the client's key intact. Cancelling, which only returns money,
+	/// is not held to it.
+	#[tokio::test]
+	async fn withdrawing_needs_a_fresh_login_but_cancelling_does_not() {
+		let (app, hub) = app_with_hub("1").await;
+		let now = jsonwebtoken::get_current_timestamp();
+		for stale in [Some(now - crate::routes::STEP_UP_MAX_AGE_SECS - 60), None] {
+			let withdraw = request_with("POST", "/api/wallet/withdrawals", WITHDRAW, Some(FIRST_PARTY), Some(access_token_at(stale)));
+			let (status, _, response) = send(&app, withdraw).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "auth_time {stale:?}: {response}");
+			assert!(response.contains("step_up_required"), "auth_time {stale:?}: {response}");
+
+			let cancel = request_with(
+				"POST",
+				"/api/wallet/withdrawals/cancel",
+				r#"{"withdrawal_id":"w-1"}"#,
+				Some(FIRST_PARTY),
+				Some(access_token_at(stale)),
+			);
+			let (_, _, response) = send(&app, cancel).await;
+			assert!(!response.contains("step_up_required"), "cancelling asks for no fresh login, auth_time {stale:?}: {response}");
+		}
+		assert!(hub.withdrawals.lock().expect("the stub's lock").is_empty(), "a refused withdrawal never reaches the hub");
+
+		let fresh = request_with("POST", "/api/wallet/withdrawals", WITHDRAW, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+		let (status, _, response) = send(&app, fresh).await;
+		assert_eq!(status, StatusCode::OK, "{response}");
+		let seen = hub.withdrawals.lock().expect("the stub's lock");
+		assert_eq!(seen.len(), 1);
+		assert_eq!(seen[0].idempotency_key, "k-1", "the client's key reaches the hub unchanged");
+	}
+
+	/// A withdrawal without a key is refused here, not defaulted: a retried POST is exactly
+	/// what the key exists to absorb. Missing, empty and non-string keys are all the same 400,
+	/// and none reaches the hub.
+	#[tokio::test]
+	async fn a_withdrawal_without_an_idempotency_key_is_refused() {
+		let (app, hub) = app_with_hub("1").await;
+		let bodies = [
+			r#"{"network":"bep20","address":"0xabc","amount":"1"}"#,
+			r#"{"network":"bep20","address":"0xabc","amount":"1","idempotency_key":""}"#,
+			r#"{"network":"bep20","address":"0xabc","amount":"1","idempotency_key":7}"#,
+		];
+		for body in bodies {
+			let (status, _, response) = send(&app, request("POST", "/api/wallet/withdrawals", body, Some(FIRST_PARTY), true)).await;
+			assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {response}");
+			assert!(response.contains("idempotency_key"), "{body}: {response}");
+		}
+		assert!(hub.withdrawals.lock().expect("the stub's lock").is_empty());
+	}
+
+	/// An invoice above the threshold is paid only on a fresh sign-in; at or below it a session
+	/// is enough. The amount judged is the hub's invoice, which the page cannot influence.
+	#[tokio::test]
+	async fn paying_above_the_threshold_needs_a_fresh_login() {
+		let uri = "/api/wallet/invoices/4f0c2d1e-0000-4000-8000-0123456789ab/pay";
+		let body = r#"{"pay_from":"main","idempotency_key":"k-1"}"#;
+		let now = jsonwebtoken::get_current_timestamp();
+		let stale = Some(access_token_at(Some(now - crate::routes::STEP_UP_MAX_AGE_SECS - 60)));
+
+		for (amount, needs_step_up) in [
+			("100.000001", true),
+			("100.01", true),
+			("5000", true),
+			("100", false),
+			("99.99", false),
+			("100.000", false),
+			("0.5", false),
+		] {
+			let (app, hub) = app_with_hub(amount).await;
+			let (status, _, response) = send(&app, request_with("POST", uri, body, Some(FIRST_PARTY), stale.clone())).await;
+			if needs_step_up {
+				assert_eq!(status, StatusCode::UNAUTHORIZED, "{amount}: {response}");
+				assert!(response.contains("step_up_required"), "{amount}: {response}");
+				assert!(hub.payments.lock().expect("the stub's lock").is_empty(), "{amount}: nothing is paid without the step-up");
+				let fresh = request_with("POST", uri, body, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+				let (status, _, response) = send(&app, fresh).await;
+				assert_eq!(status, StatusCode::OK, "{amount} with a fresh login: {response}");
+			} else {
+				assert_eq!(status, StatusCode::OK, "{amount} is under the line: {response}");
+			}
+			assert_eq!(hub.payments.lock().expect("the stub's lock").len(), 1, "{amount}");
+		}
+	}
+
+	#[test]
+	fn the_pay_threshold_is_compared_digit_for_digit() {
+		for (amount, threshold, above) in [
+			("100", "100", false),
+			("100.0", "100", false),
+			("100.000000000000000001", "100", true),
+			("99.999999999999999999", "100", false),
+			("1000", "999", true),
+			("0100", "100", false),
+			("0", "0", false),
+			("0.01", "0", true),
+			("", "100", true),
+			("-5", "100", true),
+			("1e9", "100", true),
+			("abc", "100", true),
+		] {
+			assert_eq!(exceeds(amount, threshold), above, "{amount} against {threshold}");
+		}
+	}
+
+	/// A body that is not declared `application/json` is a simple cross-site request in
+	/// waiting, and every first-party route that reads one refuses it with 415 — after the
+	/// session is proved, so the status says nothing to a stranger.
+	#[tokio::test]
+	async fn a_money_route_reads_only_declared_json() {
+		let now = jsonwebtoken::get_current_timestamp();
+		let routes = first_party_mutations().into_iter().filter(|(_, body)| !body.is_empty());
+		for (uri, body) in routes {
+			// A fresh app per route: the probes below would otherwise spend one user's budget.
+			let (app, hub) = app_with_hub("1").await;
+			for content_type in ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonp"] {
+				let mut req = request_with("POST", uri, body, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+				req.headers_mut().insert(header::CONTENT_TYPE, content_type.parse().expect("a header value"));
+				let (status, _, response) = send(&app, req).await;
+				assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{uri} as {content_type}: {response}");
+			}
+			let mut bare = request_with("POST", uri, body, Some(FIRST_PARTY), Some(access_token_at(Some(now))));
+			bare.headers_mut().remove(header::CONTENT_TYPE);
+			let (status, _, response) = send(&app, bare).await;
+			assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{uri} with no content type: {response}");
+			assert!(hub.withdrawals.lock().expect("the stub's lock").is_empty());
+			assert!(hub.payments.lock().expect("the stub's lock").is_empty());
+		}
+	}
+
+	/// The browser's own word that a request is cross-site beats a correct-looking `Origin`:
+	/// every first-party mutation answers 403 `csrf`, a session or not. Same-origin and
+	/// same-site pass the gate; so does a request that carries no such header at all.
+	#[tokio::test]
+	async fn a_cross_site_fetch_is_refused_whatever_its_origin_says() {
+		let (app, hub) = app_with_hub("1").await;
+		let routes = first_party_mutations();
+		for (uri, body) in &routes {
+			for site in ["cross-site", "none", "bogus"] {
+				let mut req = request("POST", uri, body, Some(FIRST_PARTY), true);
+				req.headers_mut().insert("sec-fetch-site", site.parse().expect("a header value"));
+				let (status, _, response) = send(&app, req).await;
+				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} as {site}: {response}");
+				assert!(response.contains("csrf"), "{uri} as {site}: {response}");
+			}
+			for site in [Some("same-origin"), Some("same-site"), None] {
+				let mut req = request("POST", uri, body, Some(FIRST_PARTY), false);
+				if let Some(site) = site {
+					req.headers_mut().insert("sec-fetch-site", site.parse().expect("a header value"));
+				}
+				let (status, _, response) = send(&app, req).await;
+				assert_eq!(
+					status,
+					StatusCode::UNAUTHORIZED,
+					"{uri} as {site:?}: past the gate the next refusal is the missing session: {response}"
+				);
+			}
+		}
+		assert!(hub.withdrawals.lock().expect("the stub's lock").is_empty());
+	}
+
+	/// Every first-party mutation with a body, once: the six money routes, the withdrawal and
+	/// redemption cancels, subscribe, redeem and the book's two.
+	fn first_party_mutations() -> Vec<(&'static str, &'static str)> {
+		MONEY_MUTATIONS
+			.iter()
+			.copied()
+			.chain([
+				("/api/wallet/withdrawals/cancel", r#"{"withdrawal_id":"w-1"}"#),
+				("/api/funds/subscribe", r#"{"service":"s","amount":"1"}"#),
+				("/api/funds/redeem", r#"{"service":"s","units":"1"}"#),
+				("/api/funds/redemptions/cancel", r#"{"redemption_id":"r-1"}"#),
+				("/api/book/orders", r#"{"service":"s","side":"buy","kind":"limit","size":"1","client_order_id":"c-1"}"#),
+				("/api/book/orders/cancel", r#"{"order_id":"o-1"}"#),
+			])
+			.collect()
+	}
+
+	/// Subscribing, redeeming and trading the book move money exactly as a withdrawal or a move
+	/// does, so they are first-party too: a scope's host, a stranger, a look-alike and a request
+	/// with no `Origin` are all 403 `csrf`, and only evinvest.ltd gets as far as the session.
+	#[tokio::test]
+	async fn funds_and_the_book_are_first_party_only() {
+		let lookalikes = ["https://evinvest.ltd.evil.example", "https://evinvest.ltd:8443", "https://evinvest.ltd/", "null", ""];
+		for (uri, body) in first_party_mutations()
+			.into_iter()
+			.filter(|(uri, _)| uri.starts_with("/api/funds") || uri.starts_with("/api/book"))
+		{
+			for origin in [Some(SCOPE_HOST), Some("https://evil.example"), None].into_iter().chain(lookalikes.iter().map(|o| Some(*o))) {
+				let (status, response) = post_from(uri, body, origin).await;
+				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} from {origin:?}: {response}");
+				assert!(response.contains("csrf"), "{uri} from {origin:?}: {response}");
+			}
+			let (status, _) = post_from(uri, body, Some(FIRST_PARTY)).await;
+			assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}: past the gate the next refusal is the missing session");
+		}
+	}
+
+	/// Placing, subscribing and redeeming draw on the same per-user budget as every other
+	/// money mutation; cancelling an order or a redemption does not, so a script that burned the
+	/// budget cannot also keep the user from taking their own orders off the book.
+	#[tokio::test]
+	async fn placing_orders_spends_the_money_budget_but_cancelling_does_not() {
+		let (app, _hub) = app_with_hub("1").await;
+		let place = ("/api/book/orders", r#"{"service":"s","side":"buy","kind":"limit","size":"1","client_order_id":"c-1"}"#);
+		for attempt in 0..crate::routes::MONEY_MUTATIONS_PER_WINDOW {
+			let (status, _, response) = send(&app, request("POST", place.0, place.1, Some(FIRST_PARTY), true)).await;
+			assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "attempt {attempt}: {response}");
+		}
+		let (status, _, response) = send(&app, request("POST", place.0, place.1, Some(FIRST_PARTY), true)).await;
+		assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{response}");
+		for (uri, body) in [
+			("/api/book/orders/cancel", r#"{"order_id":"o-1"}"#),
+			("/api/funds/redemptions/cancel", r#"{"redemption_id":"r-1"}"#),
+		] {
+			let (status, _, response) = send(&app, request("POST", uri, body, Some(FIRST_PARTY), true)).await;
+			assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "{uri}: {response}");
+		}
 	}
 
 	/// Reading a service's request for a mandate is a read, like an invoice: no CSRF token, no

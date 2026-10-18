@@ -17,6 +17,8 @@ pub enum ApiError {
 	/// The session is valid but its last interactive sign-in is too old for this act (401).
 	/// The body is the fixed code `step_up_required` the cabinet frontend keys on.
 	StepUpRequired,
+	/// A money route got a body that is not declared `application/json` (415).
+	UnsupportedMediaType,
 	/// Client input rejected before any upstream call (400).
 	BadRequest(String),
 	/// OAuth is not configured (no Google client id) (503).
@@ -82,6 +84,7 @@ impl IntoResponse for ApiError {
 			ApiError::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated".to_string()),
 			ApiError::Csrf => (StatusCode::FORBIDDEN, "csrf".to_string()),
 			ApiError::StepUpRequired => (StatusCode::UNAUTHORIZED, "step_up_required".to_string()),
+			ApiError::UnsupportedMediaType => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_media_type".to_string()),
 			ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
 			ApiError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, "auth not configured".to_string()),
 			ApiError::Internal(m) => (StatusCode::BAD_GATEWAY, m),
