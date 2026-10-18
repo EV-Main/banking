@@ -1077,7 +1077,7 @@ mod tests {
 	/// the same version with other content, which would hold every proposal back in prod.
 	#[test]
 	fn the_published_catalog_is_pinned_to_its_version() {
-		const PINNED: (u64, &str) = (1_792_281_600, "3dfe43cf768e47ec7c7060188602bf699fc5620b8c7cec3acf0c4ca04c6e1791");
+		const PINNED: (u64, &str) = (1_792_368_000, "efc475fab36d5b69405b792a33e41eacf82399359b62abf6a2af1005983e83bb");
 		let digest = sha256_hex(&domain::scope_operations::bank_catalog_canonical());
 		assert_eq!(
 			(BANK_CATALOG_VERSION, digest.as_str()),

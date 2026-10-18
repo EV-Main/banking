@@ -54,6 +54,7 @@ pub mod scope_ledger;
 pub mod scope_mandates;
 pub mod scope_notifications;
 pub mod scope_operations;
+pub mod security_notices;
 pub mod subscriptions;
 pub mod withdrawals;
 

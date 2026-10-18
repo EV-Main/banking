@@ -21,11 +21,12 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-	infrastructure::{claims::TxReads, outbox},
+	infrastructure::{claims::TxReads, outbox, scope_notifications},
 	ports::{
 		WithdrawalRepository,
 		audit::RequestAudit,
 		ledger::SpendGuard,
+		security_notices,
 		withdrawals::{AddressHold, Opened, QueuedWithdrawal, Screening, Usage},
 	},
 };
@@ -309,6 +310,10 @@ impl WithdrawalRepository for PgWithdrawals {
 			.map_err(repo_err)?;
 		}
 		outbox::drain_to_outbox(&mut tx, withdrawal, true).await?;
+		// In the transaction of the fact it announces: a withdrawal that exists is a withdrawal
+		// the owner is told about, and one that rolled back is not.
+		let notice = security_notices::withdrawal_requested(user, withdrawal, held.then_some(screening.hold_secs));
+		scope_notifications::enqueue(&mut tx, &notice, None).await?;
 		tx.commit().await.map_err(repo_err)?;
 		Ok(Opened::Recorded { new_address })
 	}

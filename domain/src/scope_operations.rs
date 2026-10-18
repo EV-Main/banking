@@ -566,7 +566,7 @@ pub struct KindSpec {
 /// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
 /// every change to the catalog — concierge refuses a catalog of the version it stores with
 /// other content, and one more than a day ahead of its clock.
-pub const BANK_CATALOG_VERSION: u64 = 1_792_281_600;
+pub const BANK_CATALOG_VERSION: u64 = 1_792_368_000;
 
 /// [`BANK_CATALOG`] rendered field by field, one line per item — what a test pins, beside
 /// [`BANK_CATALOG_VERSION`], so the catalog cannot change without the version moving.
@@ -596,6 +596,11 @@ pub fn bank_catalog_canonical() -> String {
 /// namespace's topic only once its catalog in force holds it.
 pub const MONEY_MOVEMENT_TOPIC: &str = "bank:money-movement";
 
+/// The notification topic of security notices about the wallet (`bank:wallet-security`): a
+/// withdrawal requested, a withdrawal to a new address, a mandate granted or revoked. Each
+/// carries a "this wasn't me" path to the wallet page.
+pub const WALLET_SECURITY_TOPIC: &str = "bank:wallet-security";
+
 /// One notification topic as banking publishes it (`NotificationTopicSpec`).
 #[derive(Clone, Copy, Debug)]
 pub struct TopicSpec {
@@ -609,15 +614,24 @@ pub struct TopicSpec {
 }
 
 /// The topics banking publishes beside [`BANK_CATALOG`], in the same publication.
-pub const BANK_TOPICS: &[TopicSpec] = &[TopicSpec {
-	topic: MONEY_MOVEMENT_TOPIC,
-	label: "Money movement",
-	description: "Payments out of your account that wait for your confirmation, and what became of them.",
-	// A payment awaiting the owner of the money is the one notice that must not depend on the
-	// user having found a settings page; they can still switch it off, and the payment stays
-	// answerable in the cabinet either way.
-	default_subscribed: true,
-}];
+pub const BANK_TOPICS: &[TopicSpec] = &[
+	TopicSpec {
+		topic: MONEY_MOVEMENT_TOPIC,
+		label: "Money movement",
+		description: "Payments out of your account that wait for your confirmation, and what became of them.",
+		// A payment awaiting the owner of the money is the one notice that must not depend on the
+		// user having found a settings page; they can still switch it off, and the payment stays
+		// answerable in the cabinet either way.
+		default_subscribed: true,
+	},
+	TopicSpec {
+		topic: WALLET_SECURITY_TOPIC,
+		label: "Wallet security",
+		description: "Withdrawals, new withdrawal addresses and mandates on your wallet, with a way to stop what you did not do.",
+		// The only warning an account takeover gives the owner; on until they turn it off.
+		default_subscribed: true,
+	},
+];
 
 const fn field(key: &'static str, label: &'static str, field_type: FieldType, required: bool) -> FieldSpec {
 	FieldSpec { key, label, field_type, required }

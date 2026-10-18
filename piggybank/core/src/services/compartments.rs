@@ -25,9 +25,12 @@ use crate::{
 		compartments::{self as compartments_app, CompartmentPorts, CompartmentView, MoveError},
 		scope_mandates::{self as mandates_app, MandatePorts, RequestPorts},
 	},
+	infrastructure::scope_notifications,
 	ports::{
 		compartments::{RecordedMove, ScopeRecord},
 		scope_mandates::RecordedMandate,
+		scope_notifications::ScopeNotice,
+		security_notices,
 	},
 	services::support::{MoneyGate, audit_of, caller_id, gated_caller, map_err},
 };
@@ -48,6 +51,20 @@ impl CompartmentSvc {
 			ledger: self.state.ledger.as_ref(),
 			policy: self.state.outflow.as_ref(),
 			relay: &self.state.relay_notify,
+		}
+	}
+
+	/// Queue the owner's security notice after the mandate act committed. The act is already
+	/// done and idempotent on its key, so a failure to queue is logged loudly and does not turn
+	/// a success into an error the user would retry.
+	async fn tell_security(&self, notice: &ScopeNotice) {
+		let queued = async {
+			let mut conn = self.state.pool.acquire().await.map_err(|err| err.to_string())?;
+			scope_notifications::enqueue(&mut conn, notice, None).await.map_err(|err| err.to_string())
+		}
+		.await;
+		if let Err(err) = queued {
+			tracing::error!(user = %notice.user, kind = %notice.kind, "could not queue the wallet security notice: {err}");
 		}
 	}
 
@@ -133,6 +150,16 @@ impl CompartmentService for CompartmentSvc {
 		let asked = mandates_app::read_request(&self.request_ports(), request_id_of(&req.request_id)?).await.map_err(map_err)?;
 		let parsed = mandates_app::grant_of(asked, req.idempotency_key);
 		let granted = mandates_app::grant(&self.mandate_ports(), user, parsed).await.map_err(map_err)?;
+		self.tell_security(&security_notices::mandate_changed(
+			user,
+			&granted.mandate.id.to_string(),
+			true,
+			granted.mandate.terms.client.as_str(),
+			granted.mandate.terms.scope.as_str(),
+			granted.mandate.terms.caps.per_op,
+			granted.mandate.terms.caps.per_24h,
+		))
+		.await;
 		Ok(Response::new(mandate_to_proto(&granted)))
 	}
 
@@ -146,6 +173,16 @@ impl CompartmentService for CompartmentSvc {
 			.filter(|id| id.to_string() == *raw)
 			.ok_or_else(|| Status::invalid_argument("mandate_id must be a lowercase uuid"))?;
 		let revoked = mandates_app::revoke(&self.mandate_ports(), user, id).await.map_err(map_err)?;
+		self.tell_security(&security_notices::mandate_changed(
+			user,
+			&revoked.mandate.id.to_string(),
+			false,
+			revoked.mandate.terms.client.as_str(),
+			revoked.mandate.terms.scope.as_str(),
+			revoked.mandate.terms.caps.per_op,
+			revoked.mandate.terms.caps.per_24h,
+		))
+		.await;
 		Ok(Response::new(mandate_to_proto(&revoked)))
 	}
 
