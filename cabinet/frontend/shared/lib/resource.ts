@@ -617,8 +617,15 @@ export function useResource<T, A extends unknown[]>(resource: Resource<T, A>, ..
  * entry holds something newer (see {@link seed}) — so every other screen reading this key
  * starts from it too; revalidation, polling and tag invalidation then run as for any
  * browser read. Without a seed this is exactly `useResource`.
+ *
+ * `null` means a seed is in flight: a server read for this key is still pending behind a
+ * Suspense boundary and will arrive as a later `initial` (or as `undefined` if it failed).
+ * The reader renders what the cache holds but does not start its own read on subscribe —
+ * that read would duplicate the one the server is already making. Once `initial` settles to
+ * a seed or to `undefined`, the reader behaves as always, so a failed server read still
+ * falls back to the browser read.
  */
-export function useSeededResource<T, A extends unknown[]>(resource: Resource<T, A>, initial: ResourceSeed<T> | undefined, ...args: A): ResourceSnapshot<T> {
+export function useSeededResource<T, A extends unknown[]>(resource: Resource<T, A>, initial: ResourceSeed<T> | null | undefined, ...args: A): ResourceSnapshot<T> {
   const internals = resource[INTERNALS];
   const key = resource.keyOf(...args);
   const active = internals.enabled(...args);
@@ -629,18 +636,19 @@ export function useSeededResource<T, A extends unknown[]>(resource: Resource<T, 
   // server, where module scope is shared between users.
   const entry = typeof window === "undefined" || !active ? null : internals.ensure(key, args);
   if (entry && initial) seed(entry, initial);
+  const pending = initial === null;
 
   const subscribe = useCallback(
     (onChange: () => void) => {
       if (!entry) return () => undefined;
       entry.listeners.add(onChange);
       announceSeed(entry);
-      autoRevalidate(entry);
+      if (!pending) autoRevalidate(entry);
       return () => {
         entry.listeners.delete(onChange);
       };
     },
-    [entry],
+    [entry, pending],
   );
 
   // Per seed object, so the server and hydration renders hand React the same snapshot.

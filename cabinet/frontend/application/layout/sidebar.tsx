@@ -15,7 +15,8 @@ import { KycStatusChip } from "@/features/kyc";
 import { useCabinetPathname } from "@/shared/lib/cabinet-route";
 import { cn } from "@/shared/lib/cn";
 import { SUPPORT_EMAIL } from "@/shared/config/support";
-import { useResource } from "@/shared/lib/resource";
+import type { AllocationList } from "@/shared/contracts";
+import { type ResourceSeed, useSeededResource } from "@/shared/lib/resource";
 import { visibleFor } from "@/shared/lib/roles";
 import { useSession } from "@/shared/lib/use-session";
 import { ProductIcon, productTone } from "@/shared/ui/icons/products";
@@ -125,7 +126,11 @@ const NAV_FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring foc
 // replaced by the fixed BottomNavbar. `overflow-y-auto` is a safety valve only: the
 // rail scrolls internally solely when it can't fit (e.g. the admin nav on a short
 // viewport), so nothing gets clipped.
-export function Sidebar() {
+//
+// `catalog` is the server's read of the product catalog: a seed, `undefined` when that read
+// failed, or `null` while it is still in flight (the layout streams it under its own
+// Suspense) — see `useSeededResource`.
+export function Sidebar({ catalog }: { catalog?: ResourceSeed<AllocationList> | null }) {
   // Zone-relative, so the `active` predicates below can stay written in the paths
   // the app reasons in rather than the ones the browser shows.
   const t = useT();
@@ -144,7 +149,7 @@ export function Sidebar() {
   // the first frame of a return visit rather than growing a Products group a beat later. A
   // failed read leaves the group empty rather than blocking the rail — the nav is not the
   // place to surface an API error.
-  const products = useResource(allocationsResource).data?.allocations ?? [];
+  const products = useSeededResource(allocationsResource, catalog).data?.allocations ?? [];
   // The row answers the click, not the RSC round-trip. Every cabinet route is dynamic
   // and none has a `loading.tsx`, so the pathname only changes once the new page's
   // payload has arrived — 150–300ms after the click, which is exactly the window in

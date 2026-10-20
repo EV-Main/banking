@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { type ReactNode, Suspense } from "react";
 
+import { readAllocations } from "@/entities/fund/api/fund-server";
 import { Sidebar } from "@/application/layout/sidebar";
 import { BottomNavbar } from "@/application/layout/bottom-navbar";
 import { RouteGate } from "@/application/layout/route-gate";
@@ -52,7 +53,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       {signedIn && <LocaleSync />}
       <TimeZoneSync />
       <div className="hidden lg:fixed lg:left-0 lg:top-[var(--ev-shell-offset,0px)] lg:flex lg:h-[calc(100dvh-var(--ev-shell-offset,0px))]">
-        <Sidebar />
+        {/* Its own boundary: a slow BFF must not hold up the shell. */}
+        <Suspense fallback={<Sidebar catalog={null} />}>
+          <SeededSidebar signedIn={signedIn} />
+        </Suspense>
       </div>
       <main className="min-w-0 flex-1">
         <SystemBanner />
@@ -68,4 +72,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </Suspense>
     </div>
   );
+}
+
+// The rail's product list, read on the server so the browser does not read it again once
+// the root hydrates. A failed or timed-out read is no seed, and the rail makes its own.
+async function SeededSidebar({ signedIn }: { signedIn: boolean }) {
+  const catalog = signedIn ? await readAllocations() : null;
+  return <Sidebar catalog={catalog ?? undefined} />;
 }
