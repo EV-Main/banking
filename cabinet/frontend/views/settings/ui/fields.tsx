@@ -8,7 +8,7 @@
 import { useT } from "@evinvest/i18n/react";
 
 import { BadgeCheck } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ComponentProps, type ReactNode, createContext, useContext, useEffect, useId, useRef } from "react";
 
 import { PhoneNumber } from "@evinvest/types";
 import { usePhoneNumber } from "@evinvest/types/react";
@@ -29,22 +29,38 @@ export function SectionHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
+/** The id of the enclosing `Field`'s caption, so the control inside can be named by it. */
+const CaptionId = createContext<string | undefined>(undefined);
+
+/** `aria-labelledby` from the enclosing `Field`, or an `aria-label` where there is none (mobile rows). */
+function useAccessibleName(label?: string) {
+  const captionId = useContext(CaptionId);
+  return captionId ? { "aria-labelledby": captionId } : label ? { "aria-label": label } : {};
+}
+
+/** A text input named by its `Field` caption (or by `label` outside a `Field`). */
+export function FieldInput({ label, ...props }: { label?: string } & ComponentProps<typeof Input>) {
+  return <Input {...useAccessibleName(label)} {...props} />;
+}
+
 /**
  * A labelled field slot. `hint` is the one sentence under the control that says what the
  * value is used for — it stays visible, where a `tip` is the ⓘ beside the label for the
  * longer explanation a reader opens on demand. A field takes either, both, or neither.
  */
 export function Field({ label, hint, tip, trailing, children }: { label: string; hint?: string; tip?: TipKey; trailing?: ReactNode; children: ReactNode }) {
+  const captionId = useId();
   return (
     <div className="flex min-w-65 flex-1 flex-col">
       <div className="mb-1.5 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs text-ink-soft">
-          {label}
+          {/* Its own span, so the ⓘ button is not part of the control's accessible name. */}
+          <span id={captionId}>{label}</span>
           {tip && <TipAnchor anchor={tip} />}
         </span>
         {trailing}
       </div>
-      {children}
+      <CaptionId.Provider value={captionId}>{children}</CaptionId.Provider>
       {hint && <FieldHint>{hint}</FieldHint>}
     </div>
   );
@@ -80,17 +96,21 @@ export function ThemedSelect({
   options,
   placeholder,
   error,
+  label,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   placeholder: string;
   error?: string;
+  /** Accessible name where no enclosing `Field` supplies one. */
+  label?: string;
 }) {
+  const name = useAccessibleName(label);
   return (
     <div className="min-w-0 flex-1">
       <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger className="w-full border-border bg-secondary">
+        <SelectTrigger {...name} className="w-full border-border bg-secondary">
           {/* Not `SelectValue`: the uikit's renders the raw stored value, so the trigger
               read "en" / "Asia/Ho_Chi_Minh" instead of the option label the design shows. */}
           <span className={cn("truncate", !value && "text-ink-soft")}>{value ? labelOf(options, value) : placeholder}</span>
@@ -109,7 +129,7 @@ export function ThemedSelect({
 }
 
 /** Phone input wired to the `PhoneNumber` TypeObject via `usePhoneNumber`. */
-export function PhoneField({ initial, onChange, error }: { initial: string; onChange: (v: string) => void; error?: string }) {
+export function PhoneField({ initial, onChange, error, label }: { initial: string; onChange: (v: string) => void; error?: string; label?: string }) {
   const { inputProps, value, reset } = usePhoneNumber({ initial: initial || undefined });
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -126,7 +146,7 @@ export function PhoneField({ initial, onChange, error }: { initial: string; onCh
 
   return (
     <div className="min-w-0 flex-1">
-      <Input {...inputProps} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
+      <FieldInput label={label} {...inputProps} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
       {error && <p className="mt-1 text-xs text-accent-error">{error}</p>}
     </div>
   );

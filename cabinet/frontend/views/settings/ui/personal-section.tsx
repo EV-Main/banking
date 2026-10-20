@@ -7,7 +7,7 @@
 
 import { useT } from "@evinvest/i18n/react";
 
-import { Input, Skeleton } from "@evinvest/uikit";
+import { Skeleton } from "@evinvest/uikit";
 
 import { cn } from "@/shared/lib/cn";
 import { TipAnchor } from "@/shared/tips";
@@ -15,7 +15,7 @@ import { CARD, Hairline, ListCard, StackRow } from "@/shared/ui/list-card";
 import { formatEmail } from "@/views/settings/lib/contact";
 import type { Form } from "@/views/settings/lib/form";
 import { PERSONAL } from "@/views/settings/lib/sections";
-import { Field, FieldHint, FieldSkeleton, PhoneField, SectionHeader, VerifiedTag } from "@/views/settings/ui/fields";
+import { Field, FieldHint, FieldInput, FieldSkeleton, PhoneField, SectionHeader, VerifiedTag } from "@/views/settings/ui/fields";
 
 export interface PersonalProps {
   loading: boolean;
@@ -39,11 +39,11 @@ export function PersonalSection({ loading, form, email, verified, onChange, fiel
       <div className="flex flex-wrap gap-x-4.5 gap-y-4">
         {PERSONAL.map((field) => (
           <Field key={field.key} label={field.label(t)} hint={field.hint?.(t)} tip={field.tip}>
-            {ready ? <Control field={field.key} form={form} error={fieldErrors[field.key]} onChange={onChange} /> : <FieldSkeleton />}
+            {ready ? <Control field={field.key} label={field.label(t)} form={form} error={fieldErrors[field.key]} onChange={onChange} /> : <FieldSkeleton />}
           </Field>
         ))}
         <Field label={t("ui.emailAddress", "Email address")} hint={t("settings.hint.email", "Comes from your Google account and can't be changed here.")} trailing={verified ? <VerifiedTag /> : undefined}>
-          {loading ? <FieldSkeleton /> : <Input value={formatEmail(email)} readOnly className="border-border bg-secondary text-ink-soft" />}
+          {loading ? <FieldSkeleton /> : <FieldInput value={formatEmail(email)} readOnly className="border-border bg-secondary text-ink-soft" />}
         </Field>
       </div>
     </section>
@@ -69,7 +69,7 @@ export function PersonalStack({ loading, form, email, verified, onChange, fieldE
                 </span>
               }
             >
-              {ready ? <Control field={field.key} form={form} error={fieldErrors[field.key]} onChange={onChange} /> : <Skeleton className="h-9 w-full rounded-md" />}
+              {ready ? <Control field={field.key} label={field.label(t)} form={form} error={fieldErrors[field.key]} onChange={onChange} /> : <Skeleton className="h-9 w-full rounded-md" />}
               {field.hint && <FieldHint>{field.hint(t)}</FieldHint>}
             </StackRow>
           </div>
@@ -93,11 +93,11 @@ export function PersonalStack({ loading, form, email, verified, onChange, fieldE
 
 // One control per field, error under it — the phone goes through the `PhoneNumber`
 // TypeObject so the stored value is canonical, everything else is a plain text input.
-function Control({ field, form, error, onChange }: { field: keyof Form; form: Form; error?: string; onChange: (key: keyof Form, value: string) => void }) {
-  if (field === "phone") return <PhoneField initial={form.phone} onChange={(v) => onChange("phone", v)} error={error} />;
+function Control({ field, label, form, error, onChange }: { field: keyof Form; label: string; form: Form; error?: string; onChange: (key: keyof Form, value: string) => void }) {
+  if (field === "phone") return <PhoneField label={label} initial={form.phone} onChange={(v) => onChange("phone", v)} error={error} />;
   return (
     <div className="min-w-0 flex-1">
-      <Input value={form[field]} onChange={(e) => onChange(field, e.target.value)} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
+      <FieldInput label={label} value={form[field]} onChange={(e) => onChange(field, e.target.value)} className={error ? "border-accent-error bg-accent-error/5" : "border-border bg-secondary"} />
       {error && <p className="mt-1 text-xs text-accent-error">{error}</p>}
     </div>
   );
