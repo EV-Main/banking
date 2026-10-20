@@ -66,7 +66,10 @@ export function AllocationSidePanel({ panel, onClose }: { panel: OpenAllocationP
   return (
     <PanelPresence>
       {panel && (
-        <Panel key="side-panel" collapse={{ gap: "1.5rem", width: "21.25rem" }} className="shrink-0 self-start overflow-hidden">
+        // `resize={false}`: each panel shows a skeleton until its own query resolves, and that
+        // data lands without re-rendering `Panel`, so a `layout="size"` projection measures the
+        // skeleton, animates to it, and overshoots when the real content replaces it mid-flight.
+        <Panel key="side-panel" resize={false} collapse={{ gap: "1.5rem", width: "21.25rem" }} className="shrink-0 self-start overflow-hidden">
           {/* Keyed on kind AND row: switching from grants to issuance on the same row is a
               swap too, not an in-place re-render of a panel that is no longer there. */}
           <PanelSwap swapKey={`${panel.kind}:${panel.row.service}`}>
