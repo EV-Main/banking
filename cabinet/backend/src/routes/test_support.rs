@@ -26,8 +26,13 @@ pub fn access_token() -> String {
 
 /// [`access_token`] with a chosen `auth_time`, for the step-up gate.
 pub fn access_token_at(auth_time: Option<u64>) -> String {
+	access_token_for("user-1", auth_time)
+}
+
+/// [`access_token_at`] for another account.
+pub fn access_token_for(sub: &str, auth_time: Option<u64>) -> String {
 	let claims = Claims {
-		sub: "user-1".into(),
+		sub: sub.into(),
 		iss: ISSUER.into(),
 		aud: AUDIENCE.into(),
 		exp: get_current_timestamp() + 900,
@@ -37,9 +42,20 @@ pub fn access_token_at(auth_time: Option<u64>) -> String {
 		token_version: 0,
 		auth_time,
 	};
+	sign(&claims)
+}
+
+/// Any claims, signed with the key [`ConciergeJwks`] publishes — a step-up proof among them,
+/// since concierge signs those with the access tokens' key.
+pub fn sign<T: serde::Serialize>(claims: &T) -> String {
+	sign_with_kid(claims, TEST_KID)
+}
+
+/// [`sign`] under a `kid` the JWKS may not publish.
+pub fn sign_with_kid<T: serde::Serialize>(claims: &T, kid: &str) -> String {
 	let mut header = Header::new(Algorithm::EdDSA);
-	header.kid = Some(TEST_KID.into());
-	encode(&header, &claims, &EncodingKey::from_ed_pem(TEST_PEM.as_bytes()).unwrap()).expect("sign the access token")
+	header.kid = Some(kid.into());
+	encode(&header, claims, &EncodingKey::from_ed_pem(TEST_PEM.as_bytes()).unwrap()).expect("sign the test token")
 }
 
 /// Concierge's `AuthService` as the BFF sees it: the only RPC it reaches is `Jwks` — the

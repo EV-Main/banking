@@ -7,6 +7,7 @@ pub mod cors;
 pub mod governance_ws;
 pub mod grants;
 pub mod identity;
+pub mod intents;
 pub mod money;
 pub mod notifications;
 pub mod payments;
@@ -228,6 +229,9 @@ fn requests(state: AppState) -> Router {
 		.route("/api/approval/payout/{token}", get(approval::payout_invitation).post(approval::payout_decision))
 		.route("/api/approval/removal/{token}", get(approval::removal_invitation).post(approval::removal_decision))
 		.route("/api/approval/consent/{token}", get(approval::consent_invitation).post(approval::consent_decision))
+		// A trusted host's wallet actions: the one cross-origin surface that may move money,
+		// mounted only when `WALLET_ACTION_ORIGINS` names a host. See `intents`.
+		.merge(intents::routes(&state))
 		.layer(middleware::from_fn_with_state(state.clone(), evict_banking_pair_on_unauthorized))
 		.with_state(state)
 		.layer(TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, REQUEST_DEADLINE))
@@ -374,7 +378,8 @@ pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
 
 /// The audit block the hub records beside a money act. Every field is the BFF's own reading of
 /// the request, never a body field; `stepup_method` is what this route demanded of the session
-/// (`fresh_login`, or `none`), not something the browser claims.
+/// (`fresh_login`, `passkey`, `email_code` or `none`), not something the browser claims.
+/// `intent_id` is empty here: only `intents::confirm` executes an intent, and it sets it.
 pub fn audit_context(state: &AppState, headers: &HeaderMap, peer: Option<std::net::SocketAddr>, stepup_method: &str) -> bk::AuditContext {
 	let clamp = |value: &str, max: usize| value.chars().take(max).collect::<String>();
 	bk::AuditContext {
