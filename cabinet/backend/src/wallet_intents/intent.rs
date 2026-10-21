@@ -155,18 +155,27 @@ pub fn is_intent_id(raw: &str) -> bool {
 	raw.len() == 32 && raw.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// What the caller already used in the last 24 h, through every host together.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Used24h {
+	/// Moved between compartments, with or without a step-up.
+	pub moved: Usdt,
+	/// Confirmed by emailed code.
+	pub emailed: Usdt,
+}
+
 /// The risk class of spec (h), as the step-up it demands. `amount` is what leaves the
-/// caller's hands (`None` for a mandate, which moves nothing now); `moved_24h` is what the
-/// caller already moved through this host in the last 24 h.
-pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, moved_24h: Usdt, policy: &RiskPolicy) -> Stepup {
+/// caller's hands (`None` for a mandate, which moves nothing now).
+pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, used: Used24h, policy: &RiskPolicy) -> Stepup {
 	let passkey_only = || Stepup {
 		required: true,
 		methods: vec![StepupMethod::Passkey],
 	};
 	// The email method rests on a mailbox and on a summary the page writes itself, so it
-	// authorises only small amounts; above the cap, and for anything unreadable, a passkey.
+	// authorises only small amounts, and only so much a day; past either line, and for
+	// anything unreadable, a passkey.
 	let by_amount = |amount: Option<Usdt>| match amount {
-		Some(amount) if amount <= policy.email_cap => Stepup {
+		Some(amount) if amount <= policy.email_cap && used.emailed.checked_add(amount).is_some_and(|total| total <= policy.email_24h) => Stepup {
 			required: true,
 			methods: vec![StepupMethod::Passkey, StepupMethod::EmailCode],
 		},
@@ -176,7 +185,7 @@ pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, moved_24h: Usdt, polic
 		IntentKind::Withdraw | IntentKind::Mandate => passkey_only(),
 		IntentKind::Pay => by_amount(amount),
 		IntentKind::Move => {
-			let within = amount.is_some_and(|amount| amount <= policy.no_stepup_per_op && moved_24h.checked_add(amount).is_some_and(|total| total <= policy.no_stepup_24h));
+			let within = amount.is_some_and(|amount| amount <= policy.no_stepup_per_op && used.moved.checked_add(amount).is_some_and(|total| total <= policy.no_stepup_24h));
 			if within {
 				Stepup {
 					required: false,
@@ -189,7 +198,7 @@ pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, moved_24h: Usdt, polic
 	}
 }
 
-/// `amount` in whole micro-USDT, rounded up: the unit the shared move budget counts in, small
+/// `amount` in whole micro-USDT, rounded up: the unit the 24 h budgets count in, small
 /// enough for Redis's Lua numbers to stay exact.
 pub fn micro_ceil(amount: Usdt) -> u64 {
 	const PER_MICRO: u128 = 1_000_000_000_000;
@@ -219,6 +228,7 @@ mod tests {
 			no_stepup_per_op: usdt("100"),
 			no_stepup_24h: usdt("300"),
 			email_cap: usdt("250"),
+			email_24h: usdt("500"),
 		}
 	}
 
@@ -234,16 +244,33 @@ mod tests {
 			required: true,
 			methods: vec![StepupMethod::Passkey],
 		};
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100")), usdt("200"), &p), none, "exactly at both lines");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100.000001")), Usdt::ZERO, &p), either, "over the per-op line");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("1")), usdt("299.5"), &p), either, "over the 24 h line");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("250.01")), Usdt::ZERO, &p), passkey, "over the email cap");
-		assert_eq!(stepup_for(IntentKind::Move, None, Usdt::ZERO, &p), passkey, "an amount nobody could read");
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("1")), Usdt::ZERO, &p), either, "pay always steps up");
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), Usdt::ZERO, &p), either);
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("251")), Usdt::ZERO, &p), passkey);
-		assert_eq!(stepup_for(IntentKind::Withdraw, Some(usdt("1")), Usdt::ZERO, &p), passkey);
-		assert_eq!(stepup_for(IntentKind::Mandate, None, Usdt::ZERO, &p), passkey);
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100")), moved("200"), &p), none, "exactly at both lines");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100.000001")), Used24h::default(), &p), either, "over the per-op line");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("1")), moved("299.5"), &p), either, "over the 24 h line");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("250.01")), Used24h::default(), &p), passkey, "over the email cap");
+		assert_eq!(stepup_for(IntentKind::Move, None, Used24h::default(), &p), passkey, "an amount nobody could read");
+		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("1")), Used24h::default(), &p), either, "pay always steps up");
+		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), Used24h::default(), &p), either);
+		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("251")), Used24h::default(), &p), passkey);
+		assert_eq!(stepup_for(IntentKind::Withdraw, Some(usdt("1")), Used24h::default(), &p), passkey);
+		assert_eq!(stepup_for(IntentKind::Mandate, None, Used24h::default(), &p), passkey);
+
+		// The day's emailed total: 250 more fits after 250, not after 250.01.
+		let emailed = |raw: &str| Used24h {
+			emailed: usdt(raw),
+			..Used24h::default()
+		};
+		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), emailed("250"), &p), either, "exactly at the daily line");
+		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), emailed("250.01"), &p), passkey, "over the daily line");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("150")), emailed("400"), &p), passkey, "a move over the B line too");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("50")), emailed("500"), &p), none, "a B move asks for no code at all");
+	}
+
+	fn moved(raw: &str) -> Used24h {
+		Used24h {
+			moved: usdt(raw),
+			..Used24h::default()
+		}
 	}
 
 	#[test]

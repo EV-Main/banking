@@ -99,10 +99,12 @@ pub struct EnabledHost {
 pub struct RiskPolicy {
 	/// A move at or below this needs no step-up…
 	pub no_stepup_per_op: Usdt,
-	/// …while the user's moves through the host in 24 h stay at or below this.
+	/// …while the user's moves through every host in 24 h stay at or below this.
 	pub no_stepup_24h: Usdt,
 	/// The largest amount an emailed code may confirm; above it only a passkey.
 	pub email_cap: Usdt,
+	/// The most a user may confirm by emailed code in 24 h, through every host together.
+	pub email_24h: Usdt,
 }
 
 /// Everything the intent routes need, present only when a host is switched on.
@@ -156,6 +158,7 @@ impl WalletActions {
 				no_stepup_per_op: usdt(&config.wallet_move_no_stepup_per_op_usdt)?,
 				no_stepup_24h: usdt(&config.wallet_move_no_stepup_24h_usdt)?,
 				email_cap: usdt(&config.wallet_email_stepup_cap_usdt)?,
+				email_24h: usdt(&config.wallet_email_stepup_24h_usdt)?,
 			},
 		})
 	}

@@ -12,6 +12,8 @@
 #[cfg(test)]
 mod tests;
 
+use std::time::Duration;
+
 use axum::{
 	Json, Router,
 	body::Bytes,
@@ -24,9 +26,13 @@ use axum::{
 use axum_extra::extract::cookie::CookieJar;
 use domain::money::{Network, Usdt, WalletAddress};
 use evbanking_contracts::banking::v1 as bk;
-use evconcierge_auth::{Claims, stepup::Expected};
+use evconcierge_auth::{
+	Claims,
+	stepup::{Expected, StepupMethod},
+};
 use serde::{Deserialize, Serialize};
 use tonic::{Code, Status};
+use tracing::Instrument;
 
 use crate::{
 	dto,
@@ -36,7 +42,7 @@ use crate::{
 	util::now_secs,
 	wallet_intents::{
 		EnabledHost, WalletActions,
-		intent::{self, Action, IntentRecord, MandateTerms, SessionBinding, Stepup, Summary},
+		intent::{self, Action, IntentRecord, MandateTerms, SessionBinding, Stepup, Summary, Used24h},
 		keys,
 		store::{self, IntentStatus, StoreError},
 	},
@@ -172,7 +178,7 @@ async fn host_caller(st: &AppState, actions: &WalletActions, jar: &CookieJar, he
 /// a body declared exactly `application/json`, and the per-user money budget.
 fn post_gate(st: &AppState, actions: &WalletActions, caller: &Caller, headers: &HeaderMap, body: &Bytes) -> Result<(), ApiError> {
 	let token = headers.get("x-ev-csrf").and_then(|value| value.to_str().ok()).unwrap_or_default();
-	if !actions.keys.csrf_valid(token, &caller.claims.sub, caller.host.origin, now()) {
+	if !actions.keys.csrf_valid(token, &caller.claims.sub, caller.host.origin, unix_now()) {
 		return Err(ApiError::Csrf);
 	}
 	let declared = headers
@@ -227,7 +233,7 @@ async fn account_in_good_standing(st: &AppState, caller: &Caller) -> Result<(), 
 	Ok(())
 }
 
-fn now() -> u64 {
+fn unix_now() -> u64 {
 	now_secs().max(0) as u64
 }
 
@@ -256,7 +262,7 @@ pub struct CsrfToken {
 pub async fn csrf(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap) -> Result<Json<CsrfToken>, ApiError> {
 	let actions = actions(&st)?;
 	let caller = host_caller(&st, actions, &jar, &headers).await?;
-	let (csrf, expires_at) = actions.keys.csrf_token(&caller.claims.sub, caller.host.origin, now());
+	let (csrf, expires_at) = actions.keys.csrf_token(&caller.claims.sub, caller.host.origin, unix_now());
 	Ok(Json(CsrfToken { csrf, expires_at }))
 }
 
@@ -290,15 +296,25 @@ pub async fn create(State(st): State<AppState>, jar: CookieJar, headers: HeaderM
 	}
 	account_in_good_standing(&st, &caller).await?;
 	let money_token = money_token_for(&st, &caller.claims).await?;
-	let now = now();
+	let now = unix_now();
 	let terms = terms_of(&st, &money_token, &caller.host, &action, now).await?;
 
-	let budget = store::move_budget(&caller.claims.sub, caller.host.origin);
-	let moved_24h = match action {
-		Action::Move(_) => intent::from_micro(actions.store.moved_since(&budget, now.saturating_sub(store::MOVE_WINDOW_SECS)).await.map_err(store_error)?),
-		Action::Withdraw(_) | Action::Pay(_) | Action::Mandate(_) => Usdt::ZERO,
+	let since = now.saturating_sub(store::BUDGET_WINDOW_SECS);
+	let used = |budget: String| async move { actions.store.used_since(&budget, since).await.map(intent::from_micro).map_err(store_error) };
+	// Only the kinds an emailed code can confirm read its budget; a withdrawal or a mandate is
+	// passkey-only whatever was emailed today.
+	let used = match action {
+		Action::Move(_) => Used24h {
+			moved: used(store::move_budget(&caller.claims.sub)).await?,
+			emailed: used(store::email_budget(&caller.claims.sub)).await?,
+		},
+		Action::Pay(_) => Used24h {
+			moved: Usdt::ZERO,
+			emailed: used(store::email_budget(&caller.claims.sub)).await?,
+		},
+		Action::Withdraw(_) | Action::Mandate(_) => Used24h::default(),
 	};
-	let stepup = intent::stepup_for(action.kind(), terms.amount, moved_24h, &actions.policy);
+	let stepup = intent::stepup_for(action.kind(), terms.amount, used, &actions.policy);
 	let record = IntentRecord {
 		intent_id: intent::new_intent_id().map_err(|e| internal(format!("no randomness for an intent id: {e}")))?,
 		sub: caller.claims.sub.clone(),
@@ -512,7 +528,13 @@ pub struct ConfirmedIntent {
 /// Carry out a stored intent, in the order concierge's proof contract prescribes: verify
 /// the proof, win `created → authorized`, spend the proof's `jti`, execute. A lost race at
 /// any step is a refusal, and a proof is never spent for an intent that did not move.
+///
+/// An intent left `executing` (the hub's answer was lost or unclear) is confirmed again by
+/// sending the same act under the same idempotency key: the hub answers the first act, so
+/// the page learns the outcome without a second withdrawal or move. No proof, `jti` or budget
+/// is asked for or spent again; they were, when the act was first sent.
 pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<ConfirmedIntent>, ApiError> {
+	let started = tokio::time::Instant::now();
 	let actions = actions(&st)?;
 	let caller = host_caller(&st, actions, &jar, &headers).await?;
 	post_gate(&st, actions, &caller, &headers, &body)?;
@@ -542,11 +564,40 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 	}
 	match stored.status {
 		IntentStatus::Created => {}
+		// Past `expires_at` too: the act was authorised in time, and refusing the resend would
+		// leave the person a new intent — a new key, and a second act — as the only way to learn
+		// what happened. The window is the store's keep of an executing intent.
+		IntentStatus::Executing => {
+			let money_token = money_token_for(&st, &caller.claims).await?;
+			let stepup_method = match stored.stepup_method.as_deref() {
+				Some("passkey") => "passkey",
+				Some("email_code") => "email_code",
+				Some("none") => "none",
+				other => {
+					tracing::warn!(intent_id = %id, method = ?other, "an executing intent has no readable step-up method");
+					""
+				}
+			};
+			let audit = audit_for(&st, &headers, &peer, &record, stepup_method);
+			return finish(
+				Execution {
+					st: st.clone(),
+					record,
+					money_token,
+					audit,
+					stepup_method,
+					first: None,
+				},
+				started,
+			)
+			.await;
+		}
+		// `executed` stays refused (concierge contract item 7): its result was answered once.
 		IntentStatus::Authorized | IntentStatus::Executed | IntentStatus::Expired | IntentStatus::Cancelled => {
 			return Err(refused(StatusCode::CONFLICT, "intent_not_pending"));
 		}
 	}
-	let now = now();
+	let now = unix_now();
 	if now >= record.expires_at {
 		actions.store.transition(&id, IntentStatus::Created, IntentStatus::Expired).await.map_err(store_error)?;
 		return Err(refused(StatusCode::GONE, "intent_expired"));
@@ -586,56 +637,180 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 		None => None,
 	};
 
+	// The steps above can take seconds (`GetMe`, the money token, the terms, the JWKS); an
+	// intent that expired meanwhile must not be authorised on a check made before them.
+	if unix_now() >= record.expires_at {
+		actions.store.transition(&id, IntentStatus::Created, IntentStatus::Expired).await.map_err(store_error)?;
+		return Err(refused(StatusCode::GONE, "intent_expired"));
+	}
 	if !actions.store.transition(&id, IntentStatus::Created, IntentStatus::Authorized).await.map_err(store_error)? {
 		return Err(refused(StatusCode::CONFLICT, "intent_not_pending"));
 	}
-	if let Some(claims) = &proof
-		&& !actions.store.spend_jti(&claims.jti, claims.exp.saturating_sub(now) + 5).await.map_err(store_error)?
-	{
-		tracing::warn!(intent_id = %id, "step-up proof replayed");
-		return Err(cancel(actions, &id, "proof_replayed").await);
+	let stepup_method = proof.as_ref().map(|claims| claims.method.as_str()).unwrap_or("none");
+	let audit = audit_for(&st, &headers, &peer, &record, stepup_method);
+	finish(
+		Execution {
+			st: st.clone(),
+			record,
+			money_token,
+			audit,
+			stepup_method,
+			first: Some(FirstSend {
+				proof: proof.map(|claims| (claims.jti, claims.exp, claims.method)),
+			}),
+		},
+		started,
+	)
+	.await
+}
+
+/// How long a confirmation waits for its act before it answers `intent_executing`: inside
+/// the router's outer deadline, whose `504` carries no CORS header and so reaches the page as
+/// a bare network failure.
+const ANSWER_WITHIN: Duration = Duration::from_secs(13);
+
+/// How long an `executing` intent is kept, counted from when the act was first sent: the
+/// window in which a confirm can still send it again and learn the outcome.
+pub const EXECUTING_KEEP_SECS: u64 = 86_400;
+
+/// One act to send to the hub, and the writes around it.
+struct Execution {
+	st: AppState,
+	record: IntentRecord,
+	money_token: String,
+	audit: bk::AuditContext,
+	stepup_method: &'static str,
+	/// `Some` for the first send, which still owes the `jti` and the budgets; `None` for a
+	/// resend of an `executing` intent, which already paid them.
+	first: Option<FirstSend>,
+}
+
+struct FirstSend {
+	/// The verified proof's `jti`, `exp` and method.
+	proof: Option<(String, u64, StepupMethod)>,
+}
+
+/// Run `execution` on its own task and wait for it within [`ANSWER_WITHIN`]. Neither a
+/// dropped connection nor the router's deadline can then cut the act off from the status
+/// write that records it; a confirm that stops waiting answers `intent_executing`, and the
+/// task goes on to the end.
+async fn finish(execution: Execution, started: tokio::time::Instant) -> Result<Json<ConfirmedIntent>, ApiError> {
+	let intent_id = execution.record.intent_id.clone();
+	let task = tokio::spawn(execution.run().in_current_span());
+	match tokio::time::timeout_at(started + ANSWER_WITHIN, task).await {
+		Ok(Ok(answer)) => answer.map(Json),
+		Ok(Err(join)) => Err(internal(format!("the execution of intent {intent_id} failed: {join}"))),
+		Err(_) => {
+			tracing::warn!(%intent_id, "the hub did not answer in time; the intent is left executing for a resend");
+			Err(refused(StatusCode::SERVICE_UNAVAILABLE, "intent_executing"))
+		}
 	}
-	if let Action::Move(_) = record.action {
-		let amount = match record.summary.amount.as_deref().map(Usdt::parse_decimal) {
-			Some(Ok(amount)) => amount,
-			Some(Err(e)) => return Err(internal(format!("a sealed move has an unreadable amount: {e}"))),
-			None => return Err(internal("a sealed move has no amount")),
-		};
-		// A move that needed no step-up is held to the 24 h line again here, atomically: two
-		// intents created side by side each saw the budget before the other spent it.
-		let cap = (!record.stepup.required).then(|| intent::micro_floor(actions.policy.no_stepup_24h));
-		let budget = store::move_budget(&record.sub, &record.origin);
-		if !actions
-			.store
-			.count_move(&budget, &record.intent_id, intent::micro_ceil(amount), cap, now)
-			.await
-			.map_err(store_error)?
-		{
-			return Err(cancel(actions, &id, "limit_reached").await);
+}
+
+impl Execution {
+	async fn run(self) -> Result<ConfirmedIntent, ApiError> {
+		let actions = actions(&self.st)?;
+		let id = self.record.intent_id.as_str();
+		if let Some(first) = &self.first {
+			self.pay_the_first_send(actions, first).await?;
+			if !actions.store.begin_execution(id, self.stepup_method, EXECUTING_KEEP_SECS).await.map_err(store_error)? {
+				return Err(refused(StatusCode::CONFLICT, "intent_not_pending"));
+			}
+		}
+		match execute(&self.st, &self.money_token, &self.record, self.audit.clone()).await {
+			Ok(result) => {
+				// The act is done whatever the store says now; the answer is the hub's. A lost
+				// write leaves the intent `executing`, and a later confirm resends and gets the
+				// same act back.
+				match actions.store.transition(id, IntentStatus::Executing, IntentStatus::Executed).await {
+					Ok(true) => {}
+					Ok(false) => tracing::debug!(intent_id = %id, "another confirm recorded the execution first"),
+					Err(error) => tracing::error!(intent_id = %id, %error, "the executed intent could not be recorded"),
+				}
+				Ok(ConfirmedIntent {
+					intent_id: self.record.intent_id.clone(),
+					status: IntentStatus::Executed.as_str(),
+					stepup_method: self.stepup_method,
+					result,
+				})
+			}
+			// On the first send the hub had never seen the key, so a refusal means it did not
+			// act. On a resend the first send may have acted, so the intent stays `executing`.
+			Err(status) if hub_refused(status.code()) => {
+				if self.first.is_some() {
+					match actions.store.transition(id, IntentStatus::Executing, IntentStatus::Cancelled).await {
+						Ok(_) => {}
+						Err(error) => tracing::error!(intent_id = %id, %error, "a refused intent could not be recorded"),
+					}
+				}
+				Err(ApiError::Grpc(status))
+			}
+			Err(status) => {
+				tracing::warn!(intent_id = %id, code = ?status.code(), detail = %status.message(), "the hub's answer is unclear; the intent is left executing for a resend");
+				Err(refused(StatusCode::SERVICE_UNAVAILABLE, "intent_executing"))
+			}
 		}
 	}
 
-	let stepup_method = proof.as_ref().map(|claims| claims.method.as_str()).unwrap_or("none");
-	let mut audit = audit_context(&st, &headers, peer.addr(), stepup_method);
+	/// What the first send owes before the act: the proof's `jti` (concierge doc item 4), the
+	/// day's emailed total, and the move budget. Each is counted once, here, and stays counted
+	/// if the hub then refuses (the safe side).
+	async fn pay_the_first_send(&self, actions: &WalletActions, first: &FirstSend) -> Result<(), ApiError> {
+		let id = self.record.intent_id.as_str();
+		let now = unix_now();
+		if let Some((jti, exp, _)) = &first.proof
+			&& !actions.store.spend_jti(jti, exp.saturating_sub(now) + 5).await.map_err(store_error)?
+		{
+			tracing::warn!(intent_id = %id, "step-up proof replayed");
+			return Err(cancel(actions, id, "proof_replayed").await);
+		}
+		// Checked again here, atomically: two intents created side by side each saw the
+		// budget before the other spent it.
+		if let Some((_, _, StepupMethod::EmailCode)) = &first.proof {
+			let amount = sealed_amount(&self.record)?;
+			let cap = Some(intent::micro_floor(actions.policy.email_24h));
+			if !actions
+				.store
+				.count_against(&store::email_budget(&self.record.sub), id, intent::micro_ceil(amount), cap, now)
+				.await
+				.map_err(store_error)?
+			{
+				return Err(cancel(actions, id, "email_limit_reached").await);
+			}
+		}
+		if let Action::Move(_) = self.record.action {
+			let amount = sealed_amount(&self.record)?;
+			// Only a move that needed no step-up is held to the line; every move is counted.
+			let cap = (!self.record.stepup.required).then(|| intent::micro_floor(actions.policy.no_stepup_24h));
+			if !actions
+				.store
+				.count_against(&store::move_budget(&self.record.sub), id, intent::micro_ceil(amount), cap, now)
+				.await
+				.map_err(store_error)?
+			{
+				return Err(cancel(actions, id, "limit_reached").await);
+			}
+		}
+		Ok(())
+	}
+}
+
+/// The amount a sealed pay or move confirms.
+fn sealed_amount(record: &IntentRecord) -> Result<Usdt, ApiError> {
+	match record.summary.amount.as_deref().map(Usdt::parse_decimal) {
+		Some(Ok(amount)) => Ok(amount),
+		Some(Err(e)) => Err(internal(format!("a sealed intent has an unreadable amount: {e}"))),
+		None => Err(internal("a sealed intent has no amount")),
+	}
+}
+
+/// The audit block of the act: the request's own reading, with the intent's origin and id and
+/// the step-up method the act was authorised with.
+fn audit_for(st: &AppState, headers: &HeaderMap, peer: &Peer, record: &IntentRecord, stepup_method: &str) -> bk::AuditContext {
+	let mut audit = audit_context(st, headers, peer.addr(), stepup_method);
 	audit.origin = record.origin.clone();
 	audit.intent_id = record.intent_id.clone();
-	match execute(&st, &money_token, &record, audit).await {
-		Ok(result) => {
-			actions.store.transition(&id, IntentStatus::Authorized, IntentStatus::Executed).await.map_err(store_error)?;
-			Ok(Json(ConfirmedIntent {
-				intent_id: record.intent_id,
-				status: IntentStatus::Executed.as_str(),
-				stepup_method,
-				result,
-			}))
-		}
-		Err(status) => {
-			if hub_refused(status.code()) {
-				actions.store.transition(&id, IntentStatus::Authorized, IntentStatus::Cancelled).await.map_err(store_error)?;
-			}
-			Err(ApiError::Grpc(status))
-		}
-	}
+	audit
 }
 
 /// `authorized → cancelled` for an intent that won its transition but may not go on, and
@@ -647,9 +822,8 @@ async fn cancel(actions: &WalletActions, id: &str, code: &'static str) -> ApiErr
 	}
 }
 
-/// Whether the hub's answer means it did not act. Anything else leaves the outcome unknown,
-/// so the intent stays `authorized`: it cannot be confirmed twice, and a retry by the hub's
-/// own idempotency key (the intent id) could only return the first result.
+/// Whether the hub's answer means it did not act on this send. Anything else leaves the
+/// outcome unknown, and the intent stays `executing` for a resend under the same key.
 fn hub_refused(code: Code) -> bool {
 	match code {
 		Code::InvalidArgument

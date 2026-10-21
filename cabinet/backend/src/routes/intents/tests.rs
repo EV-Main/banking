@@ -10,8 +10,9 @@ use std::{
 	net::SocketAddr,
 	sync::{
 		Arc, Mutex,
-		atomic::{AtomicU64, AtomicUsize, Ordering},
+		atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 	},
+	time::Duration,
 };
 
 use axum::{
@@ -49,7 +50,7 @@ use crate::{
 		WalletActions,
 		intent::{self, Action, IntentRecord, MoveParams, SessionBinding, Stepup, Summary},
 		keys::{self, IntentKeys},
-		store::{IntentStatus, MemoryStore, WalletStore},
+		store::{self, BUDGET_WINDOW_SECS, IntentStatus, MemoryStore, WalletStore},
 	},
 };
 
@@ -190,10 +191,14 @@ impl UserDirectory for Concierge {
 
 #[derive(Default)]
 struct Seen {
+	/// The acts the hub opened: one per idempotency key, as the real hub keeps them.
 	moves: Vec<bk::MoveFundsRequest>,
 	withdrawals: Vec<bk::RequestWithdrawalRequest>,
 	payments: Vec<bk::PayInvoiceRequest>,
 	grants: Vec<bk::GrantMandateRequest>,
+	/// Every key a move or a withdrawal was sent under, repeats included.
+	keys_sent: Vec<String>,
+	invoice_reads: usize,
 }
 
 impl Seen {
@@ -207,11 +212,28 @@ struct Hub {
 	seen: Arc<Mutex<Seen>>,
 	invoice: Arc<Mutex<bk::PayableInvoice>>,
 	mandate_request: Arc<Mutex<bk::MandateRequest>>,
+	/// When set, the next move or withdrawal is committed and its answer then lost — what a
+	/// dropped connection or a timeout after the commit looks like to the BFF.
+	lose_next_answer: Arc<AtomicBool>,
+	/// How long an invoice read takes, so a confirm can be made to cross its expiry.
+	invoice_read_delay: Arc<Mutex<Duration>>,
+}
+
+impl Hub {
+	fn answer(&self) -> Result<(), Status> {
+		if self.lose_next_answer.swap(false, Ordering::SeqCst) {
+			Err(Status::unavailable("connection reset after the commit"))
+		} else {
+			Ok(())
+		}
+	}
 }
 
 impl Default for Hub {
 	fn default() -> Self {
 		Self {
+			lose_next_answer: Arc::default(),
+			invoice_read_delay: Arc::default(),
 			seen: Arc::default(),
 			invoice: Arc::new(Mutex::new(bk::PayableInvoice {
 				invoice_id: INVOICE.into(),
@@ -290,7 +312,14 @@ impl bk::compartment_service_server::CompartmentService for Hub {
 			state: "pending".into(),
 			..Default::default()
 		};
-		self.seen.lock().unwrap().moves.push(request);
+		{
+			let mut seen = self.seen.lock().unwrap();
+			seen.keys_sent.push(request.idempotency_key.clone());
+			if !seen.moves.iter().any(|first| first.idempotency_key == request.idempotency_key) {
+				seen.moves.push(request);
+			}
+		}
+		self.answer()?;
 		Ok(GrpcResponse::new(reply))
 	}
 
@@ -323,6 +352,9 @@ impl bk::compartment_service_server::CompartmentService for Hub {
 #[tonic::async_trait]
 impl bk::invoice_payment_service_server::InvoicePaymentService for Hub {
 	async fn get_payable_invoice(&self, _: GrpcRequest<bk::GetPayableInvoiceRequest>) -> Result<GrpcResponse<bk::PayableInvoice>, Status> {
+		self.seen.lock().unwrap().invoice_reads += 1;
+		let delay = *self.invoice_read_delay.lock().unwrap();
+		tokio::time::sleep(delay).await;
 		Ok(GrpcResponse::new(self.invoice.lock().unwrap().clone()))
 	}
 
@@ -363,7 +395,14 @@ impl bk::wallet_service_server::WalletService for Hub {
 			state: "queued".into(),
 			..Default::default()
 		};
-		self.seen.lock().unwrap().withdrawals.push(request);
+		{
+			let mut seen = self.seen.lock().unwrap();
+			seen.keys_sent.push(request.idempotency_key.clone());
+			if !seen.withdrawals.iter().any(|first| first.idempotency_key == request.idempotency_key) {
+				seen.withdrawals.push(request);
+			}
+		}
+		self.answer()?;
 		Ok(GrpcResponse::new(reply))
 	}
 
@@ -1283,4 +1322,158 @@ async fn an_unknown_signing_key_refreshes_the_jwks_at_most_once_per_window() {
 	}
 	assert_eq!(h.concierge.jwks_calls.load(Ordering::SeqCst) - before, 1, "the first miss fetches, the rest wait out the window");
 	assert_eq!(h.acts(), 0);
+}
+
+async fn status_of(h: &Harness, intent: &Value) -> IntentStatus {
+	let id = intent["intent_id"].as_str().expect("an intent id");
+	h.store.get_intent(id).await.unwrap().expect("the intent is kept").status
+}
+
+/// The hub commits the move and the answer is lost. The page confirms the SAME intent again:
+/// the act goes out under the same key, the hub opens no second move, and the page gets the
+/// first result. Nothing is asked for or spent twice, and an executed intent stays closed.
+#[tokio::test]
+async fn a_lost_answer_is_resent_under_the_same_key_and_opens_one_act() {
+	let h = harness(INVEST, "move").await;
+	let intent = h.intent(INVEST, move_in("invest", "150")).await;
+	let id = intent["intent_id"].as_str().unwrap().to_owned();
+	let proof = Proof::for_intent(&intent);
+	h.hub.lose_next_answer.store(true, Ordering::SeqCst);
+	let lost = h.confirm(INVEST, &intent, proof.body()).await;
+	assert_eq!((lost.status, lost.error()), (StatusCode::SERVICE_UNAVAILABLE, "intent_executing"));
+	assert_eq!(cors_of(&lost.headers), (Some(INVEST), Some("true")), "the page can read that it may resend");
+	assert_eq!(status_of(&h, &intent).await, IntentStatus::Executing);
+
+	let resent = h.confirm(INVEST, &intent, json!({})).await;
+	assert_eq!(resent.status, StatusCode::OK, "no proof is asked for again: {}", resent.body);
+	assert_eq!((resent.body["status"].as_str(), resent.body["stepup_method"].as_str()), (Some("executed"), Some("passkey")));
+	assert_eq!(resent.body["result"]["amount"], "150");
+	{
+		let seen = h.hub.seen.lock().unwrap();
+		assert_eq!(seen.keys_sent, vec![id.clone(), id.clone()], "the same key both times");
+		assert_eq!(seen.moves.len(), 1, "one move opened");
+	}
+	assert!(!h.store.spend_jti(&proof.jti, 60).await.unwrap(), "the proof's jti was spent on the first send");
+	let moved = h.store.used_since(&store::move_budget(USER), now() - BUDGET_WINDOW_SECS).await.unwrap();
+	assert_eq!(moved, 150_000_000, "the move is counted once");
+	assert_eq!(status_of(&h, &intent).await, IntentStatus::Executed);
+
+	let again = h.confirm(INVEST, &intent, json!({})).await;
+	assert_eq!((again.status, again.error()), (StatusCode::CONFLICT, "intent_not_pending"), "an executed intent is answered once");
+	assert_eq!(h.hub.seen.lock().unwrap().keys_sent.len(), 2);
+}
+
+/// The same for a withdrawal: money leaving the platform is sent once whatever happens to the
+/// answer.
+#[tokio::test]
+async fn a_withdrawal_whose_answer_was_lost_is_not_opened_twice() {
+	let h = harness(INVEST, "move,withdraw").await;
+	let intent = h
+		.intent(INVEST, json!({"kind": "withdraw", "params": {"network": "bep20", "address": BEP20, "amount": "900"}}))
+		.await;
+	h.hub.lose_next_answer.store(true, Ordering::SeqCst);
+	let lost = h.confirm(INVEST, &intent, Proof::for_intent(&intent).body()).await;
+	assert_eq!(lost.error(), "intent_executing");
+	let resent = h.confirm(INVEST, &intent, Proof::for_intent(&intent).body()).await;
+	assert_eq!(
+		resent.status,
+		StatusCode::OK,
+		"a proof sent along on the resend is not needed and not in the way: {}",
+		resent.body
+	);
+	let seen = h.hub.seen.lock().unwrap();
+	assert_eq!((seen.keys_sent.len(), seen.withdrawals.len()), (2, 1));
+	assert_eq!(seen.withdrawals[0].idempotency_key, intent["intent_id"].as_str().unwrap());
+}
+
+/// An intent whose act was sent before it expired can still be resent after: refusing would
+/// leave a new intent, with a new key, as the only way on.
+#[tokio::test]
+async fn an_executing_intent_can_be_resent_after_its_expiry() {
+	let h = harness(INVEST, "move").await;
+	let intent = plant(&h, now() - 200, now() - 80).await;
+	let id = intent["intent_id"].as_str().unwrap();
+	assert!(h.store.transition(id, IntentStatus::Created, IntentStatus::Authorized).await.unwrap());
+	assert!(h.store.begin_execution(id, "none", 3_600).await.unwrap());
+	let answer = h.confirm(INVEST, &intent, json!({})).await;
+	assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+	assert_eq!(answer.body["stepup_method"], "none", "the method the act was authorised with");
+	assert_eq!(h.hub.seen.lock().unwrap().moves[0].audit.as_ref().unwrap().stepup_method, "none");
+}
+
+/// The expiry is checked again right before `created → authorized`: the reads of a confirm
+/// can take seconds, and an intent that expired during them is not authorised.
+#[tokio::test]
+async fn an_intent_that_expires_during_its_confirm_is_not_authorised() {
+	let h = harness(INVEST, "pay").await;
+	let created = h.intent(INVEST, json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}})).await;
+	// The same intent, re-sealed to end two seconds from now.
+	let id = created["intent_id"].as_str().unwrap();
+	let stored = h.store.get_intent(id).await.unwrap().unwrap();
+	let mut record: IntentRecord = serde_json::from_slice(&stored.record).unwrap();
+	record.expires_at = now() + 2;
+	let bytes = record.to_bytes().unwrap();
+	let hash = intent::intent_hash(&bytes);
+	h.store.put_intent(id, &bytes, &h.keys.seal(&hash), 600).await.unwrap();
+	let intent = json!({"intent_id": id, "intent_hash": keys::hex(&hash)});
+
+	*h.hub.invoice_read_delay.lock().unwrap() = Duration::from_secs(3);
+	let reads_before = h.hub.seen.lock().unwrap().invoice_reads;
+	let answer = h.confirm(INVEST, &intent, Proof::for_intent(&intent).body()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::GONE, "intent_expired"), "{}", answer.body);
+	assert_eq!(
+		h.hub.seen.lock().unwrap().invoice_reads,
+		reads_before + 1,
+		"it expired after the first check, during the terms re-read"
+	);
+	assert_eq!(status_of(&h, &intent).await, IntentStatus::Expired);
+	assert_eq!(h.acts(), 0);
+}
+
+/// The 24 h line of moves without a step-up is one total per person across hosts: what was
+/// moved through invest counts on the SA panel too.
+#[tokio::test]
+async fn the_move_budget_is_one_total_across_hosts() {
+	let h = harness(BOTH, "move").await;
+	for (origin, scope) in [(INVEST, "invest"), (INVEST, "invest"), (SA, "sa")] {
+		let intent = h.intent(origin, move_in(scope, "100")).await;
+		assert_eq!(intent["stepup"]["required"], false, "{origin}");
+		assert_eq!(h.confirm(origin, &intent, json!({})).await.status, StatusCode::OK, "{origin}");
+	}
+	let next = h.intent(SA, move_in("sa", "1")).await;
+	assert_eq!(next["stepup"]["required"], true, "300 already moved, through two hosts");
+}
+
+/// Emailed codes confirm at most 500 USDT a day per person: two 250 payments pass, a third
+/// one created before them is refused at confirm, and the next one is offered a passkey only.
+#[tokio::test]
+async fn emailed_codes_stop_at_the_daily_total() {
+	let h = harness(INVEST, "pay").await;
+	h.hub.invoice.lock().unwrap().amount = "250".into();
+	let pay = json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}});
+	let intents = [h.intent(INVEST, pay.clone()).await, h.intent(INVEST, pay.clone()).await, h.intent(INVEST, pay.clone()).await];
+	for intent in &intents {
+		assert_eq!(intent["stepup"]["methods"], json!(["passkey", "email_code"]), "nothing emailed yet when each was created");
+	}
+	let email = |intent: &Value| {
+		Proof {
+			method: StepupMethod::EmailCode,
+			..Proof::for_intent(intent)
+		}
+		.body()
+	};
+	assert_eq!(h.confirm(INVEST, &intents[0], email(&intents[0])).await.status, StatusCode::OK);
+	assert_eq!(h.confirm(INVEST, &intents[1], email(&intents[1])).await.status, StatusCode::OK);
+	let third = h.confirm(INVEST, &intents[2], email(&intents[2])).await;
+	assert_eq!((third.status, third.error()), (StatusCode::CONFLICT, "email_limit_reached"));
+	assert_eq!(status_of(&h, &intents[2]).await, IntentStatus::Cancelled);
+	assert_eq!(h.acts(), 2);
+
+	let next = h.intent(INVEST, pay).await;
+	assert_eq!(next["stepup"]["methods"], json!(["passkey"]), "the day's emailed total is used up");
+	assert_eq!(
+		h.confirm(INVEST, &next, Proof::for_intent(&next).body()).await.status,
+		StatusCode::OK,
+		"a passkey is not limited by it"
+	);
 }

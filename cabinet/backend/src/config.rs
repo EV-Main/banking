@@ -80,17 +80,22 @@ ev::settings! {
 		/// through its own derived subkey. Required once a host is switched on.
 		#[secret]
 		wallet_intent_key: Option<WalletIntentKey>,
-		/// The store every replica shares for intents, spent step-up proofs and the move
-		/// budget. Required in production once a host is switched on: with an in-process store
-		/// a proof could be spent once per replica.
+		/// The store every replica shares for intents, spent step-up proofs and the budgets.
+		/// Required in production once a host is switched on: with an in-process store a proof
+		/// could be spent once per replica. A secret: in production it carries the Redis
+		/// password (`redis://default:<password>@…`).
+		#[secret]
 		redis_url: Option<String>,
 		/// A move through a host at or below this (decimal USDT) needs no step-up, while…
 		wallet_move_no_stepup_per_op_usdt: UsdtThreshold = "100",
-		/// …the user's moves through that host in 24 h stay at or below this.
+		/// …the user's moves through all hosts together in 24 h stay at or below this.
 		wallet_move_no_stepup_24h_usdt: UsdtThreshold = "300",
 		/// The largest pay or move an emailed code may confirm; above it a passkey only. The
 		/// email method rests on a mailbox and on a summary the page writes itself.
 		wallet_email_stepup_cap_usdt: UsdtThreshold = "250",
+		/// The most one user may confirm by emailed code in 24 h, through all hosts together;
+		/// past it a passkey only.
+		wallet_email_stepup_24h_usdt: UsdtThreshold = "500",
 		/// How many reverse proxies in front of the BFF append to `X-Forwarded-For` (Traefik
 		/// alone is 1; Traefik plus the Next.js `/api` rewrite is 2). The audit trail takes the
 		/// address that many entries from the RIGHT, because everything left of the trusted hops is
@@ -172,6 +177,7 @@ impl AppConfig {
 			("WALLET_MOVE_NO_STEPUP_PER_OP_USDT", &self.wallet_move_no_stepup_per_op_usdt),
 			("WALLET_MOVE_NO_STEPUP_24H_USDT", &self.wallet_move_no_stepup_24h_usdt),
 			("WALLET_EMAIL_STEPUP_CAP_USDT", &self.wallet_email_stepup_cap_usdt),
+			("WALLET_EMAIL_STEPUP_24H_USDT", &self.wallet_email_stepup_24h_usdt),
 		] {
 			if let Err(why) = crate::wallet_intents::usdt(threshold) {
 				problems.push(format!("{var}: {why}"));
@@ -338,6 +344,7 @@ mod tests {
 				"WALLET_MOVE_NO_STEPUP_PER_OP_USDT",
 				"WALLET_MOVE_NO_STEPUP_24H_USDT",
 				"WALLET_EMAIL_STEPUP_CAP_USDT",
+				"WALLET_EMAIL_STEPUP_24H_USDT",
 				"TRUSTED_PROXY_HOPS",
 				"APP_ENV",
 				"SENTRY_DSN",
@@ -532,10 +539,20 @@ mod tests {
 	}
 
 	#[test]
-	fn the_wallet_key_never_prints() {
-		let config = with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).unwrap();
-		assert!(!format!("{config:?}").contains(KEY));
+	fn the_wallet_key_and_the_redis_password_never_print() {
+		let url = "redis://default:hunter2-redis-password@10.42.0.1:6379/2";
+		let config = with_wallet(
+			minimal_env(),
+			&[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY), ("REDIS_URL", url)],
+		)
+		.unwrap();
+		let printed = format!("{config:?}");
+		assert!(!printed.contains(KEY) && !printed.contains("hunter2"), "{printed}");
 		assert!(!format!("{:?}", config.wallet_intent_key).contains(KEY));
+		let mut prod = production_env();
+		prod.insert("REDIS_URL".into(), url.into());
+		let refused = with_wallet(prod, &[("WALLET_ACTION_ORIGINS", "https://rogue.evinvest.ltd")]).expect_err("a host outside the matrix");
+		assert!(!refused.contains("hunter2"), "{refused}");
 	}
 
 	#[test]
