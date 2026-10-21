@@ -1948,6 +1948,7 @@ mod admin_route_tests {
 			banking: Arc::new(BankingTokens::new()),
 			approvals: Arc::new(crate::routes::approval::AttemptLimiter::default()),
 			money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
+			wallet_actions: None,
 			verifier,
 			grpc: Grpc::connect_lazy(&endpoint, &endpoint, &endpoint, Some("test-issuance".into())).expect("build the lazy channels"),
 			config: Arc::new(config),

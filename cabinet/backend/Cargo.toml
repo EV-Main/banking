@@ -12,19 +12,30 @@ name = "cabinet-backend"
 path = "src/main.rs"
 
 [dependencies]
+# The wallet store's trait object (`wallet_intents::store`).
+async-trait.workspace = true
 # `ws` for the governance socket only — the rest of the surface is plain JSON.
 axum = { workspace = true, features = ["ws"] }
 axum-extra = { workspace = true, features = ["cookie"] }
 color-eyre.workspace = true
 concierge_domain.workspace = true
 concierge_iam.workspace = true
+# The hub's own money types (`Usdt`, `Network`, `WalletAddress`), so an intent's amounts and
+# addresses are read by the rules the hub applies.
+domain.workspace = true
 dotenvy.workspace = true
 ev = { workspace = true, features = ["analytics", "error_monitoring", "otel", "settings", "settings_drift"] }
 evbanking_contracts.workspace = true
 evconcierge_auth.workspace = true
 evconcierge_contracts.workspace = true
+# Random intent ids.
+getrandom.workspace = true
+# The store shared by all replicas: intents, spent step-up `jti`s, the move budget.
+redis.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Intent hashes and the HMAC of the wallet key.
+sha2.workspace = true
 subtle.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["full"] }

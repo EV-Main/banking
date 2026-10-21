@@ -30,6 +30,9 @@ pub enum ApiError {
 	ReadFailed { code: Code, message: String },
 	/// An internal failure (e.g. registry file unreadable) (502).
 	Internal(String),
+	/// A refusal the BFF decides itself, with a fixed code the page keys on — the wallet
+	/// intent routes' `scope_mismatch`, `intent_expired`, `proof_required` and the like.
+	Refused(StatusCode, &'static str),
 }
 
 impl ApiError {
@@ -88,6 +91,7 @@ impl IntoResponse for ApiError {
 			ApiError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
 			ApiError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, "auth not configured".to_string()),
 			ApiError::Internal(m) => (StatusCode::BAD_GATEWAY, m),
+			ApiError::Refused(status, code) => (status, code.to_string()),
 			ApiError::ReadFailed { code, message } => (http_status_for(code), message),
 			ApiError::Grpc(s) => {
 				// Only codes the hub uses to express client-correctable conditions carry their

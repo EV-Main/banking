@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 
+use crate::wallet_intents::{IntentKind, production_host_rule, trusted_host};
+
 ev::settings! {
 	/// Runtime configuration for the cabinet BFF, read from the environment only
 	/// (`dotenvy` loads `.env` first in dev; prod values ride the container env —
@@ -65,6 +67,35 @@ ev::settings! {
 		/// default is the product's line, and a malformed value fails the boot rather than
 		/// silently lifting the check.
 		pay_stepup_threshold_usdt: UsdtThreshold = "100",
+		/// The host pages that may run a wallet action in place (`routes::intents`,
+		/// `docs/WALLET-INTENTS.md`). Empty ⇒ the intent routes are not mounted at all. Each
+		/// must be an entry of the in-code matrix (`wallet_intents::TRUSTED_HOSTS`): this
+		/// list switches a host on and cannot add one. See [`Self::check_wallet_actions`].
+		wallet_action_origins: Vec<CorsOrigin> = "",
+		/// The kinds a host may ask for (`move`, `pay`, `mandate`, `withdraw`), narrowing each
+		/// host's matrix entry. `move` alone by default: the spec switches the kinds on one by
+		/// one, with observation after each.
+		wallet_action_kinds: Vec<IntentKind> = "move",
+		/// The BFF's wallet key: it signs the hosts' CSRF tokens and seals stored intents, each
+		/// through its own derived subkey. Required once a host is switched on.
+		#[secret]
+		wallet_intent_key: Option<WalletIntentKey>,
+		/// The store every replica shares for intents, spent step-up proofs and the budgets.
+		/// Required in production once a host is switched on: with an in-process store a proof
+		/// could be spent once per replica. A secret: in production it carries the Redis
+		/// password (`redis://default:<password>@…`).
+		#[secret]
+		redis_url: Option<String>,
+		/// A move through a host at or below this (decimal USDT) needs no step-up, while…
+		wallet_move_no_stepup_per_op_usdt: UsdtThreshold = "100",
+		/// …the user's moves through all hosts together in 24 h stay at or below this.
+		wallet_move_no_stepup_24h_usdt: UsdtThreshold = "300",
+		/// The largest pay or move an emailed code may confirm; above it a passkey only. The
+		/// email method rests on a mailbox and on a summary the page writes itself.
+		wallet_email_stepup_cap_usdt: UsdtThreshold = "250",
+		/// The most one user may confirm by emailed code in 24 h, through all hosts together;
+		/// past it a passkey only.
+		wallet_email_stepup_24h_usdt: UsdtThreshold = "500",
 		/// How many reverse proxies in front of the BFF append to `X-Forwarded-For` (Traefik
 		/// alone is 1; Traefik plus the Next.js `/api` rewrite is 2). The audit trail takes the
 		/// address that many entries from the RIGHT, because everything left of the trusted hops is
@@ -112,7 +143,75 @@ impl AppConfig {
 			foreign.join(", ")
 		))
 	}
+
+	/// The boot check of the wallet-intent surface; nothing to check while it is off. Every
+	/// listed origin must be a matrix entry and must not be the cabinet's own; production
+	/// also holds each to [`production_host_rule`] and needs `REDIS_URL`. The key is needed
+	/// everywhere: without it there is nothing to sign a CSRF token or an intent with.
+	pub fn check_wallet_actions(&self) -> Result<(), String> {
+		if self.wallet_action_origins.is_empty() {
+			return Ok(());
+		}
+		let production = self.app_env == "production";
+		let mut problems = Vec::new();
+		for origin in self.wallet_action_origins.iter().map(CorsOrigin::as_str) {
+			if trusted_host(origin).is_none() {
+				problems.push(format!("{origin} is not a host of the in-code matrix (wallet_intents::TRUSTED_HOSTS)"));
+			}
+			if production && let Err(why) = production_host_rule(origin) {
+				problems.push(format!("{origin} {why}"));
+			}
+			if self.cabinet_ws_origin.as_deref() == Some(origin) {
+				problems.push(format!("{origin} is the cabinet's own origin; its wallet routes are the first-party ones"));
+			}
+		}
+		match &self.wallet_intent_key {
+			None => problems.push("WALLET_INTENT_KEY is required once WALLET_ACTION_ORIGINS names a host".to_owned()),
+			Some(key) if key.0.len() < MIN_WALLET_INTENT_KEY_BYTES => problems.push(format!("WALLET_INTENT_KEY is shorter than {MIN_WALLET_INTENT_KEY_BYTES} bytes")),
+			Some(_) => {}
+		}
+		if production && self.redis_url.is_none() {
+			problems.push("REDIS_URL is required in production once WALLET_ACTION_ORIGINS names a host".to_owned());
+		}
+		for (var, threshold) in [
+			("WALLET_MOVE_NO_STEPUP_PER_OP_USDT", &self.wallet_move_no_stepup_per_op_usdt),
+			("WALLET_MOVE_NO_STEPUP_24H_USDT", &self.wallet_move_no_stepup_24h_usdt),
+			("WALLET_EMAIL_STEPUP_CAP_USDT", &self.wallet_email_stepup_cap_usdt),
+			("WALLET_EMAIL_STEPUP_24H_USDT", &self.wallet_email_stepup_24h_usdt),
+		] {
+			if let Err(why) = crate::wallet_intents::usdt(threshold) {
+				problems.push(format!("{var}: {why}"));
+			}
+		}
+		if problems.is_empty() { Ok(()) } else { Err(problems.join("; ")) }
+	}
 }
+
+/// The shortest wallet key the boot accepts: 32 bytes, a whole SHA-256 block's worth of the
+/// HMAC's strength. `openssl rand -hex 32` gives 64.
+pub const MIN_WALLET_INTENT_KEY_BYTES: usize = 32;
+
+/// The wallet key, redacted in every `Debug` like [`IssuanceToken`].
+#[derive(Clone, Default)]
+pub struct WalletIntentKey(String);
+impl WalletIntentKey {
+	pub fn as_bytes(&self) -> &[u8] {
+		self.0.as_bytes()
+	}
+}
+impl std::fmt::Debug for WalletIntentKey {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("WalletIntentKey(<redacted>)")
+	}
+}
+impl std::str::FromStr for WalletIntentKey {
+	type Err = std::convert::Infallible;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(Self(s.to_owned()))
+	}
+}
+ev::settings_via_from_str!(WalletIntentKey);
 
 /// The issuance bearer as a newtype with a hand-written `Debug`, so the secret is never
 /// printed by a derived debug (mirrors `evbanking_auth`'s `IssuanceToken`). The settings
@@ -238,6 +337,14 @@ mod tests {
 				"CABINET_WS_ORIGIN",
 				"WALLET_CORS_ORIGINS",
 				"PAY_STEPUP_THRESHOLD_USDT",
+				"WALLET_ACTION_ORIGINS",
+				"WALLET_ACTION_KINDS",
+				"WALLET_INTENT_KEY",
+				"REDIS_URL",
+				"WALLET_MOVE_NO_STEPUP_PER_OP_USDT",
+				"WALLET_MOVE_NO_STEPUP_24H_USDT",
+				"WALLET_EMAIL_STEPUP_CAP_USDT",
+				"WALLET_EMAIL_STEPUP_24H_USDT",
 				"TRUSTED_PROXY_HOPS",
 				"APP_ENV",
 				"SENTRY_DSN",
@@ -349,6 +456,103 @@ mod tests {
 		dev.insert("MFE_ALLOWED_ORIGINS".to_string(), "http://localhost:3001".to_string());
 		let dev = AppConfig::from_source(|var| dev.get(var).cloned()).expect("dev env loads");
 		assert!(dev.check_script_origins().is_ok(), "local MFEs run on their own ports");
+	}
+
+	fn production_env() -> HashMap<String, String> {
+		let mut env = minimal_env();
+		env.insert("APP_ENV".to_string(), "production".to_string());
+		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
+		env.insert("CABINET_WS_ORIGIN".to_string(), "https://evinvest.ltd".to_string());
+		env
+	}
+
+	fn with_wallet(mut env: HashMap<String, String>, pairs: &[(&str, &str)]) -> Result<AppConfig, String> {
+		for (var, value) in pairs {
+			env.insert((*var).to_string(), (*value).to_string());
+		}
+		let config = AppConfig::from_source(|var| env.get(var).cloned()).map_err(|e| format!("{e:?}"))?;
+		config.check_wallet_actions().map(|()| config)
+	}
+
+	const KEY: &str = "0123456789abcdef0123456789abcdef";
+
+	/// Off by default: no origin, no routes, and nothing else is demanded — not even in
+	/// production, where the surface has to be switched on deliberately.
+	#[test]
+	fn wallet_actions_are_off_by_default_with_move_as_the_only_kind() {
+		let config = with_wallet(production_env(), &[]).expect("production boots with the surface off");
+		assert!(config.wallet_action_origins.is_empty());
+		assert_eq!(config.wallet_action_kinds, vec![IntentKind::Move]);
+		assert!(config.wallet_intent_key.is_none() && config.redis_url.is_none());
+		let config = with_wallet(minimal_env(), &[("WALLET_ACTION_KINDS", "move, pay,mandate,withdraw")]).expect("every kind parses");
+		assert_eq!(config.wallet_action_kinds, vec![IntentKind::Move, IntentKind::Pay, IntentKind::Mandate, IntentKind::Withdraw]);
+		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_KINDS", "move,transfer")]).is_err(), "an unknown kind fails the boot");
+	}
+
+	/// Production takes only the matrix's exact hosts, with the key and the shared store.
+	#[test]
+	fn production_switches_on_matrix_hosts_only() {
+		let good = [
+			("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd,https://sa.evinvest.ltd"),
+			("WALLET_INTENT_KEY", KEY),
+			("REDIS_URL", "redis://10.42.0.1:6379/2"),
+		];
+		with_wallet(production_env(), &good).expect("both hosts boot");
+
+		for bad in [
+			"https://rogue.evinvest.ltd",
+			"https://evinvest.ltd.evil.example",
+			"https://evinvest.ltd",
+			"https://invest.evinvest.ltd:8443",
+			"https://invest.evinvest.ltd/",
+			"https://invest.evinvest.ltd/wallet",
+			"http://invest.evinvest.ltd",
+			"http://localhost:3000",
+			"https://*.evinvest.ltd",
+			"*",
+			"null",
+		] {
+			let refused = with_wallet(production_env(), &[good[1], good[2], ("WALLET_ACTION_ORIGINS", bad)]);
+			assert!(refused.is_err(), "{bad} must not boot in production");
+		}
+		let refused = with_wallet(production_env(), &[good[0], good[1]]).expect_err("no shared store");
+		assert!(refused.contains("REDIS_URL"), "{refused}");
+		let refused = with_wallet(production_env(), &[good[0], good[2]]).expect_err("no key");
+		assert!(refused.contains("WALLET_INTENT_KEY"), "{refused}");
+		let refused = with_wallet(production_env(), &[good[0], good[2], ("WALLET_INTENT_KEY", "short")]).expect_err("a short key");
+		assert!(refused.contains("shorter than 32"), "{refused}");
+	}
+
+	/// A dev box may run on the in-process store, but never with a host the matrix lacks or
+	/// without a key.
+	#[test]
+	fn development_still_needs_a_matrix_host_and_a_key() {
+		with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).expect("no Redis is fine off production");
+		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "http://localhost:3001"), ("WALLET_INTENT_KEY", KEY)]).is_err());
+		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd")]).is_err());
+		let mut first_party = minimal_env();
+		first_party.insert("CABINET_WS_ORIGIN".into(), "https://invest.evinvest.ltd".into());
+		assert!(
+			with_wallet(first_party, &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).is_err(),
+			"the cabinet's own origin"
+		);
+	}
+
+	#[test]
+	fn the_wallet_key_and_the_redis_password_never_print() {
+		let url = "redis://default:hunter2-redis-password@10.42.0.1:6379/2";
+		let config = with_wallet(
+			minimal_env(),
+			&[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY), ("REDIS_URL", url)],
+		)
+		.unwrap();
+		let printed = format!("{config:?}");
+		assert!(!printed.contains(KEY) && !printed.contains("hunter2"), "{printed}");
+		assert!(!format!("{:?}", config.wallet_intent_key).contains(KEY));
+		let mut prod = production_env();
+		prod.insert("REDIS_URL".into(), url.into());
+		let refused = with_wallet(prod, &[("WALLET_ACTION_ORIGINS", "https://rogue.evinvest.ltd")]).expect_err("a host outside the matrix");
+		assert!(!refused.contains("hunter2"), "{refused}");
 	}
 
 	#[test]

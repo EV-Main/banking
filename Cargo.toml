@@ -30,8 +30,8 @@ chacha20poly1305 = "0.10"
 color-eyre = "0.6"
 # What a concierge seat means, `bank:*` included: the gates ask for these names. At the contracts'
 # rev; `concierge_iam` must match the domain's, or its `Permission` trait is another crate's.
-concierge_domain = { package = "domain", git = "https://github.com/EV-Main/concierge.git", rev = "656312a7900186d607623397f0e10ad69951d048" }
-concierge_iam = { git = "https://github.com/EV-Main/concierge.git", rev = "656312a7900186d607623397f0e10ad69951d048" }
+concierge_domain = { package = "domain", git = "https://github.com/EV-Main/concierge.git", rev = "537c10739075f885bbc9eb41de5bbd4fea91dd9b" }
+concierge_iam = { git = "https://github.com/EV-Main/concierge.git", rev = "537c10739075f885bbc9eb41de5bbd4fea91dd9b" }
 # Hub-internal crates. Other service repos depend on `evbanking_contracts` (and,
 # transitively, `evbanking_auth`) by git, so they get the wire stubs and the shared
 # auth verification flow from one place.
@@ -43,11 +43,11 @@ evbanking_auth = { path = "piggybank/auth" }
 evbanking_contracts = { path = "contracts" }
 # The shared verify-side flow (JWKS-cached local verification of concierge access
 # JWTs) — the BFF's request credential is the shell-set `ev_access` cookie.
-evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "656312a7900186d607623397f0e10ad69951d048" }
+evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "537c10739075f885bbc9eb41de5bbd4fea91dd9b" }
 # The concierge identity plane's wire contracts: the cabinet backend and piggybank-core's
 # bridge consumer and mail sender. Moves with `evconcierge_auth`; `nix run .#concierge-pin-check`
 # guards the pin, and `git log -p Cargo.toml` says what each bump brought.
-evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "656312a7900186d607623397f0e10ad69951d048" }
+evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "537c10739075f885bbc9eb41de5bbd4fea91dd9b" }
 form_urlencoded = "1"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 hex = "0.4"

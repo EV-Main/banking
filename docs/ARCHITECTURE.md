@@ -191,6 +191,17 @@ in a server-side session (in-process for now, `SESSION_REDIS_URL` in production 
 the auth refresh Redis), the browser holds only the opaque session id + a readable CSRF cookie
 (double-submit on mutations).
 
+**Wallet mutations: first-party, plus one host surface.** Every mutating wallet route
+(`/api/wallet/**`, `/api/funds/**`, the book) accepts only the first-party origin
+(`CABINET_WS_ORIGIN`) with the cookie double-submit. A scope host (`invest.`, `sa.`) may read
+the wallet cross-origin (`WALLET_CORS_ORIGINS`), and it acts only through the intent routes
+`GET /api/wallet/csrf`, `POST /api/wallet/intents` and `POST /api/wallet/intents/{id}/confirm`.
+These routes are mounted only when `WALLET_ACTION_ORIGINS` names a host of the in-code matrix
+(`cabinet/backend/src/wallet_intents/mod.rs`). The BFF computes the terms from the hub, stores
+the intent in Redis, and executes it only on a confirmation from the same account, page and
+session, with a concierge step-up proof when the risk class asks for one. Contract and
+limits: [`WALLET-INTENTS.md`](./WALLET-INTENTS.md).
+
 **Cross-plane token-trust (the BFF holds two token pairs).** The cabinet spans both planes,
 which sign tokens under **separate** issuers and **distinct `aud`** (concierge `aud=concierge`
 vs. banking `aud=banking-core`). So the BFF keeps a token pair **per plane** in its session:
@@ -253,7 +264,9 @@ roots, and global tokens/uikit must cascade in.
 - **Host SDK for banking's own elements** — [`sdk/wallet`](../sdk/wallet)
   (`@evinvest/wallet`): the wallet and pay-invoice elements as React wrappers for
   other hosts (invest cabinet, SA panel, admin), plus `openWalletAction`, the popup
-  that carries a money action to evinvest.ltd and posts the result back. It lives
+  that carries a money action to evinvest.ltd and posts the result back. In-page
+  actions on a host go through the BFF's intent routes instead
+  ([`WALLET-INTENTS.md`](./WALLET-INTENTS.md)); the popup stays as the fallback. It lives
   here, not in `EV-Main/lib`, because it is banking's contract; lib holds no
   service logic. Not an npm workspace (own lockfile, `@evinvest/mfe` from npm);
   published by the `@evinvest/wallet-v<version>` tag via

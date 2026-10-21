@@ -9,6 +9,10 @@
 //! SEPARATE banking (`aud=banking-core`) pair for the verified subject. The cabinet
 //! runs no OAuth and holds no session.
 
+// `ev::settings!` walks `AppConfig` one field and one attribute at a time; with the wallet
+// fields the expansion passes the default limit of 128.
+#![recursion_limit = "256"]
+
 use std::sync::Arc;
 
 use color_eyre::eyre::Context;
@@ -24,6 +28,7 @@ mod routes;
 mod session;
 mod state;
 mod util;
+mod wallet_intents;
 
 use config::AppConfig;
 use cookies::CookieNames;
@@ -51,7 +56,7 @@ fn main() -> color_eyre::Result<()> {
 	// aggregate error, before anything binds — exiting 78 (EX_CONFIG), so "the
 	// config is wrong" is distinguishable from a dependency blip.
 	let config = ev::settings::or_exit(AppConfig::from_env());
-	if let Err(reason) = config.check_script_origins() {
+	if let Err(reason) = config.check_script_origins().and_then(|()| config.check_wallet_actions()) {
 		eprintln!("config: {reason}");
 		// EX_CONFIG, as `or_exit` uses for every other configuration error.
 		std::process::exit(78);
@@ -104,13 +109,19 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 	// Local verification of the shell-set access JWT: the JWKS is cached from the
 	// concierge plane's public `Jwks` RPC (lazy — the first verify warms it), so no
 	// per-request round trip. Fails closed until the plane publishes keys.
+	let jwks_endpoint = std::env::var("AUTH_JWKS_GRPC_ENDPOINT").unwrap_or_else(|_| config.concierge_grpc_addr.clone());
 	let verifier = Verifier::try_new(VerifierConfig {
 		issuer: config.auth_issuer.clone(),
 		audiences: vec![config.auth_client_audience.clone()],
 		allowed_types: vec![evconcierge_auth::TokenType::Access],
-		jwks_grpc_endpoint: std::env::var("AUTH_JWKS_GRPC_ENDPOINT").unwrap_or_else(|_| config.concierge_grpc_addr.clone()),
+		jwks_grpc_endpoint: jwks_endpoint.clone(),
 	})
 	.context("failed to build the access-token verifier")?;
+	// Step-up proofs are signed with the access tokens' key, so they are checked against the
+	// same JWKS endpoint.
+	let wallet_actions = wallet_intents::WalletActions::connect(&config, &jwks_endpoint)
+		.await
+		.map_err(|reason| color_eyre::eyre::eyre!("wallet actions: {reason}"))?;
 
 	let state = AppState {
 		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
@@ -118,6 +129,7 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 		approvals: Arc::new(AttemptLimiter::default()),
 		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 		verifier,
+		wallet_actions: wallet_actions.map(Arc::new),
 		grpc,
 		config: Arc::new(config),
 	};

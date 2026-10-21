@@ -20,7 +20,9 @@ cookie IS the request's credential.
 
 There is no session store, no opaque session cookie, and no `oauth.rs`. The one piece of
 server-side state left is `session.rs`'s per-user **cache** of banking money tokens, which
-a lost entry simply re-mints.
+a lost entry simply re-mints. The exception is opt-in: with `WALLET_ACTION_ORIGINS` set, the
+wallet intents of a host page live in Redis (`REDIS_URL`), shared by every replica
+(`docs/WALLET-INTENTS.md`).
 
 Cookies read (never set): `ev_access` (the access JWT) and `ev_csrf` (the readable
 double-submit token, echoed in `x-ev-csrf` on every mutation). Both are `__Host-`-prefixed
@@ -37,7 +39,8 @@ in production.
 | `governance.rs` | the concierge ownership-plane seam — see the pin note below |
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
-| `routes/` | one handler per endpoint: `identity`, `money`, `book`, `admin`, `notifications`, `platform`, `system`, `consilium`, `payments`, `approval`; the two socket bridges `governance_ws` and `book_ws` over the shared `ws` (origin guard, close codes, keepalive, expiry) |
+| `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `book`, `admin`, `notifications`, `platform`, `system`, `consilium`, `payments`, `approval`; the two socket bridges `governance_ws` and `book_ws` over the shared `ws` (origin guard, close codes, keepalive, expiry) |
 
 ## The governance surface
 
