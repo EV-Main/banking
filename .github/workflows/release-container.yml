@@ -24,7 +24,9 @@ jobs:
       with:
         authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
         name: ev-invest
-    - name: Log in to GHCR
+    - if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'pull_request'
+      name: Log in to GHCR
       uses: docker/login-action@v4
       with:
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -45,13 +47,17 @@ jobs:
         \ --print-out-paths --quiet)\"\n  if [ \"${{ github.ref_type }}\" = \"tag\"\
         \ ]; then\n    nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\"\
         \ \\\n      \"docker://ghcr.io/ev-main/${name,,}:${{ github.ref_name }}\"\n\
-        \  elif [ \"${{ github.ref }}\" = \"refs/heads/main\" ]; then\n    nix run\
-        \ nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\" \\\n      \"\
-        docker://ghcr.io/ev-main/${name,,}:main-${GITHUB_SHA::8}\"\n  else\n    head=\"\
-        ${{ github.event.pull_request.head.sha }}\"\n    nix run nixpkgs#skopeo --\
-        \ copy \\\n      \"docker-archive:$RESULT\" \\\n      \"docker://ghcr.io/ev-main/${name,,}:pr-${{\
-        \ github.event.pull_request.number }}-${head::8}\"\n  fi\n  echo \"::endgroup::\"\
-        \ndone\n"
+        \  elif [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ]; then\n \
+        \   [ \"${{ github.ref }}\" = \"refs/heads/main\" ] || { echo \"::error::dispatch\
+        \ publishes main's head only, not ${{ github.ref }}\" >&2; exit 1; }\n   \
+        \ nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\" \\\n\
+        \      \"docker://ghcr.io/ev-main/${name,,}:main-${GITHUB_SHA::8}\"\n  elif\
+        \ [ \"${{ github.event_name }}\" = \"pull_request\" ]; then\n    head=\"${{\
+        \ github.event.pull_request.head.sha }}\"\n    nix run nixpkgs#skopeo -- copy\
+        \ \\\n      \"docker-archive:$RESULT\" \\\n      \"docker://ghcr.io/ev-main/${name,,}:pr-${{\
+        \ github.event.pull_request.number }}-${head::8}\"\n  else\n    echo \"cache-seed\
+        \ build ($name) on ${{ github.ref_name }} — skipping GHCR push\"\n  fi\n \
+        \ echo \"::endgroup::\"\ndone\n"
       shell: bash
     timeout-minutes: 40
 name: Release containers
@@ -61,10 +67,9 @@ name: Release containers
     - labeled
     - synchronize
   push:
-    branches:
-    - main
     tags:
     - v[0-9]+.*
+  workflow_dispatch: {}
 permissions:
   contents: read
   packages: write
