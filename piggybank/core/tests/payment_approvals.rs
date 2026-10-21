@@ -1099,8 +1099,8 @@ async fn an_investors_payment_is_answered_in_the_cabinet_and_settles_once() {
 	assert_eq!((queued[0].1.as_str(), queued[0].2.as_str()), ("payment_consent", MONEY_MOVEMENT_TOPIC));
 	assert_eq!(
 		queued[0].3,
-		format!("/cabinet/wallet/action/payment/{}", id.raw()),
-		"a path in the cabinet, never a link carrying a secret"
+		format!("/wallet/action/payment/{}", id.raw()),
+		"a path relative to the cabinet root, never a link carrying a secret"
 	);
 
 	// Only the subject sees it; a stranger finds nothing and cannot answer.

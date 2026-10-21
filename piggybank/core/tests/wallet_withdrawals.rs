@@ -564,10 +564,7 @@ async fn every_screened_withdrawal_tells_the_owner_and_a_new_address_says_so() {
 	let first = notices(held.id()).await;
 	assert_eq!(first.len(), 1, "one notice per withdrawal");
 	let (topic, kind, link, body) = &first[0];
-	assert_eq!(
-		(topic.as_str(), kind.as_str(), link.as_str()),
-		("bank:wallet-security", "withdrawal_new_address", "/cabinet/wallet")
-	);
+	assert_eq!((topic.as_str(), kind.as_str(), link.as_str()), ("bank:wallet-security", "withdrawal_new_address", "/wallet"));
 	assert!(body.contains(to.as_str()) && body.contains("50 USDT"), "{body}");
 	let second = notices(released.id()).await;
 	assert_eq!(second[0].1, "withdrawal_requested", "a known address is an ordinary withdrawal notice");

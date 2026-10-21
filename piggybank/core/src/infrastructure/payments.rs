@@ -423,10 +423,11 @@ enum SeatKind {
 const CONSENT_NOTICE_KIND: &str = "payment_consent";
 const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 
-/// Where in the cabinet an order is answered. A path and not a URL: concierge pins it to its
-/// own origin, so this plane never mints a host.
+/// Where in the cabinet an order is answered. A path and not a URL: concierge joins it onto
+/// `CABINET_URL`, so this plane never mints a host. Relative to the cabinet root, because
+/// `CABINET_URL` already carries the cabinet's prefix.
 fn answer_link(payment: PaymentId) -> String {
-	format!("/cabinet/wallet/action/payment/{}", payment.raw())
+	format!("/wallet/action/payment/{}", payment.raw())
 }
 
 /// How a consent died without being answered — the pair concierge's `PaymentOutcomeMail`
