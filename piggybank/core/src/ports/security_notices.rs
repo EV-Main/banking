@@ -10,9 +10,10 @@ use domain::{money::Usdt, scope_operations::WALLET_SECURITY_TOPIC, users::UserId
 
 use crate::ports::scope_notifications::ScopeNotice;
 
-/// Cabinet-relative: the wallet page. Cancelling a queued withdrawal and signing out everywhere
-/// both start there.
-const WALLET_PAGE: &str = "/cabinet/wallet";
+/// The wallet page, relative to the cabinet root: concierge joins it onto `CABINET_URL`, which
+/// already ends in the cabinet's own prefix, so a `/cabinet` here would double it. Cancelling a
+/// queued withdrawal and signing out everywhere both start there.
+const WALLET_PAGE: &str = "/wallet";
 
 const WASNT_ME: &str = "If this was not you, open your wallet now, cancel it and sign out of every device.";
 
@@ -104,7 +105,7 @@ mod tests {
 	fn a_mandate_notice_names_the_service_and_points_at_the_wallet() {
 		let notice = mandate_changed(UserId::new(), "m-1", true, "panel", "sa", Usdt::parse_decimal("10").unwrap(), Usdt::parse_decimal("50").unwrap());
 		assert_eq!(notice.topic, "bank:wallet-security");
-		assert_eq!(notice.link, "/cabinet/wallet");
+		assert_eq!(notice.link, "/wallet");
 		assert!(notice.body.contains("panel") && notice.body.contains("10 USDT per operation"));
 		assert!(!notice.body.contains("://"), "plain text, no links in the body");
 		assert!(notice.title.chars().count() <= 200 && notice.dedupe_key.len() <= 128);
