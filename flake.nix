@@ -280,6 +280,10 @@
             # Where Home's "Service-Arb panel" card points. Public, and inlined at build
             # like the two above; unset, the card is simply not shown.
             NEXT_PUBLIC_SA_PANEL_URL = "https://sa.evinvest.ltd";
+            # The platform origin: account actions (verify email, profile, security) are
+            # concierge's, at /admin/account here. Public, inlined at build, also into the
+            # account-chip bundle, which the SA panel serves from another origin.
+            NEXT_PUBLIC_PLATFORM_URL = "https://evinvest.ltd";
             # Cloudflare Turnstile site key of widget `evinvest sign-in` (Ev Invest account),
             # for the sign-in dialog. Public like the DSN; its secret is concierge's.
             NEXT_PUBLIC_TURNSTILE_SITE_KEY = "0x4AAAAAAFSnp3-3WadT45qx";

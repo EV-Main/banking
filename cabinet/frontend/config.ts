@@ -53,6 +53,10 @@ function getSettings() {
       // The Service-Arb panel Home links to. Unset ⇒ no card: a link to nowhere is worse
       // than no link. Public; a build-time literal in flake.nix like the PostHog key.
       NEXT_PUBLIC_SA_PANEL_URL: opt(url()),
+      // The platform origin (concierge's account page lives there). Unset ⇒ account links
+      // stay path-only, which only resolves on the platform's own origin. Public; a
+      // build-time literal in flake.nix.
+      NEXT_PUBLIC_PLATFORM_URL: opt(url()),
       // Cloudflare Turnstile site key for the sign-in dialog; locally Cloudflare's
       // always-pass test key `1x00000000000000000000AA`. Unset, the dialog's credential
       // forms stay disabled — the identity plane refuses them without a token anyway.
@@ -81,6 +85,7 @@ function getSettings() {
       NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
       NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
       NEXT_PUBLIC_SA_PANEL_URL: process.env.NEXT_PUBLIC_SA_PANEL_URL,
+      NEXT_PUBLIC_PLATFORM_URL: process.env.NEXT_PUBLIC_PLATFORM_URL,
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     },
   });
@@ -125,6 +130,7 @@ export const config = ((): Readonly<{
     posthogHost: string | undefined;
     sentryDsn: string | undefined;
     saPanelUrl: string | undefined;
+    platformUrl: string | undefined;
     turnstileSiteKey: string | undefined;
   }>;
 }> => {
@@ -166,6 +172,9 @@ export const config = ((): Readonly<{
       get saPanelUrl(): string | undefined {
         return getSettings().NEXT_PUBLIC_SA_PANEL_URL;
       },
+      get platformUrl(): string | undefined {
+        return getSettings().NEXT_PUBLIC_PLATFORM_URL;
+      },
       get turnstileSiteKey(): string | undefined {
         return getSettings().NEXT_PUBLIC_TURNSTILE_SITE_KEY;
       },
@@ -196,6 +205,7 @@ export function assertConfig(): void {
   void config.public.posthogHost;
   void config.public.sentryDsn;
   void config.public.saPanelUrl;
+  void config.public.platformUrl;
   void config.public.turnstileSiteKey;
 }
 
