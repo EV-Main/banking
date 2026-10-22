@@ -9,10 +9,10 @@ import { renderTimeZone } from "@/shared/config/time-zone";
 import { isSessionId } from "@/shared/lib/access-renewal";
 import { TimeZoneProvider } from "@/shared/lib/time-zone";
 
-// The money actions scope hosts open on evinvest.ltd (`/wallet/{withdraw,move,pay,mandate}`,
-// redirected here by the proxy) — usually in a 480 px popup. Chromeless on purpose: no rail,
-// no bottom nav, nothing that walks the reader off the action before it reports back to the
-// window that opened it. The session parts of the app shell stay: the route gate (a guest
+// The money actions scope hosts open on evinvest.ltd (`/wallet/{withdraw,move,pay,mandate}`
+// and `/wallet/payment/<id>`, redirected here by the proxy) — usually in a 480 px popup.
+// Chromeless on purpose: no rail, no bottom nav, nothing that walks the reader off the action
+// before it reports back to the window that opened it. The session parts of the app shell stay: the route gate (a guest
 // gets the sign-in wall, not a form that can only answer 401) and the keeper that renews the
 // short-lived access cookie while the form is open.
 //
