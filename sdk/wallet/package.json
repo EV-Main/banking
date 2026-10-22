@@ -1,6 +1,6 @@
 {
   "name": "@evinvest/wallet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Host wrappers for the banking wallet microfrontends: the wallet and the pay-invoice button, and the popup helper that carries a money action to evinvest.ltd and brings its result back by postMessage. A thin layer over @evinvest/mfe.",
   "license": "BlueOak-1.0.0",
   "publishConfig": {

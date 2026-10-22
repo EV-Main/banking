@@ -13,6 +13,7 @@ import {
   WALLET_ACTION_PATHS,
   walletActionFromEvent,
   walletActionUrl,
+  walletPaymentUrl,
 } from '../src/index';
 
 const STATE = 'state-1';
@@ -313,5 +314,88 @@ describe('parseWalletMessage: what is ignored', () => {
 
   it('should_return_null_when_the_expected_state_is_empty_even_if_the_message_echoes_it', () => {
     expect(parseWalletMessage({ type: 'ev:wallet-result', state: '', outcome: 'done' }, '')).toBeNull();
+  });
+});
+
+const PAYMENT_ID = '4f0c2d1e-0000-4000-8000-0123456789ab';
+const ID_128 = 'a'.repeat(128);
+
+describe('walletActionUrl: the payment answer path', () => {
+  it('should_accept_a_payment_path_and_keep_only_the_scope', () => {
+    expect(walletActionUrl('https://evinvest.ltd/wallet/payment/abc?scope=sa&x=1#h')?.href).toBe(
+      'https://evinvest.ltd/wallet/payment/abc?scope=sa',
+    );
+  });
+
+  it('should_accept_an_id_of_128_characters', () => {
+    expect(walletActionUrl(`https://evinvest.ltd/wallet/payment/${ID_128}`)?.href).toBe(
+      `https://evinvest.ltd/wallet/payment/${ID_128}`,
+    );
+  });
+
+  it.each([
+    ['an_empty_id', 'https://evinvest.ltd/wallet/payment/'],
+    ['a_nested_path', 'https://evinvest.ltd/wallet/payment/a/b'],
+    ['an_encoded_slash', 'https://evinvest.ltd/wallet/payment/a%2Fb'],
+    ['an_encoded_dot', 'https://evinvest.ltd/wallet/payment/a%2Eb'],
+    ['a_trailing_slash', 'https://evinvest.ltd/wallet/payment/abc/'],
+    ['a_sibling_path', 'https://evinvest.ltd/wallet/payments/a'],
+    ['a_129_character_id', `https://evinvest.ltd/wallet/payment/${'a'.repeat(129)}`],
+    ['another_origin', 'https://evil.example/wallet/payment/abc'],
+    ['a_dot_segment_escape', 'https://evinvest.ltd/wallet/payment/../withdraw/x'],
+  ])('should_refuse_%s', (_name, raw) => {
+    expect(walletActionUrl(raw)).toBeNull();
+  });
+});
+
+describe('walletPaymentUrl', () => {
+  it('should_build_the_payment_url_with_the_scope', () => {
+    expect(walletPaymentUrl(PAYMENT_ID, 'invest')?.href).toBe(`https://evinvest.ltd/wallet/payment/${PAYMENT_ID}?scope=invest`);
+  });
+
+  it('should_build_a_url_that_walletActionUrl_returns_unchanged', () => {
+    const url = walletPaymentUrl(PAYMENT_ID, 'invest');
+
+    expect(url).not.toBeNull();
+    expect(walletActionUrl(url?.href)?.href).toBe(url?.href);
+  });
+
+  it('should_accept_ids_of_1_and_128_characters', () => {
+    expect(walletPaymentUrl('a', 'sa')?.pathname).toBe('/wallet/payment/a');
+    expect(walletPaymentUrl(ID_128, 'sa')?.pathname).toBe(`/wallet/payment/${ID_128}`);
+  });
+
+  it.each(['', 'a'.repeat(129), 'a/b', 'a%2Fb', 'a%', 'a.b', '..', 'a b', 'пей', 'a\u00e9'])(
+    'should_return_null_for_the_payment_id_%j',
+    id => {
+      expect(walletPaymentUrl(id, 'invest')).toBeNull();
+    },
+  );
+
+  it.each(['', 'a'.repeat(129), 'a/b', 'a%2Fb', 'a.b', 'a b', 'скоуп', 'a&b=1'])(
+    'should_return_null_for_the_scope_%j',
+    scope => {
+      expect(walletPaymentUrl(PAYMENT_ID, scope)).toBeNull();
+    },
+  );
+
+  it.each([
+    ['with_a_path', 'https://evinvest.ltd/app'],
+    ['with_credentials', 'https://user:pass@evinvest.ltd'],
+    ['that_is_not_a_url', 'not a url'],
+    ['that_is_empty', ''],
+  ])('should_return_null_for_an_origin_%s', (_name, origin) => {
+    expect(walletPaymentUrl(PAYMENT_ID, 'invest', origin)).toBeNull();
+  });
+
+  it('should_build_the_url_on_a_staging_origin', () => {
+    const url = walletPaymentUrl(PAYMENT_ID, 'invest', 'https://stage.evinvest.ltd');
+
+    expect(url?.href).toBe(`https://stage.evinvest.ltd/wallet/payment/${PAYMENT_ID}?scope=invest`);
+    expect(walletActionUrl(url?.href, 'https://stage.evinvest.ltd')?.href).toBe(url?.href);
+  });
+
+  it('should_not_pass_the_default_origin_check_for_a_staging_url', () => {
+    expect(walletActionUrl(walletPaymentUrl(PAYMENT_ID, 'invest', 'https://stage.evinvest.ltd')?.href)).toBeNull();
   });
 });

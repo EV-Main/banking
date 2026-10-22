@@ -1,7 +1,9 @@
 "use client";
 
-// "This payment is out of your account — do you agree?" — reached from the notice that asks,
-// signed in. The money is the reader's: nobody else is asked, and nobody else can answer.
+// "This payment is out of your account — do you agree?" — reached signed in, from the notice
+// that asks or as a money action a scope host opens in a popup (`@evinvest/wallet`
+// `walletPaymentUrl`). The money is the reader's: nobody else is asked, and nobody else can
+// answer.
 //
 // The terms are the server's, shown whole before either button is offered. What an answer
 // does is read back from the server; this page predicts nothing about the order's state.
@@ -18,12 +20,34 @@ import type { ConsentDecision, PaymentConfirmation } from "@/shared/contracts/pa
 import { errorMessage, RequestError } from "@/shared/lib/api-client";
 import { expiresIn, formatMoment, hasExpired } from "@/shared/lib/datetime";
 import { settledConsent } from "@/shared/lib/decision";
+import { ActionCancel, ActionFrame, useWalletAction } from "@/features/wallet-action";
 import { ApprovalOutcome, ApprovalSkeleton, ApprovalTitle, ApprovalUnreachable, DetailRow } from "@/views/approval/ui/approval-chrome";
 import { PaymentTermsBlock, renderablePayment } from "@/views/approval/ui/payment-terms";
 
-const COLUMN = "mx-4 flex flex-col gap-6 py-8 sm:mx-8 lg:max-w-160";
+const COLUMN = "flex flex-col gap-6";
 
+/**
+ * The payment answer as a wallet money action: an approval reports `done`, a refusal
+ * `cancelled`, both with the payment id as the reference; the host re-reads the payment
+ * from its own backend either way. Only the id comes from the URL — from the path, not the
+ * query — and `scope`, `opener`, `state` and `return_to` follow the action contract.
+ */
 export function PaymentConfirmView({ id }: { id: string }) {
+  const { params, finished, finish } = useWalletAction();
+  // Reached from the notice, there is nobody to report to and nowhere to go back to: the
+  // frame's bare "Done" would replace this page's own account of what the answer did.
+  const hosted = params.opener !== null || params.returnTo !== null;
+  const answered = (decision: ConsentDecision) => {
+    if (hosted) finish(decision === "approve" ? "done" : "cancelled", id);
+  };
+  return (
+    <ActionFrame inlineCancel params={params} finished={finished} finish={finish}>
+      <PaymentAnswer id={id} hosted={hosted} onAnswered={answered} />
+    </ActionFrame>
+  );
+}
+
+function PaymentAnswer({ id, hosted, onAnswered }: { id: string; hosted: boolean; onAnswered: (decision: ConsentDecision) => void }) {
   const t = useT();
   const locale = useLocale();
   const [payment, setPayment] = useState<PaymentConfirmation | null>(null);
@@ -60,6 +84,7 @@ export function PaymentConfirmView({ id }: { id: string }) {
     try {
       setPayment(await answerPaymentConfirmation(id, decision));
       setJustAnswered(true);
+      onAnswered(decision);
     } catch (e) {
       setError(e);
       // A refusal that closed the order (a pin moved) is read back, not guessed at.
@@ -69,15 +94,24 @@ export function PaymentConfirmView({ id }: { id: string }) {
     }
   };
 
+  // Nothing left to answer here: a host that opened the popup still needs to hear that it ended.
+  const leave = hosted ? <ActionCancel /> : null;
+
   if (missing) {
     return (
       <div className={COLUMN}>
         <ApprovalOutcome icon={<XCircle />} title={t("paymentConfirm.missing.title", "This payment is not available")} description={t("paymentConfirm.missing.body", "It may have been answered, withdrawn or have expired, or it was not made for this account. Nothing was approved.")} />
+        {leave}
       </div>
     );
   }
   if (payment === null) {
-    return <div className={COLUMN}>{loadError ? <ApprovalUnreachable onRetry={retry} retrying={false} /> : <ApprovalSkeleton />}</div>;
+    return (
+      <div className={COLUMN}>
+        {loadError ? <ApprovalUnreachable onRetry={retry} retrying={false} /> : <ApprovalSkeleton />}
+        {loadError ? leave : null}
+      </div>
+    );
   }
   if (!renderablePayment(payment)) {
     return (
@@ -87,6 +121,7 @@ export function PaymentConfirmView({ id }: { id: string }) {
             {t("status.tryAgain", "Try again")}
           </Button>
         </ApprovalOutcome>
+        {leave}
       </div>
     );
   }
@@ -129,7 +164,10 @@ export function PaymentConfirmView({ id }: { id: string }) {
           </Button>
         </div>
       ) : (
-        <Outcome payment={payment} settled={settled} expired={expired} fresh={justAnswered} />
+        <>
+          <Outcome payment={payment} settled={settled} expired={expired} fresh={justAnswered} />
+          {leave}
+        </>
       )}
     </div>
   );

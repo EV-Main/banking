@@ -151,15 +151,17 @@ export const relocalise = (
   url: { pathname: string; search: string; hash: string },
 ): string => cabinetPath(locale, zonePathname(url.pathname)) + url.search + url.hash;
 
-// The four money actions scope hosts open on evinvest.ltd, by the exact paths the host SDK
-// (`@evinvest/wallet` `WALLET_ACTION_PATHS`) builds: no locale, no zone prefix, because
-// they are the wallet's public addresses rather than cabinet pages.
-const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate)$/;
+// The money actions scope hosts open on evinvest.ltd, by the exact paths the host SDK
+// (`@evinvest/wallet` `WALLET_ACTION_PATHS`, `walletPaymentUrl`) builds: no locale, no zone
+// prefix, because they are the wallet's public addresses rather than cabinet pages. The
+// payment id has the SDK's id rule, so nothing but a plain segment reaches the page route.
+const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate|payment\/[A-Za-z0-9_-]{1,128})$/;
 
 /**
  * The zone-relative page behind a wallet action address — `/wallet/withdraw` →
- * `/wallet/action/withdraw` — or `null` for any other path. The proxy redirects there
- * under the reader's locale with the query intact (opener, state, scope, invoice).
+ * `/wallet/action/withdraw`, `/wallet/payment/<id>` → `/wallet/action/payment/<id>` — or
+ * `null` for any other path. The proxy redirects there under the reader's locale with the
+ * query intact (opener, state, scope, invoice).
  */
 export const walletActionPage = (pathname: string): `/${string}` | null => {
   const match = WALLET_ACTION.exec(pathname);

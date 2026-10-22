@@ -33,5 +33,6 @@ export {
   walletActionFromEvent,
   walletActionUrl,
   walletNavigationHref,
+  walletPaymentUrl,
 } from './action';
 export type { WalletActionOptions, WalletActionOutcome, WalletActionPath, WalletResult } from './action';

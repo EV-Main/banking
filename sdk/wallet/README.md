@@ -41,8 +41,9 @@ The host's CSP allows the bundle directory, not the whole origin:
 With `scope` (a scope host) the wallet shows balances and history only.
 Without it the wallet is mounted on evinvest.ltd itself and the element carries
 out its actions in place; the host does not intercept them. A payment,
-withdrawal, move between compartments or mandate (`/wallet/pay`, `/wallet/withdraw`,
-`/wallet/move`, `/wallet/mandate` — no other path is opened) happens on `https://evinvest.ltd`: in a
+withdrawal, move between compartments, mandate, or the answer to a payment out
+of the user's account (`/wallet/pay`, `/wallet/withdraw`, `/wallet/move`,
+`/wallet/mandate`, `/wallet/payment/<id>` — no other path is opened) happens on `https://evinvest.ltd`: in a
 popup, whose page posts the result back to its opener, or — when the popup is
 blocked — as a full navigation that returns to the host. Banking's mutating
 routes accept only `Origin: https://evinvest.ltd`, so nothing on a host can move
@@ -100,13 +101,32 @@ URL that is not an action, and a `returnTo` off this page's origin falls back to
 the page itself) · `busy` (another action's popup is open
 on this page: it is focused, and this call reports nothing) · `timeout`
 (default 15 min; the popup is closed) · `aborted` (`signal`) · `invalid_url`
-(not one of the four action paths on `https://evinvest.ltd`, or a malformed
+(not one of the action paths on `https://evinvest.ltd`, or a malformed
 `invoice`/`scope`/`request`) · `unsupported` (no `crypto` to draw a state from;
 nothing opened). The React wrappers ignore `busy`,
 so a double click gives one popup and one `onResult`.
 A message counts only if `event.origin` is `https://evinvest.ltd`, its source
 is this popup **and** it echoes this popup's `state`. Call it inside the user's click, or the browser blocks the
 popup. `origin` is overridable for a staging stand only.
+
+### `walletPaymentUrl(paymentId, scope, origin?)`
+
+The popup URL for the user's answer to a payment out of their account — the
+page that a scope host opens from the link in a payment-consent notice:
+`https://evinvest.ltd/wallet/payment/<paymentId>?scope=<scope>`, or `null` when
+the id or the scope is not 1–128 of `A–Z a–z 0–9 _ -`. Its result passes
+`walletActionUrl` unchanged; open it with `openWalletAction`.
+
+```ts
+const url = walletPaymentUrl(paymentId, 'invest');
+if (url) void openWalletAction(url).then(() => refetchPayment(paymentId));
+```
+
+The page reads the payment's terms from banking by the id; only the payer,
+signed in on evinvest.ltd, sees or answers it. It reports `done` when the user
+approved and `cancelled` when they declined, with the payment id as
+`reference`, or `cancelled` without one when they left without answering. As
+with every action, the host re-reads the payment's state from its backend.
 
 Neither the host page nor the action page may send
 `Cross-Origin-Opener-Policy: same-origin`: it severs the opener link, the page

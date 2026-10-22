@@ -216,6 +216,28 @@ test("a wallet action address with a trailing slash is not an action", () => {
   assert.equal(walletActionPage("/wallet/withdraw/"), null);
 });
 
+test("a wallet payment address maps onto the payment action page", () => {
+  const id = "4f0c2d1e-0000-4000-8000-0123456789ab";
+  assert.equal(walletActionPage(`/wallet/payment/${id}`), `/wallet/action/payment/${id}`);
+  assert.equal(walletActionPage(`/wallet/payment/${"a".repeat(128)}`), `/wallet/action/payment/${"a".repeat(128)}`);
+});
+
+test("a wallet payment address with an unsafe or missing id is not an action", () => {
+  const id = "4f0c2d1e-0000-4000-8000-0123456789ab";
+  for (const path of [
+    "/wallet/payment/",
+    "/wallet/payment/a/b",
+    "/wallet/payment/a%2Fb",
+    "/wallet/payment/a.b",
+    `/wallet/payment/${id}/`,
+    `/wallet/payment/${"a".repeat(129)}`,
+    "/wallet/payments/a",
+    "/wallet/action/payment/a",
+  ]) {
+    assert.equal(walletActionPage(path), null, path);
+  }
+});
+
 test("the wallet element bundles are not pages", () => {
   assert.equal(isNonPagePath("/wallet/mfe/x.js"), true);
 });

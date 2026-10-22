@@ -8,7 +8,7 @@
 // `window.open` returns a fake that only carries what the helper reads.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { walletNavigationHref, type WalletActionOutcome } from '../src/index';
+import { walletNavigationHref, walletPaymentUrl, type WalletActionOutcome } from '../src/index';
 
 type WalletModule = typeof import('../src/index');
 
@@ -516,5 +516,60 @@ describe('walletNavigationHref', () => {
 
   it('should_return_null_for_a_staging_action_without_the_staging_origin', () => {
     expect(walletNavigationHref(new URL('https://stage.evinvest.ltd/wallet/pay?invoice=inv-1'), '/billing')).toBeNull();
+  });
+});
+
+describe('openWalletAction: the payment answer', () => {
+  const PAYMENT_ID = '4f0c2d1e-0000-4000-8000-0123456789ab';
+
+  function paymentUrl(): URL {
+    const url = walletPaymentUrl(PAYMENT_ID, 'invest');
+    if (!url) throw new Error('walletPaymentUrl returned null for a valid id');
+    return url;
+  }
+
+  it('should_open_the_payment_page_with_opener_and_state_added', () => {
+    const popup = fakePopup();
+    stubOpen(popup);
+
+    void openWalletAction(paymentUrl());
+
+    const opened = new URL(popup.href ?? 'about:blank');
+    expect(opened.origin + opened.pathname).toBe(`https://evinvest.ltd/wallet/payment/${PAYMENT_ID}`);
+    expect([...opened.searchParams.keys()]).toEqual(['scope', 'opener', 'state']);
+    expect(opened.searchParams.get('scope')).toBe('invest');
+    expect(opened.searchParams.get('opener')).toBe('http://localhost:3000');
+    expect(opened.searchParams.get('state')).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('should_resolve_the_result_when_the_payment_page_posts_it', async () => {
+    const popup = fakePopup();
+    stubOpen(popup);
+    const done = openWalletAction(paymentUrl());
+
+    answer(popup, { type: 'ev:wallet-result', outcome: 'done', reference: PAYMENT_ID });
+
+    await expect(done).resolves.toEqual({ status: 'result', result: { outcome: 'done', reference: PAYMENT_ID } });
+    expect(popup.close).toHaveBeenCalled();
+  });
+
+  it('should_ignore_a_payment_result_that_echoes_another_state', async () => {
+    const popup = fakePopup();
+    stubOpen(popup);
+    let outcome: WalletActionOutcome | undefined;
+    void openWalletAction(paymentUrl()).then(value => {
+      outcome = value;
+    });
+
+    post({ ...RESULT, state: 'someone-elses', reference: PAYMENT_ID }, { origin: 'https://evinvest.ltd', source: popup });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(outcome).toBeUndefined();
+  });
+
+  it('should_build_the_navigation_href_of_a_payment_url', () => {
+    const href = walletNavigationHref(paymentUrl(), '/billing');
+
+    expect(href).toBe(`https://evinvest.ltd/wallet/payment/${PAYMENT_ID}?scope=invest&return_to=http%3A%2F%2Flocalhost%3A3000%2Fbilling`);
   });
 });
