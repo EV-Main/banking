@@ -1120,7 +1120,10 @@ async fn an_investors_payment_is_answered_in_the_cabinet_and_settles_once() {
 	assert_eq!(emitted.len(), 1);
 	assert_eq!(emitted[0].0, concierge_id);
 	assert!(emitted[0].1.body.contains("30 USDT") && emitted[0].1.body.contains("quarterly rebalance"));
-	assert_eq!(emitted[0].1.link_scope, "", "the order debits the platform wallet, so it is answered in the platform cabinet");
+	assert_eq!(
+		emitted[0].1.link_scope, "invest",
+		"the order pays into `fee`, an invest allocation, so it is answered in invest's cabinet"
+	);
 
 	// The answer: approved, reserved, and executed once the relay has applied the reserve.
 	let outcome = payments_app::answer_consent(&ports(&a), investor, id, ConsentDecision::Approve, &audit(), now())
@@ -1318,6 +1321,11 @@ async fn a_changed_mailbox_voids_the_answer_and_only_the_operator_is_told() {
 	assert_eq!(state_of(&a, id).await, PaymentState::Rejected);
 	let told: Vec<Uuid> = notices(&a.pool, id).await.into_iter().filter(|n| n.1 == "payment_outcome").map(|n| n.0).collect();
 	assert_eq!(told, vec![operator.raw()]);
+	assert_eq!(
+		link_scopes(&a.pool, id).await,
+		vec![("payment_outcome".to_owned(), "invest".to_owned())],
+		"the outcome opens where the consent did"
+	);
 
 	reset(&a.pool).await;
 }
@@ -1425,4 +1433,48 @@ async fn the_outbox_refuses_a_scope_concierge_would_refuse() {
 	assert!(refused.is_err(), "{refused:?}");
 	let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_notification_outbox").fetch_one(&a.pool).await.unwrap();
 	assert_eq!(queued, 0);
+}
+
+async fn link_scopes(pool: &PgPool, payment: PaymentId) -> Vec<(String, String)> {
+	sqlx::query_as("SELECT kind, link_scope FROM scope_notification_outbox WHERE payment_id = $1 AND withdrawn_at IS NULL ORDER BY kind")
+		.bind(payment.raw())
+		.fetch_all(pool)
+		.await
+		.unwrap()
+}
+
+/// The consent notice opens in the scope of the order's product end; an order with no product
+/// end stays in the platform cabinet, the only one banking knows is the person's.
+#[tokio::test]
+async fn a_consent_notice_opens_in_the_scope_of_the_product_it_pays() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals link scope").await else { return };
+	reset(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	let other = an_investor(&a.pool).await;
+	let operator = an_investor(&a.pool).await;
+	fund(&a, LedgerAccountKey::UserClaim(investor), "100").await;
+
+	let service_arb = ServiceId::parse("service_arb").unwrap();
+	// Registered only if no other suite did, and removed again below, so the shared database
+	// of a workspace run keeps the registry it had.
+	let registered: Option<Uuid> =
+		sqlx::query_scalar("INSERT INTO allocations (id, service, title, state) VALUES ($1, $2, 'Service Arb', 'open') ON CONFLICT (service) DO NOTHING RETURNING id")
+			.bind(Uuid::new_v4())
+			.bind(service_arb.as_str())
+			.fetch_optional(&a.pool)
+			.await
+			.unwrap();
+	let to_sa = terms(Party::User(investor), PaymentDestination::Internal(Party::Service(service_arb)), "5");
+	let id = payments_app::open(&ports(&a), operator, to_sa, now()).await.expect("open into service_arb").order.id();
+	assert_eq!(link_scopes(&a.pool, id).await, vec![("payment_consent".to_owned(), "sa".to_owned())]);
+
+	let to_user = terms(Party::User(investor), PaymentDestination::Internal(Party::User(other)), "5");
+	let id = payments_app::open(&ports(&a), operator, to_user, now()).await.expect("open to a user").order.id();
+	assert_eq!(link_scopes(&a.pool, id).await, vec![("payment_consent".to_owned(), String::new())]);
+
+	reset(&a.pool).await;
+	if let Some(registered) = registered {
+		sqlx::query("DELETE FROM allocations WHERE id = $1").bind(registered).execute(&a.pool).await.unwrap();
+	}
 }
