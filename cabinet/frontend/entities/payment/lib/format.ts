@@ -1,7 +1,6 @@
 // The words for a payment order's wire vocabulary — state, tier, requirement, consent —
-// shared by every surface that shows an order: the console list, the owners' room, the
-// emailed approvals. Each takes the caller's `t`, as `views/admin/lib/format.ts` does,
-// because this is a plain module with no translator of its own.
+// shared by every surface that shows an order: the owners' room and the emailed approvals. Each takes the caller's `t`, because this is a plain module with no
+// translator of its own.
 //
 // Every lookup is guarded by its table and falls back to the bare wire word: the state
 // machine lives in the money plane, and a state it grows tomorrow should render as

@@ -59,7 +59,7 @@ fail on it). The release is effectively one-way from the moment the new pod migr
 }
 ```
 
-- `user_id` is either the id `/cabinet/admin/users` shows (the concierge id) or the
+- `user_id` is either the id the central admin's `/admin/users` shows (the concierge id) or the
   banking `users.id` — the command accepts both, and the two may be mixed. Each id is
   looked up as a concierge id first, then as a banking id; an id that is neither is
   refused before the ledger is read. Every person must be active.
@@ -83,7 +83,7 @@ fail on it). The release is effectively one-way from the moment the new pod migr
 2. **Fresh marks.** Every product whose fee class the `fee` allocation holds must have a
    valuation posted within the last 24 h (`MAX_NAV_AGE_SECS`): the migration prices the
    fee class at the product's dealing NAV and refuses a stale one.
-3. **Snapshot before**: `/cabinet/admin/treasury` (the `retired` figures and each
+3. **Snapshot before**: the central admin's `/admin/treasury` (the `retired` figures and each
    allocation's line) and the C-0 snapshot. The outbox must be drained (no parked rows,
    nothing pending on `fund` / `fee` — the command refuses in-flight pendings).
 4. Feed the table over stdin and **dry-run**. The classifier blocks `kubectl exec` on
@@ -113,7 +113,7 @@ fail on it). The release is effectively one-way from the moment the new pod migr
 6. Read `=== applied ===`, `=== ledger after ===` and `=== reconciliation ===`. Exit 0
    and `migration complete` means: both retired claims at 0, `Σ holders ==
    SharesOutstanding` for `fee` and `fund`, nothing unheld, cash invariant balanced.
-7. Snapshot after: `/cabinet/admin/treasury` shows `fee` and `fund` with their holders,
+7. Snapshot after: the central admin's `/admin/treasury` shows `fee` and `fund` with their holders,
    `retired` at zero; the reconciliation log stays quiet on the next scans. Only then
    C-9 / R2.
 

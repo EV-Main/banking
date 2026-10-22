@@ -6,9 +6,8 @@ import type { ReactNode } from "react";
 
 import { AuthWall, Button } from "@evinvest/uikit";
 
-import { isPanelAccessRoute } from "@/entities/grant/lib/access";
 import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
-import { ACCOUNT, requiredPermission } from "@/shared/config/route-permissions";
+import { requiredPermission } from "@/shared/config/route-permissions";
 import { useCabinetPathname } from "@/shared/lib/cabinet-route";
 import { SESSION_UNAVAILABLE, useSession } from "@/shared/lib/use-session";
 import { ForbiddenScreen } from "@/shared/ui/forbidden-screen";
@@ -28,9 +27,7 @@ export function RouteGate({ signedIn, children }: { signedIn: boolean; children:
   const pathname = useCabinetPathname();
   const dialog = useSignInDialog();
 
-  // The panel-access page is for a tenant's delegate, who holds no console seat: the page
-  // asks the grants itself.
-  const needed = isPanelAccessRoute(pathname) ? ACCOUNT : requiredPermission(pathname);
+  const needed = requiredPermission(pathname);
   const unknown = session === null || session === SESSION_UNAVAILABLE;
   const guest = unknown ? !signedIn : !session.authenticated;
   const allowed = needed === null || (unknown ? signedIn : session.permissions.includes(needed));

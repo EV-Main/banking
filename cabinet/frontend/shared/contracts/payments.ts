@@ -16,9 +16,8 @@
 //     owner consilium, an investor's own claim asks that investor. There is no cell in
 //     which one admin moves fund money alone, and no field here that could ask for one.
 //
-// The form previews both before the confirm click (`views/admin/payments/lib/terms.ts`)
-// so the operator is not surprised by who gets emailed — but the plane's answer is the one
-// that counts, and the list renders the plane's, not the preview.
+// A form may preview both before the confirm click, but the plane's answer is the one that
+// counts.
 //
 // Lifecycle states travel as plain strings, for the reason `./governance` gives: the state
 // machine lives in the money plane, and a closed union here would turn a backend addition

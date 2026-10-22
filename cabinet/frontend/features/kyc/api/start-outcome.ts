@@ -3,9 +3,7 @@
 // Split out of `./kyc-client` so it can be run: `kyc-client.ts` imports through the `@/`
 // alias, which the test runner (`node --test --experimental-strip-types`) does not resolve,
 // so anything living there is untestable by construction — and this is the only part of the
-// slice whose behaviour a plane release can change under it. `shared/lib/consilium-refusal`
-// is the same extraction for the same reason: a pure classifier beside its client, imported
-// relatively, covered by its own file.
+// slice whose behaviour a plane release can change under it.
 //
 // It takes the status and the body rather than the `RequestError` that carries them, which
 // is what keeps it importable: `instanceof RequestError` would drag the whole transport —

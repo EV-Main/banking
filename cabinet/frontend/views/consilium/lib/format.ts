@@ -1,5 +1,5 @@
 // Display helpers for the owners' room. Plain TypeScript — every helper that produces words
-// takes the caller's `t`, the same contract `views/admin/lib/format.ts` follows.
+// takes the caller's `t`.
 
 import type { Translate } from "@evinvest/i18n";
 

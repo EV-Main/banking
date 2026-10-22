@@ -38,8 +38,7 @@ export const TAG = {
   sessions: "sessions",
 
   // ── the book (secondary market in an allocation's units) ──────────────────────
-  /** A product's public book: the snapshot and the trade tape. Delivered by the socket
-   *  and polled underneath it (`entities/book/model/book-socket.ts`). */
+  /** A product's public book: the snapshot and the trade tape. */
   book: "book",
   /** The caller's own orders — resting, history and fills. Moves on every fill, and a
    *  fill also moves `wallet` and `positions` (the escrow settles into both), so the

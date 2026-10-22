@@ -17,66 +17,12 @@
 //   · idle — once the shell is up, warm the handful of reads shared by most screens, at
 //     idle priority so they never race the reads the current screen is making for itself.
 
-import {
-  adminAllocationsResource,
-  cabinetConfigResource,
-  fundRevenueResource,
-  mfeRegistryResource,
-  parkedEventsResource,
-  redemptionQueueResource,
-  treasuryResource,
-  usersResource,
-  withdrawalQueueResource,
-} from "@/entities/admin/model/admin-resource";
-import { paymentsResource } from "@/entities/payment/model/payment-resource";
-import { isServiceId, tenantOf } from "@/entities/grant/lib/access";
-import { grantHoldersResource } from "@/entities/grant/model/grant-resource";
 import { profileResource } from "@/entities/user/model/profile-resource";
 import { depositsResource, walletResource, withdrawalsResource } from "@/entities/wallet/model/wallet-resource";
 
 // Zone-relative paths, exactly as the rail writes them (basePath is not part of these).
 // Ordered longest-prefix-first so `/wallet/activity` isn't answered by `/wallet`.
 const ROUTES: ReadonlyArray<{ prefix: string; warm: (path: string) => void }> = [
-  { prefix: "/admin/users", warm: () => usersResource.prefetch({}) },
-  {
-    prefix: "/admin/cabinet",
-    warm: () => {
-      cabinetConfigResource.prefetch();
-      mfeRegistryResource.prefetch();
-    },
-  },
-  { prefix: "/admin/treasury", warm: () => treasuryResource.prefetch() },
-  { prefix: "/admin/withdrawals", warm: () => withdrawalQueueResource.prefetch() },
-  { prefix: "/admin/outbox", warm: () => parkedEventsResource.prefetch() },
-  {
-    prefix: "/admin/payments",
-    warm: () => {
-      // The unfiltered list, plus what the form's pickers read: the product list and the
-      // configured rails (the treasury read carries them).
-      paymentsResource.prefetch();
-      adminAllocationsResource.prefetch();
-      treasuryResource.prefetch();
-    },
-  },
-  { prefix: "/admin/revenue", warm: () => fundRevenueResource.prefetch() },
-  // `/admin/allocations/<service>` is the panel-access page, open to a delegate who cannot
-  // read the registry — warming that would only buy them a 403.
-  {
-    prefix: "/admin/allocations/",
-    warm: (path) => {
-      const service = path.slice("/admin/allocations/".length).split("/")[0] ?? "";
-      const namespace = isServiceId(service) ? tenantOf(service) : null;
-      if (namespace !== null) grantHoldersResource.prefetch(namespace);
-    },
-  },
-  { prefix: "/admin/allocations", warm: () => adminAllocationsResource.prefetch() },
-  {
-    prefix: "/admin/valuation",
-    warm: () => {
-      adminAllocationsResource.prefetch();
-      redemptionQueueResource.prefetch();
-    },
-  },
   {
     prefix: "/wallet/activity",
     warm: () => {
