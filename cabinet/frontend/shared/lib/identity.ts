@@ -1,10 +1,9 @@
 // Name and initials derived from an account's email — the fallback identity every surface
 // that shows a person uses before (or instead of) a set display name.
 //
-// Moved down from `views/settings/lib/format.ts` for the same reason as `shared/lib/rail.ts`:
-// the owners' roster shows a person too, and a `views/*` slice reaching into another one is
-// a same-layer dependency. `views/settings/lib/format.ts` re-exports these, so the settings,
-// profile and account-chip call sites are unchanged.
+// In `shared/` for the same reason as `shared/lib/rail.ts`: the owners' roster and the
+// account chip both show a person, and a `views/*` slice reaching into another one is a
+// same-layer dependency.
 
 import type { Translate } from "@evinvest/i18n";
 

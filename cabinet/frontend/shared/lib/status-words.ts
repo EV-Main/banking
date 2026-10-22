@@ -20,9 +20,8 @@ export const statusWords = (t: Translate): Readonly<Record<string, string>> => (
   onboarding: t("admin.status.onboarding", "Onboarding"),
   staged: t("admin.status.staged", "Staged"),
   blocked: t("admin.status.blocked", "Blocked"),
-  // `statusTone` in `views/profile/ui/profile-view.tsx` already branches on these two,
-  // so they are statuses the UI expects to see even though the hub does not emit them
-  // yet. Without them here the lookup falls through and the reader gets the bare wire
+  // Statuses the UI expects to see even though the hub does not emit them yet. Without
+  // them here the lookup falls through and the reader gets the bare wire
   // word — which is the safe failure, but a needless one for a value we can name.
   pending: t("admin.status.pending", "Pending"),
   review: t("admin.status.review", "Review"),

@@ -124,18 +124,6 @@
   }
 }
 
-/* Onboarding stage: which placeholder shape Home's server HTML keeps.
-   The server renders the candidates (features/onboarding/ui/checklist-skeleton)
-   and an inline script copies this browser's stage onto <html> before the first
-   paint (StageMirror). Unlayered on purpose: these have to beat the `flex` and
-   `block` utilities on the same elements, and unlayered rules outrank every layer.
-   No attribute — no script, storage blocked, a fresh browser — leaves the card. */
-:root:not([data-ev-onboarding-stage="acknowledged"]) .ev-stage-if-acknowledged,
-:root[data-ev-onboarding-stage="acknowledged"] .ev-stage-unless-acknowledged,
-:root:not([data-ev-onboarding-stage="open"]) .ev-stage-if-open {
-  display: none;
-}
-
 /* Every skeleton fades in, wherever it is used.
    This lives here rather than in `Settled` because most skeletons never pass
    through it: 40 of the 57 in this app are written inline next to the value they

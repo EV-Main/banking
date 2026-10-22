@@ -3,10 +3,8 @@
 // One answer to "what may this screen offer?", so no screen has to compose a tier and a case
 // for itself.
 //
-// Its callers: the profile card's start row, the money screens' gate (`./use-kyc-gate`,
-// #215), the checklist's verify button, and — through the slice's public index — Home's
-// dashboard, which hands the answer to `features/onboarding` so the checklist can decide
-// which step is the reader's. The money screens are where offering a doomed start costs a
+// Its callers: the home card's start row and status chip, and the money screens' gate
+// (`./use-kyc-gate`, #215). The money screens are where offering a doomed start costs a
 // paid vendor session, which is why every one of them reads this and not the profile's
 // mirrored tier alone.
 //

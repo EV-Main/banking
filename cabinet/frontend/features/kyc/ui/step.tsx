@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 /**
  * One step of the verification story — an icon, a title and a sentence.
  *
- * `Item` and not three hand-written `div`s: the kit owns this shape (`views/dashboard` uses
- * the same composition for operation rows), and what is overridden here is only the frame —
+ * `Item` and not three hand-written `div`s: the kit owns this shape, and what is overridden
+ * here is only the frame —
  * the chip keeps the surrounding surface's rounding, and the row drops the padding it would
  * carry as a standalone list item.
  *

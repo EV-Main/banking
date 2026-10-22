@@ -55,9 +55,8 @@ export function VerificationRequired({ title, description, className }: { title:
           <Skeleton className="h-9 w-32 rounded-md" />
         ) : canStart ? (
           <>
-            {/* i18n-max: 14 — the uikit Button is shrink-0. The number is the checklist row's
-                (`features/kyc/ui/verify-button`), the tighter of the two frames this key
-                renders in; one string, one budget. */}
+            {/* i18n-max: 14 — the uikit Button is shrink-0. The budget is the one the old
+                checklist row set, the tightest frame this key rendered in. */}
             <Button type="button" onClick={() => setOpen(true)}>
               {t("kyc.verifyNow", "Verify now")}
             </Button>

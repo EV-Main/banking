@@ -3,13 +3,11 @@
 import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
-import { CircleUserRound, Home, LineChart, ListChecks, Wallet, type LucideIcon } from "lucide-react";
+import { Home, Wallet, type LucideIcon } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import * as m from "motion/react-m";
 import { Link } from "@/shared/ui/cabinet-link";
 
-import { AccountTabBadge } from "@/application/layout/account-tab-badge";
-import { useSession } from "@/shared/lib/use-session";
 import { prefetchOn } from "@/application/prefetch";
 import { useCabinetPathname } from "@/shared/lib/cabinet-route";
 import { cn } from "@/shared/lib/cn";
@@ -23,30 +21,17 @@ interface TabItem {
   active: (path: string) => boolean;
 }
 
-// The 5-tab mobile navigation bar (Figma cabinet mobile tab bar). These tabs
-// replace the desktop sidebar on narrow viewports (<1024px), in the rail's
-// order: its FUND group, then one tab standing in for its whole bottom group.
+// The mobile navigation bar (Figma cabinet mobile tab bar). It replaces the desktop
+// sidebar on narrow viewports (<1024px) with the rail's FUND group. The investor tabs
+// (Invest, Activity, Account) went with banking#565; the operator screens have no tab, as
+// before.
 //
-// The predicates are pairwise disjoint, and have to stay that way: the active
-// marker below is one element that moves to the matching tab, so two tabs
-// answering true for the same path would make "the matching tab" ambiguous.
-// The pair that used to overlap was Invest and a Products tab that pointed at
-// /invest as well — Products is gone, and Wallet (a real destination with no
-// tab of its own) took the slot. Operations no longer claims /wallet either,
-// which was the other half of that collision.
-//
-// Account is the rail's Profile, Notifications and Settings rows folded into
-// the one slot the bar has left (#388). It lands on /settings, whose mobile
-// root already carries the profile card and the inbox row, so each of the
-// three is one tap from the tab — and it claims all three routes, so the
-// marker stays on it while the reader is inside any of them.
-const ACCOUNT_ROUTES = ["/settings", "/profile", "/notifications"] as const;
+// The predicates are pairwise disjoint, and have to stay that way: the active marker below
+// is one element that moves to the matching tab, so two tabs answering true for the same
+// path would make "the matching tab" ambiguous.
 const TABS: TabItem[] = [
   { href: "/", text: (t) => t("nav.home", "Home"), icon: Home, active: (p) => p === "/" },
-  { href: "/invest", text: (t) => t("nav.invest", "Invest"), icon: LineChart, active: (p) => p.startsWith("/invest") },
   { href: "/wallet", text: (t) => t("nav.wallet", "Wallet"), icon: Wallet, active: (p) => p.startsWith("/wallet") },
-  { href: "/operations", text: (t) => t("nav.operations", "Activity"), icon: ListChecks, active: (p) => p.startsWith("/operations") },
-  { href: "/settings", text: (t) => t("nav.account", "Account"), icon: CircleUserRound, active: (p) => ACCOUNT_ROUTES.some((r) => p.startsWith(r)) },
 ];
 
 /** Horizontal padding of the bar, as a length the marker's width math can use. */
@@ -58,7 +43,6 @@ export function BottomNavbar() {
   const reduce = useReducedMotion();
   const activeAt = TABS.findIndex((tab) => tab.active(pathname));
   const onTab = activeAt >= 0;
-  const authenticated = useSession()?.authenticated ?? false;
 
   return (
     <nav aria-label={t("nav.a11y.primary", "Primary")} className="fixed bottom-0 left-0 right-0 z-50 flex h-[var(--cabinet-bottom-nav-h,64px)] items-center border-t border-border bg-secondary px-2 pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
@@ -103,9 +87,9 @@ export function BottomNavbar() {
               // `min-w-0` is load-bearing, not tidiness. A flex item's default
               // `min-width: auto` refuses to shrink below its content, so a long
               // label (Russian "Инвестировать", German "Einstellungen") made its
-              // tab wider than the 1/5 share `flex-1` promises and shoved the
+              // tab wider than the share `flex-1` promises and shoved the
               // others off their marker positions — the marker's width is
-              // computed as an exact fifth of the bar, so the two drift apart the
+              // computed as an exact share of the bar, so the two drift apart the
               // moment a tab is not that width. With `min-w-0` the tab can shrink
               // and the label truncates instead of the layout breaking.
               "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-1 font-medium transition-colors",
@@ -115,25 +99,9 @@ export function BottomNavbar() {
               isActive ? "text-primary-ink" : "text-ink-soft hover:text-ink",
             )}
           >
-            {/* Account carries the two facts the rail spreads over two rows — the
-                unread count and the verification state (#395); the badge picks. */}
-            <span className="relative shrink-0">
-              <Icon className="size-5" />
-              {tab.href === "/settings" && authenticated && <AccountTabBadge />}
-            </span>
-            {/* `truncate` is the net, not the plan. Five tabs on a 390px phone give each
-                label a 75px box, measured; every `nav.*` value is authored to fit it.
-                For the record, at 12px/500 Inter: "Operations" 63.1px, "Инвестиции"
-                72.1px, "Paramètres" 65.6px — and the value this replaced, Russian
-                "Инвестировать", 91.3px. That 16px is what broke the bar, because
-                without `min-w-0` above the tab grew to fit rather than the label
-                shrinking, and the marker is positioned as an exact fifth of the bar.
-                German is the tightest case: "Einstellungen" measures 77.1px and does
-                not fit, which is why `nav.settings` is "Optionen" there.
-                The `title` is for assistive tech and for a desktop browser at a narrow
-                width — not a touch affordance, since neither iOS nor Android surfaces
-                one, and this bar is `lg:hidden`. The label is authored to fit; nothing
-                here depends on the tooltip. */}
+            <Icon className="size-5 shrink-0" />
+            {/* `truncate` is the net, not the plan: every `nav.*` value is authored to fit
+                the tab. The `title` is for assistive tech and a narrow desktop window. */}
             <span className="w-full truncate text-center text-xs" title={tab.text(t)}>
               {tab.text(t)}
             </span>
