@@ -8,7 +8,7 @@ import { currentLocale } from "@/shared/config/locale";
 export default async function WalletActivityPage() {
   const locale = await currentLocale();
   return (
-    <I18nScope messages={routeMessages(locale, "app/[locale]/cabinet/(app)/wallet/activity/page.tsx")}>
+    <I18nScope messages={routeMessages(locale, "app/[locale]/cabinet/(host)/wallet/activity/page.tsx")}>
       <ActivityView />
     </I18nScope>
   );
