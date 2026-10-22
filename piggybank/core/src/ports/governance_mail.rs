@@ -139,7 +139,8 @@ pub struct FeePolicyNotice {
 	/// Unix seconds at which the proposed terms bind.
 	pub effective_at: i64,
 	/// Cabinet-relative path of the product page (`/invest/<service>`), single leading `/`.
-	/// Concierge pins it to its own `PUBLIC_ORIGIN`, so this plane never mints a host.
+	/// Concierge joins it onto the invest cabinet (the mail names the scope), so this plane
+	/// never mints a host.
 	pub link: String,
 }
 

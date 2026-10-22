@@ -37,7 +37,7 @@ use uuid::Uuid;
 use crate::{
 	infrastructure::{
 		consilium_mailer::{MailSubject, enqueue, withdraw_undelivered_consent},
-		outbox, scope_notifications, withdrawals,
+		outbox, scope_notifications, window_tool, withdrawals,
 	},
 	ports::{
 		governance_mail::{GovernanceMail, PaymentConsent, PaymentOutcome},
@@ -424,10 +424,24 @@ const CONSENT_NOTICE_KIND: &str = "payment_consent";
 const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 
 /// Where in the cabinet an order is answered. A path and not a URL: concierge joins it onto
-/// `CABINET_URL`, so this plane never mints a host. Relative to the cabinet root, because
-/// `CABINET_URL` already carries the cabinet's prefix.
+/// `CABINET_URL`, or onto the base of the notice's `link_scope`, so this plane never mints a
+/// host. Relative to the cabinet root, because every base already carries the cabinet's prefix.
 fn answer_link(payment: PaymentId) -> String {
 	format!("/wallet/action/payment/{}", payment.raw())
+}
+
+/// The cabinet a payment's notices open in: the scope of the product the order pays out of or
+/// into, the source first. A fund payment from the admin console names a product at one end,
+/// and its holders are that scope's people. Banking records no scope a person belongs to, so an
+/// order with no product end (user to user, the treasury) stays in the platform cabinet.
+fn payment_link_scope(terms: &PaymentTerms) -> Result<String, DomainError> {
+	let product = match (terms.from(), terms.to()) {
+		(Party::Service(service), _) | (_, PaymentDestination::Internal(Party::Service(service))) => service,
+		(Party::User(_) | Party::Treasury, PaymentDestination::Internal(Party::User(_) | Party::Treasury) | PaymentDestination::External { .. }) => return Ok(String::new()),
+	};
+	window_tool::remap::scope_of(product)
+		.map(|scope| scope.to_string())
+		.map_err(|err| DomainError::Validation(format!("the scope of allocation `{product}`: {err}")))
 }
 
 /// How a consent died without being answered — the pair concierge's `PaymentOutcomeMail`
@@ -577,6 +591,7 @@ async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 		ConsentInvalidation::SessionsRevoked { .. } => "the sessions of the account were revoked after the payment was opened",
 		ConsentInvalidation::EmailChanged => "the mailbox of the account changed after the payment was opened",
 	};
+	let link_scope = payment_link_scope(order.terms())?;
 	let mut notices = Vec::with_capacity(2);
 	if !matches!(cause, ConsentInvalidation::EmailChanged) {
 		notices.push((subject, format!("The payment of {what} out of your account was stopped because {why}. Nothing was moved.")));
@@ -592,6 +607,7 @@ async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 			title: "A payment was stopped".to_owned(),
 			body,
 			link: String::new(),
+			link_scope: link_scope.clone(),
 			dedupe_key: format!("payment:{}:outcome:{recipient}", order.id()),
 		};
 		scope_notifications::enqueue(conn, &notice, Some(order.id().raw())).await?;
@@ -962,6 +978,7 @@ impl PaymentRepository for PgPayments {
 						},
 					),
 					link: answer_link(order.id()),
+					link_scope: payment_link_scope(order.terms())?,
 					dedupe_key: format!("payment:{}:consent:{}", order.id(), session.subject),
 				};
 				scope_notifications::enqueue(&mut tx, &notice, Some(order.id().raw())).await?;

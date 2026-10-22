@@ -195,6 +195,7 @@ pub mod wired {
 					proposed: Some(fee_terms(&notice.proposed)),
 					effective_at: notice.effective_at,
 					link: notice.link.clone(),
+					link_scope: crate::infrastructure::fee_policy_changes::PRODUCT_PAGE_SCOPE.to_owned(),
 				});
 			}
 			GovernanceMail::PaymentOutcome(outcome) => {
@@ -238,7 +239,32 @@ pub mod wired {
 	#[cfg(test)]
 	mod tests {
 		use super::*;
-		use crate::ports::governance_mail::PaymentOutcome;
+		use crate::ports::governance_mail::{FeePolicyNotice, PaymentOutcome};
+
+		/// The fee notice opens the product page in the invest cabinet, which serves it.
+		#[test]
+		fn a_fee_policy_notice_links_into_the_invest_cabinet() {
+			let recipient = Uuid::new_v4();
+			let terms = FeePolicyTerms {
+				management_bps: 200,
+				performance_bps: 2000,
+				hurdle_bps: 0,
+				basis: "invested_capital".to_owned(),
+				crystallization: "annual".to_owned(),
+			};
+			let mail = GovernanceMail::FeePolicyNotice(FeePolicyNotice {
+				subject_user_id: recipient.to_string(),
+				fund: "Quy Nhon (quy_nhon)".to_owned(),
+				current: None,
+				proposed: terms,
+				effective_at: 1_800_000_000,
+				link: "/invest/quy_nhon".to_owned(),
+			});
+			let request = request_of(recipient, "fee-policy-notice:c:u", &mail);
+			assert_eq!(request.kind, GovernanceMailKind::FeePolicyNotice as i32);
+			let payload = request.fee_policy_notice.as_ref().expect("the fee_policy_notice field is set");
+			assert_eq!((payload.link.as_str(), payload.link_scope.as_str()), ("/invest/quy_nhon", "invest"));
+		}
 
 		/// The consent-outcome kind reaches the relay as `PAYMENT_OUTCOME` (8) with its own
 		/// payload (field 10) and no other: concierge reads the payload the kind names, so a

@@ -138,6 +138,10 @@ fn topic_spec(spec: &TopicSpec) -> NotificationTopicSpec {
 		label: spec.label.to_owned(),
 		description: spec.description.to_owned(),
 		default_subscribed: spec.default_subscribed,
+		// No bank topic is one a person cannot switch off: each is a notice, never the only
+		// path to their money.
+		required: false,
+		required_reason: String::new(),
 	}
 }
 

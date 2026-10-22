@@ -240,8 +240,8 @@ consilium executes — not when it was proposed. Holders are then mailed
 `fee-policy-notice:<change>:<holder>`, through the same `consilium_mail` queue every
 governance mail leaves through, in the same transaction as the state change), with the
 fund's name, the current terms (absent when the fund charged nothing), the proposed terms,
-the moment they bind and the cabinet-relative product page (`/invest/<service>`, pinned to
-concierge's own origin). On the administrator's path the same mails go out the moment the
+the moment they bind and the cabinet-relative product page (`/invest/<service>`, which
+concierge opens in the invest cabinet: the mail names `link_scope = invest`). On the administrator's path the same mails go out the moment the
 change is scheduled.
 
 A notice is queued for every holder with an account row, whether or not the identity plane

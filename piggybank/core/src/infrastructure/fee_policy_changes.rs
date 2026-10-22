@@ -62,10 +62,16 @@ macro_rules! change_columns {
 }
 
 /// The cabinet-relative path of a product's page, as the holders' notice links to it.
-/// Concierge pins it to its own public origin; this plane never mints a host.
+/// Concierge joins it onto the cabinet of [`PRODUCT_PAGE_SCOPE`]; this plane never mints a host.
 pub fn product_page_path(service: &ServiceId) -> String {
 	format!("/invest/{service}")
 }
+
+/// The scope whose cabinet serves [`product_page_path`]: the invest cabinet serves
+/// `/invest/<service>` for every product, and the platform cabinet no longer does (banking#584).
+/// The mail names it rather than the queue row, so a notice queued before the scope existed
+/// links there too.
+pub const PRODUCT_PAGE_SCOPE: &str = "invest";
 
 pub struct PgFeePolicyChanges {
 	pool: PgPool,

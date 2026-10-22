@@ -797,7 +797,7 @@ this section covers only how the kind sits in the consilium.
   the fund's display name, the current and the proposed terms, the reason, and the token).
   Holders are told with `FeePolicyNotice` (`GOVERNANCE_MAIL_KIND_FEE_POLICY_NOTICE`: the same
   two sets of terms, the moment they bind, and the cabinet-relative product page
-  `/invest/<service>`, addressed by identity as a consent is). No outcome mail is sent for
+  `/invest/<service>` in the invest cabinet (`link_scope = invest`), addressed by identity as a consent is). No outcome mail is sent for
   this kind: the owners read the verdict in the consilium room, and the holders learn of a
   carried change from their notice. Wiring an outcome template is tracked under #233.
 

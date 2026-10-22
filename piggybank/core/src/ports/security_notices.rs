@@ -10,9 +10,10 @@ use domain::{money::Usdt, scope_operations::WALLET_SECURITY_TOPIC, users::UserId
 
 use crate::ports::scope_notifications::ScopeNotice;
 
-/// The wallet page, relative to the cabinet root: concierge joins it onto `CABINET_URL`, which
-/// already ends in the cabinet's own prefix, so a `/cabinet` here would double it. Cancelling a
-/// queued withdrawal and signing out everywhere both start there.
+/// The wallet page, relative to the cabinet root: concierge joins it onto `CABINET_URL`, or onto
+/// the base of the notice's `link_scope`, and each base already ends in the cabinet's own
+/// prefix, so a `/cabinet` here would double it. Cancelling a queued withdrawal and signing out
+/// everywhere both start there.
 const WALLET_PAGE: &str = "/wallet";
 
 const WASNT_ME: &str = "If this was not you, open your wallet now, cancel it and sign out of every device.";
@@ -48,6 +49,10 @@ pub fn withdrawal_requested(user: UserId, withdrawal: &Withdrawal, hold_secs: Op
 		title: title.to_owned(),
 		body,
 		link: WALLET_PAGE.to_owned(),
+		// A withdrawal leaves the person's own wallet (`main`), which belongs to no scope, and
+		// banking records no scope a person belongs to: the platform cabinet is the only one
+		// known to be theirs.
+		link_scope: String::new(),
 		dedupe_key: format!("withdrawal:{}:requested", withdrawal.id()),
 	}
 }
@@ -78,6 +83,8 @@ pub fn mandate_changed(user: UserId, mandate_id: &str, granted: bool, client: &s
 		title: title.to_owned(),
 		body,
 		link: WALLET_PAGE.to_owned(),
+		// The mandate is the person's tie to this scope, so its cabinet is where they read it.
+		link_scope: scope.to_owned(),
 		dedupe_key: format!("mandate:{mandate_id}:{}", if granted { "granted" } else { "revoked" }),
 	}
 }
@@ -105,7 +112,7 @@ mod tests {
 	fn a_mandate_notice_names_the_service_and_points_at_the_wallet() {
 		let notice = mandate_changed(UserId::new(), "m-1", true, "panel", "sa", Usdt::parse_decimal("10").unwrap(), Usdt::parse_decimal("50").unwrap());
 		assert_eq!(notice.topic, "bank:wallet-security");
-		assert_eq!(notice.link, "/wallet");
+		assert_eq!((notice.link.as_str(), notice.link_scope.as_str()), ("/wallet", "sa"), "read in the mandate's scope's cabinet");
 		assert!(notice.body.contains("panel") && notice.body.contains("10 USDT per operation"));
 		assert!(!notice.body.contains("://"), "plain text, no links in the body");
 		assert!(notice.title.chars().count() <= 200 && notice.dedupe_key.len() <= 128);
