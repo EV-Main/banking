@@ -1388,11 +1388,10 @@ async fn an_investor_with_no_mirrored_identity_cannot_be_asked() {
 	reset(&a.pool).await;
 }
 
-/// A mandate notice names its scope, but the outbox does not keep it yet: what reaches concierge
-/// links into the platform cabinet, as before. When the outbox stores the scope, this test flips
-/// to expect it.
+/// A mandate notice names its scope, and the outbox keeps it until delivery, so the person
+/// reads it in that scope's cabinet.
 #[tokio::test]
-async fn a_queued_mandate_notice_reaches_the_inbox_without_its_scope() {
+async fn a_queued_mandate_notice_reaches_the_inbox_with_its_scope() {
 	let _guard = exclusive().await;
 	let Some(a) = app("payment approvals mandate notice").await else { return };
 	reset(&a.pool).await;
@@ -1408,5 +1407,22 @@ async fn a_queued_mandate_notice_reaches_the_inbox_without_its_scope() {
 	assert_eq!(worker.drain().await.unwrap(), 1);
 	let emitted = inbox.0.lock().unwrap().emitted.clone();
 	assert_eq!(emitted.len(), 1);
-	assert_eq!((emitted[0].1.link.as_str(), emitted[0].1.link_scope.as_str()), ("/wallet", ""));
+	assert_eq!((emitted[0].1.link.as_str(), emitted[0].1.link_scope.as_str()), ("/wallet", "invest"));
+}
+
+/// A scope name concierge would refuse never enters the outbox: it would fail the emit attempt
+/// after attempt, long after the fact that queued it.
+#[tokio::test]
+async fn the_outbox_refuses_a_scope_concierge_would_refuse() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals malformed link scope").await else { return };
+	reset(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	let mut notice = piggybank_core::ports::security_notices::mandate_changed(investor, &Uuid::new_v4().to_string(), true, "invest-core", "invest", usdt("10"), usdt("50"));
+	notice.link_scope = "In-Vest".to_owned();
+	let mut conn = a.pool.acquire().await.unwrap();
+	let refused = piggybank_core::infrastructure::scope_notifications::enqueue(&mut conn, &notice, None).await;
+	assert!(refused.is_err(), "{refused:?}");
+	let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM scope_notification_outbox").fetch_one(&a.pool).await.unwrap();
+	assert_eq!(queued, 0);
 }

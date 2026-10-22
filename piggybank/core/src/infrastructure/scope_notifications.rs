@@ -24,8 +24,8 @@ use crate::ports::scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier}
 /// key makes a retried transition enqueue the same notice once.
 pub async fn enqueue(conn: &mut PgConnection, notice: &ScopeNotice, payment: Option<Uuid>) -> Result<(), DomainError> {
 	sqlx::query(
-		"INSERT INTO scope_notification_outbox (user_id, topic, kind, title, body, link, dedupe_key, payment_id) \
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (dedupe_key) DO NOTHING",
+		"INSERT INTO scope_notification_outbox (user_id, topic, kind, title, body, link, link_scope, dedupe_key, payment_id) \
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (dedupe_key) DO NOTHING",
 	)
 	.bind(notice.user.raw())
 	.bind(&notice.topic)
@@ -33,6 +33,7 @@ pub async fn enqueue(conn: &mut PgConnection, notice: &ScopeNotice, payment: Opt
 	.bind(&notice.title)
 	.bind(&notice.body)
 	.bind(&notice.link)
+	.bind(&notice.link_scope)
 	.bind(&notice.dedupe_key)
 	.bind(payment)
 	.execute(&mut *conn)
@@ -224,7 +225,7 @@ impl ScopeNotificationWorker {
 	async fn deliver(&self, id: i64) -> Result<bool, DomainError> {
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
 		let row = sqlx::query(
-			"SELECT n.user_id, n.topic, n.kind, n.title, n.body, n.link, n.dedupe_key, u.concierge_user_id \
+			"SELECT n.user_id, n.topic, n.kind, n.title, n.body, n.link, n.link_scope, n.dedupe_key, u.concierge_user_id \
 			 FROM scope_notification_outbox n JOIN users u ON u.id = n.user_id \
 			 WHERE n.id = $1 AND n.sent_at IS NULL AND n.withdrawn_at IS NULL AND n.attempts < $2 AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= now()) \
 			 FOR UPDATE OF n SKIP LOCKED",
@@ -252,10 +253,7 @@ impl ScopeNotificationWorker {
 			title: row.try_get("title").map_err(repo_err)?,
 			body: row.try_get("body").map_err(repo_err)?,
 			link: row.try_get("link").map_err(repo_err)?,
-			// The outbox has no column for the scope yet, so a queued notice links into the
-			// platform cabinet, as every notice did before `link_scope` existed. A mandate
-			// notice loses its scope here until that column lands.
-			link_scope: String::new(),
+			link_scope: row.try_get("link_scope").map_err(repo_err)?,
 			dedupe_key: row.try_get("dedupe_key").map_err(repo_err)?,
 		};
 		let sent = match self.notifier.emit(recipient, &notice).await {
