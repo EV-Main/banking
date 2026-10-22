@@ -1,6 +1,6 @@
 // Money actions on a scope host. The wallet there shows balances and history
-// only; a withdrawal, transfer, payment or mandate happens on evinvest.ltd, in a
-// popup (or, when the popup is blocked, a full navigation), and the result comes
+// only; a withdrawal, transfer, invoice payment, mandate, or the user's answer to
+// a payment out of their account happens on evinvest.ltd, in a popup (or, when the popup is blocked, a full navigation), and the result comes
 // back to the opener by `postMessage`. Banking's mutating routes accept only
 // `Origin: https://evinvest.ltd`, so nothing here can move money by itself.
 //
@@ -23,12 +23,14 @@ export const WALLET_RESULT_MESSAGE = 'ev:wallet-result';
 
 /**
  * The money actions a host may open, as exact paths on {@link WALLET_ORIGIN}.
- * Anything else — a sibling page, a trailing slash, a deeper path — is not an
- * action, however it is spelled.
+ * The one other action is the answer to a payment, `/wallet/payment/<id>`
+ * ({@link walletPaymentUrl}). Anything else — a sibling page, a trailing slash,
+ * a deeper path — is not an action, however it is spelled.
  */
 export const WALLET_ACTION_PATHS = ['/wallet/pay', '/wallet/withdraw', '/wallet/move', '/wallet/mandate'] as const;
 
-export type WalletActionPath = (typeof WALLET_ACTION_PATHS)[number];
+/** One of {@link WALLET_ACTION_PATHS}, or `/wallet/payment/<id>` with an id of 1–128 of `A–Z a–z 0–9 _ -`. */
+export type WalletActionPath = (typeof WALLET_ACTION_PATHS)[number] | `/wallet/payment/${string}`;
 
 /**
  * The only query parameters an action URL keeps: which invoice, which scope, which
@@ -49,6 +51,9 @@ const MAX_REFERENCE = 128;
 // An id with a separator or an encoded character in it can make the action
 // page look up something other than what the element named; refused, not cleaned.
 const ACTION_PARAM_VALUE = /^[A-Za-z0-9_-]{1,128}$/;
+// The id is a path segment, so the same rule holds there: `URL` keeps `%2F` and
+// `%2E` encoded in `pathname`, and the class refuses `%`.
+const PAYMENT_PATH = /^\/wallet\/payment\/[A-Za-z0-9_-]{1,128}$/;
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_POLL_MS = 500;
 const POPUP_FEATURES = 'popup=yes,width=480,height=720';
@@ -56,12 +61,13 @@ const POPUP_FEATURES = 'popup=yes,width=480,height=720';
 const POPUP_NAME = 'ev-wallet-action';
 
 function isActionPath(path: string): path is WalletActionPath {
-  return WALLET_ACTION_PATHS.some(action => action === path);
+  return WALLET_ACTION_PATHS.some(action => action === path) || PAYMENT_PATH.test(path);
 }
 
 /**
  * `raw` as a wallet action URL on `origin`, rebuilt from scratch, or null.
- * Only an exact {@link WALLET_ACTION_PATHS} path survives, with the first
+ * Only an exact {@link WALLET_ACTION_PATHS} path, or `/wallet/payment/<id>`
+ * with an id of 1–128 of `A–Z a–z 0–9 _ -`, survives, with the first
  * `invoice`, `scope` and `request` values; every other parameter and the hash are
  * dropped. Refused outright: another origin, another path, credentials,
  * control characters and backslashes — browsers strip tabs and newlines and
@@ -73,6 +79,8 @@ function isActionPath(path: string): path is WalletActionPath {
  *   come from the invoice banking issued, server-side; the URL only names it;
  * - a mandate's service and caps likewise come from the mandate request banking
  *   stored, which `request` only names;
+ * - a payment to answer is read by its id from the server, and only its payer
+ *   can see or answer it; the path only names it;
  * - `opener` is accepted only when its origin exactly matches one of the
  *   scope's registered origins, else ignored;
  * - `return_to` is accepted only when it is one of those origins plus a path
@@ -102,6 +110,37 @@ export function walletActionUrl(raw: unknown, origin: string = WALLET_ORIGIN): U
     url.searchParams.set(name, value);
   }
   return url;
+}
+
+/**
+ * The popup URL for the user's answer to a payment out of their account:
+ * `<origin>/wallet/payment/<paymentId>?scope=<scope>`, or null when `paymentId`
+ * or `scope` is not 1–128 of `A–Z a–z 0–9 _ -`, or `origin` is not an origin.
+ * Pass it to {@link openWalletAction}, which adds `opener` and `state`.
+ *
+ * The URL names the payment and nothing else: its amount, payee and terms are
+ * read from banking by the id, and only the payer, signed in on evinvest.ltd,
+ * can see or answer it. `scope` decides where the result may be posted (the
+ * scope's registered origins, see {@link walletActionUrl}). The outcome is
+ * `done` when the user approved, `cancelled` when they declined or closed it,
+ * with the payment id as `reference`; as with every action, it is a UI hint,
+ * and the host re-reads the payment's state from its backend.
+ *
+ * The result always passes {@link walletActionUrl} unchanged.
+ */
+export function walletPaymentUrl(paymentId: string, scope: string, origin: string = WALLET_ORIGIN): URL | null {
+  if (!ACTION_PARAM_VALUE.test(paymentId) || !ACTION_PARAM_VALUE.test(scope)) return null;
+  let url: URL;
+  try {
+    url = new URL(`/wallet/payment/${paymentId}`, origin);
+  } catch {
+    return null;
+  }
+  url.searchParams.set('scope', scope);
+  // Through the same gate as an element's URL, so the two can never disagree:
+  // an `origin` with a path or credentials comes out null here, not as a URL
+  // that `openWalletAction` would then refuse.
+  return walletActionUrl(url.href, origin);
 }
 
 /** The action URL of a {@link WALLET_ACTION_EVENT}, or null when the detail is missing or not one. */
