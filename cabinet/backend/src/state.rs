@@ -1000,7 +1000,8 @@ impl Grpc {
 	// ── payments: the order that moves money between two named ends ──────────
 	// Same plane and same token as the consilium above: the requirement (the owners'
 	// quorum or the subject's consent) is decided and seated by the plane inside
-	// `OpenPayment`, so the BFF only ever forwards the order and reads it back.
+	// `OpenPayment`. This BFF does not open an order (banking#565, F3): it reads one back
+	// and lets its initiator cancel it.
 
 	pub async fn list_payments(&self, token: &str, req: bk::ListPaymentsRequest) -> Result<bk::PaymentList, Status> {
 		Ok(self.payments().list_payments(bearer(token, req)?).await?.into_inner())
@@ -1009,17 +1010,6 @@ impl Grpc {
 	pub async fn get_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {
 		let req = bk::GetPaymentRequest { payment_id: payment_id.to_string() };
 		Ok(self.payments().get_payment(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// `proof` is the caller's own concierge access token, relayed so the money plane can prove
-	/// to concierge who asked for a payment the owners decide (D24(1)): concierge accepts it only
-	/// minted within the last 120 seconds, so it travels once and is kept nowhere.
-	pub async fn open_payment(&self, token: &str, proof: &str, req: bk::OpenPaymentRequest) -> Result<bk::Payment, Status> {
-		let mut request = bearer(token, req)?;
-		request
-			.metadata_mut()
-			.insert("x-ev-user-token", proof.parse().map_err(|_| Status::unauthenticated("invalid user token"))?);
-		Ok(self.payments().open_payment(request).await?.into_inner())
 	}
 
 	pub async fn cancel_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {

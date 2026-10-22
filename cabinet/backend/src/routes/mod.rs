@@ -190,9 +190,10 @@ fn requests(state: AppState) -> Router {
 		.route("/api/admin/rails/frozen", post(admin::set_rail_frozen))
 		.route("/api/admin/cabinet/announcement", post(admin::set_announcement))
 		.route("/api/admin/cabinet/flag", post(admin::set_flag))
-		// Payments — an order between two named ends. Money plane, Admin|Owner; the plane
-		// seats the one approval it needs (owner consilium or subject consent) on open.
-		.route("/api/admin/payments", get(payments::list).post(payments::open))
+		// Payments — an order between two named ends. Money plane, Admin|Owner. Read and
+		// cancel only: an order is opened from the central admin, which gates it on a fresh
+		// sign-in (banking#565, F3).
+		.route("/api/admin/payments", get(payments::list))
 		.route("/api/admin/payments/{id}", get(payments::get))
 		.route("/api/admin/payments/{id}/cancel", post(payments::cancel))
 		// Consilium — the platform's own money moving or changing hands, gated on a quorum
