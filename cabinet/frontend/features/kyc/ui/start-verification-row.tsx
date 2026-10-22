@@ -6,12 +6,12 @@ import { useState } from "react";
 
 import { Button, Skeleton } from "@evinvest/uikit";
 
-import { Link } from "@/shared/ui/cabinet-link";
-
 import { useKycStatus } from "@/features/kyc/model/use-kyc-status";
 import { VerificationDialog } from "@/features/kyc/ui/verification-dialog";
 import { Hairline, Pill, RowLabel } from "@/shared/ui/list-card";
 import { Settled } from "@/shared/ui/motion";
+import { config } from "@/config";
+import { platformAccountHref } from "@/shared/config/platform";
 import { useSession } from "@/shared/lib/use-session";
 import { SupportLink } from "@/shared/ui/support-link";
 
@@ -56,9 +56,10 @@ export function StartVerificationRow() {
         <Hairline />
         <div className="flex min-w-0 items-center justify-between gap-3 py-3.5">
           <RowLabel title={t("profile.kyc.verifyEmailTitle", "Verify your email first")} sub={t("profile.kyc.verifyEmailSub", "Identity checks open once your address is confirmed")} />
-          <Link href="/settings?section=security" className="shrink-0 text-sm font-semibold text-primary-ink">
+          {/* Concierge owns the account, so this leaves the cabinet: a plain anchor, no locale or base path. */}
+          <a href={platformAccountHref(config.public.platformUrl, "security")} className="shrink-0 text-sm font-semibold text-primary-ink">
             {t("auth.email.verify", "Verify")}
-          </Link>
+          </a>
         </div>
       </>
     );
