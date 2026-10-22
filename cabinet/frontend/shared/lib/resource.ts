@@ -18,14 +18,12 @@
 // in seconds, `tags`, and a `revalidateTag()` that mutations call — because the semantics
 // are the same and there is no reason to invent a second dialect for them.
 //
-// Server reads (`shared/api/server`) do not replace this cache, they feed it: a server
-// component reads once for the first HTML and passes the answer down as a seed
+// A server read does not replace this cache, it feeds it: a server component reads once for the first HTML and passes the answer down as a seed
 // (`useSeededResource`), and from then on the value lives, ages and is invalidated here.
 //
-// Why not a store library. The repo already answers this: `entities/user/model/
-// profile-store.ts`, `entities/notification/model/notification-store.ts`,
-// `shared/lib/use-session.ts` and `shared/lib/use-platform.ts` are four hand-rolled copies
-// of this same pattern, each with slightly different staleness rules. This is that pattern
+// Why not a store library. The repo already answers this: `shared/lib/use-session.ts` and
+// `shared/lib/use-platform.ts` are hand-rolled copies of this same pattern, each with
+// slightly different staleness rules. This is that pattern
 // written once, with a policy per resource instead of per copy — and no new dependency
 // (see AGENTS.md § Hard rules).
 //
@@ -430,8 +428,7 @@ export function clearResources(): void {
 // Coming back to a tab that has been in the background is exactly when the numbers on it
 // are most likely to be old — and a backgrounded tab's timers are throttled, so nothing
 // else would have caught it. Only mounted, stale entries are refreshed, so returning to a
-// tab costs at most one read per figure actually on screen. Same reasoning as the unread
-// badge's visibility check in `entities/notification/model/notification-store.ts`.
+// tab costs at most one read per figure actually on screen.
 let watchingFocus = false;
 
 function watchFocus(): void {

@@ -21,6 +21,24 @@ The Next.js host shell for the bank's cabinet. Two jobs:
 See [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) for the full contract and
 the React / Rust-WASM producer recipes.
 
+## Pages
+
+Since banking#565 the investor screens live in the invest cabinet and the staff
+screens in the central admin. What stays here is what outside links and the
+wallet element reach:
+
+| Group | Pages | Why it stays |
+|---|---|---|
+| `(host)` | `/cabinet`, `/cabinet/wallet`, `/cabinet/wallet/deposit`, `/cabinet/wallet/activity` | The sign-in host and the concierge `KYC_RETURN_URL` target; the wallet panel (the fallback link of wallet notices); the two pages the wallet element links to |
+| `(wallet-action)` | `/cabinet/wallet/action/*` | The money-action popups scope hosts open (`@evinvest/wallet`) and the payment answer link |
+| `(public)` | `/cabinet/approve/*`, `/cabinet/consent/*`, `/cabinet/owner-removal/*` | Token links in mails already sent |
+| `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
+| `(auth)` | `/cabinet/loggedout` | The sign-out landing |
+| `(app)` | `/cabinet/admin/*`, `/cabinet/consilium`, `/cabinet/approvals/payout/*` | Transitional, with the rail: the admin screens go after the central admin release, the consilium screens after invest#37 |
+
+`(host)` and `(wallet-action)` share one session pattern: the route gate gives a
+guest the sign-in wall, and `SessionKeeper` renews the access cookie.
+
 ## i18n
 
 Five locales (`en` `ru` `vi` `fr` `de`) through `@evinvest/i18n`, under the same
@@ -47,15 +65,17 @@ does not resolve.
 conductor is deliberate. The public site prefixes every non-default locale
 (`/ru/team`) because it must serve `hreflang` alternates to a crawler and must not
 move already-indexed URLs. The cabinet is entirely behind auth: no crawler, no
-indexed URL, and prefixing would mean restructuring all 19 routes around a
+indexed URL, and prefixing would mean restructuring every route around a
 `[locale]` segment to buy nothing.
 
 So `proxy.ts` negotiates `Accept-Language` once and mints a sticky `ev_locale`
 cookie, and never overwrites it — a reader who picks English on a Russian laptop
 stays in English. `currentLocale()` (`shared/config/locale.ts`) reads it; the root
-layout feeds `I18nProvider` so both the `(app)` and `(auth)` groups are covered.
+layout feeds `I18nProvider` so every route group is covered.
 
-Only a Settings save *confirms* that cookie (`ev_locale_chosen`). An unprefixed entry
+No page here *confirms* that cookie (`ev_locale_chosen`) since the Settings screen
+left with banking#565, so every `ev_locale` this zone sees is one the proxy or the
+public site seeded. An unprefixed entry
 whose `ev_locale` was not confirmed is treated as a guess, so the account's stored
 language wins on that device; a URL never writes to the account. A confirmed
 choice is kept on that device until it is changed there.
@@ -232,8 +252,7 @@ Rules:
   admin users drawer (`views/admin/users`) is the reference.
 - **Alerts and result cards that replace one another share one
   `PanelPresence`.** A submit that fails should swap review → error in place
-  rather than emptying the column and refilling it. See `views/wallet/withdraw`
-  and `views/invest/deal-panels`.
+  rather than emptying the column and refilling it. See `views/wallet/withdraw`.
 - **A marker that moves is one node per surface, mounted once and translated** —
   never a per-item background that blinks between rows, and never a `layoutId`
   pill that mounts inside whichever item is active. The mobile tab bar's rule is

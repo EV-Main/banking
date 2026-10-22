@@ -3,22 +3,17 @@
 import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
-import { ArrowLeftRight, ArrowUpFromLine, Bell, Boxes, Coins, Gavel, Home, Inbox, Landmark, LifeBuoy, LineChart, ListChecks, PanelsTopLeft, Percent, PiggyBank, Receipt, Settings, UserRound, UsersRound, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, ArrowUpFromLine, Boxes, Coins, Gavel, Home, Inbox, Landmark, LifeBuoy, PanelsTopLeft, Percent, PiggyBank, Receipt, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import { Link } from "@/shared/ui/cabinet-link";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { prefetchOn } from "@/application/prefetch";
-import { allocationsResource } from "@/entities/fund/model/fund-resource";
-import { useUnreadCount, useUnreadCountPolling } from "@/entities/notification/model/notification-store";
 import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
-import { KycStatusChip } from "@/features/kyc";
 import { useCabinetPathname } from "@/shared/lib/cabinet-route";
 import { cn } from "@/shared/lib/cn";
 import { SUPPORT_EMAIL } from "@/shared/config/support";
-import { useResource } from "@/shared/lib/resource";
 import { visibleFor } from "@/shared/lib/roles";
 import { useSession } from "@/shared/lib/use-session";
-import { ProductIcon, productTone } from "@/shared/ui/icons/products";
 
 interface NavItem {
   href: `/${string}`;
@@ -34,27 +29,12 @@ interface NavItem {
   roles?: readonly string[];
 }
 
-// FUND group — the primary surfaces. "Home" is the portfolio dashboard; "Wallet" is the
-// balance plus deposit/withdraw/activity, which the dashboard's money actions also link
-// into. The mobile tab bar has no room for a sixth tab, so there /wallet still lights up
-// Operations.
+// FUND group — the two thin hosts that remain after banking#565 (investor screens moved to
+// the invest cabinet). Both pages render outside this shell, without the rail.
 const FUND: NavItem[] = [
   { href: "/", text: (t) => t("nav.home", "Home"), icon: Home, active: (p) => p === "/" },
-  // Exactly `/invest`, not everything beneath it: each product has its own row in
-  // PRODUCTS, and a prefix match here lit both that row and this one on a product
-  // page. Two highlighted rows is not a state the rail should be able to reach —
-  // and with one marker per section it would mean two markers at once.
-  { href: "/invest", text: (t) => t("nav.invest", "Invest"), icon: LineChart, active: (p) => p === "/invest" },
   { href: "/wallet", text: (t) => t("nav.wallet", "Wallet"), icon: Wallet, active: (p) => p.startsWith("/wallet") },
-  { href: "/operations", text: (t) => t("nav.operations", "Activity"), icon: ListChecks, active: (p) => p.startsWith("/operations") },
 ];
-
-// PRODUCTS is the open allocation registry, not a fixed list: a fund appears in the rail
-// because an operator registered and opened it. It used to name one product literally,
-// which went stale the moment a second one was registered.
-//
-// The mark and its tint both come from `@/shared/ui/icons/products`, so the rail, the
-// invest card and the product page draw the same fund the same way.
 
 // ADMINISTER group — the operator console. Rendered only for a non-investor session
 // role (the BFF's `/api/auth/session` `isAdmin`); every screen is also authorized
@@ -94,24 +74,6 @@ const ADMIN: NavItem[] = [
   { href: "/admin/fees", text: (t) => t("nav.fees", "Fees"), icon: Percent, active: (p) => p.startsWith("/admin/fees"), roles: ["admin", "owner"] },
 ];
 
-// The bottom rail — the reader's own account, then the two things about it that change.
-// Profile sits first: it is who the row is about, where Notifications and Settings are
-// things done to that account. The mobile tab bar has no sixth slot, so below `lg` the
-// profile is reached through Settings instead.
-const SECONDARY: NavItem[] = [
-  { href: "/profile", text: (t) => t("nav.profile", "Profile"), icon: UserRound, active: (p) => p.startsWith("/profile") },
-  { href: "/notifications", text: (t) => t("nav.notifications", "Notifications"), icon: Bell, active: (p) => p.startsWith("/notifications") },
-  { href: "/settings", text: (t) => t("nav.settings", "Settings"), icon: Settings, active: (p) => p.startsWith("/settings") },
-];
-
-// A product's row owns its page AND the surfaces under it — `/invest/<service>/trade` is
-// the terminal over that product, not a different place in the rail. Matched with the
-// trailing slash so `/invest/arb` never lights the row of a product called `arbitrage`.
-function onProduct(pathname: string, service: string): boolean {
-  const href = `/invest/${encodeURIComponent(service)}`;
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
 // Every rail row is a hand-written Link, so keyboard focus rides on this string. It runs
 // The ring is the solid token, never a tint: at 50% the teal composites to 1.9–2.3:1 against
 // every surface in this theme, under the 3:1 SC 1.4.11 floor, where solid clears it
@@ -136,15 +98,6 @@ export function Sidebar() {
   const dialog = useSignInDialog();
   const role = session?.user?.role;
   const admin = ADMIN.filter((item) => visibleFor(item.roles, role));
-  // The rail is mounted on every signed-in screen, so it is the one place the unread
-  // count is polled from — every other consumer reads the shared store.
-  useUnreadCountPolling(!guest);
-  const unread = useUnreadCount();
-  // The catalog is cached and mirrored to sessionStorage, so the rail lists its products on
-  // the first frame of a return visit rather than growing a Products group a beat later. A
-  // failed read leaves the group empty rather than blocking the rail — the nav is not the
-  // place to surface an API error.
-  const products = useResource(allocationsResource).data?.allocations ?? [];
   // The row answers the click, not the RSC round-trip. Every cabinet route is dynamic
   // and none has a `loading.tsx`, so the pathname only changes once the new page's
   // payload has arrived — 150–300ms after the click, which is exactly the window in
@@ -156,7 +109,7 @@ export function Sidebar() {
   // render rather than in an effect — an effect would paint one frame with the URL's row
   // marked and the stale one not — and cleared rather than merely ignored: an entry left
   // behind would come back to life on a return to the page it was made on, marking
-  // Operations again on the way back from it to Wallet. A click that never navigates
+  // Users again on the way back from it to Treasury. A click that never navigates
   // (cancelled, failed) is forgotten by the next one.
   const [pending, setPending] = useState<{ href: `/${string}`; from: string } | null>(null);
   if (pending && pending.from !== pathname) setPending(null);
@@ -171,35 +124,6 @@ export function Sidebar() {
             <NavLink key={item.href} item={item} active={item.active(marked)} onClick={onRailClick(item.href, mark)} />
           ))}
         </Section>
-        {products.length > 0 && (
-          <Section label={t("invest.products", "Products")} at={products.some((p) => onProduct(marked, p.service)) ? marked : null}>
-            {products.map((p) => {
-              // Every row pointed at `/invest`, so naming a product in the rail took you to
-              // the list of all of them. The product's own page is keyed by its service id.
-              const href: `/${string}` = `/invest/${encodeURIComponent(p.service)}`;
-              const active = onProduct(marked, p.service);
-              return (
-                <Link
-                  key={p.service}
-                  href={href}
-                  {...prefetchOn(href)}
-                  onClick={onRailClick(href, mark)}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    NAV_FOCUS,
-                    active ? "font-semibold text-on-primary" : "font-medium text-ink hover:bg-ink/5",
-                  )}
-                >
-                  <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md", productTone(p.service))}>
-                    <ProductIcon icon={p.icon} className="size-3.5" />
-                  </span>
-                  <span className="truncate">{p.title}</span>
-                </Link>
-              );
-            })}
-          </Section>
-        )}
         {isAdmin && (
           <Section label={t("admin.eyebrow.administer", "Administer")} at={admin.some((i) => i.active(marked)) ? marked : null}>
             {admin.map((item) => (
@@ -212,15 +136,7 @@ export function Sidebar() {
       <div className="flex-1" />
 
       <nav aria-label={t("nav.a11y.secondary", "Secondary")} className="flex flex-col">
-        <Section at={SECONDARY.some((i) => i.active(marked)) ? marked : null}>
-          {SECONDARY.map((item) => {
-            const active = item.active(marked);
-            // The two rows about the account carry its two live facts: the verification
-            // state on Profile, where the row that changes it lives (#395), and the unread
-            // count on Notifications.
-            const trailing = guest ? undefined : item.href === "/profile" ? <KycStatusChip active={active} /> : item.href === "/notifications" && unread ? <UnreadPill count={unread} active={active} /> : undefined;
-            return <NavLink key={item.href} item={item} active={active} onClick={onRailClick(item.href, mark)} trailing={trailing} />;
-          })}
+        <Section at={null}>
           <SupportLink />
           {guest && (
             // A guest's way in, wherever they are: the same dialog every wall opens.
@@ -264,7 +180,7 @@ function onRailClick(href: `/${string}`, mark: (href: `/${string}`) => void) {
 // main thread is doing, and the origin is wherever the marker already is.
 //
 // One per section rather than one per rail for the same reason as before: a marker
-// travelling from Invest to Users would cross two headings that have nothing to do with
+// travelling from Wallet to Users would cross two headings that have nothing to do with
 // either row, and the distance would imply a relationship that does not exist. Crossing
 // a section unmounts one marker and mounts another, which is a fade.
 //
@@ -335,12 +251,10 @@ function NavLink({
   item,
   active,
   onClick,
-  trailing,
 }: {
   item: NavItem;
   active: boolean;
   onClick: (e: MouseEvent<HTMLAnchorElement>) => void;
-  trailing?: ReactNode;
 }) {
   const t = useT();
   const Icon = item.icon;
@@ -365,7 +279,6 @@ function NavLink({
       <span className="min-w-0 flex-1 truncate" title={item.text(t)}>
         {item.text(t)}
       </span>
-      {trailing}
     </Link>
   );
 }
@@ -386,24 +299,3 @@ function SupportLink() {
   );
 }
 
-// Capped at 99+ so a long-neglected inbox cannot widen the rail.
-//
-// The label and the text deliberately disagree past 99: the pill shows "99+" because the
-// rail has no room for more, while the accessible name carries the real number, which is
-// the one piece of information the cap throws away. The label was `${count} unread` — an
-// English plural assembled by concatenation, hidden where nothing renders it, so every
-// locale announced it in English.
-function UnreadPill({ count, active }: { count: number; active: boolean }) {
-  const t = useT();
-  return (
-    <span
-      aria-label={t("notif.unreadCount", "Unread · {n}", { n: count })}
-      className={cn(
-        "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-        active ? "bg-background text-ink" : "bg-primary-ink/15 text-primary-ink",
-      )}
-    >
-      {count > 99 ? "99+" : count}
-    </span>
-  );
-}

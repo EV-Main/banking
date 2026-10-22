@@ -31,6 +31,9 @@ await build({
     // The menu's Service-Arb entry; unset, it is left out.
     "process.env.NEXT_PUBLIC_SA_PANEL_URL":
       process.env.NEXT_PUBLIC_SA_PANEL_URL === undefined ? "undefined" : JSON.stringify(process.env.NEXT_PUBLIC_SA_PANEL_URL),
+    // Where "Profile" and "Manage account" go: concierge's account page on the platform.
+    "process.env.NEXT_PUBLIC_PLATFORM_URL":
+      process.env.NEXT_PUBLIC_PLATFORM_URL === undefined ? "undefined" : JSON.stringify(process.env.NEXT_PUBLIC_PLATFORM_URL),
   },
 });
 

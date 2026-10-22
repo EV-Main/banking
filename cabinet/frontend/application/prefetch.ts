@@ -28,14 +28,9 @@ import {
   usersResource,
   withdrawalQueueResource,
 } from "@/entities/admin/model/admin-resource";
-import { bookPolicyResource, bookSnapshotResource, bookTradesResource, openOrdersResource } from "@/entities/book/model/book-resource";
-import { allocationsResource, fundNavResource, positionsResource, redemptionsResource } from "@/entities/fund/model/fund-resource";
-import { notificationSettingsResource, notificationsResource } from "@/entities/notification/model/notification-resource";
-import { RECENT_OPS, operationsResource } from "@/entities/operation/model/operation-resource";
 import { paymentsResource } from "@/entities/payment/model/payment-resource";
 import { isServiceId, tenantOf } from "@/entities/grant/lib/access";
 import { grantHoldersResource } from "@/entities/grant/model/grant-resource";
-import { sessionsResource } from "@/entities/session/model/session-resource";
 import { profileResource } from "@/entities/user/model/profile-resource";
 import { depositsResource, walletResource, withdrawalsResource } from "@/entities/wallet/model/wallet-resource";
 
@@ -90,80 +85,8 @@ const ROUTES: ReadonlyArray<{ prefix: string; warm: (path: string) => void }> = 
     },
   },
   { prefix: "/wallet", warm: () => walletResource.prefetch() },
-  {
-    prefix: "/invest/",
-    warm: (path) => {
-      allocationsResource.prefetch();
-      positionsResource.prefetch();
-      redemptionsResource.prefetch();
-      // `/invest/<service>` — the fund's own page opens on its NAV, and on whether its
-      // book is open (the "Trade" control reads the policy).
-      const [slug, surface] = path.slice("/invest/".length).split("/");
-      const service = decodeURIComponent(slug ?? "");
-      if (!service) return;
-      fundNavResource.prefetch(service);
-      bookPolicyResource.prefetch(service);
-      if (surface === "trade") {
-        // The terminal: the book paints from the cache before the socket's first frame
-        // lands, and the form needs the balance to say what is available.
-        bookSnapshotResource.prefetch(service);
-        bookTradesResource.prefetch(service);
-        openOrdersResource.prefetch(service);
-        walletResource.prefetch();
-      }
-    },
-  },
-  {
-    prefix: "/invest",
-    warm: () => {
-      positionsResource.prefetch();
-      redemptionsResource.prefetch();
-      walletResource.prefetch();
-      allocationsResource.prefetch();
-    },
-  },
-  {
-    prefix: "/operations",
-    warm: () => {
-      operationsResource.prefetch(undefined);
-      allocationsResource.prefetch();
-    },
-  },
-  {
-    prefix: "/notifications",
-    warm: () => notificationsResource.prefetch("all"),
-  },
-  {
-    prefix: "/profile",
-    warm: () => {
-      // The profile is read-only and summarises the account: the identity record, the
-      // holdings and balance behind its stat strip, the full timeline behind its activity
-      // counts (the same read `/operations` makes, so one cache entry serves both), and the
-      // session list its Access card counts.
-      profileResource.prefetch();
-      positionsResource.prefetch();
-      walletResource.prefetch();
-      operationsResource.prefetch(undefined);
-      sessionsResource.prefetch();
-    },
-  },
-  {
-    prefix: "/settings",
-    warm: () => {
-      profileResource.prefetch();
-      sessionsResource.prefetch();
-      notificationSettingsResource.prefetch();
-    },
-  },
-  {
-    prefix: "/",
-    warm: () => {
-      walletResource.prefetch();
-      positionsResource.prefetch();
-      operationsResource.prefetch(RECENT_OPS);
-      allocationsResource.prefetch();
-    },
-  },
+  // Home reads the verification standing.
+  { prefix: "/", warm: () => profileResource.prefetch() },
 ];
 
 // "/" is Home, not "every path": it is matched exactly, never as a prefix. Every other entry
@@ -189,18 +112,14 @@ export function prefetchOn(href: string) {
 }
 
 /**
- * Warm what nearly every screen in the cabinet reads: the balance, the positions, and the
- * fund catalog the rail itself lists. Called once when the signed-in shell mounts.
+ * Warm the balance, which both wallet pages and the wallet panel read. Called once when a
+ * signed-in shell mounts.
  *
  * At idle, so the current screen's own reads go first — nothing here is needed to paint the
  * page the user actually asked for.
  */
 export function warmShell(): () => void {
-  const warm = () => {
-    walletResource.prefetch();
-    positionsResource.prefetch();
-    allocationsResource.prefetch();
-  };
+  const warm = () => walletResource.prefetch();
   if (typeof window === "undefined") return () => undefined;
   if (typeof requestIdleCallback === "function") {
     const handle = requestIdleCallback(warm, { timeout: 2_000 });

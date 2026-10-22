@@ -14,6 +14,7 @@ import {
   type CachedIdentity,
 } from "@/entities/user/model/identity-cache";
 import { cabinetPath, isCabinetPage } from "@/shared/config/base-path";
+import { platformAccountHref } from "@/shared/config/platform";
 import { cn } from "@/shared/lib/cn";
 import { csrfHeader } from "@/shared/lib/csrf-client";
 import { displayName, initialsOfName, truncateName } from "@/shared/lib/identity";
@@ -32,6 +33,9 @@ import { AccountMenu, CHIP_FOCUS, type MenuIdentity, type MenuLinks } from "./ac
 // that reads every variable off `process`, which this bundle does not have on the host page.
 // eslint-disable-next-line no-restricted-properties
 const SA_PANEL_URL = process.env.NEXT_PUBLIC_SA_PANEL_URL;
+// Inlined the same way; the account itself lives in concierge, on the platform origin.
+// eslint-disable-next-line no-restricted-properties
+const PLATFORM_URL = process.env.NEXT_PUBLIC_PLATFORM_URL;
 
 /** Keeps the label from pushing the host's central nav off-centre. */
 const MAX_LABEL = 28;
@@ -156,8 +160,8 @@ function cabinetLinks(): MenuLinks {
   const here = typeof document === "undefined" ? "/" : document.location.pathname + document.location.search;
   const inCabinet = typeof document !== "undefined" && isCabinetPage(document.location.pathname);
   return {
-    profile: inCabinet ? { href: cabinetPath(locale, "/profile"), kind: "profile" } : { href: cabinetPath(locale, "/"), kind: "cabinet" },
-    manage: cabinetPath(locale, "/settings"),
+    profile: inCabinet ? { href: platformAccountHref(PLATFORM_URL, "profile"), kind: "profile" } : { href: cabinetPath(locale, "/"), kind: "cabinet" },
+    manage: platformAccountHref(PLATFORM_URL, "security"),
     // Google's chooser is on every sign-in; the new session closes this one.
     switchAccount: `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
   };

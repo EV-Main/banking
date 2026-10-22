@@ -2731,10 +2731,6 @@
     "en": "That sign-in attempt expired. Please try again.",
     "t": "Lượt đăng nhập đó đã hết hạn. Vui lòng thử lại."
   },
-  "auth.notSignedIn": {
-    "en": "Not signed in",
-    "t": "Chưa đăng nhập"
-  },
   "auth.signInAgain": {
     "en": "Sign in again",
     "t": "Đăng nhập lại"
@@ -2758,10 +2754,6 @@
   "auth.signedOutSub": {
     "en": "You've been signed out of your cabinet.",
     "t": "Bạn đã đăng xuất khỏi tài khoản của mình."
-  },
-  "auth.stat.risk": {
-    "en": "Capital at risk. A target is not a forecast, and returns are not guaranteed.",
-    "t": "Vốn có rủi ro. Mục tiêu không phải dự báo, và lợi nhuận không được đảm bảo."
   },
   "consent.approve": {
     "en": "Approve — move my money",
@@ -3623,197 +3615,13 @@
     "en": "Not answered",
     "t": "Chưa trả lời"
   },
-  "dash.activeStrategies": {
-    "en": "Active strategies",
-    "t": "Chiến lược đang hoạt động"
-  },
-  "dash.allTimeSuffix": {
-    "en": "{pct} all-time",
-    "t": "{pct} từ trước đến nay"
-  },
-  "dash.available": {
-    "en": "Available",
-    "t": "Khả dụng"
-  },
-  "dash.browseStrategies": {
-    "en": "Browse strategies",
-    "t": "Xem các chiến lược"
-  },
-  "dash.fundFallback": {
-    "en": "Fund",
-    "t": "Quỹ"
-  },
-  "dash.fundPerformance": {
-    "en": "Fund performance",
-    "t": "Hiệu suất quỹ"
-  },
-  "dash.hintAcrossPositions": {
-    "en": "across all positions",
-    "t": "trên tất cả vị thế"
-  },
-  "dash.hintAtCostBasis": {
-    "en": "at cost basis",
-    "t": "theo giá gốc"
-  },
-  "dash.hintAutoDeploysEod": {
-    "en": "auto-deploys at EOD",
-    "t": "tự động phân bổ cuối ngày"
-  },
-  "dash.hintFundPositions": {
-    "en": "fund positions",
-    "t": "vị thế trong quỹ"
-  },
-  "dash.historyTruncated": {
-    "en": "Only the most recent marks in this range are shown; the fund curve starts from the oldest one shown, not from the start of the range.",
-    "t": "Chỉ hiển thị các mốc định giá gần nhất trong khoảng này; đường cong của quỹ bắt đầu từ mốc cũ nhất được hiển thị, không phải từ đầu khoảng."
-  },
-  "dash.investedWhatIOwn": {
-    "en": "Invested · what I own",
-    "t": "Đã đầu tư · những gì tôi sở hữu"
-  },
-  "dash.moveMoney": {
-    "en": "Move money",
-    "t": "Chuyển tiền"
-  },
-  "dash.netContributed": {
-    "en": "Net contributed",
-    "t": "Đóng góp ròng"
-  },
-  "dash.noHistory": {
-    "en": "No performance history yet",
-    "t": "Chưa có lịch sử hiệu suất"
-  },
-  "dash.noHistoryHint": {
-    "en": "The fund curve and your participation appear here once there is activity to plot.",
-    "t": "Đường cong của quỹ và phần tham gia của bạn sẽ hiện ở đây khi có dữ liệu để vẽ."
-  },
-  "dash.noOperationsHint": {
-    "en": "Deposits, subscriptions, redemptions and withdrawals land here the moment you make them.",
-    "t": "Các khoản nạp, đăng ký, hoàn vốn và rút tiền sẽ xuất hiện ở đây ngay khi bạn thực hiện."
-  },
-  "dash.nothingInvested": {
-    "en": "Nothing invested yet",
-    "t": "Chưa đầu tư khoản nào"
-  },
-  "dash.nothingInvestedHint": {
-    "en": "Subscribe to a strategy and the split of what you own shows up here.",
-    "t": "Đăng ký một chiến lược và cơ cấu khoản đầu tư của bạn sẽ hiện ở đây."
-  },
-  "dash.op.deposit": {
-    "en": "Deposit · {network}",
-    "t": "Nạp tiền · {network}"
-  },
-  "dash.op.redeemed": {
-    "en": "{fund} — redeemed",
-    "t": "{fund} — đã hoàn vốn"
-  },
-  "dash.op.sub": {
-    "en": "{ref} · {state}",
-    "t": "{ref} · {state}"
-  },
-  "dash.op.subscribed": {
-    "en": "{fund} — subscribed",
-    "t": "{fund} — đã đăng ký mua"
-  },
-  "dash.op.withdrawal": {
-    "en": "Withdrawal · {network}",
-    "t": "Rút tiền · {network}"
-  },
-  "dash.portfolio": {
-    "en": "Portfolio",
-    "t": "Danh mục"
-  },
-  "dash.portfolioSub": {
-    "en": "All-time performance and your participation",
-    "t": "Hiệu suất từ trước đến nay và phần tham gia của bạn"
-  },
-  "dash.portfolioValue": {
-    "en": "Portfolio value",
-    "t": "Giá trị danh mục"
-  },
-  "dash.range.1m": {
-    "en": "1M",
-    "t": "1T"
-  },
-  "dash.range.1y": {
-    "en": "1Y",
-    "t": "1N"
-  },
-  "dash.range.6m": {
-    "en": "6M",
-    "t": "6T"
-  },
-  "dash.range.all": {
-    "en": "All",
-    "t": "Tất cả"
-  },
-  "dash.rangeLabel": {
-    "en": "Chart range",
-    "t": "Khoảng thời gian biểu đồ"
-  },
-  "dash.recentOperations": {
-    "en": "Recent activity",
-    "t": "Hoạt động gần đây"
-  },
-  "dash.servicePanel": {
-    "en": "Service-Arb panel",
-    "t": "Bảng điều khiển Service-Arb"
-  },
-  "dash.strategyCount": {
-    "en": "{n, plural, one {# strategy} other {# strategies}}",
-    "t": "{n, plural, other {# chiến lược}}"
-  },
-  "dash.unitsAmount": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}}",
-    "t": "{n, plural, other {{units} đơn vị quỹ}}"
-  },
-  "dash.unrealizedPnl": {
-    "en": "Unrealized P&L",
-    "t": "Lãi/lỗ chưa thực hiện"
-  },
-  "dash.yourParticipation": {
-    "en": "Your participation",
-    "t": "Phần tham gia của bạn"
-  },
-  "err.address.controlChars": {
-    "en": "Residential address must not contain control characters",
-    "t": "Địa chỉ thường trú không được chứa ký tự điều khiển"
-  },
-  "err.address.maxLength": {
-    "en": "Residential address must be at most 256 characters",
-    "t": "Địa chỉ thường trú tối đa 256 ký tự"
-  },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",
     "t": "Hiện chưa thể đăng nhập. Vui lòng thử lại sau ít phút."
   },
-  "err.chunkLoad": {
-    "en": "This part of the page didn't load.",
-    "t": "Phần này của trang chưa tải được."
-  },
   "err.csrf": {
     "en": "This page went stale. Reload it and try again.",
     "t": "Trang này đã cũ. Hãy tải lại và thử lần nữa."
-  },
-  "err.currency.format": {
-    "en": "Base currency must be a 3-letter code such as 'USD'",
-    "t": "Tiền tệ cơ sở phải là mã 3 chữ cái, ví dụ 'USD'"
-  },
-  "err.dob.format": {
-    "en": "Date of birth must be a valid YYYY-MM-DD date",
-    "t": "Ngày sinh phải là ngày hợp lệ theo dạng YYYY-MM-DD"
-  },
-  "err.dob.range": {
-    "en": "Date of birth must be a real date between 1900 and 2100",
-    "t": "Ngày sinh phải là một ngày có thật trong khoảng 1900 đến 2100"
-  },
-  "err.email.invalid": {
-    "en": "Enter a valid email address",
-    "t": "Hãy nhập địa chỉ email hợp lệ"
-  },
-  "err.email.maxLength": {
-    "en": "Email address must be at most 320 characters",
-    "t": "Địa chỉ email tối đa 320 ký tự"
   },
   "err.feePolicySave": {
     "en": "Could not save these terms.",
@@ -3823,25 +3631,9 @@
     "en": "Could not settle these units.",
     "t": "Không thể tất toán các đơn vị quỹ này."
   },
-  "err.field.maxLength": {
-    "en": "{field} must be at most {n, plural, one {# character} other {# characters}}",
-    "t": "{field} tối đa {n, plural, other {# ký tự}}"
-  },
-  "err.field.minLetters": {
-    "en": "{field} must contain at least 2 letters",
-    "t": "{field} phải chứa ít nhất 2 chữ cái"
-  },
-  "err.field.nameChars": {
-    "en": "{field} may only contain letters, spaces, hyphens, apostrophes, and periods",
-    "t": "{field} chỉ được chứa chữ cái, dấu cách, dấu gạch nối, dấu nháy đơn và dấu chấm"
-  },
   "err.forbidden": {
     "en": "You don't have access to this.",
     "t": "Bạn không có quyền truy cập mục này."
-  },
-  "err.fundRefresh": {
-    "en": "Couldn't refresh this fund",
-    "t": "Không thể làm mới quỹ này"
   },
   "err.fundServiceRequired": {
     "en": "Select a fund to continue.",
@@ -3863,14 +3655,6 @@
     "en": "Verification is unavailable right now. Please contact support.",
     "t": "Hiện chưa thể xác minh. Vui lòng liên hệ bộ phận hỗ trợ."
   },
-  "err.language.format": {
-    "en": "Language must be a BCP 47 code such as 'en' or 'en-US'",
-    "t": "Ngôn ngữ phải là mã BCP 47, ví dụ 'en' hoặc 'en-US'"
-  },
-  "err.language.maxLength": {
-    "en": "Language must be at most 16 characters",
-    "t": "Ngôn ngữ tối đa 16 ký tự"
-  },
   "err.network": {
     "en": "Can't reach the server. Check your connection and try again.",
     "t": "Không kết nối được máy chủ. Hãy kiểm tra kết nối và thử lại."
@@ -3878,22 +3662,6 @@
   "err.notFound": {
     "en": "Not found.",
     "t": "Không tìm thấy."
-  },
-  "err.opsLoad": {
-    "en": "Couldn't load your activity",
-    "t": "Không tải được hoạt động của bạn"
-  },
-  "err.phone.invalid": {
-    "en": "Enter a valid phone number starting with + or country code",
-    "t": "Hãy nhập số điện thoại hợp lệ, bắt đầu bằng + hoặc mã quốc gia"
-  },
-  "err.phone.maxLength": {
-    "en": "Phone number must be at most 32 characters",
-    "t": "Số điện thoại tối đa 32 ký tự"
-  },
-  "err.positionsLoad": {
-    "en": "Couldn't load your positions",
-    "t": "Không tải được các vị thế của bạn"
   },
   "err.rateLimited": {
     "en": "Too many requests — give it a moment and try again.",
@@ -3911,14 +3679,6 @@
     "en": "Your session has ended. Sign in again to continue.",
     "t": "Phiên của bạn đã kết thúc. Hãy đăng nhập lại để tiếp tục."
   },
-  "err.timezone.format": {
-    "en": "Time zone must be 'UTC', 'GMT', or an IANA name such as 'Asia/Ho_Chi_Minh'",
-    "t": "Múi giờ phải là 'UTC', 'GMT', hoặc một tên IANA như 'Asia/Ho_Chi_Minh'"
-  },
-  "err.timezone.maxLength": {
-    "en": "Time zone must be at most 64 characters",
-    "t": "Múi giờ tối đa 64 ký tự"
-  },
   "err.unauthenticated": {
     "en": "We couldn't confirm your session. Reload the page or sign in again.",
     "t": "Chúng tôi không xác nhận được phiên của bạn. Hãy tải lại trang hoặc đăng nhập lại."
@@ -3931,421 +3691,21 @@
     "en": "Verify your identity to continue.",
     "t": "Xác minh danh tính để tiếp tục."
   },
-  "err.walletLoad": {
-    "en": "Couldn't load your wallet",
-    "t": "Không tải được ví của bạn"
-  },
-  "invest.about.risk": {
-    "en": "Units can fall in value as well as rise. The NAV is set by a posted valuation, not by a market price, and past marks are no guide to future ones. Cash comes back only when a redemption settles or a buyer takes your units on the book. Invest only what you can afford to leave in.",
-    "t": "Đơn vị có thể giảm giá cũng như tăng giá. NAV được xác định bởi mức định giá đã công bố, không phải giá thị trường, và các mốc định giá trước không nói lên gì về tương lai. Tiền chỉ quay lại khi lệnh rút được tất toán hoặc có người mua nhận đơn vị của bạn trên sổ lệnh. Chỉ đầu tư số tiền bạn có thể để lại lâu dài."
-  },
-  "invest.about.riskTitle": {
-    "en": "Risk.",
-    "t": "Rủi ro."
-  },
-  "invest.about.title": {
-    "en": "About this product",
-    "t": "Về sản phẩm này"
-  },
-  "invest.accruedOnHolding": {
-    "en": "Accrued on your holding",
-    "t": "Tích lũy trên khoản nắm giữ của bạn"
-  },
-  "invest.acrossFunds": {
-    "en": "{n, plural, one {Across # fund} other {Across # funds}}",
-    "t": "{n, plural, other {Trên # quỹ}}"
-  },
-  "invest.allProducts": {
-    "en": "All products",
-    "t": "Tất cả sản phẩm"
-  },
-  "invest.amountUsdt": {
-    "en": "Amount (USDT)",
-    "t": "Số tiền (USDT)"
-  },
-  "invest.availableToInvest": {
-    "en": "Available to invest",
-    "t": "Khả dụng để đầu tư"
-  },
-  "invest.availableUsdt": {
-    "en": "Available: {amount} USDT",
-    "t": "Khả dụng: {amount} USDT"
-  },
-  "invest.awaitingSettlement": {
-    "en": "Awaiting settlement",
-    "t": "Chờ tất toán"
-  },
-  "invest.backing.cash": {
-    "en": "Cash-backed",
-    "t": "Bảo đảm bằng tiền mặt"
-  },
-  "invest.backing.inKind": {
-    "en": "In kind",
-    "t": "Hiện vật"
-  },
-  "invest.backing.inKindNote": {
-    "en": "Units of this product represent an asset held off-platform. The fund holds no cash for them, so they are sold on the book rather than redeemed.",
-    "t": "Đơn vị của sản phẩm này đại diện cho một tài sản được giữ ngoài nền tảng. Quỹ không giữ tiền mặt cho chúng, nên chúng được bán trên sổ lệnh thay vì rút."
-  },
-  "invest.badge.locked": {
-    "en": "Locked",
-    "t": "Bị khóa"
-  },
-  "invest.badge.open": {
-    "en": "Open",
-    "t": "Đang mở"
-  },
-  "invest.badge.redeemOnly": {
-    "en": "Redeem only",
-    "t": "Chỉ hoàn vốn"
-  },
-  "invest.badge.staleNav": {
-    "en": "Stale NAV",
-    "t": "NAV cũ"
-  },
-  "invest.blocked.capReached": {
-    "en": "This fund has issued its full authorised supply, so it is not minting new units. Redemptions are unaffected.",
-    "t": "Quỹ này đã phát hành hết nguồn cung được phép, nên không phát hành thêm đơn vị quỹ mới. Các lệnh hoàn vốn không bị ảnh hưởng."
-  },
-  "invest.blocked.closed": {
-    "en": "This fund is closed to new subscriptions. Your units are unaffected — you can still redeem them in full.",
-    "t": "Quỹ này đã đóng với các lệnh đăng ký mới. Đơn vị quỹ của bạn không bị ảnh hưởng — bạn vẫn có thể hoàn vốn toàn bộ."
-  },
-  "invest.blocked.locked": {
-    "en": "This fund isn't open to you yet. You can see it, but subscribing stays locked until your access is raised. If you think you should have it:",
-    "t": "Quỹ này chưa mở cho bạn. Bạn có thể xem, nhưng việc đăng ký vẫn bị khóa cho đến khi quyền truy cập của bạn được nâng. Nếu bạn cho rằng mình nên có quyền:"
-  },
-  "invest.blocked.staleNav": {
-    "en": "The fund's valuation is out of date, so dealing is paused until a fresh one is posted.",
-    "t": "Định giá của quỹ đã cũ, nên việc giao dịch tạm dừng cho tới khi mức định giá mới được công bố."
-  },
-  "invest.buysUnits": {
-    "en": "Buys {n, plural, one {{units} unit} other {{units} units}} at {nav} USDT per unit.",
-    "t": "Mua {n, plural, other {{units} đơn vị quỹ}} với giá {nav} USDT mỗi đơn vị."
-  },
-  "invest.carriedOver": {
-    "en": "Carried over",
-    "t": "Chuyển sang kỳ sau"
-  },
-  "invest.costBasis": {
-    "en": "Cost basis",
-    "t": "Giá gốc"
-  },
-  "invest.cta.locked": {
-    "en": "Locked: ask for access",
-    "t": "Đã khóa: yêu cầu truy cập"
-  },
-  "invest.cta.lockedSubject": {
-    "en": "Access to {title}",
-    "t": "Truy cập {title}"
-  },
-  "invest.cta.trade": {
-    "en": "Trade on the book",
-    "t": "Giao dịch trên sổ lệnh"
-  },
-  "invest.cta.verify": {
-    "en": "Verify to invest",
-    "t": "Xác minh để đầu tư"
-  },
-  "invest.dustHint": {
-    "en": "Too small to buy a whole unit at {nav} — increase the amount.",
-    "t": "Quá nhỏ để mua trọn một đơn vị quỹ ở mức {nav} — hãy tăng số tiền."
-  },
-  "invest.facts.backing": {
-    "en": "Backing",
-    "t": "Tài sản bảo đảm"
-  },
-  "invest.facts.backingCash": {
-    "en": "Cash held by the fund",
-    "t": "Tiền mặt do quỹ nắm giữ"
-  },
-  "invest.facts.backingInKind": {
-    "en": "Asset held off-platform",
-    "t": "Tài sản nắm giữ ngoài nền tảng"
-  },
-  "invest.facts.capacity": {
-    "en": "Capacity left",
-    "t": "Hạn mức còn lại"
-  },
-  "invest.facts.feeHeadline": {
-    "en": "{management} p.a. + {performance} of the gain",
-    "t": "{management}/năm + {performance} lợi nhuận"
-  },
-  "invest.facts.feeHeadlineHurdle": {
-    "en": "{management} p.a. + {performance} of the gain above {hurdle} p.a.",
-    "t": "{management}/năm + {performance} lợi nhuận vượt {hurdle}/năm"
-  },
-  "invest.facts.feeUnset": {
-    "en": "Not published yet",
-    "t": "Chưa công bố"
-  },
-  "invest.facts.fees": {
-    "en": "Fees",
-    "t": "Phí"
-  },
-  "invest.facts.lastValuation": {
-    "en": "Last valuation",
-    "t": "Định giá gần nhất"
-  },
-  "invest.facts.liquidity": {
-    "en": "Liquidity",
-    "t": "Thanh khoản"
-  },
-  "invest.facts.liquidityBook": {
-    "en": "Sold on the book",
-    "t": "Bán trên sổ lệnh"
-  },
-  "invest.facts.liquidityNav": {
-    "en": "Redeem at NAV, queued",
-    "t": "Rút theo NAV, theo hàng đợi"
-  },
-  "invest.facts.liquidityNavOrBook": {
-    "en": "Redeem at NAV (queued) or trade on the book",
-    "t": "Rút theo NAV (hàng đợi) hoặc giao dịch trên sổ lệnh"
-  },
-  "invest.facts.markedOn": {
-    "en": "Marked {date}",
-    "t": "Định giá ngày {date}"
-  },
-  "invest.feeChangeProposed": {
-    "en": "A change is proposed and awaits the owners: {terms}.",
-    "t": "Một thay đổi được đề xuất và đang chờ các chủ sở hữu: {terms}."
-  },
-  "invest.feeChangeScheduled": {
-    "en": "Terms change on {at}: {terms}.",
-    "t": "Điều khoản thay đổi vào {at}: {terms}."
-  },
-  "invest.feeNoteHolder": {
-    "en": "Fees are taken in units, never in cash — your wallet balance is untouched, and the value shown opposite is before them. The performance fee applies only to gains above your own high-water mark, so a recovery back to it costs nothing.",
-    "t": "Phí được thu bằng đơn vị quỹ, không bao giờ bằng tiền mặt — số dư ví của bạn không bị động đến, và giá trị hiển thị bên cạnh là trước phí. Phí hiệu suất chỉ áp dụng cho phần lãi vượt mốc cao nhất của riêng bạn, nên việc hồi phục trở lại mốc đó không tốn gì."
-  },
-  "invest.feeNoteProspect": {
-    "en": "Fees are taken in units, never in cash. The performance fee applies only to gains above the price you enter at, measured per investor rather than per fund.",
-    "t": "Phí được thu bằng đơn vị quỹ, không bao giờ bằng tiền mặt. Phí hiệu suất chỉ áp dụng cho phần lãi vượt mức giá bạn tham gia, tính theo từng nhà đầu tư chứ không theo từng quỹ."
-  },
-  "invest.fullyIssued": {
-    "en": "Fully issued — not minting new units.",
-    "t": "Đã phát hành hết — không phát hành thêm đơn vị quỹ."
-  },
-  "invest.fundAum": {
-    "en": "Fund AUM",
-    "t": "AUM của quỹ"
-  },
-  "invest.fundsHeld": {
-    "en": "Funds held",
-    "t": "Số quỹ đang nắm giữ"
-  },
-  "invest.hurdleFirst": {
-    "en": "{pct} p.a. first",
-    "t": "{pct}/năm đầu tiên"
-  },
-  "invest.insufficientHint": {
-    "en": "That is more than your available balance.",
-    "t": "Số tiền này vượt quá số dư khả dụng của bạn."
-  },
-  "invest.investAmount": {
-    "en": "Invest {amount} USDT",
-    "t": "Đầu tư {amount} USDT"
-  },
-  "invest.investedValue": {
-    "en": "Invested value",
-    "t": "Giá trị đã đầu tư"
-  },
   "invest.lockedIn": {
     "en": "Locked in",
     "t": "Đã chốt"
-  },
-  "invest.nav": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "invest.navPerUnit": {
-    "en": "NAV / unit",
-    "t": "NAV / đơn vị"
-  },
-  "invest.noFunds": {
-    "en": "No funds are open for subscription right now.",
-    "t": "Hiện không có quỹ nào mở nhận đăng ký."
-  },
-  "invest.noFundsHint": {
-    "en": "A fund appears here once it is registered and opened for subscription. Nothing you hold is affected.",
-    "t": "Một quỹ sẽ xuất hiện ở đây khi được đăng ký và mở cho đăng ký mua. Những gì bạn đang nắm giữ không bị ảnh hưởng."
-  },
-  "invest.noUnitsHeld": {
-    "en": "You hold no units yet.",
-    "t": "Bạn chưa nắm giữ đơn vị nào."
-  },
-  "invest.noUnitsInFund": {
-    "en": "You hold no units in this fund yet.",
-    "t": "Bạn chưa nắm giữ đơn vị quỹ nào trong quỹ này."
-  },
-  "invest.notInvestedYet": {
-    "en": "Not invested yet",
-    "t": "Chưa đầu tư"
-  },
-  "invest.notRegistered": {
-    "en": "No fund is registered as “{service}”.",
-    "t": "Không có quỹ nào được đăng ký với mã “{service}”."
-  },
-  "invest.notRegisteredHint": {
-    "en": "Nothing is registered under this name. If you followed a link here, the product may never have been opened.",
-    "t": "Không có gì được đăng ký dưới tên này. Nếu bạn đến đây từ một đường dẫn, có thể sản phẩm này chưa từng được mở."
-  },
-  "invest.notYetValued": {
-    "en": "Not yet valued",
-    "t": "Chưa định giá"
-  },
-  "invest.notYetValuedHint": {
-    "en": "Not yet valued — the first subscription prices at 1.0.",
-    "t": "Chưa định giá — lệnh đăng ký đầu tiên được tính ở mức 1.0."
   },
   "invest.ofTheGain": {
     "en": "{pct} of the gain",
     "t": "{pct} của phần lãi"
   },
-  "invest.overCapHint": {
-    "en": "Only {n, plural, one {{units} unit is} other {{units} units are}} left before this fund reaches its cap — reduce the amount.",
-    "t": "Chỉ còn {n, plural, other {{units} đơn vị quỹ}} trước khi quỹ này chạm trần — hãy giảm số tiền."
-  },
   "invest.perAnnum": {
     "en": "{pct} p.a.",
     "t": "{pct}/năm"
   },
-  "invest.pnl": {
-    "en": "P&L",
-    "t": "Lãi/lỗ"
-  },
-  "invest.products": {
-    "en": "Products",
-    "t": "Sản phẩm"
-  },
-  "invest.redeem": {
-    "en": "Redeem",
-    "t": "Hoàn vốn"
-  },
-  "invest.redeemCompleted": {
-    "en": "Redemption completed",
-    "t": "Đã hoàn vốn xong"
-  },
-  "invest.redeemEstimate": {
-    "en": "≈ {amount} USDT at today's NAV — the settle price may differ.",
-    "t": "≈ {amount} USDT theo NAV hôm nay — giá tất toán có thể khác."
-  },
-  "invest.redeemFailed": {
-    "en": "Redemption failed",
-    "t": "Hoàn vốn thất bại"
-  },
-  "invest.redeemQueued": {
-    "en": "Redemption queued",
-    "t": "Lệnh hoàn vốn đang chờ"
-  },
-  "invest.redeemReceiptCompleted": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} redeemed for {cash} USDT at {nav} USDT NAV.",
-    "t": "Đã hoàn vốn {n, plural, other {{units} đơn vị quỹ}} lấy {cash} USDT tại NAV {nav} USDT."
-  },
-  "invest.redeemReceiptQueued": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} reserved — queued until the fund tops up, then priced at the settle NAV.",
-    "t": "Đã giữ {n, plural, other {{units} đơn vị quỹ}} — xếp hàng cho tới khi quỹ được bổ sung, sau đó tính giá theo NAV lúc tất toán."
-  },
-  "invest.redeemTimingNote": {
-    "en": "Your units are reserved the moment you submit, but the cash is priced when the redemption settles — not now. A figure shown here is an estimate at today's NAV.",
-    "t": "Đơn vị quỹ của bạn được giữ ngay khi bạn gửi lệnh, nhưng tiền chỉ được định giá khi lệnh hoàn vốn tất toán — không phải bây giờ. Con số hiển thị ở đây là ước tính theo NAV hôm nay."
-  },
-  "invest.redeemUnbacked": {
-    "en": "Units of this product are not backed by fund cash — sell them on the book instead of redeeming.",
-    "t": "Đơn vị của sản phẩm này không được bảo chứng bằng tiền mặt của quỹ — hãy bán chúng trên sổ lệnh thay vì rút."
-  },
-  "invest.remainingCapacity": {
-    "en": "Remaining capacity",
-    "t": "Sức chứa còn lại"
-  },
-  "invest.reservedPricedAtSettle": {
-    "en": "reserved, priced at settle",
-    "t": "đã giữ, định giá khi tất toán"
-  },
-  "invest.subscribe": {
-    "en": "Subscribe",
-    "t": "Đăng ký mua"
-  },
-  "invest.subscribeFailed": {
-    "en": "Subscription failed",
-    "t": "Đăng ký mua thất bại"
-  },
-  "invest.subscribeIdleHint": {
-    "en": "Units are priced at the current NAV; the unit count is fixed at purchase and does not grow.",
-    "t": "Đơn vị quỹ được định giá theo NAV hiện tại; số đơn vị được cố định tại thời điểm mua và không tăng thêm."
-  },
-  "invest.subscribeReceiptBody": {
-    "en": "Minted {n, plural, one {{units} unit} other {{units} units}} at {nav} USDT NAV — your position updates shortly.",
-    "t": "Đã phát hành {n, plural, other {{units} đơn vị quỹ}} tại NAV {nav} USDT — vị thế của bạn sẽ cập nhật trong giây lát."
-  },
-  "invest.subscribeReceived": {
-    "en": "Subscription received",
-    "t": "Đã nhận lệnh đăng ký"
-  },
-  "invest.subscribeVerifyBody": {
-    "en": "Subscriptions open once your identity is verified. Your balance is untouched in the meantime.",
-    "t": "Đăng ký sẽ mở sau khi danh tính của bạn được xác minh. Số dư của bạn không bị ảnh hưởng trong thời gian đó."
-  },
-  "invest.subscribeVerifyTitle": {
-    "en": "Verify your identity to invest",
-    "t": "Xác minh danh tính để đầu tư"
-  },
-  "invest.supplyNote": {
-    "en": "Subscriptions mint units at the current NAV. Once the cap is reached the fund stops accepting new money; redemptions are unaffected.",
-    "t": "Lệnh đăng ký phát hành đơn vị quỹ theo NAV hiện tại. Khi chạm trần, quỹ ngừng nhận tiền mới; các lệnh hoàn vốn không bị ảnh hưởng."
-  },
-  "invest.title": {
-    "en": "Invest",
-    "t": "Đầu tư"
-  },
-  "invest.topUp": {
-    "en": "Top up",
-    "t": "Nạp thêm"
-  },
-  "invest.trade": {
-    "en": "Trade",
-    "t": "Giao dịch"
-  },
   "invest.units": {
     "en": "Units",
     "t": "Đơn vị quỹ"
-  },
-  "invest.unitsHeld": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} held.",
-    "t": "Đang nắm giữ {n, plural, other {{units} đơn vị quỹ}}."
-  },
-  "invest.unitsIssued": {
-    "en": "Units issued",
-    "t": "Đơn vị đã phát hành"
-  },
-  "invest.unitsToRedeem": {
-    "en": "Units to redeem",
-    "t": "Số đơn vị cần hoàn vốn"
-  },
-  "invest.unmarkedNote": {
-    "en": "No valuation posted yet — units price at the bootstrap NAV of 1.0 until the first mark.",
-    "t": "Chưa có định giá nào được đăng — đơn vị quỹ được tính theo NAV khởi tạo 1.0 cho tới lần định giá đầu tiên."
-  },
-  "invest.value": {
-    "en": "Value",
-    "t": "Giá trị"
-  },
-  "invest.youHoldUnits": {
-    "en": "You hold {n, plural, one {{units} unit} other {{units} units}}.",
-    "t": "Bạn đang nắm giữ {n, plural, other {{units} đơn vị quỹ}}."
-  },
-  "invest.yourMark": {
-    "en": "Your mark",
-    "t": "Mốc của bạn"
-  },
-  "invest.yourPosition": {
-    "en": "Your position",
-    "t": "Vị thế của bạn"
-  },
-  "invest.yourUnits": {
-    "en": "Your units",
-    "t": "Đơn vị của bạn"
   },
   "kyc.chip.attention": {
     "en": "Needs attention",
@@ -4411,10 +3771,6 @@
     "en": "Start verification",
     "t": "Bắt đầu xác minh"
   },
-  "lang.switch": {
-    "en": "Language",
-    "t": "Ngôn ngữ"
-  },
   "meta.description": {
     "en": "Your investor cabinet — portfolio, funds and wallet.",
     "t": "Cổng nhà đầu tư của bạn — danh mục, quỹ và ví."
@@ -4434,10 +3790,6 @@
   "nav.a11y.secondary": {
     "en": "Secondary",
     "t": "Điều hướng phụ"
-  },
-  "nav.account": {
-    "en": "Account",
-    "t": "Tài khoản"
   },
   "nav.allocations": {
     "en": "Allocations",
@@ -4467,18 +3819,6 @@
     "en": "Home",
     "t": "Trang chủ"
   },
-  "nav.invest": {
-    "en": "Invest",
-    "t": "Đầu tư"
-  },
-  "nav.notifications": {
-    "en": "Notifications",
-    "t": "Thông báo"
-  },
-  "nav.operations": {
-    "en": "Activity",
-    "t": "Hoạt động"
-  },
   "nav.outbox": {
     "en": "Outbox",
     "t": "Hàng đợi outbox"
@@ -4487,17 +3827,9 @@
     "en": "Payments",
     "t": "Thanh toán"
   },
-  "nav.profile": {
-    "en": "Profile",
-    "t": "Hồ sơ"
-  },
   "nav.revenue": {
     "en": "Revenue stats",
     "t": "Thống kê doanh thu"
-  },
-  "nav.settings": {
-    "en": "Settings",
-    "t": "Cài đặt"
   },
   "nav.support": {
     "en": "Support",
@@ -4523,126 +3855,6 @@
     "en": "Withdrawals",
     "t": "Rút tiền"
   },
-  "notif.a11y.email": {
-    "en": "Email notifications",
-    "t": "Thông báo qua email"
-  },
-  "notif.a11y.emailCopyFor": {
-    "en": "Email copy for {topic}",
-    "t": "Bản sao qua email cho {topic}"
-  },
-  "notif.a11y.inApp": {
-    "en": "In-app notifications",
-    "t": "Thông báo trong ứng dụng"
-  },
-  "notif.allCaughtUp": {
-    "en": "You're all caught up.",
-    "t": "Bạn đã xem hết thông báo."
-  },
-  "notif.channelsFootnote": {
-    "en": "Turn a channel off and we stop sending on it. Turn both off and we stop notifying you altogether — updates still live on the fund pages whenever you want them.",
-    "t": "Tắt một kênh và chúng tôi ngừng gửi qua kênh đó. Tắt cả hai và chúng tôi ngừng thông báo hoàn toàn — các cập nhật vẫn luôn có trên trang của từng quỹ bất cứ khi nào bạn cần."
-  },
-  "notif.delivery": {
-    "en": "Delivery",
-    "t": "Kênh gửi"
-  },
-  "notif.deliverySub": {
-    "en": "Choose where notifications reach you. Both can be off.",
-    "t": "Chọn nơi bạn nhận thông báo. Có thể tắt cả hai."
-  },
-  "notif.emailUnverified": {
-    "en": "{email} · unverified, so email is not sent",
-    "t": "{email} · chưa xác minh, nên email không được gửi"
-  },
-  "notif.emailVerified": {
-    "en": "Sent to {email} · verified",
-    "t": "Gửi tới {email} · đã xác minh"
-  },
-  "notif.emptyHint": {
-    "en": "Follow a fund and its NAV updates, distributions and research notes land here — and in your inbox too, if you want a copy.",
-    "t": "Theo dõi một quỹ và các cập nhật NAV, phân phối lợi nhuận cùng báo cáo phân tích của quỹ sẽ về đây — và cả hộp thư của bạn, nếu bạn muốn một bản sao."
-  },
-  "notif.follow": {
-    "en": "Follow",
-    "t": "Theo dõi"
-  },
-  "notif.following": {
-    "en": "Following",
-    "t": "Đã theo dõi"
-  },
-  "notif.inAppSub": {
-    "en": "On by default. Turn this off and notifications stop appearing in your cabinet.",
-    "t": "Bật mặc định. Tắt mục này và thông báo sẽ không còn hiện trong tài khoản của bạn."
-  },
-  "notif.loadOlder": {
-    "en": "Load older",
-    "t": "Tải thông báo cũ hơn"
-  },
-  "notif.markAllRead": {
-    "en": "Mark all read",
-    "t": "Đánh dấu đã đọc tất cả"
-  },
-  "notif.nothingUnread": {
-    "en": "Nothing unread",
-    "t": "Không có thông báo chưa đọc"
-  },
-  "notif.nothingYet": {
-    "en": "Nothing yet",
-    "t": "Chưa có gì"
-  },
-  "notif.settingsLink": {
-    "en": "Notification settings",
-    "t": "Cài đặt thông báo"
-  },
-  "notif.subtitle": {
-    "en": "Everything you follow — and how you hear about it",
-    "t": "Mọi thứ bạn theo dõi — và cách bạn nhận tin"
-  },
-  "notif.topicsSub": {
-    "en": "Email a copy for these. Unsubscribing is one click — no confirmation step.",
-    "t": "Gửi một bản sao qua email cho các mục này. Hủy nhận chỉ bằng một cú nhấp — không có bước xác nhận."
-  },
-  "notif.unread": {
-    "en": "Unread",
-    "t": "Chưa đọc"
-  },
-  "notif.unreadCount": {
-    "en": "Unread · {n}",
-    "t": "Chưa đọc · {n}"
-  },
-  "notif.whatYouFollow": {
-    "en": "What you follow",
-    "t": "Những gì bạn theo dõi"
-  },
-  "notif.when.days": {
-    "en": "{n}d",
-    "t": "{n} ngày"
-  },
-  "notif.when.hours": {
-    "en": "{n}h",
-    "t": "{n} giờ"
-  },
-  "notif.when.minutes": {
-    "en": "{n}m",
-    "t": "{n} phút"
-  },
-  "notif.when.now": {
-    "en": "now",
-    "t": "vừa xong"
-  },
-  "ops.a11y.rowDetails": {
-    "en": "{title} — details",
-    "t": "{title} — chi tiết"
-  },
-  "ops.context.fund": {
-    "en": "Fund · {when}",
-    "t": "Quỹ · {when}"
-  },
-  "ops.context.network": {
-    "en": "{network} · {when}",
-    "t": "{network} · {when}"
-  },
   "ops.day.today": {
     "en": "Today",
     "t": "Hôm nay"
@@ -4662,134 +3874,6 @@
   "ops.day.yesterdayInline": {
     "en": "yesterday",
     "t": "hôm qua"
-  },
-  "ops.detail.amountCredited": {
-    "en": "Amount credited",
-    "t": "Số tiền ghi có"
-  },
-  "ops.detail.amountDebited": {
-    "en": "Amount debited",
-    "t": "Số tiền ghi nợ"
-  },
-  "ops.detail.cashIn": {
-    "en": "Cash in",
-    "t": "Tiền vào"
-  },
-  "ops.detail.cashOut": {
-    "en": "Cash out",
-    "t": "Tiền ra"
-  },
-  "ops.detail.feeDeferred": {
-    "en": "Taken in units — the rest is carried to the next charge",
-    "t": "Thu bằng đơn vị quỹ — phần còn lại chuyển sang lần thu kế tiếp"
-  },
-  "ops.detail.feeTaken": {
-    "en": "Taken in units, not from your wallet",
-    "t": "Thu bằng đơn vị quỹ, không trừ vào ví của bạn"
-  },
-  "ops.detail.managementFee": {
-    "en": "Management fee",
-    "t": "Phí quản lý"
-  },
-  "ops.detail.netArrives": {
-    "en": "{amount} USDT arrives after the network fee",
-    "t": "{amount} USDT về tới nơi sau khi trừ phí mạng"
-  },
-  "ops.detail.netSent": {
-    "en": "Net sent",
-    "t": "Thực gửi"
-  },
-  "ops.detail.notYetBroadcast": {
-    "en": "not yet broadcast",
-    "t": "chưa phát lên mạng"
-  },
-  "ops.detail.performanceFee": {
-    "en": "Performance fee",
-    "t": "Phí hiệu suất"
-  },
-  "ops.detail.pricePerUnit": {
-    "en": "Price per unit",
-    "t": "Giá mỗi đơn vị quỹ"
-  },
-  "ops.detail.pricedAtSettle": {
-    "en": "Priced when the fund settles it",
-    "t": "Được định giá khi quỹ tất toán"
-  },
-  "ops.detail.reference": {
-    "en": "Reference",
-    "t": "Tham chiếu"
-  },
-  "ops.detail.setAtSettle": {
-    "en": "set at settle",
-    "t": "xác định khi tất toán"
-  },
-  "ops.detail.toAddress": {
-    "en": "To address",
-    "t": "Địa chỉ nhận"
-  },
-  "ops.detail.unitsMinted": {
-    "en": "Units minted",
-    "t": "Đơn vị quỹ đã phát hành"
-  },
-  "ops.detail.unitsRedeemed": {
-    "en": "Units redeemed",
-    "t": "Đơn vị quỹ đã hoàn vốn"
-  },
-  "ops.detail.valueTaken": {
-    "en": "Value taken",
-    "t": "Giá trị đã thu"
-  },
-  "ops.empty.deposits": {
-    "en": "No deposits yet",
-    "t": "Chưa có khoản nạp nào"
-  },
-  "ops.empty.fees": {
-    "en": "No fees yet",
-    "t": "Chưa có khoản phí nào"
-  },
-  "ops.empty.redemptions": {
-    "en": "No redemptions yet",
-    "t": "Chưa có lệnh hoàn vốn nào"
-  },
-  "ops.empty.subscriptions": {
-    "en": "No subscriptions yet",
-    "t": "Chưa có lệnh đăng ký nào"
-  },
-  "ops.empty.withdrawals": {
-    "en": "No withdrawals yet",
-    "t": "Chưa có lệnh rút nào"
-  },
-  "ops.emptyHint": {
-    "en": "Add funds to your wallet, then subscribe into a fund — every movement appears here from the moment you make it, not once it settles.",
-    "t": "Hãy nạp tiền vào ví, rồi đăng ký mua một quỹ — mọi chuyển động đều hiện ở đây ngay khi bạn thực hiện, không phải chờ đến lúc tất toán."
-  },
-  "ops.filter.deposits": {
-    "en": "Deposits",
-    "t": "Nạp tiền"
-  },
-  "ops.filter.fees": {
-    "en": "Fees",
-    "t": "Phí"
-  },
-  "ops.filter.redemptions": {
-    "en": "Redemptions",
-    "t": "Hoàn vốn"
-  },
-  "ops.filter.subscriptions": {
-    "en": "Subscriptions",
-    "t": "Đăng ký mua"
-  },
-  "ops.filter.withdrawals": {
-    "en": "Withdrawals",
-    "t": "Rút tiền"
-  },
-  "ops.filterByKind": {
-    "en": "Filter activity by kind",
-    "t": "Lọc hoạt động theo loại"
-  },
-  "ops.filterEmptyHint": {
-    "en": "You have other activity — switch back to All to see it.",
-    "t": "Bạn có hoạt động khác — chuyển về Tất cả để xem."
   },
   "ops.kind.deposit": {
     "en": "Deposit",
@@ -4814,10 +3898,6 @@
   "ops.kind.withdrawal": {
     "en": "Withdrawal",
     "t": "Rút tiền"
-  },
-  "ops.op.feeCharged": {
-    "en": "{fund} — fee charged",
-    "t": "{fund} — đã thu phí"
   },
   "ops.state.cancelled": {
     "en": "Cancelled",
@@ -4850,114 +3930,6 @@
   "ops.state.queued": {
     "en": "Queued",
     "t": "Đang chờ"
-  },
-  "ops.step.awaitingFund": {
-    "en": "Awaiting fund liquidity",
-    "t": "Chờ thanh khoản của quỹ"
-  },
-  "ops.step.awaitingFundMeta": {
-    "en": "priced at the NAV when it settles",
-    "t": "định giá theo NAV lúc tất toán"
-  },
-  "ops.step.awaitingRail": {
-    "en": "Awaiting network liquidity",
-    "t": "Chờ thanh khoản trên mạng"
-  },
-  "ops.step.awaitingRailMeta": {
-    "en": "sent as soon as the network is topped up",
-    "t": "sẽ chuyển đi ngay khi mạng được nạp thêm"
-  },
-  "ops.step.broadcast": {
-    "en": "Broadcast to the network",
-    "t": "Đã phát lên mạng"
-  },
-  "ops.step.burnVoided": {
-    "en": "the reserved burn was voided",
-    "t": "lệnh hủy đơn vị đã giữ được bãi bỏ"
-  },
-  "ops.step.cashPaidOut": {
-    "en": "Cash paid out",
-    "t": "Đã chi trả tiền"
-  },
-  "ops.step.creditedToBalance": {
-    "en": "credited to your balance",
-    "t": "đã ghi có vào số dư của bạn"
-  },
-  "ops.step.inFlight": {
-    "en": "in flight",
-    "t": "đang thực hiện"
-  },
-  "ops.step.leftCustody": {
-    "en": "funds have left custody",
-    "t": "tiền đã rời khỏi lưu ký"
-  },
-  "ops.step.perUnit": {
-    "en": "{nav} per unit",
-    "t": "{nav} mỗi đơn vị quỹ"
-  },
-  "ops.step.pricedAtSettle": {
-    "en": "Priced at the settle NAV",
-    "t": "Định giá theo NAV lúc tất toán"
-  },
-  "ops.step.redCancelled": {
-    "en": "Cancelled — units returned",
-    "t": "Đã hủy — đơn vị quỹ được trả lại"
-  },
-  "ops.step.redFailed": {
-    "en": "Failed — units returned",
-    "t": "Thất bại — đơn vị quỹ được trả lại"
-  },
-  "ops.step.requested": {
-    "en": "Requested",
-    "t": "Đã gửi yêu cầu"
-  },
-  "ops.step.reservationVoided": {
-    "en": "the reservation was voided",
-    "t": "phần đã giữ được bãi bỏ"
-  },
-  "ops.step.settledOnChain": {
-    "en": "Settled on-chain",
-    "t": "Đã tất toán on-chain"
-  },
-  "ops.step.waiting": {
-    "en": "waiting",
-    "t": "đang chờ"
-  },
-  "ops.step.wdCancelled": {
-    "en": "Cancelled — balance returned",
-    "t": "Đã hủy — số dư được hoàn lại"
-  },
-  "ops.step.wdFailed": {
-    "en": "Failed — balance returned",
-    "t": "Thất bại — số dư được hoàn lại"
-  },
-  "ops.sub.deposit": {
-    "en": "{network} · {ref}",
-    "t": "{network} · {ref}"
-  },
-  "ops.sub.managementLeg": {
-    "en": "{amount} management",
-    "t": "{amount} phí quản lý"
-  },
-  "ops.sub.performanceLeg": {
-    "en": "{amount} performance",
-    "t": "{amount} phí hiệu suất"
-  },
-  "ops.sub.withdrawal": {
-    "en": "{network} · {destination}",
-    "t": "{network} · {destination}"
-  },
-  "ops.sub.withdrawalNet": {
-    "en": "{network} · {destination} · {amount} USDT net",
-    "t": "{network} · {destination} · {amount} USDT ròng"
-  },
-  "ops.subtitle": {
-    "en": "Every deposit, withdrawal, subscription and redemption you have made, and every fee a fund has charged — one timeline.",
-    "t": "Mọi khoản nạp, rút, đăng ký mua và hoàn vốn bạn đã thực hiện, cùng mọi khoản phí một quỹ đã thu — trên một dòng thời gian."
-  },
-  "ops.truncatedNote": {
-    "en": "Showing your most recent activity — older entries aren't listed here yet.",
-    "t": "Đang hiển thị hoạt động gần nhất — các mục cũ hơn chưa được liệt kê ở đây."
   },
   "panelAccess.action": {
     "en": "Panel access",
@@ -5219,42 +4191,6 @@
     "en": "This payment was stopped",
     "t": "Khoản thanh toán này đã bị dừng"
   },
-  "profile.activeSince": {
-    "en": "Active since {date}",
-    "t": "Hoạt động từ {date}"
-  },
-  "profile.activity": {
-    "en": "Activity",
-    "t": "Hoạt động"
-  },
-  "profile.activityCapped": {
-    "en": "Counted over your {n} most recent activity entries",
-    "t": "Tính trên {n} mục hoạt động gần nhất của bạn"
-  },
-  "profile.activitySub": {
-    "en": "Everything that has moved money on this account",
-    "t": "Mọi giao dịch đã chuyển tiền trên tài khoản này"
-  },
-  "profile.completeDetails": {
-    "en": "Complete your details in Settings — verification and compliance checks rely on them.",
-    "t": "Hoàn thiện thông tin trong Cài đặt — việc xác minh và kiểm tra tuân thủ dựa vào đó."
-  },
-  "profile.dateOfBirth": {
-    "en": "Date of birth",
-    "t": "Ngày sinh"
-  },
-  "profile.edit": {
-    "en": "Edit",
-    "t": "Sửa"
-  },
-  "profile.editInSettings": {
-    "en": "Edit in Settings",
-    "t": "Sửa trong Cài đặt"
-  },
-  "profile.hintAtNav": {
-    "en": "at current NAV",
-    "t": "theo NAV hiện tại"
-  },
   "profile.identityAndStanding": {
     "en": "Identity and account standing",
     "t": "Danh tính và trạng thái tài khoản"
@@ -5307,66 +4243,6 @@
     "en": "Automatic verification is temporarily out of service — write to us and we'll raise your level by hand.",
     "t": "Xác minh tự động tạm thời ngừng hoạt động — hãy viết cho chúng tôi và chúng tôi sẽ nâng cấp độ của bạn thủ công."
   },
-  "profile.kycLevelPill": {
-    "en": "KYC level {n}",
-    "t": "KYC cấp {n}"
-  },
-  "profile.kycRaisedBy": {
-    "en": "Raised by verification and review",
-    "t": "Được nâng sau khi xác minh và xét duyệt"
-  },
-  "profile.lastActivity": {
-    "en": "Last activity",
-    "t": "Hoạt động gần nhất"
-  },
-  "profile.legalName": {
-    "en": "Legal name",
-    "t": "Tên pháp lý"
-  },
-  "profile.nationality": {
-    "en": "Nationality",
-    "t": "Quốc tịch"
-  },
-  "profile.noActivityBody": {
-    "en": "Your first deposit will appear here.",
-    "t": "Khoản nạp đầu tiên của bạn sẽ xuất hiện ở đây."
-  },
-  "profile.noActivityTitle": {
-    "en": "No activity yet",
-    "t": "Chưa có hoạt động nào"
-  },
-  "profile.phoneNumber": {
-    "en": "Phone number",
-    "t": "Số điện thoại"
-  },
-  "profile.platformAccess": {
-    "en": "Platform access",
-    "t": "Quyền truy cập nền tảng"
-  },
-  "profile.preferredName": {
-    "en": "Preferred name",
-    "t": "Tên thường gọi"
-  },
-  "profile.residentialAddress": {
-    "en": "Residential address",
-    "t": "Địa chỉ thường trú"
-  },
-  "profile.subtitle": {
-    "en": "Who you are on the platform and how your account stands",
-    "t": "Bạn là ai trên nền tảng và tình trạng tài khoản của bạn"
-  },
-  "profile.taxResidence": {
-    "en": "Tax residence",
-    "t": "Nơi cư trú thuế"
-  },
-  "profile.unverified": {
-    "en": "Unverified",
-    "t": "Chưa xác minh"
-  },
-  "profile.viewAllActivity": {
-    "en": "View all activity",
-    "t": "Xem toàn bộ hoạt động"
-  },
   "session.breakGlass.body": {
     "en": "This fund has no owner in the register yet, so your role comes from the OWNER_SUBJECTS emergency allowlist and not from the register itself. It is real authority over this console, but it seats nobody: you hold no vote in the consilium. A seat is written once by the genesis seed when the service starts, or granted afterwards by a consilium of the existing owners — and this notice goes away for good the moment the first owner is seated.",
     "t": "Quỹ này chưa có chủ sở hữu nào trong sổ đăng ký, nên vai trò của bạn lấy từ danh sách truy cập khẩn cấp OWNER_SUBJECTS chứ không phải từ sổ đăng ký. Đó là quyền thật trong bảng điều khiển này, nhưng nó không trao ghế: bạn không có phiếu bầu trong hội đồng. Một ghế chỉ được ghi bởi đợt gieo mầm khởi thủy khi dịch vụ khởi động, hoặc do hội đồng các chủ sở hữu đương nhiệm trao sau đó — và thông báo này sẽ biến mất vĩnh viễn ngay khi có chủ sở hữu đầu tiên."
@@ -5374,274 +4250,6 @@
   "session.breakGlass.title": {
     "en": "You are working under emergency access",
     "t": "Bạn đang làm việc bằng truy cập khẩn cấp"
-  },
-  "settings.a11y.sections": {
-    "en": "Settings sections",
-    "t": "Các mục cài đặt"
-  },
-  "settings.baseCurrency": {
-    "en": "Base currency",
-    "t": "Tiền tệ cơ sở"
-  },
-  "settings.currency.eur": {
-    "en": "EUR (€)",
-    "t": "EUR (€)"
-  },
-  "settings.currency.usd": {
-    "en": "USD ($)",
-    "t": "USD ($)"
-  },
-  "settings.deliveryTopicsSub": {
-    "en": "Where we reach you and what you follow",
-    "t": "Nơi chúng tôi liên hệ và những gì bạn theo dõi"
-  },
-  "settings.device.browser": {
-    "en": "Browser",
-    "t": "Trình duyệt"
-  },
-  "settings.device.generic": {
-    "en": "device",
-    "t": "thiết bị"
-  },
-  "settings.device.label": {
-    "en": "{browser} · {os}",
-    "t": "{browser} · {os}"
-  },
-  "settings.device.unknown": {
-    "en": "Unknown device",
-    "t": "Thiết bị không xác định"
-  },
-  "settings.devicesSignedIn": {
-    "en": "{n, plural, one {# device currently signed in} other {# devices currently signed in}}",
-    "t": "{n, plural, other {# thiết bị đang đăng nhập}}"
-  },
-  "settings.documents.custody": {
-    "en": "How funds are held",
-    "t": "Tiền được giữ như thế nào"
-  },
-  "settings.documents.custodySub": {
-    "en": "Deposits are held in the fund's custody wallets at Turnkey on the network you sent them over, and booked to your identity as verified by Didit. Nothing is moved without that identity, and withdrawals go only to an address you request. You sign in with your Google account.",
-    "t": "Tiền nạp được giữ trong ví lưu ký của quỹ tại Turnkey trên mạng bạn đã gửi, và ghi nhận dưới danh tính đã được Didit xác minh của bạn. Không gì được chuyển đi nếu thiếu danh tính đó, và tiền rút chỉ đi đến địa chỉ bạn yêu cầu. Bạn đăng nhập bằng tài khoản Google của mình."
-  },
-  "settings.documents.newTab": {
-    "en": "opens in a new tab",
-    "t": "mở trong thẻ mới"
-  },
-  "settings.documents.published": {
-    "en": "Published documents",
-    "t": "Tài liệu đã công bố"
-  },
-  "settings.documents.risk": {
-    "en": "Risk",
-    "t": "Rủi ro"
-  },
-  "settings.documents.rowSub": {
-    "en": "Whitepaper, open source, how funds are held, risk",
-    "t": "Sách trắng, mã nguồn mở, lưu ký tiền, rủi ro"
-  },
-  "settings.documents.sourceCode": {
-    "en": "Open source",
-    "t": "Mã nguồn mở"
-  },
-  "settings.documents.sourceCodeSub": {
-    "en": "The fund's code, on GitHub",
-    "t": "Mã nguồn của quỹ, trên GitHub"
-  },
-  "settings.documents.sub": {
-    "en": "What the fund has published, and how your money is held",
-    "t": "Quỹ đã công bố gì và tiền của bạn được giữ ra sao"
-  },
-  "settings.documents.title": {
-    "en": "Documents and disclosures",
-    "t": "Tài liệu và công bố"
-  },
-  "settings.documents.whitepaper": {
-    "en": "Whitepaper",
-    "t": "Sách trắng"
-  },
-  "settings.documents.whitepaperSub": {
-    "en": "The fund's thesis and structure, on the public site",
-    "t": "Luận điểm và cấu trúc của quỹ, trên trang công khai"
-  },
-  "settings.fixHighlighted": {
-    "en": "Please fix the highlighted fields",
-    "t": "Vui lòng sửa các trường được đánh dấu"
-  },
-  "settings.group.cabinet": {
-    "en": "Cabinet",
-    "t": "Cabinet"
-  },
-  "settings.group.cabinetSub": {
-    "en": "How the cabinet looks and how it reaches you",
-    "t": "Cabinet trông thế nào và liên hệ với bạn ra sao"
-  },
-  "settings.group.help": {
-    "en": "Help",
-    "t": "Trợ giúp"
-  },
-  "settings.group.helpSub": {
-    "en": "What the fund has published, and how to reach a person",
-    "t": "Quỹ đã công bố gì và cách liên hệ với một người thật"
-  },
-  "settings.group.profileSub": {
-    "en": "Who you are and how your account is protected",
-    "t": "Bạn là ai và tài khoản của bạn được bảo vệ ra sao"
-  },
-  "settings.hint.address": {
-    "en": "Your current home address.",
-    "t": "Địa chỉ nhà hiện tại của bạn."
-  },
-  "settings.hint.baseCurrency": {
-    "en": "Saved to your account. Balances in the cabinet are always shown in USD.",
-    "t": "Lưu vào tài khoản của bạn. Số dư trong cabinet luôn hiển thị bằng USD."
-  },
-  "settings.hint.dateOfBirth": {
-    "en": "As on your identity document.",
-    "t": "Như trên giấy tờ tùy thân của bạn."
-  },
-  "settings.hint.email": {
-    "en": "Comes from your Google account and can't be changed here.",
-    "t": "Lấy từ tài khoản Google của bạn và không thể thay đổi tại đây."
-  },
-  "settings.hint.language": {
-    "en": "Applies as soon as you save; the whole cabinet switches.",
-    "t": "Áp dụng ngay khi bạn lưu; toàn bộ cabinet sẽ chuyển ngôn ngữ."
-  },
-  "settings.hint.phone": {
-    "en": "Used to reach you about your account.",
-    "t": "Dùng để liên hệ với bạn về tài khoản."
-  },
-  "settings.hint.preferredName": {
-    "en": "How the cabinet and our emails address you.",
-    "t": "Cách cabinet và email của chúng tôi xưng hô với bạn."
-  },
-  "settings.hint.timeZone": {
-    "en": "Saved to your account. The cabinet itself shows times in your device's time zone.",
-    "t": "Lưu vào tài khoản của bạn. Cabinet hiển thị thời gian theo múi giờ của thiết bị bạn dùng."
-  },
-  "settings.nav.documents": {
-    "en": "Documents",
-    "t": "Tài liệu"
-  },
-  "settings.inbox": {
-    "en": "Inbox",
-    "t": "Hộp thư đến"
-  },
-  "settings.nav.personal": {
-    "en": "Personal details",
-    "t": "Thông tin cá nhân"
-  },
-  "settings.nav.preferences": {
-    "en": "Preferences",
-    "t": "Tùy chọn"
-  },
-  "settings.noSessions": {
-    "en": "No active sessions.",
-    "t": "Không có phiên nào đang hoạt động."
-  },
-  "settings.notificationsSub": {
-    "en": "Which channels reach you and which events you follow",
-    "t": "Kênh nào liên hệ với bạn và sự kiện nào bạn theo dõi"
-  },
-  "settings.personalRowSub": {
-    "en": "Name, phone, address, tax residence",
-    "t": "Tên, điện thoại, địa chỉ, cư trú thuế"
-  },
-  "settings.personalSub": {
-    "en": "Your identity as the fund records it",
-    "t": "Danh tính của bạn theo hồ sơ của quỹ"
-  },
-  "settings.preferencesSub": {
-    "en": "How the cabinet is displayed to you. Saved to your account, so every device follows",
-    "t": "Cách cabinet hiển thị với bạn. Lưu vào tài khoản, nên mọi thiết bị đều áp dụng"
-  },
-  "settings.revoke": {
-    "en": "Revoke",
-    "t": "Thu hồi"
-  },
-  "settings.securitySub": {
-    "en": "How you sign in and where your account is active",
-    "t": "Cách bạn đăng nhập và nơi tài khoản của bạn đang hoạt động"
-  },
-  "settings.selectCurrency": {
-    "en": "Select currency",
-    "t": "Chọn tiền tệ"
-  },
-  "settings.selectLanguage": {
-    "en": "Select language",
-    "t": "Chọn ngôn ngữ"
-  },
-  "settings.selectTimeZone": {
-    "en": "Select time zone",
-    "t": "Chọn múi giờ"
-  },
-  "settings.session.activeNow": {
-    "en": "Active now",
-    "t": "Đang hoạt động"
-  },
-  "settings.session.activeNowLower": {
-    "en": "active now",
-    "t": "đang hoạt động"
-  },
-  "settings.session.activeRecently": {
-    "en": "active recently",
-    "t": "hoạt động gần đây"
-  },
-  "settings.session.lastActiveDays": {
-    "en": "last active {n}d ago",
-    "t": "hoạt động cuối {n} ngày trước"
-  },
-  "settings.session.lastActiveHours": {
-    "en": "last active {n}h ago",
-    "t": "hoạt động cuối {n} giờ trước"
-  },
-  "settings.session.lastActiveMinutes": {
-    "en": "last active {n}m ago",
-    "t": "hoạt động cuối {n} phút trước"
-  },
-  "settings.sessionsLoading": {
-    "en": "Loading active sessions…",
-    "t": "Đang tải các phiên hoạt động…"
-  },
-  "settings.sessionsSub": {
-    "en": "Where you're signed in — revoke anything you don't recognise",
-    "t": "Nơi bạn đang đăng nhập — thu hồi bất kỳ phiên nào bạn không nhận ra"
-  },
-  "settings.signOutOthers": {
-    "en": "Sign out all other devices",
-    "t": "Đăng xuất mọi thiết bị khác"
-  },
-  "settings.subtitle": {
-    "en": "Manage your account, security and access",
-    "t": "Quản lý tài khoản, bảo mật và quyền truy cập của bạn"
-  },
-  "settings.support.email": {
-    "en": "Email support",
-    "t": "Gửi email cho hỗ trợ"
-  },
-  "settings.support.sub": {
-    "en": "A person reads every message",
-    "t": "Mỗi tin nhắn đều có người đọc"
-  },
-  "settings.thisDevice": {
-    "en": "This device",
-    "t": "Thiết bị này"
-  },
-  "settings.timeZone": {
-    "en": "Time zone",
-    "t": "Múi giờ"
-  },
-  "settings.trustedSessionsSub": {
-    "en": "Devices signed in to your account",
-    "t": "Các thiết bị đang đăng nhập vào tài khoản của bạn"
-  },
-  "settings.tz.hoChiMinh": {
-    "en": "Asia / Ho Chi Minh",
-    "t": "Châu Á / Hồ Chí Minh"
-  },
-  "settings.viewProfile": {
-    "en": "View profile",
-    "t": "Xem hồ sơ"
   },
   "status.backHome": {
     "en": "Back to home",
@@ -6063,270 +4671,6 @@
     "en": "State",
     "t": "Trạng thái"
   },
-  "tips.dashboard.invested.allocation.body": {
-    "en": "Each bar is one strategy's share of your invested value at current NAV. Percentages are of invested value only and exclude your available cash.",
-    "t": "Mỗi thanh là tỷ trọng của một chiến lược trong giá trị đã đầu tư của bạn theo NAV hiện tại. Tỷ lệ phần trăm chỉ tính trên giá trị đã đầu tư và không bao gồm tiền mặt khả dụng."
-  },
-  "tips.dashboard.invested.allocation.title": {
-    "en": "Invested — what I own",
-    "t": "Đã đầu tư — những gì tôi sở hữu"
-  },
-  "tips.dashboard.performance.all-time-return.body": {
-    "en": "Total unrealized P&L divided by what you put in at cost basis, across every position. A paper figure, not realized cash.",
-    "t": "Tổng lãi/lỗ chưa thực hiện chia cho số tiền bạn bỏ ra theo giá gốc, trên tất cả các vị thế. Đây là con số trên giấy, chưa phải tiền đã thực hiện."
-  },
-  "tips.dashboard.performance.all-time-return.title": {
-    "en": "All-time return",
-    "t": "Lợi nhuận từ trước đến nay"
-  },
-  "tips.dashboard.performance.portfolio-value.body": {
-    "en": "Your whole balance: available + invested + pending withdrawal. Money locked in a queued withdrawal is still counted here.",
-    "t": "Toàn bộ số dư của bạn: khả dụng + đã đầu tư + đang chờ rút. Tiền bị khóa trong một lệnh rút đang chờ vẫn được tính ở đây."
-  },
-  "tips.dashboard.performance.portfolio-value.title": {
-    "en": "Portfolio value",
-    "t": "Giá trị danh mục"
-  },
-  "tips.dashboard.performance.series.body": {
-    "en": "'Fund performance' is the fund's return since the first valuation in the range, from the posted marks; 'Your participation' is what your units were worth at each of them, which differs by when you contributed.",
-    "t": "“Hiệu suất quỹ” là lợi nhuận của quỹ kể từ lần định giá đầu tiên trong khoảng, theo các mốc đã công bố; “Phần tham gia của bạn” là giá trị đơn vị của bạn tại mỗi mốc đó, khác nhau tùy thời điểm bạn góp vốn."
-  },
-  "tips.dashboard.performance.series.title": {
-    "en": "Performance chart",
-    "t": "Biểu đồ hiệu suất"
-  },
-  "tips.dashboard.stats.available.body": {
-    "en": "Cash that is free and spendable now — ready to deploy into a strategy or withdraw.",
-    "t": "Tiền mặt đang tự do và có thể dùng ngay — sẵn sàng đưa vào một chiến lược hoặc rút ra."
-  },
-  "tips.dashboard.stats.available.title": {
-    "en": "Available",
-    "t": "Khả dụng"
-  },
-  "tips.dashboard.stats.net-invested.body": {
-    "en": "Total cash you put into strategies at cost basis, net of redemptions — not the current value.",
-    "t": "Tổng số tiền bạn đã đưa vào các chiến lược theo giá gốc, trừ đi phần đã hoàn vốn — không phải giá trị hiện tại."
-  },
-  "tips.dashboard.stats.net-invested.title": {
-    "en": "Net invested",
-    "t": "Đầu tư ròng"
-  },
-  "tips.dashboard.stats.unrealized-pnl.body": {
-    "en": "Paper gain or loss across all positions — current value minus cost basis. It becomes realized cash only when you redeem.",
-    "t": "Lãi hoặc lỗ trên giấy của tất cả các vị thế — giá trị hiện tại trừ giá gốc. Nó chỉ thành tiền thực khi bạn hoàn vốn."
-  },
-  "tips.dashboard.stats.unrealized-pnl.title": {
-    "en": "Unrealized P&L",
-    "t": "Lãi/lỗ chưa thực hiện"
-  },
-  "tips.invest.activity.cancel.body": {
-    "en": "Available only while a redemption is still queued. It withdraws the request and releases the reserved units back to your holding before any settle NAV is applied.",
-    "t": "Chỉ khả dụng khi lệnh hoàn vốn còn đang xếp hàng. Thao tác này rút lại yêu cầu và trả các đơn vị quỹ đã giữ về khoản nắm giữ của bạn trước khi áp dụng bất kỳ NAV tất toán nào."
-  },
-  "tips.invest.activity.cancel.title": {
-    "en": "Cancel",
-    "t": "Hủy"
-  },
-  "tips.invest.activity.status.body": {
-    "en": "Queued (reserved, awaiting settle), completed (paid out at the settle NAV), failed, or cancelled.",
-    "t": "Đang chờ (đã giữ, chờ tất toán), hoàn tất (đã chi trả theo NAV lúc tất toán), thất bại, hoặc đã hủy."
-  },
-  "tips.invest.activity.status.title": {
-    "en": "Redemption status",
-    "t": "Trạng thái hoàn vốn"
-  },
-  "tips.invest.overview.body": {
-    "en": "Subscribe USDT for units — your value tracks the fund's NAV, not the unit count.",
-    "t": "Đăng ký mua bằng USDT để nhận đơn vị quỹ — giá trị của bạn bám theo NAV của quỹ, không theo số lượng đơn vị."
-  },
-  "tips.invest.overview.title": {
-    "en": "How investing works",
-    "t": "Đầu tư hoạt động thế nào"
-  },
-  "tips.invest.position.nav.body": {
-    "en": "Net asset value per unit — the current price at which units are bought on subscribe and priced on redeem.",
-    "t": "Giá trị tài sản ròng trên mỗi đơn vị quỹ — mức giá hiện tại để mua đơn vị khi đăng ký và để định giá khi hoàn vốn."
-  },
-  "tips.invest.position.nav.title": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "tips.invest.position.pnl.body": {
-    "en": "Your position's current value minus what you paid in — green for a gain, red for a loss, driven by the NAV moving.",
-    "t": "Giá trị hiện tại của vị thế trừ đi số bạn đã bỏ ra — xanh là lãi, đỏ là lỗ, do NAV biến động."
-  },
-  "tips.invest.position.pnl.title": {
-    "en": "Profit & loss",
-    "t": "Lãi và lỗ"
-  },
-  "tips.invest.position.stale-nav.body": {
-    "en": "The fund's price feed is out of date, so the value and P&L shown here may lag the true mark until the NAV refreshes.",
-    "t": "Nguồn giá của quỹ đã lỗi thời, nên giá trị và lãi/lỗ hiển thị ở đây có thể trễ so với mức định giá thật cho tới khi NAV được làm mới."
-  },
-  "tips.invest.position.stale-nav.title": {
-    "en": "Stale NAV",
-    "t": "NAV cũ"
-  },
-  "tips.invest.position.units.body": {
-    "en": "The units you hold in this fund — a fixed quantity until you subscribe or redeem more.",
-    "t": "Số đơn vị bạn nắm giữ trong quỹ này — một lượng cố định cho tới khi bạn đăng ký mua thêm hoặc hoàn vốn."
-  },
-  "tips.invest.position.units.title": {
-    "en": "Units",
-    "t": "Đơn vị quỹ"
-  },
-  "tips.invest.position.value.body": {
-    "en": "Units × current NAV. It rises and falls as the NAV moves, not with the unit count.",
-    "t": "Số đơn vị × NAV hiện tại. Nó tăng giảm theo NAV, không theo số lượng đơn vị."
-  },
-  "tips.invest.position.value.title": {
-    "en": "Value",
-    "t": "Giá trị"
-  },
-  "tips.invest.redeem.queue.body": {
-    "en": "Redemptions are accept-and-queue — your units are reserved now, and cash is priced at the settle-time NAV once the fund tops up.",
-    "t": "Hoàn vốn theo cơ chế nhận-và-xếp-hàng — đơn vị quỹ của bạn được giữ ngay bây giờ, còn tiền được định giá theo NAV tại thời điểm tất toán khi quỹ được bổ sung."
-  },
-  "tips.invest.redeem.queue.title": {
-    "en": "How redemptions settle",
-    "t": "Cách lệnh hoàn vốn tất toán"
-  },
-  "tips.invest.redeem.units.body": {
-    "en": "How many units to redeem — Max fills your full holding. The resulting cash isn't fixed here; it is set at the settle-time NAV.",
-    "t": "Số đơn vị quỹ muốn hoàn vốn — Tối đa điền toàn bộ khoản nắm giữ. Số tiền thu về không cố định ở đây; nó được xác định theo NAV tại thời điểm tất toán."
-  },
-  "tips.invest.redeem.units.title": {
-    "en": "Units to redeem",
-    "t": "Số đơn vị cần hoàn vốn"
-  },
-  "tips.invest.subscribe.amount.body": {
-    "en": "How much USDT to subscribe. It is converted into units at the current NAV when you submit.",
-    "t": "Số USDT muốn đăng ký mua. Nó được quy đổi thành đơn vị quỹ theo NAV hiện tại khi bạn gửi lệnh."
-  },
-  "tips.invest.subscribe.amount.title": {
-    "en": "Amount",
-    "t": "Số tiền"
-  },
-  "tips.profile.email.verified.body": {
-    "en": "Confirms this email address has been verified. It is not identity or KYC verification.",
-    "t": "Xác nhận địa chỉ email này đã được xác minh. Đây không phải xác minh danh tính hay KYC."
-  },
-  "tips.profile.email.verified.title": {
-    "en": "Verified",
-    "t": "Đã xác minh"
-  },
-  "tips.profile.field.legal-name.body": {
-    "en": "Your full name exactly as it appears on official documents — used for compliance and statements, distinct from your preferred name.",
-    "t": "Họ tên đầy đủ đúng như trên giấy tờ chính thức — dùng cho tuân thủ và sao kê, khác với tên thường gọi của bạn."
-  },
-  "tips.profile.field.legal-name.title": {
-    "en": "Legal name",
-    "t": "Tên pháp lý"
-  },
-  "tips.profile.field.nationality.body": {
-    "en": "Collected for compliance and eligibility checks.",
-    "t": "Được thu thập cho mục đích tuân thủ và kiểm tra điều kiện tham gia."
-  },
-  "tips.profile.field.nationality.title": {
-    "en": "Nationality",
-    "t": "Quốc tịch"
-  },
-  "tips.profile.field.tax-residence.body": {
-    "en": "The country where you're liable to pay tax, used for tax reporting. Usually where you live — it can differ from your nationality.",
-    "t": "Quốc gia nơi bạn có nghĩa vụ nộp thuế, dùng cho việc báo cáo thuế. Thường là nơi bạn sinh sống — có thể khác quốc tịch."
-  },
-  "tips.profile.field.tax-residence.title": {
-    "en": "Tax residence",
-    "t": "Nơi cư trú thuế"
-  },
-  "tips.profile.kyc-level.body": {
-    "en": "Level 0 is browse only: products, prices and your account. Level 1 means your identity is verified and opens a deposit address, withdrawals and subscribing.",
-    "t": "Cấp 0 chỉ để xem: sản phẩm, giá và tài khoản của bạn. Cấp 1 nghĩa là danh tính đã được xác minh, mở địa chỉ nạp, rút tiền và đăng ký mua."
-  },
-  "tips.profile.kyc-level.title": {
-    "en": "What your KYC level means",
-    "t": "Cấp KYC của bạn nghĩa là gì"
-  },
-  "tips.profile.personal.compliance.body": {
-    "en": "These personal details are collected to meet the fund's compliance obligations and to produce your account statements. They are not shown publicly.",
-    "t": "Những thông tin cá nhân này được thu thập để đáp ứng nghĩa vụ tuân thủ của quỹ và để lập sao kê tài khoản cho bạn. Chúng không được hiển thị công khai."
-  },
-  "tips.profile.personal.compliance.title": {
-    "en": "Why we collect this",
-    "t": "Vì sao chúng tôi thu thập"
-  },
-  "tips.settings.security.google-signin.body": {
-    "en": "Your sign-in and password are managed by Google. Two-factor authentication and recovery are configured in your Google Account.",
-    "t": "Việc đăng nhập và mật khẩu của bạn do Google quản lý. Xác thực hai yếu tố và khôi phục được thiết lập trong Tài khoản Google của bạn."
-  },
-  "tips.settings.security.google-signin.title": {
-    "en": "Sign-in is managed by Google",
-    "t": "Việc đăng nhập do Google quản lý"
-  },
-  "tips.settings.sessions.overview.body": {
-    "en": "Where you're signed in — each row is a device or browser with a live session. Revoke anything you don't recognise.",
-    "t": "Nơi bạn đang đăng nhập — mỗi dòng là một thiết bị hoặc trình duyệt có phiên đang hoạt động. Hãy thu hồi bất kỳ phiên nào bạn không nhận ra."
-  },
-  "tips.settings.sessions.overview.title": {
-    "en": "Sessions & devices",
-    "t": "Phiên & thiết bị"
-  },
-  "tips.settings.sessions.revoke-others.body": {
-    "en": "Signs out every device except this one. Use it if a device was lost or you don't recognise a session.",
-    "t": "Đăng xuất mọi thiết bị trừ thiết bị này. Hãy dùng khi bạn làm mất một thiết bị hoặc không nhận ra một phiên."
-  },
-  "tips.settings.sessions.revoke-others.title": {
-    "en": "Sign out all other devices",
-    "t": "Đăng xuất mọi thiết bị khác"
-  },
-  "tips.settings.sessions.revoke.body": {
-    "en": "Signs that device out immediately. It must sign in again with Google to regain access.",
-    "t": "Đăng xuất thiết bị đó ngay lập tức. Thiết bị phải đăng nhập lại bằng Google để có quyền truy cập."
-  },
-  "tips.settings.sessions.revoke.title": {
-    "en": "Revoke",
-    "t": "Thu hồi"
-  },
-  "tips.settings.sessions.this-device.body": {
-    "en": "The browser you're using right now. It stays signed in and can't be revoked from here — use 'Sign out all other devices' to clear the rest.",
-    "t": "Trình duyệt bạn đang dùng ngay bây giờ. Nó vẫn giữ đăng nhập và không thể bị thu hồi từ đây — hãy dùng “Đăng xuất mọi thiết bị khác” để xóa phần còn lại."
-  },
-  "tips.settings.sessions.this-device.title": {
-    "en": "This device",
-    "t": "Thiết bị này"
-  },
-  "tips.trade.book.body": {
-    "en": "The book trades existing units between holders — a buyer and a seller meet at a bid or ask price they set themselves. Subscribing is different: it mints new units at the posted NAV, and redeeming returns them at NAV.",
-    "t": "Sổ lệnh trao đổi các đơn vị đã có giữa những người nắm giữ — người mua và người bán gặp nhau ở giá bid hoặc ask do chính họ đặt. Đăng ký mua thì khác: nó phát hành đơn vị mới theo NAV đã công bố, và hoàn vốn trả lại đơn vị theo NAV."
-  },
-  "tips.trade.book.title": {
-    "en": "How the book works",
-    "t": "Sổ lệnh hoạt động thế nào"
-  },
-  "tips.wallet.balance.available.body": {
-    "en": "Your spendable USDT right now — what you can invest into fund units or withdraw.",
-    "t": "Số USDT bạn có thể dùng ngay bây giờ — để đầu tư vào đơn vị quỹ hoặc rút ra."
-  },
-  "tips.wallet.balance.available.title": {
-    "en": "Available",
-    "t": "Khả dụng"
-  },
-  "tips.wallet.balance.in-orders.body": {
-    "en": "USDT set aside by your resting buy orders on the book. Still yours: it comes back to available when an order is cancelled, and turns into units when it fills.",
-    "t": "USDT đang được giữ cho các lệnh mua của bạn còn chờ trong sổ. Vẫn là của bạn: sẽ trở lại khả dụng khi lệnh bị hủy và chuyển thành đơn vị quỹ khi lệnh khớp."
-  },
-  "tips.wallet.balance.in-orders.title": {
-    "en": "In orders",
-    "t": "Trong lệnh"
-  },
-  "tips.wallet.balance.invested.body": {
-    "en": "Held in fund units, valued at the current NAV — units offered for sale on the book included.",
-    "t": "Đang nằm trong đơn vị quỹ, định giá theo NAV hiện tại — bao gồm cả đơn vị đang rao bán trong sổ lệnh."
-  },
-  "tips.wallet.balance.invested.title": {
-    "en": "Invested",
-    "t": "Đã đầu tư"
-  },
   "tips.wallet.balance.model.body": {
     "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
     "t": "Bạn chỉ có một số dư USDT duy nhất — các mạng chỉ là cách bạn nạp và rút. Thẻ này chia số dư đó thành Tổng = Khả dụng + Trong lệnh + Đã đầu tư + Đang chờ rút + Trong ngăn."
@@ -6334,14 +4678,6 @@
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
     "t": "Một số dư, nhiều mạng"
-  },
-  "tips.wallet.balance.pending-withdrawal.body": {
-    "en": "USDT reserved for withdrawals still in flight (queued or processing). It is no longer part of your available balance.",
-    "t": "USDT đã được giữ cho các lệnh rút còn đang thực hiện (đang chờ hoặc đang xử lý). Phần này không còn thuộc số dư khả dụng của bạn."
-  },
-  "tips.wallet.balance.pending-withdrawal.title": {
-    "en": "Pending withdrawal",
-    "t": "Đang chờ rút"
   },
   "tips.wallet.deposit.address.body": {
     "en": "A personal, reusable address on this network. On TON it is shown in the wallet-friendly UQ… form so an uninitialised wallet doesn't bounce the transfer.",
@@ -6431,369 +4767,9 @@
     "en": "You will receive",
     "t": "Bạn sẽ nhận được"
   },
-  "trade.book.col.price": {
-    "en": "Price",
-    "t": "Giá"
-  },
-  "trade.book.col.size": {
-    "en": "Size",
-    "t": "Khối lượng"
-  },
-  "trade.book.col.total": {
-    "en": "Total",
-    "t": "Tổng"
-  },
-  "trade.book.empty": {
-    "en": "Nothing resting",
-    "t": "Chưa có lệnh chờ"
-  },
-  "trade.book.emptyHint": {
-    "en": "No holder has quoted yet. The first limit order opens the book.",
-    "t": "Chưa ai đặt giá. Lệnh giới hạn đầu tiên sẽ mở sổ lệnh."
-  },
-  "trade.book.levelOrders": {
-    "en": "{n, plural, one {# order} other {# orders}}",
-    "t": "{n, plural, one {# lệnh} other {# lệnh}}"
-  },
-  "trade.book.oneSided": {
-    "en": "One-sided",
-    "t": "Một phía"
-  },
-  "trade.book.spread": {
-    "en": "Spread {spread}",
-    "t": "Chênh lệch {spread}"
-  },
-  "trade.book.tape": {
-    "en": "Trades",
-    "t": "Giao dịch"
-  },
-  "trade.book.title": {
-    "en": "Book",
-    "t": "Sổ lệnh"
-  },
-  "trade.chart.empty": {
-    "en": "No trades yet — the chart draws from the first fill.",
-    "t": "Chưa có giao dịch — biểu đồ bắt đầu từ lần khớp đầu tiên."
-  },
-  "trade.chart.resolution": {
-    "en": "Candle size",
-    "t": "Khung nến"
-  },
-  "trade.chart.title": {
-    "en": "Chart",
-    "t": "Biểu đồ"
-  },
-  "trade.form.available": {
-    "en": "Available",
-    "t": "Khả dụng"
-  },
-  "trade.form.buy": {
-    "en": "Buy",
-    "t": "Mua"
-  },
-  "trade.form.closed": {
-    "en": "The book is closed. Orders are not accepted until it opens again.",
-    "t": "Sổ lệnh đang đóng. Lệnh không được nhận cho đến khi sổ mở lại."
-  },
-  "trade.form.duplicateTitle": {
-    "en": "Already submitted",
-    "t": "Đã gửi trước đó"
-  },
-  "trade.form.failedTitle": {
-    "en": "Order failed",
-    "t": "Lệnh không thành công"
-  },
-  "trade.form.fee": {
-    "en": "Taker fee",
-    "t": "Phí taker"
-  },
-  "trade.form.inOrders": {
-    "en": "In orders",
-    "t": "Đang trong lệnh"
-  },
-  "trade.form.kind": {
-    "en": "Order type",
-    "t": "Loại lệnh"
-  },
-  "trade.form.limit": {
-    "en": "Limit",
-    "t": "Giới hạn"
-  },
-  "trade.form.locked": {
-    "en": "Trading isn't open to you on this product. If you think you should have access:",
-    "t": "Bạn chưa được mở giao dịch sản phẩm này. Nếu bạn cho rằng mình nên có quyền:"
-  },
-  "trade.form.market": {
-    "en": "Market",
-    "t": "Thị trường"
-  },
-  "trade.form.notional": {
-    "en": "Order value",
-    "t": "Giá trị lệnh"
-  },
-  "trade.form.notionalEstimate": {
-    "en": "Est. value",
-    "t": "Giá trị ước tính"
-  },
-  "trade.form.placed.cancelled": {
-    "en": "Nothing crossed, so the order was cancelled.",
-    "t": "Không khớp được gì nên lệnh đã hủy."
-  },
-  "trade.form.placed.filled": {
-    "en": "Filled {filled} at an average of {avg} USDT.",
-    "t": "Đã khớp {filled} với giá trung bình {avg} USDT."
-  },
-  "trade.form.placed.partial": {
-    "en": "Filled {filled} of {size} at {avg} USDT; the rest was cancelled.",
-    "t": "Đã khớp {filled} trên {size} ở {avg} USDT; phần còn lại đã hủy."
-  },
-  "trade.form.placed.rejected": {
-    "en": "The order was not accepted: {reason}",
-    "t": "Lệnh không được nhận: {reason}"
-  },
-  "trade.form.placed.resting": {
-    "en": "Resting on the book: {filled} of {size} filled so far.",
-    "t": "Đang chờ trong sổ: đã khớp {filled} trên {size}."
-  },
-  "trade.form.price": {
-    "en": "Price (USDT)",
-    "t": "Giá (USDT)"
-  },
-  "trade.form.problem.funds": {
-    "en": "More than you have available",
-    "t": "Nhiều hơn số bạn khả dụng"
-  },
-  "trade.form.problem.lot": {
-    "en": "Size must be a multiple of {lot}",
-    "t": "Khối lượng phải là bội số của {lot}"
-  },
-  "trade.form.problem.noQuote": {
-    "en": "Nothing on the other side to trade against — place a limit order instead.",
-    "t": "Phía đối diện không có lệnh để khớp — hãy đặt lệnh giới hạn."
-  },
-  "trade.form.problem.price": {
-    "en": "Enter a price above zero",
-    "t": "Nhập giá lớn hơn 0"
-  },
-  "trade.form.problem.size": {
-    "en": "Enter a size above zero",
-    "t": "Nhập khối lượng lớn hơn 0"
-  },
-  "trade.form.problem.tick": {
-    "en": "Price must be a multiple of {tick}",
-    "t": "Giá phải là bội số của {tick}"
-  },
-  "trade.form.refusedBody": {
-    "en": "{detail} If you think you should be able to trade this product:",
-    "t": "{detail} Nếu bạn cho rằng mình được giao dịch sản phẩm này:"
-  },
-  "trade.form.refusedTitle": {
-    "en": "Order refused",
-    "t": "Lệnh bị từ chối"
-  },
-  "trade.form.sell": {
-    "en": "Sell",
-    "t": "Bán"
-  },
-  "trade.form.size": {
-    "en": "Size (units)",
-    "t": "Khối lượng (đơn vị)"
-  },
-  "trade.form.submitBuy": {
-    "en": "Place buy order",
-    "t": "Đặt lệnh mua"
-  },
-  "trade.form.submitSell": {
-    "en": "Place sell order",
-    "t": "Đặt lệnh bán"
-  },
-  "trade.form.tif": {
-    "en": "Time in force",
-    "t": "Hiệu lực"
-  },
-  "trade.form.tifHint.alo": {
-    "en": "Only rests on the book: it is refused rather than filled against an existing order.",
-    "t": "Chỉ nằm chờ trong sổ: bị từ chối thay vì khớp với lệnh đang có."
-  },
-  "trade.form.tifHint.gtc": {
-    "en": "Rests on the book until it fills or you cancel it.",
-    "t": "Nằm trong sổ lệnh cho tới khi khớp hoặc bạn hủy."
-  },
-  "trade.form.tifHint.ioc": {
-    "en": "Fills whatever it can right now; the rest is cancelled at once.",
-    "t": "Khớp phần có thể ngay lúc này; phần còn lại bị hủy ngay."
-  },
-  "trade.form.tifLabel.alo": {
-    "en": "Post-only",
-    "t": "Chỉ đặt chờ"
-  },
-  "trade.form.tifLabel.gtc": {
-    "en": "Good till cancelled",
-    "t": "Đến khi hủy"
-  },
-  "trade.form.tifLabel.ioc": {
-    "en": "Immediate or cancel",
-    "t": "Khớp ngay hoặc hủy"
-  },
-  "trade.orders.col.avgFill": {
-    "en": "Avg fill",
-    "t": "Giá TB"
-  },
-  "trade.orders.col.fee": {
-    "en": "Fee",
-    "t": "Phí"
-  },
-  "trade.orders.col.filled": {
-    "en": "Filled",
-    "t": "Đã khớp"
-  },
-  "trade.orders.col.role": {
-    "en": "Role",
-    "t": "Vai trò"
-  },
-  "trade.orders.col.side": {
-    "en": "Side",
-    "t": "Chiều"
-  },
-  "trade.orders.col.state": {
-    "en": "Status",
-    "t": "Trạng thái"
-  },
-  "trade.orders.col.time": {
-    "en": "Time",
-    "t": "Thời gian"
-  },
-  "trade.orders.col.type": {
-    "en": "Type",
-    "t": "Loại"
-  },
-  "trade.orders.emptyFills": {
-    "en": "No fills yet",
-    "t": "Chưa có khớp lệnh"
-  },
-  "trade.orders.emptyHistory": {
-    "en": "No orders yet",
-    "t": "Chưa có lệnh nào"
-  },
-  "trade.orders.emptyOpen": {
-    "en": "No open orders",
-    "t": "Không có lệnh đang mở"
-  },
-  "trade.orders.fills": {
-    "en": "Fills",
-    "t": "Khớp lệnh"
-  },
-  "trade.orders.history": {
-    "en": "Order history",
-    "t": "Lịch sử lệnh"
-  },
-  "trade.orders.maker": {
-    "en": "Maker",
-    "t": "Maker"
-  },
-  "trade.orders.open": {
-    "en": "Open orders",
-    "t": "Lệnh đang mở"
-  },
-  "trade.orders.taker": {
-    "en": "Taker",
-    "t": "Taker"
-  },
-  "trade.state.cancelled": {
-    "en": "Cancelled",
-    "t": "Đã hủy"
-  },
-  "trade.state.filled": {
-    "en": "Filled",
-    "t": "Đã khớp"
-  },
-  "trade.state.open": {
-    "en": "Open",
-    "t": "Đang mở"
-  },
-  "trade.state.partialCancelled": {
-    "en": "Partially filled, rest cancelled",
-    "t": "Khớp một phần, phần còn lại đã hủy"
-  },
-  "trade.state.unfilledCancelled": {
-    "en": "Not filled, cancelled",
-    "t": "Không khớp, đã hủy"
-  },
-  "trade.state.partiallyFilled": {
-    "en": "Partially filled",
-    "t": "Khớp một phần"
-  },
-  "trade.state.rejected": {
-    "en": "Rejected",
-    "t": "Bị từ chối"
-  },
-  "trade.stream.live": {
-    "en": "Live",
-    "t": "Trực tiếp"
-  },
-  "trade.stream.paused": {
-    "en": "Paused",
-    "t": "Tạm dừng"
-  },
-  "trade.stream.polling": {
-    "en": "Polling",
-    "t": "Đang cập nhật định kỳ"
-  },
-  "trade.stream.reconnecting": {
-    "en": "Reconnecting",
-    "t": "Đang kết nối lại"
-  },
-  "trade.tape.col.time": {
-    "en": "Time",
-    "t": "Thời gian"
-  },
-  "trade.tape.empty": {
-    "en": "No trades yet",
-    "t": "Chưa có giao dịch"
-  },
-  "trade.ticker.change": {
-    "en": "24h change",
-    "t": "Thay đổi 24h"
-  },
-  "trade.ticker.last": {
-    "en": "Last",
-    "t": "Giá cuối"
-  },
-  "trade.ticker.mid": {
-    "en": "Mid",
-    "t": "Giá giữa"
-  },
-  "trade.ticker.nav": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "trade.ticker.navHint": {
-    "en": "The book price is what holders trade at; NAV is the fund's own mark.",
-    "t": "Giá sổ lệnh là giá người nắm giữ giao dịch với nhau; NAV là định giá riêng của quỹ."
-  },
-  "trade.ticker.spread": {
-    "en": "Spread",
-    "t": "Chênh lệch"
-  },
-  "trade.ticker.volume": {
-    "en": "24h volume",
-    "t": "Khối lượng 24h"
-  },
-  "trade.unbackedNotice": {
-    "en": "Units of this product are a claim on an off-platform asset and cannot be redeemed for fund cash — the book is the only exit.",
-    "t": "Các đơn vị của sản phẩm này là quyền đối với một tài sản ngoài nền tảng và không thể rút thành tiền mặt của quỹ — sổ lệnh là lối thoát duy nhất."
-  },
   "ui.account": {
     "en": "Account",
     "t": "Tài khoản"
-  },
-  "ui.accountStatus": {
-    "en": "Account status",
-    "t": "Trạng thái tài khoản"
-  },
-  "ui.addFunds": {
-    "en": "Add funds",
-    "t": "Nạp thêm tiền"
   },
   "ui.address": {
     "en": "address",
@@ -6803,10 +4779,6 @@
     "en": "All",
     "t": "Tất cả"
   },
-  "ui.allocate": {
-    "en": "Allocate",
-    "t": "Phân bổ"
-  },
   "ui.amount": {
     "en": "Amount",
     "t": "Số tiền"
@@ -6814,10 +4786,6 @@
   "ui.back": {
     "en": "Back",
     "t": "Quay lại"
-  },
-  "ui.browseFunds": {
-    "en": "Browse funds",
-    "t": "Xem các quỹ"
   },
   "ui.cancel": {
     "en": "Cancel",
@@ -6859,10 +4827,6 @@
     "en": "Previous month",
     "t": "Tháng trước"
   },
-  "ui.deliveryTopics": {
-    "en": "Delivery & topics",
-    "t": "Gửi thông báo & chủ đề"
-  },
   "ui.deposit": {
     "en": "Deposit",
     "t": "Nạp tiền"
@@ -6875,29 +4839,9 @@
     "en": "Destination",
     "t": "Người nhận"
   },
-  "ui.details": {
-    "en": "Details",
-    "t": "Chi tiết"
-  },
   "ui.edit": {
     "en": "Edit",
     "t": "Sửa"
-  },
-  "ui.email": {
-    "en": "Email",
-    "t": "Email"
-  },
-  "ui.emailAddress": {
-    "en": "Email address",
-    "t": "Địa chỉ email"
-  },
-  "ui.inProgress": {
-    "en": "In progress",
-    "t": "Đang xử lý"
-  },
-  "ui.inYourCabinet": {
-    "en": "In your cabinet",
-    "t": "Trong tài khoản của bạn"
   },
   "ui.keep": {
     "en": "Keep it",
@@ -6911,10 +4855,6 @@
     "en": "Loading…",
     "t": "Đang tải…"
   },
-  "ui.manage": {
-    "en": "Manage",
-    "t": "Quản lý"
-  },
   "ui.max": {
     "en": "Max",
     "t": "Tối đa"
@@ -6923,29 +4863,9 @@
     "en": "Network",
     "t": "Mạng"
   },
-  "ui.networks": {
-    "en": "Networks",
-    "t": "Mạng lưới"
-  },
-  "ui.noOperations": {
-    "en": "No activity yet",
-    "t": "Chưa có hoạt động nào"
-  },
-  "ui.none": {
-    "en": "None",
-    "t": "Không có"
-  },
-  "ui.operations": {
-    "en": "Activity",
-    "t": "Hoạt động"
-  },
   "ui.profile": {
     "en": "Profile",
     "t": "Hồ sơ"
-  },
-  "ui.progress": {
-    "en": "Progress",
-    "t": "Tiến trình"
   },
   "ui.receiveFunds": {
     "en": "Receive funds into your wallet",
@@ -6955,10 +4875,6 @@
     "en": "Refresh",
     "t": "Làm mới"
   },
-  "ui.reloadPage": {
-    "en": "Reload page",
-    "t": "Tải lại trang"
-  },
   "ui.reset": {
     "en": "Reset",
     "t": "Đặt lại"
@@ -6967,34 +4883,6 @@
     "en": "Save",
     "t": "Lưu"
   },
-  "ui.saveChanges": {
-    "en": "Save changes",
-    "t": "Lưu thay đổi"
-  },
-  "ui.saved": {
-    "en": "Saved",
-    "t": "Đã lưu"
-  },
-  "ui.security": {
-    "en": "Security",
-    "t": "Bảo mật"
-  },
-  "ui.sessionsDevices": {
-    "en": "Sessions & devices",
-    "t": "Phiên & thiết bị"
-  },
-  "ui.total": {
-    "en": "Total",
-    "t": "Tổng"
-  },
-  "ui.trustedSessions": {
-    "en": "Trusted sessions",
-    "t": "Phiên tin cậy"
-  },
-  "ui.verified": {
-    "en": "Verified",
-    "t": "Đã xác minh"
-  },
   "ui.services": {
     "en": "Services",
     "t": "Dịch vụ"
@@ -7002,10 +4890,6 @@
   "ui.walletHistory": {
     "en": "History",
     "t": "Lịch sử"
-  },
-  "ui.viewAll": {
-    "en": "View all",
-    "t": "Xem tất cả"
   },
   "ui.wallet": {
     "en": "Wallet",
@@ -7058,34 +4942,6 @@
   "wallet.chain.unknown": {
     "en": "Network",
     "t": "Mạng"
-  },
-  "wallet.chip.avail": {
-    "en": "AVAILABLE",
-    "t": "KHẢ DỤNG"
-  },
-  "wallet.chip.availShort": {
-    "en": "AVAIL",
-    "t": "SẴN CÓ"
-  },
-  "wallet.chip.inOrders": {
-    "en": "IN ORDERS",
-    "t": "TRONG LỆNH"
-  },
-  "wallet.chip.inOrdersShort": {
-    "en": "ORDERS",
-    "t": "LỆNH"
-  },
-  "wallet.chip.invest": {
-    "en": "INVESTED",
-    "t": "ĐÃ ĐẦU TƯ"
-  },
-  "wallet.chip.investShort": {
-    "en": "INVEST",
-    "t": "ĐẦU TƯ"
-  },
-  "wallet.chip.pendingWd": {
-    "en": "PENDING WD",
-    "t": "CHỜ RÚT TIỀN"
   },
   "wallet.confirmWithdrawal": {
     "en": "Confirm withdrawal",
@@ -7163,37 +5019,9 @@
     "en": "No deposit networks are available right now — check back soon.",
     "t": "Hiện không có mạng nạp tiền nào khả dụng — vui lòng quay lại sau."
   },
-  "wallet.noRails": {
-    "en": "No deposit or withdrawal networks are available right now — check back soon.",
-    "t": "Hiện không có mạng nạp hoặc rút tiền nào khả dụng — vui lòng quay lại sau."
-  },
-  "wallet.noRailsTitle": {
-    "en": "No networks available yet",
-    "t": "Chưa có mạng nào khả dụng"
-  },
-  "wallet.overviewVerifyTitle": {
-    "en": "Verify your identity to use these networks",
-    "t": "Xác minh danh tính để sử dụng các mạng này"
-  },
-  "wallet.overviewVerifyBody": {
-    "en": "Deposit addresses are issued and withdrawals open once your identity is verified. Your balance above is unaffected.",
-    "t": "Địa chỉ nạp tiền được cấp và rút tiền được mở sau khi danh tính của bạn được xác minh. Số dư ở trên không thay đổi."
-  },
   "wallet.noWithdrawRails": {
     "en": "No withdrawal networks are available right now — check back soon.",
     "t": "Hiện không có mạng rút tiền nào khả dụng — vui lòng quay lại sau."
-  },
-  "wallet.oneFungibleBalance": {
-    "en": "≈ ${amount} · one fungible balance",
-    "t": "≈ ${amount} · một số dư duy nhất"
-  },
-  "wallet.overviewSub": {
-    "en": "One USDT balance · networks are how you deposit and withdraw",
-    "t": "Một số dư USDT duy nhất · mạng là cách bạn nạp và rút"
-  },
-  "wallet.pendWd": {
-    "en": "PEND WD",
-    "t": "CHỜ RÚT"
   },
   "wallet.placeholder.railAddress": {
     "en": "{network} address",
@@ -7203,10 +5031,6 @@
     "en": "QR code unavailable — use the address below.",
     "t": "Không hiển thị được mã QR — hãy dùng địa chỉ bên dưới."
   },
-  "wallet.railActionUnavailable": {
-    "en": "{action} is not available on this network yet",
-    "t": "{action} chưa khả dụng trên mạng này"
-  },
   "wallet.railHazard": {
     "en": "Only send USDT on the {network} network to this address. Funds sent on any other network will be lost permanently.",
     "t": "Chỉ gửi USDT trên mạng {network} tới địa chỉ này. Tiền gửi trên bất kỳ mạng nào khác sẽ mất vĩnh viễn."
@@ -7214,10 +5038,6 @@
   "wallet.railUsdt": {
     "en": "{network} · USDT",
     "t": "{network} · USDT"
-  },
-  "wallet.railsCaption": {
-    "en": "deposit & withdrawal networks",
-    "t": "mạng nạp & rút tiền"
   },
   "wallet.receiptQueued": {
     "en": "{amount} USDT to {address} is queued — it is sent once {network} liquidity is topped up.",
@@ -7242,10 +5062,6 @@
   "wallet.toAddressLine": {
     "en": "To {address}",
     "t": "Tới {address}"
-  },
-  "wallet.totalBalance": {
-    "en": "TOTAL BALANCE",
-    "t": "TỔNG SỐ DƯ"
   },
   "wallet.txRef": {
     "en": "tx {ref}",
@@ -7287,78 +5103,6 @@
     "en": "Your {network} deposit address",
     "t": "Địa chỉ nạp {network} của bạn"
   },
-  "onboarding.allSet.body": {
-    "en": "Your holdings and their split are under {own}; every movement lands in {ops}.",
-    "t": "Các vị thế và tỷ trọng của bạn nằm trong mục “{own}”; mọi giao dịch được ghi ở “{ops}”."
-  },
-  "onboarding.allSet.dismiss": {
-    "en": "Got it",
-    "t": "Đã hiểu"
-  },
-  "onboarding.allSet.title": {
-    "en": "You're all set",
-    "t": "Bạn đã sẵn sàng"
-  },
-  "onboarding.deposit.current": {
-    "en": "Send funds to your deposit address — credited once the network confirms it.",
-    "t": "Gửi tiền đến địa chỉ nạp của bạn — được ghi có ngay khi mạng xác nhận giao dịch."
-  },
-  "onboarding.deposit.done": {
-    "en": "Funds received.",
-    "t": "Đã nhận tiền."
-  },
-  "onboarding.deposit.locked": {
-    "en": "Opens once your identity is verified.",
-    "t": "Mở sau khi danh tính của bạn được xác minh."
-  },
-  "onboarding.deposit.title": {
-    "en": "Make your first deposit",
-    "t": "Nạp tiền lần đầu"
-  },
-  "onboarding.invest.current": {
-    "en": "Pick a strategy and subscribe with your available balance.",
-    "t": "Chọn một chiến lược và đăng ký bằng số dư khả dụng của bạn."
-  },
-  "onboarding.invest.done": {
-    "en": "You hold units.",
-    "t": "Bạn đang nắm giữ đơn vị quỹ."
-  },
-  "onboarding.invest.locked": {
-    "en": "Opens once a deposit is credited.",
-    "t": "Mở sau khi khoản nạp được ghi có."
-  },
-  "onboarding.invest.title": {
-    "en": "Choose a strategy",
-    "t": "Chọn chiến lược"
-  },
-  "onboarding.progress": {
-    "en": "{done} of {total} done",
-    "t": "Xong {done}/{total}"
-  },
-  "onboarding.status.complete": {
-    "en": "Verified · funded · invested",
-    "t": "Đã xác minh · đã nạp tiền · đã đầu tư"
-  },
-  "onboarding.subtitle": {
-    "en": "Three steps to your first investment.",
-    "t": "Ba bước đến khoản đầu tư đầu tiên của bạn."
-  },
-  "onboarding.title": {
-    "en": "Get started",
-    "t": "Bắt đầu"
-  },
-  "onboarding.verify.done": {
-    "en": "Your deposit address and withdrawals are open.",
-    "t": "Địa chỉ nạp tiền và rút tiền đã được mở."
-  },
-  "onboarding.verify.review": {
-    "en": "Nothing to do on your side — your documents are with our reviewers and we'll email you the decision.",
-    "t": "Bạn không cần làm gì thêm — hồ sơ đang được đội ngũ xét duyệt, quyết định sẽ được gửi qua email."
-  },
-  "onboarding.verify.title": {
-    "en": "Verify your identity",
-    "t": "Xác minh danh tính"
-  },
   "auth.code.back": {
     "en": "Use a different email",
     "t": "Dùng email khác"
@@ -7374,10 +5118,6 @@
   "auth.code.label": {
     "en": "Code",
     "t": "Mã"
-  },
-  "auth.code.mailMe": {
-    "en": "Email me a code",
-    "t": "Gửi mã qua email"
   },
   "auth.code.resend": {
     "en": "Send a new code",
@@ -7398,18 +5138,6 @@
   "auth.dialog.heading": {
     "en": "Sign in or create an account",
     "t": "Đăng nhập hoặc tạo tài khoản"
-  },
-  "auth.email.confirm": {
-    "en": "Confirm",
-    "t": "Xác nhận"
-  },
-  "auth.email.unverifiedSub": {
-    "en": "Not verified — identity checks need a verified email",
-    "t": "Chưa xác minh — kiểm tra danh tính cần email đã xác minh"
-  },
-  "auth.email.verified": {
-    "en": "Verified",
-    "t": "Đã xác minh"
   },
   "auth.email.verify": {
     "en": "Verify",
@@ -7443,10 +5171,6 @@
     "en": "An account already exists for that address. Sign in instead — with a code if you forgot the password.",
     "t": "Địa chỉ này đã có tài khoản. Hãy đăng nhập — bằng mã nếu bạn quên mật khẩu."
   },
-  "auth.err.emailVerifiedElsewhere": {
-    "en": "This address is verified on another account.",
-    "t": "Địa chỉ này đã được xác minh ở tài khoản khác."
-  },
   "auth.err.invalidCode": {
     "en": "That code is not right. Try again.",
     "t": "Mã không đúng. Hãy thử lại."
@@ -7458,10 +5182,6 @@
   "auth.err.invalidEmail": {
     "en": "Enter a valid email address.",
     "t": "Nhập một địa chỉ email hợp lệ."
-  },
-  "auth.err.invalidUsername": {
-    "en": "3–32 characters: letters, digits, '_', '.' or '-'.",
-    "t": "3–32 ký tự: chữ cái, chữ số, '_', '.' hoặc '-'."
   },
   "auth.err.passwordLocked": {
     "en": "Too many wrong passwords. Sign in with a code instead.",
@@ -7475,18 +5195,6 @@
     "en": "Too many codes went to this address. Try again in a few minutes.",
     "t": "Đã gửi quá nhiều mã tới địa chỉ này. Hãy thử lại sau vài phút."
   },
-  "auth.err.usernameTaken": {
-    "en": "That username is taken.",
-    "t": "Tên người dùng này đã có người dùng."
-  },
-  "auth.err.verifyAttemptsExceeded": {
-    "en": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
-    "t": "Quá nhiều mã sai trong 24 giờ qua. Hãy thử lại vào ngày mai."
-  },
-  "auth.err.verifyThrottled": {
-    "en": "Too many codes went to this address. Try again later — the limit is 10 a day.",
-    "t": "Đã gửi quá nhiều mã tới địa chỉ này. Hãy thử lại sau — tối đa 10 mã mỗi ngày."
-  },
   "auth.err.weakPassword": {
     "en": "Use at least 8 characters.",
     "t": "Dùng ít nhất 8 ký tự."
@@ -7499,41 +5207,13 @@
     "en": "Email or username",
     "t": "Email hoặc tên người dùng"
   },
-  "auth.field.newPassword": {
-    "en": "New password",
-    "t": "Mật khẩu mới"
-  },
   "auth.field.password": {
     "en": "Password",
     "t": "Mật khẩu"
   },
-  "auth.method.code": {
-    "en": "Email code",
-    "t": "Mã qua email"
-  },
-  "auth.method.password": {
-    "en": "Password",
-    "t": "Mật khẩu"
-  },
-  "auth.methods.title": {
-    "en": "Sign-in methods",
-    "t": "Phương thức đăng nhập"
-  },
   "auth.orContinueWith": {
     "en": "Or continue with",
     "t": "Hoặc tiếp tục với"
-  },
-  "auth.password.change": {
-    "en": "Change password",
-    "t": "Đổi mật khẩu"
-  },
-  "auth.password.save": {
-    "en": "Save password",
-    "t": "Lưu mật khẩu"
-  },
-  "auth.password.set": {
-    "en": "Set password",
-    "t": "Đặt mật khẩu"
   },
   "auth.signIn": {
     "en": "Sign in",
@@ -7570,22 +5250,6 @@
   "auth.usePasswordInstead": {
     "en": "Sign in with a password instead",
     "t": "Đăng nhập bằng mật khẩu"
-  },
-  "auth.username.change": {
-    "en": "Change",
-    "t": "Đổi"
-  },
-  "auth.username.none": {
-    "en": "None yet — once set, it signs you in like your email",
-    "t": "Chưa có — khi đặt, bạn có thể đăng nhập bằng nó như email"
-  },
-  "auth.username.save": {
-    "en": "Save",
-    "t": "Lưu"
-  },
-  "auth.username.title": {
-    "en": "Username",
-    "t": "Tên người dùng"
   },
   "auth.verify.desc": {
     "en": "Your account is ready. Enter the 6 digit code we sent to {email} to verify it, or skip and verify later in Settings.",
@@ -7635,33 +5299,9 @@
     "en": "That took too long. Try the passkey again.",
     "t": "Quá thời gian. Hãy thử lại khóa truy cập."
   },
-  "auth.err.passkeyRegistered": {
-    "en": "This passkey is registered already.",
-    "t": "Khóa truy cập này đã được đăng ký."
-  },
   "auth.err.passkeyRejected": {
     "en": "That passkey is not registered here. Sign in with a code instead.",
     "t": "Khóa truy cập này chưa được đăng ký ở đây. Hãy đăng nhập bằng mã."
-  },
-  "auth.passkeys.add": {
-    "en": "Add a passkey",
-    "t": "Thêm khóa truy cập"
-  },
-  "auth.passkeys.default": {
-    "en": "Passkey",
-    "t": "Khóa truy cập"
-  },
-  "auth.passkeys.remove": {
-    "en": "Remove",
-    "t": "Xóa"
-  },
-  "auth.passkeys.sub": {
-    "en": "Sign in with your fingerprint, face or screen lock — no code, no password",
-    "t": "Đăng nhập bằng vân tay, khuôn mặt hoặc khóa màn hình — không cần mã hay mật khẩu"
-  },
-  "auth.passkeys.title": {
-    "en": "Passkeys",
-    "t": "Khóa truy cập"
   },
   "auth.usePasskey": {
     "en": "Use a passkey",
@@ -7706,18 +5346,6 @@
   "admin.withdrawals.source.treasury": {
     "en": "Banking treasury",
     "t": "Ngân quỹ của banking"
-  },
-  "tips.wallet.balance.in-compartments.body": {
-    "en": "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it.",
-    "t": "USDT bạn đã chuyển vào ngăn của một dịch vụ. Vẫn là của bạn và được tính vào tổng — hãy chuyển lại về số dư chính để rút."
-  },
-  "tips.wallet.balance.in-compartments.title": {
-    "en": "In compartments",
-    "t": "Trong ngăn"
-  },
-  "wallet.chip.inCompartments": {
-    "en": "IN COMPARTMENTS",
-    "t": "TRONG NGĂN"
   },
   "walletAction.back": {
     "en": "Go back",

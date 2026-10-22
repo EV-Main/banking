@@ -2731,10 +2731,6 @@
     "en": "That sign-in attempt expired. Please try again.",
     "t": "Срок этой попытки входа истёк. Попробуйте ещё раз."
   },
-  "auth.notSignedIn": {
-    "en": "Not signed in",
-    "t": "Вход не выполнен"
-  },
   "auth.signInAgain": {
     "en": "Sign in again",
     "t": "Войти снова"
@@ -2758,10 +2754,6 @@
   "auth.signedOutSub": {
     "en": "You've been signed out of your cabinet.",
     "t": "Вы вышли из своего кабинета."
-  },
-  "auth.stat.risk": {
-    "en": "Capital at risk. A target is not a forecast, and returns are not guaranteed.",
-    "t": "Капитал под риском. Цель — не прогноз, доходность не гарантирована."
   },
   "consent.approve": {
     "en": "Approve — move my money",
@@ -3623,197 +3615,13 @@
     "en": "Not answered",
     "t": "Нет ответа"
   },
-  "dash.activeStrategies": {
-    "en": "Active strategies",
-    "t": "Активные стратегии"
-  },
-  "dash.allTimeSuffix": {
-    "en": "{pct} all-time",
-    "t": "{pct} за всё время"
-  },
-  "dash.available": {
-    "en": "Available",
-    "t": "Доступно"
-  },
-  "dash.browseStrategies": {
-    "en": "Browse strategies",
-    "t": "Смотреть стратегии"
-  },
-  "dash.fundFallback": {
-    "en": "Fund",
-    "t": "Фонд"
-  },
-  "dash.fundPerformance": {
-    "en": "Fund performance",
-    "t": "Доходность фонда"
-  },
-  "dash.hintAcrossPositions": {
-    "en": "across all positions",
-    "t": "по всем позициям"
-  },
-  "dash.hintAtCostBasis": {
-    "en": "at cost basis",
-    "t": "по цене приобретения"
-  },
-  "dash.hintAutoDeploysEod": {
-    "en": "auto-deploys at EOD",
-    "t": "размещается в конце дня"
-  },
-  "dash.hintFundPositions": {
-    "en": "fund positions",
-    "t": "позиций в фондах"
-  },
-  "dash.historyTruncated": {
-    "en": "Only the most recent marks in this range are shown; the fund curve starts from the oldest one shown, not from the start of the range.",
-    "t": "Показаны только последние отметки в этом диапазоне; кривая фонда начинается с самой старой из показанных, а не с начала диапазона."
-  },
-  "dash.investedWhatIOwn": {
-    "en": "Invested · what I own",
-    "t": "Инвестировано · что мне принадлежит"
-  },
-  "dash.moveMoney": {
-    "en": "Move money",
-    "t": "Движение средств"
-  },
-  "dash.netContributed": {
-    "en": "Net contributed",
-    "t": "Чистые взносы"
-  },
-  "dash.noHistory": {
-    "en": "No performance history yet",
-    "t": "Истории доходности пока нет"
-  },
-  "dash.noHistoryHint": {
-    "en": "The fund curve and your participation appear here once there is activity to plot.",
-    "t": "Кривая фонда и ваша доля появятся здесь, как только будет что отобразить."
-  },
-  "dash.noOperationsHint": {
-    "en": "Deposits, subscriptions, redemptions and withdrawals land here the moment you make them.",
-    "t": "Пополнения, подписки, погашения и выводы появятся здесь сразу после того, как вы их совершите."
-  },
-  "dash.nothingInvested": {
-    "en": "Nothing invested yet",
-    "t": "Пока ничего не инвестировано"
-  },
-  "dash.nothingInvestedHint": {
-    "en": "Subscribe to a strategy and the split of what you own shows up here.",
-    "t": "Подпишитесь на стратегию — и структура ваших вложений появится здесь."
-  },
-  "dash.op.deposit": {
-    "en": "Deposit · {network}",
-    "t": "Пополнение · {network}"
-  },
-  "dash.op.redeemed": {
-    "en": "{fund} — redeemed",
-    "t": "{fund} — погашение"
-  },
-  "dash.op.sub": {
-    "en": "{ref} · {state}",
-    "t": "{ref} · {state}"
-  },
-  "dash.op.subscribed": {
-    "en": "{fund} — subscribed",
-    "t": "{fund} — подписка"
-  },
-  "dash.op.withdrawal": {
-    "en": "Withdrawal · {network}",
-    "t": "Вывод · {network}"
-  },
-  "dash.portfolio": {
-    "en": "Portfolio",
-    "t": "Портфель"
-  },
-  "dash.portfolioSub": {
-    "en": "All-time performance and your participation",
-    "t": "Доходность за всё время и ваша доля"
-  },
-  "dash.portfolioValue": {
-    "en": "Portfolio value",
-    "t": "Стоимость портфеля"
-  },
-  "dash.range.1m": {
-    "en": "1M",
-    "t": "1М"
-  },
-  "dash.range.1y": {
-    "en": "1Y",
-    "t": "1Г"
-  },
-  "dash.range.6m": {
-    "en": "6M",
-    "t": "6М"
-  },
-  "dash.range.all": {
-    "en": "All",
-    "t": "Всё"
-  },
-  "dash.rangeLabel": {
-    "en": "Chart range",
-    "t": "Диапазон графика"
-  },
-  "dash.recentOperations": {
-    "en": "Recent activity",
-    "t": "Последняя активность"
-  },
-  "dash.servicePanel": {
-    "en": "Service-Arb panel",
-    "t": "Панель Service-Arb"
-  },
-  "dash.strategyCount": {
-    "en": "{n, plural, one {# strategy} other {# strategies}}",
-    "t": "{n, plural, one {# стратегия} few {# стратегии} many {# стратегий} other {# стратегии}}"
-  },
-  "dash.unitsAmount": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}}",
-    "t": "{n, plural, one {{units} пай} few {{units} пая} many {{units} паёв} other {{units} пая}}"
-  },
-  "dash.unrealizedPnl": {
-    "en": "Unrealized P&L",
-    "t": "Нереализованный P&L"
-  },
-  "dash.yourParticipation": {
-    "en": "Your participation",
-    "t": "Ваша доля"
-  },
-  "err.address.controlChars": {
-    "en": "Residential address must not contain control characters",
-    "t": "Адрес проживания не должен содержать управляющие символы"
-  },
-  "err.address.maxLength": {
-    "en": "Residential address must be at most 256 characters",
-    "t": "Адрес проживания не должен превышать 256 символов"
-  },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",
     "t": "Вход сейчас недоступен. Повторите попытку чуть позже."
   },
-  "err.chunkLoad": {
-    "en": "This part of the page didn't load.",
-    "t": "Эта часть страницы не загрузилась."
-  },
   "err.csrf": {
     "en": "This page went stale. Reload it and try again.",
     "t": "Страница устарела. Обновите её и попробуйте снова."
-  },
-  "err.currency.format": {
-    "en": "Base currency must be a 3-letter code such as 'USD'",
-    "t": "Базовая валюта должна быть трёхбуквенным кодом, например «USD»"
-  },
-  "err.dob.format": {
-    "en": "Date of birth must be a valid YYYY-MM-DD date",
-    "t": "Дата рождения должна быть корректной датой в формате YYYY-MM-DD"
-  },
-  "err.dob.range": {
-    "en": "Date of birth must be a real date between 1900 and 2100",
-    "t": "Дата рождения должна быть реальной датой между 1900 и 2100 годом"
-  },
-  "err.email.invalid": {
-    "en": "Enter a valid email address",
-    "t": "Введите корректный адрес эл. почты"
-  },
-  "err.email.maxLength": {
-    "en": "Email address must be at most 320 characters",
-    "t": "Адрес электронной почты не должен превышать 320 символов"
   },
   "err.feePolicySave": {
     "en": "Could not save these terms.",
@@ -3823,25 +3631,9 @@
     "en": "Could not settle these units.",
     "t": "Не удалось исполнить эти паи."
   },
-  "err.field.maxLength": {
-    "en": "{field} must be at most {n, plural, one {# character} other {# characters}}",
-    "t": "Максимальная длина поля {field} — {n, plural, one {# символ} few {# символа} many {# символов} other {# символа}}"
-  },
-  "err.field.minLetters": {
-    "en": "{field} must contain at least 2 letters",
-    "t": "{field}: должно содержать не менее 2 букв"
-  },
-  "err.field.nameChars": {
-    "en": "{field} may only contain letters, spaces, hyphens, apostrophes, and periods",
-    "t": "{field}: допустимы только буквы, пробелы, дефисы, апострофы и точки"
-  },
   "err.forbidden": {
     "en": "You don't have access to this.",
     "t": "У вас нет доступа к этому."
-  },
-  "err.fundRefresh": {
-    "en": "Couldn't refresh this fund",
-    "t": "Не удалось обновить данные фонда"
   },
   "err.fundServiceRequired": {
     "en": "Select a fund to continue.",
@@ -3863,14 +3655,6 @@
     "en": "Verification is unavailable right now. Please contact support.",
     "t": "Верификация сейчас недоступна. Напишите в поддержку."
   },
-  "err.language.format": {
-    "en": "Language must be a BCP 47 code such as 'en' or 'en-US'",
-    "t": "Язык должен быть кодом BCP 47, например «en» или «en-US»"
-  },
-  "err.language.maxLength": {
-    "en": "Language must be at most 16 characters",
-    "t": "Язык не должен превышать 16 символов"
-  },
   "err.network": {
     "en": "Can't reach the server. Check your connection and try again.",
     "t": "Не удаётся связаться с сервером. Проверьте соединение и попробуйте снова."
@@ -3878,22 +3662,6 @@
   "err.notFound": {
     "en": "Not found.",
     "t": "Не найдено."
-  },
-  "err.opsLoad": {
-    "en": "Couldn't load your activity",
-    "t": "Не удалось загрузить вашу активность"
-  },
-  "err.phone.invalid": {
-    "en": "Enter a valid phone number starting with + or country code",
-    "t": "Введите корректный номер телефона, начинающийся с + или кода страны"
-  },
-  "err.phone.maxLength": {
-    "en": "Phone number must be at most 32 characters",
-    "t": "Номер телефона не должен превышать 32 символа"
-  },
-  "err.positionsLoad": {
-    "en": "Couldn't load your positions",
-    "t": "Не удалось загрузить ваши позиции"
   },
   "err.rateLimited": {
     "en": "Too many requests — give it a moment and try again.",
@@ -3911,14 +3679,6 @@
     "en": "Your session has ended. Sign in again to continue.",
     "t": "Ваш сеанс завершён. Войдите снова, чтобы продолжить."
   },
-  "err.timezone.format": {
-    "en": "Time zone must be 'UTC', 'GMT', or an IANA name such as 'Asia/Ho_Chi_Minh'",
-    "t": "Часовой пояс должен быть «UTC», «GMT» или именем IANA, например «Asia/Ho_Chi_Minh»"
-  },
-  "err.timezone.maxLength": {
-    "en": "Time zone must be at most 64 characters",
-    "t": "Часовой пояс не должен превышать 64 символа"
-  },
   "err.unauthenticated": {
     "en": "We couldn't confirm your session. Reload the page or sign in again.",
     "t": "Не удалось подтвердить ваш сеанс. Обновите страницу или войдите снова."
@@ -3931,421 +3691,21 @@
     "en": "Verify your identity to continue.",
     "t": "Подтвердите личность, чтобы продолжить."
   },
-  "err.walletLoad": {
-    "en": "Couldn't load your wallet",
-    "t": "Не удалось загрузить ваш кошелёк"
-  },
-  "invest.about.risk": {
-    "en": "Units can fall in value as well as rise. The NAV is set by a posted valuation, not by a market price, and past marks are no guide to future ones. Cash comes back only when a redemption settles or a buyer takes your units on the book. Invest only what you can afford to leave in.",
-    "t": "Паи могут как расти, так и падать в цене. NAV задаётся опубликованной оценкой, а не рыночной ценой, и прошлые отметки ничего не говорят о будущих. Деньги возвращаются только после расчёта по погашению или когда покупатель заберёт ваши паи в книге. Инвестируйте только то, что можете оставить надолго."
-  },
-  "invest.about.riskTitle": {
-    "en": "Risk.",
-    "t": "Риск."
-  },
-  "invest.about.title": {
-    "en": "About this product",
-    "t": "О продукте"
-  },
-  "invest.accruedOnHolding": {
-    "en": "Accrued on your holding",
-    "t": "Начислено на вашу позицию"
-  },
-  "invest.acrossFunds": {
-    "en": "{n, plural, one {Across # fund} other {Across # funds}}",
-    "t": "{n, plural, one {В # фонде} few {В # фондах} many {В # фондах} other {В # фондах}}"
-  },
-  "invest.allProducts": {
-    "en": "All products",
-    "t": "Все продукты"
-  },
-  "invest.amountUsdt": {
-    "en": "Amount (USDT)",
-    "t": "Сумма (USDT)"
-  },
-  "invest.availableToInvest": {
-    "en": "Available to invest",
-    "t": "Доступно для инвестирования"
-  },
-  "invest.availableUsdt": {
-    "en": "Available: {amount} USDT",
-    "t": "Доступно: {amount} USDT"
-  },
-  "invest.awaitingSettlement": {
-    "en": "Awaiting settlement",
-    "t": "Ожидает исполнения"
-  },
-  "invest.backing.cash": {
-    "en": "Cash-backed",
-    "t": "Обеспечен кэшем"
-  },
-  "invest.backing.inKind": {
-    "en": "In kind",
-    "t": "Натурой"
-  },
-  "invest.backing.inKindNote": {
-    "en": "Units of this product represent an asset held off-platform. The fund holds no cash for them, so they are sold on the book rather than redeemed.",
-    "t": "Юниты этого продукта представляют актив, хранящийся вне платформы. Фонд не держит под них кэш, поэтому они продаются в книге, а не погашаются."
-  },
-  "invest.badge.locked": {
-    "en": "Locked",
-    "t": "Заблокирован"
-  },
-  "invest.badge.open": {
-    "en": "Open",
-    "t": "Открыт"
-  },
-  "invest.badge.redeemOnly": {
-    "en": "Redeem only",
-    "t": "Только выход"
-  },
-  "invest.badge.staleNav": {
-    "en": "Stale NAV",
-    "t": "Старый NAV"
-  },
-  "invest.blocked.capReached": {
-    "en": "This fund has issued its full authorised supply, so it is not minting new units. Redemptions are unaffected.",
-    "t": "Фонд выпустил весь разрешённый объём, поэтому новые паи не выпускаются. Погашения это не затрагивает."
-  },
-  "invest.blocked.closed": {
-    "en": "This fund is closed to new subscriptions. Your units are unaffected — you can still redeem them in full.",
-    "t": "Фонд закрыт для новых подписок. Ваши паи это не затрагивает — вы можете погасить их полностью."
-  },
-  "invest.blocked.locked": {
-    "en": "This fund isn't open to you yet. You can see it, but subscribing stays locked until your access is raised. If you think you should have it:",
-    "t": "Этот фонд пока не открыт для вас. Вы можете его видеть, но подписка заблокирована, пока ваш доступ не повысят. Если считаете, что доступ должен быть:"
-  },
-  "invest.blocked.staleNav": {
-    "en": "The fund's valuation is out of date, so dealing is paused until a fresh one is posted.",
-    "t": "Оценка фонда устарела, поэтому операции приостановлены, пока не будет опубликована новая."
-  },
-  "invest.buysUnits": {
-    "en": "Buys {n, plural, one {{units} unit} other {{units} units}} at {nav} USDT per unit.",
-    "t": "Покупка {n, plural, one {{units} пая} few {{units} паёв} many {{units} паёв} other {{units} паёв}} по {nav} USDT за пай."
-  },
-  "invest.carriedOver": {
-    "en": "Carried over",
-    "t": "Перенесено"
-  },
-  "invest.costBasis": {
-    "en": "Cost basis",
-    "t": "Цена приобретения"
-  },
-  "invest.cta.locked": {
-    "en": "Locked: ask for access",
-    "t": "Закрыто: запросить доступ"
-  },
-  "invest.cta.lockedSubject": {
-    "en": "Access to {title}",
-    "t": "Доступ к {title}"
-  },
-  "invest.cta.trade": {
-    "en": "Trade on the book",
-    "t": "Торговать в книге"
-  },
-  "invest.cta.verify": {
-    "en": "Verify to invest",
-    "t": "Пройти проверку"
-  },
-  "invest.dustHint": {
-    "en": "Too small to buy a whole unit at {nav} — increase the amount.",
-    "t": "Слишком мало, чтобы купить целый пай по {nav} — увеличьте сумму."
-  },
-  "invest.facts.backing": {
-    "en": "Backing",
-    "t": "Обеспечение"
-  },
-  "invest.facts.backingCash": {
-    "en": "Cash held by the fund",
-    "t": "Кэш на балансе фонда"
-  },
-  "invest.facts.backingInKind": {
-    "en": "Asset held off-platform",
-    "t": "Актив вне платформы"
-  },
-  "invest.facts.capacity": {
-    "en": "Capacity left",
-    "t": "Свободный лимит"
-  },
-  "invest.facts.feeHeadline": {
-    "en": "{management} p.a. + {performance} of the gain",
-    "t": "{management} годовых + {performance} от прироста"
-  },
-  "invest.facts.feeHeadlineHurdle": {
-    "en": "{management} p.a. + {performance} of the gain above {hurdle} p.a.",
-    "t": "{management} годовых + {performance} от прироста сверх {hurdle} годовых"
-  },
-  "invest.facts.feeUnset": {
-    "en": "Not published yet",
-    "t": "Ещё не опубликованы"
-  },
-  "invest.facts.fees": {
-    "en": "Fees",
-    "t": "Комиссии"
-  },
-  "invest.facts.lastValuation": {
-    "en": "Last valuation",
-    "t": "Последняя оценка"
-  },
-  "invest.facts.liquidity": {
-    "en": "Liquidity",
-    "t": "Ликвидность"
-  },
-  "invest.facts.liquidityBook": {
-    "en": "Sold on the book",
-    "t": "Продажа в книге"
-  },
-  "invest.facts.liquidityNav": {
-    "en": "Redeem at NAV, queued",
-    "t": "Погашение по NAV, в очереди"
-  },
-  "invest.facts.liquidityNavOrBook": {
-    "en": "Redeem at NAV (queued) or trade on the book",
-    "t": "Погашение по NAV (в очереди) или торговля в книге"
-  },
-  "invest.facts.markedOn": {
-    "en": "Marked {date}",
-    "t": "Оценка от {date}"
-  },
-  "invest.feeChangeProposed": {
-    "en": "A change is proposed and awaits the owners: {terms}.",
-    "t": "Предложено изменение, оно ждёт владельцев: {terms}."
-  },
-  "invest.feeChangeScheduled": {
-    "en": "Terms change on {at}: {terms}.",
-    "t": "Условия меняются {at}: {terms}."
-  },
-  "invest.feeNoteHolder": {
-    "en": "Fees are taken in units, never in cash — your wallet balance is untouched, and the value shown opposite is before them. The performance fee applies only to gains above your own high-water mark, so a recovery back to it costs nothing.",
-    "t": "Комиссии удерживаются паями, а не деньгами: баланс кошелька не затрагивается, а показанная напротив стоимость указана до их удержания. Комиссия за успех берётся только с прибыли выше вашего личного high-water mark, поэтому возврат к нему ничего не стоит."
-  },
-  "invest.feeNoteProspect": {
-    "en": "Fees are taken in units, never in cash. The performance fee applies only to gains above the price you enter at, measured per investor rather than per fund.",
-    "t": "Комиссии удерживаются паями, а не деньгами. Комиссия за успех берётся только с прибыли выше цены вашего входа и считается по каждому инвестору, а не по фонду в целом."
-  },
-  "invest.fullyIssued": {
-    "en": "Fully issued — not minting new units.",
-    "t": "Выпуск исчерпан — новые паи не выпускаются."
-  },
-  "invest.fundAum": {
-    "en": "Fund AUM",
-    "t": "AUM фонда"
-  },
-  "invest.fundsHeld": {
-    "en": "Funds held",
-    "t": "Фондов в портфеле"
-  },
-  "invest.hurdleFirst": {
-    "en": "{pct} p.a. first",
-    "t": "сначала {pct} годовых"
-  },
-  "invest.insufficientHint": {
-    "en": "That is more than your available balance.",
-    "t": "Это больше вашего доступного баланса."
-  },
-  "invest.investAmount": {
-    "en": "Invest {amount} USDT",
-    "t": "Инвестировать {amount} USDT"
-  },
-  "invest.investedValue": {
-    "en": "Invested value",
-    "t": "Стоимость вложений"
-  },
   "invest.lockedIn": {
     "en": "Locked in",
     "t": "Фиксация"
-  },
-  "invest.nav": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "invest.navPerUnit": {
-    "en": "NAV / unit",
-    "t": "NAV / пай"
-  },
-  "invest.noFunds": {
-    "en": "No funds are open for subscription right now.",
-    "t": "Сейчас нет фондов, открытых для подписки."
-  },
-  "invest.noFundsHint": {
-    "en": "A fund appears here once it is registered and opened for subscription. Nothing you hold is affected.",
-    "t": "Фонд появится здесь, как только его зарегистрируют и откроют для подписки. На ваши активы это не влияет."
-  },
-  "invest.noUnitsHeld": {
-    "en": "You hold no units yet.",
-    "t": "У вас пока нет паёв."
-  },
-  "invest.noUnitsInFund": {
-    "en": "You hold no units in this fund yet.",
-    "t": "У вас пока нет паёв этого фонда."
-  },
-  "invest.notInvestedYet": {
-    "en": "Not invested yet",
-    "t": "Вложений пока нет"
-  },
-  "invest.notRegistered": {
-    "en": "No fund is registered as “{service}”.",
-    "t": "Фонд с идентификатором «{service}» не зарегистрирован."
-  },
-  "invest.notRegisteredHint": {
-    "en": "Nothing is registered under this name. If you followed a link here, the product may never have been opened.",
-    "t": "Под этим именем ничего не зарегистрировано. Если вы перешли сюда по ссылке, продукт мог так и не быть открыт."
-  },
-  "invest.notYetValued": {
-    "en": "Not yet valued",
-    "t": "Оценки ещё нет"
-  },
-  "invest.notYetValuedHint": {
-    "en": "Not yet valued — the first subscription prices at 1.0.",
-    "t": "Оценки ещё нет — первая подписка проходит по цене 1.0."
   },
   "invest.ofTheGain": {
     "en": "{pct} of the gain",
     "t": "{pct} от прибыли"
   },
-  "invest.overCapHint": {
-    "en": "Only {n, plural, one {{units} unit is} other {{units} units are}} left before this fund reaches its cap — reduce the amount.",
-    "t": "До лимита фонда осталось всего {n, plural, one {{units} пай} few {{units} пая} many {{units} паёв} other {{units} пая}} — уменьшите сумму."
-  },
   "invest.perAnnum": {
     "en": "{pct} p.a.",
     "t": "{pct} годовых"
   },
-  "invest.pnl": {
-    "en": "P&L",
-    "t": "P&L"
-  },
-  "invest.products": {
-    "en": "Products",
-    "t": "Продукты"
-  },
-  "invest.redeem": {
-    "en": "Redeem",
-    "t": "Погасить"
-  },
-  "invest.redeemCompleted": {
-    "en": "Redemption completed",
-    "t": "Погашение исполнено"
-  },
-  "invest.redeemEstimate": {
-    "en": "≈ {amount} USDT at today's NAV — the settle price may differ.",
-    "t": "≈ {amount} USDT по сегодняшнему NAV — расчётная цена может отличаться."
-  },
-  "invest.redeemFailed": {
-    "en": "Redemption failed",
-    "t": "Погашение не выполнено"
-  },
-  "invest.redeemQueued": {
-    "en": "Redemption queued",
-    "t": "Погашение в очереди"
-  },
-  "invest.redeemReceiptCompleted": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} redeemed for {cash} USDT at {nav} USDT NAV.",
-    "t": "{n, plural, one {Погашен {units} пай} few {Погашено {units} пая} many {Погашено {units} паёв} other {Погашено {units} пая}} за {cash} USDT по NAV {nav} USDT."
-  },
-  "invest.redeemReceiptQueued": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} reserved — queued until the fund tops up, then priced at the settle NAV.",
-    "t": "{n, plural, one {Зарезервирован {units} пай} few {Зарезервировано {units} пая} many {Зарезервировано {units} паёв} other {Зарезервировано {units} пая}} — заявка в очереди до пополнения фонда, затем цена определяется по расчётному NAV."
-  },
-  "invest.redeemTimingNote": {
-    "en": "Your units are reserved the moment you submit, but the cash is priced when the redemption settles — not now. A figure shown here is an estimate at today's NAV.",
-    "t": "Паи резервируются в момент отправки заявки, но сумма определяется при исполнении погашения, а не сейчас. Показанная здесь цифра — оценка по сегодняшнему NAV."
-  },
-  "invest.redeemUnbacked": {
-    "en": "Units of this product are not backed by fund cash — sell them on the book instead of redeeming.",
-    "t": "Юниты этого продукта не обеспечены кэшем фонда — продайте их в книге вместо погашения."
-  },
-  "invest.remainingCapacity": {
-    "en": "Remaining capacity",
-    "t": "Остаток лимита"
-  },
-  "invest.reservedPricedAtSettle": {
-    "en": "reserved, priced at settle",
-    "t": "зарезервировано, цена — при исполнении"
-  },
-  "invest.subscribe": {
-    "en": "Subscribe",
-    "t": "Подписаться"
-  },
-  "invest.subscribeFailed": {
-    "en": "Subscription failed",
-    "t": "Подписка не выполнена"
-  },
-  "invest.subscribeIdleHint": {
-    "en": "Units are priced at the current NAV; the unit count is fixed at purchase and does not grow.",
-    "t": "Паи покупаются по текущему NAV; их количество фиксируется при покупке и не растёт."
-  },
-  "invest.subscribeReceiptBody": {
-    "en": "Minted {n, plural, one {{units} unit} other {{units} units}} at {nav} USDT NAV — your position updates shortly.",
-    "t": "{n, plural, one {Выпущен {units} пай} few {Выпущено {units} пая} many {Выпущено {units} паёв} other {Выпущено {units} пая}} по NAV {nav} USDT — позиция обновится в ближайшее время."
-  },
-  "invest.subscribeReceived": {
-    "en": "Subscription received",
-    "t": "Подписка принята"
-  },
-  "invest.subscribeVerifyBody": {
-    "en": "Subscriptions open once your identity is verified. Your balance is untouched in the meantime.",
-    "t": "Подписка откроется после подтверждения личности. Ваш баланс при этом не затрагивается."
-  },
-  "invest.subscribeVerifyTitle": {
-    "en": "Verify your identity to invest",
-    "t": "Подтвердите личность, чтобы инвестировать"
-  },
-  "invest.supplyNote": {
-    "en": "Subscriptions mint units at the current NAV. Once the cap is reached the fund stops accepting new money; redemptions are unaffected.",
-    "t": "Подписки выпускают паи по текущему NAV. Как только достигнут лимит, фонд перестаёт принимать новые средства; погашения это не затрагивает."
-  },
-  "invest.title": {
-    "en": "Invest",
-    "t": "Инвестировать"
-  },
-  "invest.topUp": {
-    "en": "Top up",
-    "t": "Пополнить"
-  },
-  "invest.trade": {
-    "en": "Trade",
-    "t": "Торговать"
-  },
   "invest.units": {
     "en": "Units",
     "t": "Паи"
-  },
-  "invest.unitsHeld": {
-    "en": "{n, plural, one {{units} unit} other {{units} units}} held.",
-    "t": "Во владении: {n, plural, one {{units} пай} few {{units} пая} many {{units} паёв} other {{units} пая}}."
-  },
-  "invest.unitsIssued": {
-    "en": "Units issued",
-    "t": "Выпущено паёв"
-  },
-  "invest.unitsToRedeem": {
-    "en": "Units to redeem",
-    "t": "Паёв к погашению"
-  },
-  "invest.unmarkedNote": {
-    "en": "No valuation posted yet — units price at the bootstrap NAV of 1.0 until the first mark.",
-    "t": "Оценка ещё не опубликована — до первой отметки паи оцениваются по начальному NAV 1.0."
-  },
-  "invest.value": {
-    "en": "Value",
-    "t": "Стоимость"
-  },
-  "invest.youHoldUnits": {
-    "en": "You hold {n, plural, one {{units} unit} other {{units} units}}.",
-    "t": "У вас {n, plural, one {{units} пай} few {{units} пая} many {{units} паёв} other {{units} пая}}."
-  },
-  "invest.yourMark": {
-    "en": "Your mark",
-    "t": "Ваш high-water mark"
-  },
-  "invest.yourPosition": {
-    "en": "Your position",
-    "t": "Ваша позиция"
-  },
-  "invest.yourUnits": {
-    "en": "Your units",
-    "t": "Ваши паи"
   },
   "kyc.chip.attention": {
     "en": "Needs attention",
@@ -4411,10 +3771,6 @@
     "en": "Start verification",
     "t": "Начать проверку"
   },
-  "lang.switch": {
-    "en": "Language",
-    "t": "Язык"
-  },
   "meta.description": {
     "en": "Your investor cabinet — portfolio, funds and wallet.",
     "t": "Ваш инвесторский кабинет — портфель, фонды и кошелёк."
@@ -4434,10 +3790,6 @@
   "nav.a11y.secondary": {
     "en": "Secondary",
     "t": "Дополнительная"
-  },
-  "nav.account": {
-    "en": "Account",
-    "t": "Аккаунт"
   },
   "nav.allocations": {
     "en": "Allocations",
@@ -4467,18 +3819,6 @@
     "en": "Home",
     "t": "Главная"
   },
-  "nav.invest": {
-    "en": "Invest",
-    "t": "Инвестиции"
-  },
-  "nav.notifications": {
-    "en": "Notifications",
-    "t": "Оповещения"
-  },
-  "nav.operations": {
-    "en": "Activity",
-    "t": "Активность"
-  },
   "nav.outbox": {
     "en": "Outbox",
     "t": "Очередь outbox"
@@ -4487,17 +3827,9 @@
     "en": "Payments",
     "t": "Платежи"
   },
-  "nav.profile": {
-    "en": "Profile",
-    "t": "Профиль"
-  },
   "nav.revenue": {
     "en": "Revenue stats",
     "t": "Статистика дохода"
-  },
-  "nav.settings": {
-    "en": "Settings",
-    "t": "Настройки"
   },
   "nav.support": {
     "en": "Support",
@@ -4523,126 +3855,6 @@
     "en": "Withdrawals",
     "t": "Выводы"
   },
-  "notif.a11y.email": {
-    "en": "Email notifications",
-    "t": "Уведомления по эл. почте"
-  },
-  "notif.a11y.emailCopyFor": {
-    "en": "Email copy for {topic}",
-    "t": "Копия на эл. почту по теме «{topic}»"
-  },
-  "notif.a11y.inApp": {
-    "en": "In-app notifications",
-    "t": "Уведомления в кабинете"
-  },
-  "notif.allCaughtUp": {
-    "en": "You're all caught up.",
-    "t": "Вы всё просмотрели."
-  },
-  "notif.channelsFootnote": {
-    "en": "Turn a channel off and we stop sending on it. Turn both off and we stop notifying you altogether — updates still live on the fund pages whenever you want them.",
-    "t": "Отключите канал — и мы перестанем отправлять по нему. Отключите оба — и мы перестанем уведомлять вас совсем; обновления по-прежнему будут доступны на страницах фондов, когда они вам понадобятся."
-  },
-  "notif.delivery": {
-    "en": "Delivery",
-    "t": "Доставка"
-  },
-  "notif.deliverySub": {
-    "en": "Choose where notifications reach you. Both can be off.",
-    "t": "Выберите, куда приходят уведомления. Можно отключить оба канала."
-  },
-  "notif.emailUnverified": {
-    "en": "{email} · unverified, so email is not sent",
-    "t": "{email} · не подтверждён, поэтому письма не отправляются"
-  },
-  "notif.emailVerified": {
-    "en": "Sent to {email} · verified",
-    "t": "Отправляется на {email} · подтверждён"
-  },
-  "notif.emptyHint": {
-    "en": "Follow a fund and its NAV updates, distributions and research notes land here — and in your inbox too, if you want a copy.",
-    "t": "Подпишитесь на фонд — и обновления NAV, распределения и аналитические заметки будут появляться здесь, а при желании и в вашей почте."
-  },
-  "notif.follow": {
-    "en": "Follow",
-    "t": "Подписаться"
-  },
-  "notif.following": {
-    "en": "Following",
-    "t": "Вы подписаны"
-  },
-  "notif.inAppSub": {
-    "en": "On by default. Turn this off and notifications stop appearing in your cabinet.",
-    "t": "Включено по умолчанию. Отключите — и уведомления перестанут появляться в кабинете."
-  },
-  "notif.loadOlder": {
-    "en": "Load older",
-    "t": "Показать более ранние"
-  },
-  "notif.markAllRead": {
-    "en": "Mark all read",
-    "t": "Отметить все прочитанными"
-  },
-  "notif.nothingUnread": {
-    "en": "Nothing unread",
-    "t": "Новых нет"
-  },
-  "notif.nothingYet": {
-    "en": "Nothing yet",
-    "t": "Пока пусто"
-  },
-  "notif.settingsLink": {
-    "en": "Notification settings",
-    "t": "Настройки уведомлений"
-  },
-  "notif.subtitle": {
-    "en": "Everything you follow — and how you hear about it",
-    "t": "Всё, на что вы подписаны, и как вы об этом узнаёте"
-  },
-  "notif.topicsSub": {
-    "en": "Email a copy for these. Unsubscribing is one click — no confirmation step.",
-    "t": "Копия по этим темам на почту. Отписка — в один клик, без подтверждения."
-  },
-  "notif.unread": {
-    "en": "Unread",
-    "t": "Новые"
-  },
-  "notif.unreadCount": {
-    "en": "Unread · {n}",
-    "t": "Новые · {n}"
-  },
-  "notif.whatYouFollow": {
-    "en": "What you follow",
-    "t": "На что вы подписаны"
-  },
-  "notif.when.days": {
-    "en": "{n}d",
-    "t": "{n} д"
-  },
-  "notif.when.hours": {
-    "en": "{n}h",
-    "t": "{n} ч"
-  },
-  "notif.when.minutes": {
-    "en": "{n}m",
-    "t": "{n} мин"
-  },
-  "notif.when.now": {
-    "en": "now",
-    "t": "сейчас"
-  },
-  "ops.a11y.rowDetails": {
-    "en": "{title} — details",
-    "t": "{title} — подробности"
-  },
-  "ops.context.fund": {
-    "en": "Fund · {when}",
-    "t": "Фонд · {when}"
-  },
-  "ops.context.network": {
-    "en": "{network} · {when}",
-    "t": "{network} · {when}"
-  },
   "ops.day.today": {
     "en": "Today",
     "t": "Сегодня"
@@ -4662,134 +3874,6 @@
   "ops.day.yesterdayInline": {
     "en": "yesterday",
     "t": "вчера"
-  },
-  "ops.detail.amountCredited": {
-    "en": "Amount credited",
-    "t": "Зачислено"
-  },
-  "ops.detail.amountDebited": {
-    "en": "Amount debited",
-    "t": "Списано"
-  },
-  "ops.detail.cashIn": {
-    "en": "Cash in",
-    "t": "Поступление"
-  },
-  "ops.detail.cashOut": {
-    "en": "Cash out",
-    "t": "Выбытие"
-  },
-  "ops.detail.feeDeferred": {
-    "en": "Taken in units — the rest is carried to the next charge",
-    "t": "Удержано паями — остаток перенесён на следующее начисление"
-  },
-  "ops.detail.feeTaken": {
-    "en": "Taken in units, not from your wallet",
-    "t": "Удержано паями, а не с кошелька"
-  },
-  "ops.detail.managementFee": {
-    "en": "Management fee",
-    "t": "Комиссия за управление"
-  },
-  "ops.detail.netArrives": {
-    "en": "{amount} USDT arrives after the network fee",
-    "t": "После комиссии сети придёт {amount} USDT"
-  },
-  "ops.detail.netSent": {
-    "en": "Net sent",
-    "t": "Отправлено нетто"
-  },
-  "ops.detail.notYetBroadcast": {
-    "en": "not yet broadcast",
-    "t": "ещё не отправлено в сеть"
-  },
-  "ops.detail.performanceFee": {
-    "en": "Performance fee",
-    "t": "Комиссия за успех"
-  },
-  "ops.detail.pricePerUnit": {
-    "en": "Price per unit",
-    "t": "Цена за пай"
-  },
-  "ops.detail.pricedAtSettle": {
-    "en": "Priced when the fund settles it",
-    "t": "Цена определяется при исполнении фондом"
-  },
-  "ops.detail.reference": {
-    "en": "Reference",
-    "t": "Ссылка"
-  },
-  "ops.detail.setAtSettle": {
-    "en": "set at settle",
-    "t": "определяется при исполнении"
-  },
-  "ops.detail.toAddress": {
-    "en": "To address",
-    "t": "Адрес получателя"
-  },
-  "ops.detail.unitsMinted": {
-    "en": "Units minted",
-    "t": "Выпущено паёв"
-  },
-  "ops.detail.unitsRedeemed": {
-    "en": "Units redeemed",
-    "t": "Погашено паёв"
-  },
-  "ops.detail.valueTaken": {
-    "en": "Value taken",
-    "t": "Удержанная стоимость"
-  },
-  "ops.empty.deposits": {
-    "en": "No deposits yet",
-    "t": "Пополнений пока нет"
-  },
-  "ops.empty.fees": {
-    "en": "No fees yet",
-    "t": "Комиссий пока нет"
-  },
-  "ops.empty.redemptions": {
-    "en": "No redemptions yet",
-    "t": "Погашений пока нет"
-  },
-  "ops.empty.subscriptions": {
-    "en": "No subscriptions yet",
-    "t": "Подписок пока нет"
-  },
-  "ops.empty.withdrawals": {
-    "en": "No withdrawals yet",
-    "t": "Выводов пока нет"
-  },
-  "ops.emptyHint": {
-    "en": "Add funds to your wallet, then subscribe into a fund — every movement appears here from the moment you make it, not once it settles.",
-    "t": "Пополните кошелёк, затем подпишитесь на фонд — каждое движение появляется здесь сразу, а не после исполнения."
-  },
-  "ops.filter.deposits": {
-    "en": "Deposits",
-    "t": "Пополнения"
-  },
-  "ops.filter.fees": {
-    "en": "Fees",
-    "t": "Комиссии"
-  },
-  "ops.filter.redemptions": {
-    "en": "Redemptions",
-    "t": "Погашения"
-  },
-  "ops.filter.subscriptions": {
-    "en": "Subscriptions",
-    "t": "Подписки"
-  },
-  "ops.filter.withdrawals": {
-    "en": "Withdrawals",
-    "t": "Выводы"
-  },
-  "ops.filterByKind": {
-    "en": "Filter activity by kind",
-    "t": "Фильтровать активность по типу"
-  },
-  "ops.filterEmptyHint": {
-    "en": "You have other activity — switch back to All to see it.",
-    "t": "У вас есть другие операции — вернитесь к фильтру «Все», чтобы их увидеть."
   },
   "ops.kind.deposit": {
     "en": "Deposit",
@@ -4814,10 +3898,6 @@
   "ops.kind.withdrawal": {
     "en": "Withdrawal",
     "t": "Вывод"
-  },
-  "ops.op.feeCharged": {
-    "en": "{fund} — fee charged",
-    "t": "{fund} — начислена комиссия"
   },
   "ops.state.cancelled": {
     "en": "Cancelled",
@@ -4850,114 +3930,6 @@
   "ops.state.queued": {
     "en": "Queued",
     "t": "В очереди"
-  },
-  "ops.step.awaitingFund": {
-    "en": "Awaiting fund liquidity",
-    "t": "Ожидание ликвидности фонда"
-  },
-  "ops.step.awaitingFundMeta": {
-    "en": "priced at the NAV when it settles",
-    "t": "цена по NAV на момент исполнения"
-  },
-  "ops.step.awaitingRail": {
-    "en": "Awaiting network liquidity",
-    "t": "Ожидание ликвидности сети"
-  },
-  "ops.step.awaitingRailMeta": {
-    "en": "sent as soon as the network is topped up",
-    "t": "уйдёт, как только сеть пополнят"
-  },
-  "ops.step.broadcast": {
-    "en": "Broadcast to the network",
-    "t": "Отправлено в сеть"
-  },
-  "ops.step.burnVoided": {
-    "en": "the reserved burn was voided",
-    "t": "резерв на списание паёв отменён"
-  },
-  "ops.step.cashPaidOut": {
-    "en": "Cash paid out",
-    "t": "Деньги выплачены"
-  },
-  "ops.step.creditedToBalance": {
-    "en": "credited to your balance",
-    "t": "зачислено на ваш баланс"
-  },
-  "ops.step.inFlight": {
-    "en": "in flight",
-    "t": "в пути"
-  },
-  "ops.step.leftCustody": {
-    "en": "funds have left custody",
-    "t": "средства покинули кастоди"
-  },
-  "ops.step.perUnit": {
-    "en": "{nav} per unit",
-    "t": "{nav} за пай"
-  },
-  "ops.step.pricedAtSettle": {
-    "en": "Priced at the settle NAV",
-    "t": "Цена по расчётному NAV"
-  },
-  "ops.step.redCancelled": {
-    "en": "Cancelled — units returned",
-    "t": "Отменено — паи возвращены"
-  },
-  "ops.step.redFailed": {
-    "en": "Failed — units returned",
-    "t": "Не выполнено — паи возвращены"
-  },
-  "ops.step.requested": {
-    "en": "Requested",
-    "t": "Заявка создана"
-  },
-  "ops.step.reservationVoided": {
-    "en": "the reservation was voided",
-    "t": "резерв отменён"
-  },
-  "ops.step.settledOnChain": {
-    "en": "Settled on-chain",
-    "t": "Подтверждено в сети"
-  },
-  "ops.step.waiting": {
-    "en": "waiting",
-    "t": "ожидание"
-  },
-  "ops.step.wdCancelled": {
-    "en": "Cancelled — balance returned",
-    "t": "Отменено — средства возвращены"
-  },
-  "ops.step.wdFailed": {
-    "en": "Failed — balance returned",
-    "t": "Не выполнено — средства возвращены"
-  },
-  "ops.sub.deposit": {
-    "en": "{network} · {ref}",
-    "t": "{network} · {ref}"
-  },
-  "ops.sub.managementLeg": {
-    "en": "{amount} management",
-    "t": "{amount} за управление"
-  },
-  "ops.sub.performanceLeg": {
-    "en": "{amount} performance",
-    "t": "{amount} за успех"
-  },
-  "ops.sub.withdrawal": {
-    "en": "{network} · {destination}",
-    "t": "{network} · {destination}"
-  },
-  "ops.sub.withdrawalNet": {
-    "en": "{network} · {destination} · {amount} USDT net",
-    "t": "{network} · {destination} · {amount} USDT нетто"
-  },
-  "ops.subtitle": {
-    "en": "Every deposit, withdrawal, subscription and redemption you have made, and every fee a fund has charged — one timeline.",
-    "t": "Все ваши пополнения, выводы, подписки и погашения, а также все комиссии, начисленные фондами, — одной лентой."
-  },
-  "ops.truncatedNote": {
-    "en": "Showing your most recent activity — older entries aren't listed here yet.",
-    "t": "Показана последняя активность — более ранние записи здесь пока не отображаются."
   },
   "panelAccess.action": {
     "en": "Panel access",
@@ -5219,42 +4191,6 @@
     "en": "This payment was stopped",
     "t": "Этот платёж остановлен"
   },
-  "profile.activeSince": {
-    "en": "Active since {date}",
-    "t": "Активен с {date}"
-  },
-  "profile.activity": {
-    "en": "Activity",
-    "t": "Активность"
-  },
-  "profile.activityCapped": {
-    "en": "Counted over your {n} most recent activity entries",
-    "t": "Подсчитано по вашим {n} последним записям активности"
-  },
-  "profile.activitySub": {
-    "en": "Everything that has moved money on this account",
-    "t": "Всё, что двигало деньги на этом счёте"
-  },
-  "profile.completeDetails": {
-    "en": "Complete your details in Settings — verification and compliance checks rely on them.",
-    "t": "Заполните данные в Настройках — на них опираются верификация и комплаенс-проверки."
-  },
-  "profile.dateOfBirth": {
-    "en": "Date of birth",
-    "t": "Дата рождения"
-  },
-  "profile.edit": {
-    "en": "Edit",
-    "t": "Изменить"
-  },
-  "profile.editInSettings": {
-    "en": "Edit in Settings",
-    "t": "Править в настройках"
-  },
-  "profile.hintAtNav": {
-    "en": "at current NAV",
-    "t": "по текущему NAV"
-  },
   "profile.identityAndStanding": {
     "en": "Identity and account standing",
     "t": "Личность и статус аккаунта"
@@ -5307,66 +4243,6 @@
     "en": "Automatic verification is temporarily out of service — write to us and we'll raise your level by hand.",
     "t": "Автоматическая проверка временно не работает — напишите нам, и мы поднимем уровень вручную."
   },
-  "profile.kycLevelPill": {
-    "en": "KYC level {n}",
-    "t": "KYC ур. {n}"
-  },
-  "profile.kycRaisedBy": {
-    "en": "Raised by verification and review",
-    "t": "Повышается по итогам верификации и проверки"
-  },
-  "profile.lastActivity": {
-    "en": "Last activity",
-    "t": "Последняя активность"
-  },
-  "profile.legalName": {
-    "en": "Legal name",
-    "t": "Имя по документам"
-  },
-  "profile.nationality": {
-    "en": "Nationality",
-    "t": "Гражданство"
-  },
-  "profile.noActivityBody": {
-    "en": "Your first deposit will appear here.",
-    "t": "Здесь появится ваше первое пополнение."
-  },
-  "profile.noActivityTitle": {
-    "en": "No activity yet",
-    "t": "Активности пока нет"
-  },
-  "profile.phoneNumber": {
-    "en": "Phone number",
-    "t": "Номер телефона"
-  },
-  "profile.platformAccess": {
-    "en": "Platform access",
-    "t": "Доступ к платформе"
-  },
-  "profile.preferredName": {
-    "en": "Preferred name",
-    "t": "Предпочитаемое имя"
-  },
-  "profile.residentialAddress": {
-    "en": "Residential address",
-    "t": "Адрес проживания"
-  },
-  "profile.subtitle": {
-    "en": "Who you are on the platform and how your account stands",
-    "t": "Кто вы на платформе и в каком состоянии ваш аккаунт"
-  },
-  "profile.taxResidence": {
-    "en": "Tax residence",
-    "t": "Налоговое резидентство"
-  },
-  "profile.unverified": {
-    "en": "Unverified",
-    "t": "Не проверен"
-  },
-  "profile.viewAllActivity": {
-    "en": "View all activity",
-    "t": "Вся активность"
-  },
   "session.breakGlass.body": {
     "en": "This fund has no owner in the register yet, so your role comes from the OWNER_SUBJECTS emergency allowlist and not from the register itself. It is real authority over this console, but it seats nobody: you hold no vote in the consilium. A seat is written once by the genesis seed when the service starts, or granted afterwards by a consilium of the existing owners — and this notice goes away for good the moment the first owner is seated.",
     "t": "В реестре этого фонда пока нет ни одного владельца, поэтому ваша роль взята из списка аварийного доступа OWNER_SUBJECTS, а не из реестра. Это настоящие права в консоли, но места они не дают: голоса в консилиуме у вас нет. Место записывает либо посев генезиса при старте сервиса, либо консилиум действующих владельцев — и это сообщение исчезнет навсегда, как только появится первый владелец."
@@ -5374,274 +4250,6 @@
   "session.breakGlass.title": {
     "en": "You are working under emergency access",
     "t": "Вы действуете по аварийному доступу"
-  },
-  "settings.a11y.sections": {
-    "en": "Settings sections",
-    "t": "Разделы настроек"
-  },
-  "settings.baseCurrency": {
-    "en": "Base currency",
-    "t": "Базовая валюта"
-  },
-  "settings.currency.eur": {
-    "en": "EUR (€)",
-    "t": "EUR (€)"
-  },
-  "settings.currency.usd": {
-    "en": "USD ($)",
-    "t": "USD ($)"
-  },
-  "settings.deliveryTopicsSub": {
-    "en": "Where we reach you and what you follow",
-    "t": "Куда мы вам пишем и на что вы подписаны"
-  },
-  "settings.device.browser": {
-    "en": "Browser",
-    "t": "Браузер"
-  },
-  "settings.device.generic": {
-    "en": "device",
-    "t": "устройство"
-  },
-  "settings.device.label": {
-    "en": "{browser} · {os}",
-    "t": "{browser} · {os}"
-  },
-  "settings.device.unknown": {
-    "en": "Unknown device",
-    "t": "Неизвестное устройство"
-  },
-  "settings.devicesSignedIn": {
-    "en": "{n, plural, one {# device currently signed in} other {# devices currently signed in}}",
-    "t": "Сейчас выполнен вход с {n, plural, one {# устройства} few {# устройств} many {# устройств} other {# устройств}}"
-  },
-  "settings.documents.custody": {
-    "en": "How funds are held",
-    "t": "Как хранятся средства"
-  },
-  "settings.documents.custodySub": {
-    "en": "Deposits are held in the fund's custody wallets at Turnkey on the network you sent them over, and booked to your identity as verified by Didit. Nothing is moved without that identity, and withdrawals go only to an address you request. You sign in with your Google account.",
-    "t": "Депозиты хранятся в кастодиальных кошельках фонда в Turnkey в той сети, по которой вы их отправили, и записываются на вашу личность, проверенную через Didit. Без неё ничего не перемещается, а выводы идут только на адрес, который вы указали. Вход — через ваш аккаунт Google."
-  },
-  "settings.documents.newTab": {
-    "en": "opens in a new tab",
-    "t": "откроется в новой вкладке"
-  },
-  "settings.documents.published": {
-    "en": "Published documents",
-    "t": "Опубликованные документы"
-  },
-  "settings.documents.risk": {
-    "en": "Risk",
-    "t": "Риск"
-  },
-  "settings.documents.rowSub": {
-    "en": "Whitepaper, open source, how funds are held, risk",
-    "t": "Уайтпейпер, открытый код, хранение средств, риск"
-  },
-  "settings.documents.sourceCode": {
-    "en": "Open source",
-    "t": "Открытый код"
-  },
-  "settings.documents.sourceCodeSub": {
-    "en": "The fund's code, on GitHub",
-    "t": "Код фонда на GitHub"
-  },
-  "settings.documents.sub": {
-    "en": "What the fund has published, and how your money is held",
-    "t": "Что фонд опубликовал и как хранятся ваши деньги"
-  },
-  "settings.documents.title": {
-    "en": "Documents and disclosures",
-    "t": "Документы и раскрытия"
-  },
-  "settings.documents.whitepaper": {
-    "en": "Whitepaper",
-    "t": "Уайтпейпер"
-  },
-  "settings.documents.whitepaperSub": {
-    "en": "The fund's thesis and structure, on the public site",
-    "t": "Тезис и структура фонда на публичном сайте"
-  },
-  "settings.fixHighlighted": {
-    "en": "Please fix the highlighted fields",
-    "t": "Исправьте выделенные поля"
-  },
-  "settings.group.cabinet": {
-    "en": "Cabinet",
-    "t": "Кабинет"
-  },
-  "settings.group.cabinetSub": {
-    "en": "How the cabinet looks and how it reaches you",
-    "t": "Как кабинет выглядит и как с вами связывается"
-  },
-  "settings.group.help": {
-    "en": "Help",
-    "t": "Помощь"
-  },
-  "settings.group.helpSub": {
-    "en": "What the fund has published, and how to reach a person",
-    "t": "Что опубликовал фонд и как связаться с человеком"
-  },
-  "settings.group.profileSub": {
-    "en": "Who you are and how your account is protected",
-    "t": "Кто вы и как защищён ваш аккаунт"
-  },
-  "settings.hint.address": {
-    "en": "Your current home address.",
-    "t": "Ваш текущий домашний адрес."
-  },
-  "settings.hint.baseCurrency": {
-    "en": "Saved to your account. Balances in the cabinet are always shown in USD.",
-    "t": "Хранится в аккаунте. Балансы в кабинете всегда показаны в USD."
-  },
-  "settings.hint.dateOfBirth": {
-    "en": "As on your identity document.",
-    "t": "Как в документе, удостоверяющем личность."
-  },
-  "settings.hint.email": {
-    "en": "Comes from your Google account and can't be changed here.",
-    "t": "Берётся из вашего аккаунта Google, здесь не меняется."
-  },
-  "settings.hint.language": {
-    "en": "Applies as soon as you save; the whole cabinet switches.",
-    "t": "Применяется сразу после сохранения — переключается весь кабинет."
-  },
-  "settings.hint.phone": {
-    "en": "Used to reach you about your account.",
-    "t": "Чтобы связаться с вами по поводу аккаунта."
-  },
-  "settings.hint.preferredName": {
-    "en": "How the cabinet and our emails address you.",
-    "t": "Как к вам обращаются кабинет и наши письма."
-  },
-  "settings.hint.timeZone": {
-    "en": "Saved to your account. The cabinet itself shows times in your device's time zone.",
-    "t": "Хранится в аккаунте. Сам кабинет показывает время в часовом поясе вашего устройства."
-  },
-  "settings.nav.documents": {
-    "en": "Documents",
-    "t": "Документы"
-  },
-  "settings.inbox": {
-    "en": "Inbox",
-    "t": "Входящие"
-  },
-  "settings.nav.personal": {
-    "en": "Personal details",
-    "t": "Личные данные"
-  },
-  "settings.nav.preferences": {
-    "en": "Preferences",
-    "t": "Предпочтения"
-  },
-  "settings.noSessions": {
-    "en": "No active sessions.",
-    "t": "Активных сеансов нет."
-  },
-  "settings.notificationsSub": {
-    "en": "Which channels reach you and which events you follow",
-    "t": "Какие каналы до вас доходят и за какими событиями вы следите"
-  },
-  "settings.personalRowSub": {
-    "en": "Name, phone, address, tax residence",
-    "t": "Имя, телефон, адрес, налоговое резидентство"
-  },
-  "settings.personalSub": {
-    "en": "Your identity as the fund records it",
-    "t": "Ваша личность, как её учитывает фонд"
-  },
-  "settings.preferencesSub": {
-    "en": "How the cabinet is displayed to you. Saved to your account, so every device follows",
-    "t": "Как кабинет показывается вам. Хранится в аккаунте, поэтому действует на всех устройствах"
-  },
-  "settings.revoke": {
-    "en": "Revoke",
-    "t": "Отозвать"
-  },
-  "settings.securitySub": {
-    "en": "How you sign in and where your account is active",
-    "t": "Как вы входите и где активен ваш аккаунт"
-  },
-  "settings.selectCurrency": {
-    "en": "Select currency",
-    "t": "Выберите валюту"
-  },
-  "settings.selectLanguage": {
-    "en": "Select language",
-    "t": "Выберите язык"
-  },
-  "settings.selectTimeZone": {
-    "en": "Select time zone",
-    "t": "Выберите часовой пояс"
-  },
-  "settings.session.activeNow": {
-    "en": "Active now",
-    "t": "Активен сейчас"
-  },
-  "settings.session.activeNowLower": {
-    "en": "active now",
-    "t": "активен сейчас"
-  },
-  "settings.session.activeRecently": {
-    "en": "active recently",
-    "t": "недавняя активность"
-  },
-  "settings.session.lastActiveDays": {
-    "en": "last active {n}d ago",
-    "t": "активность {n} д назад"
-  },
-  "settings.session.lastActiveHours": {
-    "en": "last active {n}h ago",
-    "t": "активность {n} ч назад"
-  },
-  "settings.session.lastActiveMinutes": {
-    "en": "last active {n}m ago",
-    "t": "активность {n} мин назад"
-  },
-  "settings.sessionsLoading": {
-    "en": "Loading active sessions…",
-    "t": "Загрузка активных сеансов…"
-  },
-  "settings.sessionsSub": {
-    "en": "Where you're signed in — revoke anything you don't recognise",
-    "t": "Где выполнен вход — отзовите всё, что вам незнакомо"
-  },
-  "settings.signOutOthers": {
-    "en": "Sign out all other devices",
-    "t": "Выйти на других устройствах"
-  },
-  "settings.subtitle": {
-    "en": "Manage your account, security and access",
-    "t": "Управление аккаунтом, безопасностью и доступом"
-  },
-  "settings.support.email": {
-    "en": "Email support",
-    "t": "Написать в поддержку"
-  },
-  "settings.support.sub": {
-    "en": "A person reads every message",
-    "t": "Каждое письмо читает человек"
-  },
-  "settings.thisDevice": {
-    "en": "This device",
-    "t": "Текущее"
-  },
-  "settings.timeZone": {
-    "en": "Time zone",
-    "t": "Часовой пояс"
-  },
-  "settings.trustedSessionsSub": {
-    "en": "Devices signed in to your account",
-    "t": "Устройства, на которых выполнен вход в ваш аккаунт"
-  },
-  "settings.tz.hoChiMinh": {
-    "en": "Asia / Ho Chi Minh",
-    "t": "Азия / Хошимин"
-  },
-  "settings.viewProfile": {
-    "en": "View profile",
-    "t": "Открыть профиль"
   },
   "status.backHome": {
     "en": "Back to home",
@@ -6063,270 +4671,6 @@
     "en": "State",
     "t": "Состояние"
   },
-  "tips.dashboard.invested.allocation.body": {
-    "en": "Each bar is one strategy's share of your invested value at current NAV. Percentages are of invested value only and exclude your available cash.",
-    "t": "Каждая полоса — доля одной стратегии в стоимости ваших вложений по текущему NAV. Проценты считаются только от стоимости вложений и не включают свободные средства."
-  },
-  "tips.dashboard.invested.allocation.title": {
-    "en": "Invested — what I own",
-    "t": "Инвестировано — что мне принадлежит"
-  },
-  "tips.dashboard.performance.all-time-return.body": {
-    "en": "Total unrealized P&L divided by what you put in at cost basis, across every position. A paper figure, not realized cash.",
-    "t": "Совокупный нереализованный P&L, делённый на вложенное по цене приобретения, по всем позициям. Это бумажный результат, а не полученные деньги."
-  },
-  "tips.dashboard.performance.all-time-return.title": {
-    "en": "All-time return",
-    "t": "Доходность за всё время"
-  },
-  "tips.dashboard.performance.portfolio-value.body": {
-    "en": "Your whole balance: available + invested + pending withdrawal. Money locked in a queued withdrawal is still counted here.",
-    "t": "Весь ваш баланс: доступно + инвестировано + в ожидании вывода. Деньги, заблокированные в выводе из очереди, здесь тоже учитываются."
-  },
-  "tips.dashboard.performance.portfolio-value.title": {
-    "en": "Portfolio value",
-    "t": "Стоимость портфеля"
-  },
-  "tips.dashboard.performance.series.body": {
-    "en": "'Fund performance' is the fund's return since the first valuation in the range, from the posted marks; 'Your participation' is what your units were worth at each of them, which differs by when you contributed.",
-    "t": "«Доходность фонда» — результат фонда с первой оценки в диапазоне, по опубликованным отметкам; «Ваша доля» — сколько стоили ваши юниты в каждой из них, что зависит от того, когда вы вносили средства."
-  },
-  "tips.dashboard.performance.series.title": {
-    "en": "Performance chart",
-    "t": "График доходности"
-  },
-  "tips.dashboard.stats.available.body": {
-    "en": "Cash that is free and spendable now — ready to deploy into a strategy or withdraw.",
-    "t": "Средства, свободные и доступные прямо сейчас — их можно разместить в стратегию или вывести."
-  },
-  "tips.dashboard.stats.available.title": {
-    "en": "Available",
-    "t": "Доступно"
-  },
-  "tips.dashboard.stats.net-invested.body": {
-    "en": "Total cash you put into strategies at cost basis, net of redemptions — not the current value.",
-    "t": "Всего внесено в стратегии по цене приобретения за вычетом погашений — это не текущая стоимость."
-  },
-  "tips.dashboard.stats.net-invested.title": {
-    "en": "Net invested",
-    "t": "Чистые взносы"
-  },
-  "tips.dashboard.stats.unrealized-pnl.body": {
-    "en": "Paper gain or loss across all positions — current value minus cost basis. It becomes realized cash only when you redeem.",
-    "t": "Бумажная прибыль или убыток по всем позициям — текущая стоимость минус цена приобретения. Реальными деньгами это становится только при погашении."
-  },
-  "tips.dashboard.stats.unrealized-pnl.title": {
-    "en": "Unrealized P&L",
-    "t": "Нереализованный P&L"
-  },
-  "tips.invest.activity.cancel.body": {
-    "en": "Available only while a redemption is still queued. It withdraws the request and releases the reserved units back to your holding before any settle NAV is applied.",
-    "t": "Доступно, только пока погашение стоит в очереди. Отзывает заявку и возвращает зарезервированные паи в вашу позицию до применения расчётного NAV."
-  },
-  "tips.invest.activity.cancel.title": {
-    "en": "Cancel",
-    "t": "Отмена"
-  },
-  "tips.invest.activity.status.body": {
-    "en": "Queued (reserved, awaiting settle), completed (paid out at the settle NAV), failed, or cancelled.",
-    "t": "В очереди (зарезервировано, ожидает исполнения), завершено (выплачено по расчётному NAV), не выполнено или отменено."
-  },
-  "tips.invest.activity.status.title": {
-    "en": "Redemption status",
-    "t": "Статус погашения"
-  },
-  "tips.invest.overview.body": {
-    "en": "Subscribe USDT for units — your value tracks the fund's NAV, not the unit count.",
-    "t": "Подписывайтесь на паи за USDT — стоимость вашей позиции следует за NAV фонда, а не за количеством паёв."
-  },
-  "tips.invest.overview.title": {
-    "en": "How investing works",
-    "t": "Как устроены инвестиции"
-  },
-  "tips.invest.position.nav.body": {
-    "en": "Net asset value per unit — the current price at which units are bought on subscribe and priced on redeem.",
-    "t": "Стоимость чистых активов на один пай — текущая цена, по которой паи покупаются при подписке и оцениваются при погашении."
-  },
-  "tips.invest.position.nav.title": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "tips.invest.position.pnl.body": {
-    "en": "Your position's current value minus what you paid in — green for a gain, red for a loss, driven by the NAV moving.",
-    "t": "Текущая стоимость вашей позиции минус вложенное: зелёный — прибыль, красный — убыток; зависит от движения NAV."
-  },
-  "tips.invest.position.pnl.title": {
-    "en": "Profit & loss",
-    "t": "Прибыль и убыток"
-  },
-  "tips.invest.position.stale-nav.body": {
-    "en": "The fund's price feed is out of date, so the value and P&L shown here may lag the true mark until the NAV refreshes.",
-    "t": "Котировки фонда устарели, поэтому показанные здесь стоимость и P&L могут отставать от реальной оценки, пока NAV не обновится."
-  },
-  "tips.invest.position.stale-nav.title": {
-    "en": "Stale NAV",
-    "t": "Устаревший NAV"
-  },
-  "tips.invest.position.units.body": {
-    "en": "The units you hold in this fund — a fixed quantity until you subscribe or redeem more.",
-    "t": "Ваши паи в этом фонде — фиксированная величина, пока вы не подпишетесь или не погасите ещё."
-  },
-  "tips.invest.position.units.title": {
-    "en": "Units",
-    "t": "Паи"
-  },
-  "tips.invest.position.value.body": {
-    "en": "Units × current NAV. It rises and falls as the NAV moves, not with the unit count.",
-    "t": "Паи × текущий NAV. Значение растёт и падает вместе с NAV, а не с количеством паёв."
-  },
-  "tips.invest.position.value.title": {
-    "en": "Value",
-    "t": "Стоимость"
-  },
-  "tips.invest.redeem.queue.body": {
-    "en": "Redemptions are accept-and-queue — your units are reserved now, and cash is priced at the settle-time NAV once the fund tops up.",
-    "t": "Погашения принимаются и ставятся в очередь: паи резервируются сразу, а сумма определяется по NAV на момент исполнения, когда фонд пополнится."
-  },
-  "tips.invest.redeem.queue.title": {
-    "en": "How redemptions settle",
-    "t": "Как исполняются погашения"
-  },
-  "tips.invest.redeem.units.body": {
-    "en": "How many units to redeem — Max fills your full holding. The resulting cash isn't fixed here; it is set at the settle-time NAV.",
-    "t": "Сколько паёв погасить — «Макс.» подставляет всю вашу позицию. Итоговая сумма здесь не фиксируется: она определяется по NAV на момент исполнения."
-  },
-  "tips.invest.redeem.units.title": {
-    "en": "Units to redeem",
-    "t": "Паёв к погашению"
-  },
-  "tips.invest.subscribe.amount.body": {
-    "en": "How much USDT to subscribe. It is converted into units at the current NAV when you submit.",
-    "t": "Сколько USDT вложить в подписку. Сумма конвертируется в паи по текущему NAV в момент отправки."
-  },
-  "tips.invest.subscribe.amount.title": {
-    "en": "Amount",
-    "t": "Сумма"
-  },
-  "tips.profile.email.verified.body": {
-    "en": "Confirms this email address has been verified. It is not identity or KYC verification.",
-    "t": "Подтверждает, что этот адрес эл. почты проверен. Это не верификация личности и не KYC."
-  },
-  "tips.profile.email.verified.title": {
-    "en": "Verified",
-    "t": "Проверен"
-  },
-  "tips.profile.field.legal-name.body": {
-    "en": "Your full name exactly as it appears on official documents — used for compliance and statements, distinct from your preferred name.",
-    "t": "Ваше полное имя точно так, как оно указано в официальных документах — используется для комплаенса и отчётов; отличается от предпочитаемого имени."
-  },
-  "tips.profile.field.legal-name.title": {
-    "en": "Legal name",
-    "t": "Имя по документам"
-  },
-  "tips.profile.field.nationality.body": {
-    "en": "Collected for compliance and eligibility checks.",
-    "t": "Собирается для комплаенса и проверки права на участие."
-  },
-  "tips.profile.field.nationality.title": {
-    "en": "Nationality",
-    "t": "Гражданство"
-  },
-  "tips.profile.field.tax-residence.body": {
-    "en": "The country where you're liable to pay tax, used for tax reporting. Usually where you live — it can differ from your nationality.",
-    "t": "Страна, в которой вы обязаны платить налоги; используется для налоговой отчётности. Обычно это страна проживания, и она может отличаться от гражданства."
-  },
-  "tips.profile.field.tax-residence.title": {
-    "en": "Tax residence",
-    "t": "Налоговое резидентство"
-  },
-  "tips.profile.kyc-level.body": {
-    "en": "Level 0 is browse only: products, prices and your account. Level 1 means your identity is verified and opens a deposit address, withdrawals and subscribing.",
-    "t": "Уровень 0 — только просмотр: продукты, цены и ваш счёт. Уровень 1 означает, что личность подтверждена, и открывает адрес для пополнения, вывод и подписку."
-  },
-  "tips.profile.kyc-level.title": {
-    "en": "What your KYC level means",
-    "t": "Что значит ваш уровень KYC"
-  },
-  "tips.profile.personal.compliance.body": {
-    "en": "These personal details are collected to meet the fund's compliance obligations and to produce your account statements. They are not shown publicly.",
-    "t": "Эти личные данные собираются, чтобы выполнить комплаенс-обязательства фонда и подготовить ваши отчёты по счёту. Публично они не показываются."
-  },
-  "tips.profile.personal.compliance.title": {
-    "en": "Why we collect this",
-    "t": "Зачем мы это собираем"
-  },
-  "tips.settings.security.google-signin.body": {
-    "en": "Your sign-in and password are managed by Google. Two-factor authentication and recovery are configured in your Google Account.",
-    "t": "Вход и пароль управляются Google. Двухфакторная аутентификация и восстановление настраиваются в вашем аккаунте Google."
-  },
-  "tips.settings.security.google-signin.title": {
-    "en": "Sign-in is managed by Google",
-    "t": "Вход управляется Google"
-  },
-  "tips.settings.sessions.overview.body": {
-    "en": "Where you're signed in — each row is a device or browser with a live session. Revoke anything you don't recognise.",
-    "t": "Где выполнен вход: каждая строка — устройство или браузер с активным сеансом. Отзовите всё, что вам незнакомо."
-  },
-  "tips.settings.sessions.overview.title": {
-    "en": "Sessions & devices",
-    "t": "Сеансы и устройства"
-  },
-  "tips.settings.sessions.revoke-others.body": {
-    "en": "Signs out every device except this one. Use it if a device was lost or you don't recognise a session.",
-    "t": "Завершает сеансы на всех устройствах, кроме текущего. Используйте, если устройство потеряно или сеанс вам незнаком."
-  },
-  "tips.settings.sessions.revoke-others.title": {
-    "en": "Sign out all other devices",
-    "t": "Выйти на других устройствах"
-  },
-  "tips.settings.sessions.revoke.body": {
-    "en": "Signs that device out immediately. It must sign in again with Google to regain access.",
-    "t": "Немедленно завершает сеанс на этом устройстве. Чтобы вернуть доступ, нужно снова войти через Google."
-  },
-  "tips.settings.sessions.revoke.title": {
-    "en": "Revoke",
-    "t": "Отозвать"
-  },
-  "tips.settings.sessions.this-device.body": {
-    "en": "The browser you're using right now. It stays signed in and can't be revoked from here — use 'Sign out all other devices' to clear the rest.",
-    "t": "Браузер, которым вы пользуетесь прямо сейчас. Он остаётся в сеансе, и отозвать его отсюда нельзя — используйте «Выйти на других устройствах», чтобы завершить остальные."
-  },
-  "tips.settings.sessions.this-device.title": {
-    "en": "This device",
-    "t": "Текущее устройство"
-  },
-  "tips.trade.book.body": {
-    "en": "The book trades existing units between holders — a buyer and a seller meet at a bid or ask price they set themselves. Subscribing is different: it mints new units at the posted NAV, and redeeming returns them at NAV.",
-    "t": "В книге держатели торгуют уже выпущенными паями — покупатель и продавец встречаются по цене bid или ask, которую задают сами. Подписка — другое: она выпускает новые паи по опубликованному NAV, а погашение возвращает их по NAV."
-  },
-  "tips.trade.book.title": {
-    "en": "How the book works",
-    "t": "Как работает книга"
-  },
-  "tips.wallet.balance.available.body": {
-    "en": "Your spendable USDT right now — what you can invest into fund units or withdraw.",
-    "t": "Ваши USDT, доступные прямо сейчас: их можно вложить в паи фондов или вывести."
-  },
-  "tips.wallet.balance.available.title": {
-    "en": "Available",
-    "t": "Доступно"
-  },
-  "tips.wallet.balance.in-orders.body": {
-    "en": "USDT set aside by your resting buy orders on the book. Still yours: it comes back to available when an order is cancelled, and turns into units when it fills.",
-    "t": "USDT, зарезервированные вашими заявками на покупку, стоящими в книге. Они по-прежнему ваши: вернутся в доступные при отмене заявки и превратятся в паи при исполнении."
-  },
-  "tips.wallet.balance.in-orders.title": {
-    "en": "In orders",
-    "t": "В заявках"
-  },
-  "tips.wallet.balance.invested.body": {
-    "en": "Held in fund units, valued at the current NAV — units offered for sale on the book included.",
-    "t": "Размещено в паях фондов и оценено по текущему NAV — включая паи, выставленные на продажу в книге."
-  },
-  "tips.wallet.balance.invested.title": {
-    "en": "Invested",
-    "t": "Инвестировано"
-  },
   "tips.wallet.balance.model.body": {
     "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
     "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + в заявках + инвестировано + в ожидании вывода + в отсеках."
@@ -6334,14 +4678,6 @@
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
     "t": "Один баланс, много сетей"
-  },
-  "tips.wallet.balance.pending-withdrawal.body": {
-    "en": "USDT reserved for withdrawals still in flight (queued or processing). It is no longer part of your available balance.",
-    "t": "USDT, зарезервированные под выводы, которые ещё в пути (в очереди или в обработке). Они больше не входят в ваш доступный баланс."
-  },
-  "tips.wallet.balance.pending-withdrawal.title": {
-    "en": "Pending withdrawal",
-    "t": "В ожидании вывода"
   },
   "tips.wallet.deposit.address.body": {
     "en": "A personal, reusable address on this network. On TON it is shown in the wallet-friendly UQ… form so an uninitialised wallet doesn't bounce the transfer.",
@@ -6431,369 +4767,9 @@
     "en": "You will receive",
     "t": "Вы получите"
   },
-  "trade.book.col.price": {
-    "en": "Price",
-    "t": "Цена"
-  },
-  "trade.book.col.size": {
-    "en": "Size",
-    "t": "Объём"
-  },
-  "trade.book.col.total": {
-    "en": "Total",
-    "t": "Итого"
-  },
-  "trade.book.empty": {
-    "en": "Nothing resting",
-    "t": "Заявок нет"
-  },
-  "trade.book.emptyHint": {
-    "en": "No holder has quoted yet. The first limit order opens the book.",
-    "t": "Никто ещё не выставил котировку. Первая лимитная заявка откроет стакан."
-  },
-  "trade.book.levelOrders": {
-    "en": "{n, plural, one {# order} other {# orders}}",
-    "t": "{n, plural, one {# заявка} few {# заявки} many {# заявок} other {# заявки}}"
-  },
-  "trade.book.oneSided": {
-    "en": "One-sided",
-    "t": "Одна сторона"
-  },
-  "trade.book.spread": {
-    "en": "Spread {spread}",
-    "t": "Спред {spread}"
-  },
-  "trade.book.tape": {
-    "en": "Trades",
-    "t": "Сделки"
-  },
-  "trade.book.title": {
-    "en": "Book",
-    "t": "Стакан"
-  },
-  "trade.chart.empty": {
-    "en": "No trades yet — the chart draws from the first fill.",
-    "t": "Сделок ещё нет — график начнётся с первого исполнения."
-  },
-  "trade.chart.resolution": {
-    "en": "Candle size",
-    "t": "Размер свечи"
-  },
-  "trade.chart.title": {
-    "en": "Chart",
-    "t": "График"
-  },
-  "trade.form.available": {
-    "en": "Available",
-    "t": "Доступно"
-  },
-  "trade.form.buy": {
-    "en": "Buy",
-    "t": "Купить"
-  },
-  "trade.form.closed": {
-    "en": "The book is closed. Orders are not accepted until it opens again.",
-    "t": "Книга закрыта. Заявки не принимаются, пока она не откроется снова."
-  },
-  "trade.form.duplicateTitle": {
-    "en": "Already submitted",
-    "t": "Уже отправлена"
-  },
-  "trade.form.failedTitle": {
-    "en": "Order failed",
-    "t": "Заявка не прошла"
-  },
-  "trade.form.fee": {
-    "en": "Taker fee",
-    "t": "Комиссия тейкера"
-  },
-  "trade.form.inOrders": {
-    "en": "In orders",
-    "t": "В заявках"
-  },
-  "trade.form.kind": {
-    "en": "Order type",
-    "t": "Тип заявки"
-  },
-  "trade.form.limit": {
-    "en": "Limit",
-    "t": "Лимит"
-  },
-  "trade.form.locked": {
-    "en": "Trading isn't open to you on this product. If you think you should have access:",
-    "t": "Торговля этим продуктом вам не открыта. Если считаете, что доступ должен быть:"
-  },
-  "trade.form.market": {
-    "en": "Market",
-    "t": "Рынок"
-  },
-  "trade.form.notional": {
-    "en": "Order value",
-    "t": "Сумма заявки"
-  },
-  "trade.form.notionalEstimate": {
-    "en": "Est. value",
-    "t": "Оценка суммы"
-  },
-  "trade.form.placed.cancelled": {
-    "en": "Nothing crossed, so the order was cancelled.",
-    "t": "Ничего не пересеклось, заявка отменена."
-  },
-  "trade.form.placed.filled": {
-    "en": "Filled {filled} at an average of {avg} USDT.",
-    "t": "Исполнено {filled} по средней {avg} USDT."
-  },
-  "trade.form.placed.partial": {
-    "en": "Filled {filled} of {size} at {avg} USDT; the rest was cancelled.",
-    "t": "Исполнено {filled} из {size} по {avg} USDT; остаток отменён."
-  },
-  "trade.form.placed.rejected": {
-    "en": "The order was not accepted: {reason}",
-    "t": "Заявка не принята: {reason}"
-  },
-  "trade.form.placed.resting": {
-    "en": "Resting on the book: {filled} of {size} filled so far.",
-    "t": "Стоит в стакане: исполнено {filled} из {size}."
-  },
-  "trade.form.price": {
-    "en": "Price (USDT)",
-    "t": "Цена (USDT)"
-  },
-  "trade.form.problem.funds": {
-    "en": "More than you have available",
-    "t": "Больше, чем у вас доступно"
-  },
-  "trade.form.problem.lot": {
-    "en": "Size must be a multiple of {lot}",
-    "t": "Объём должен быть кратен {lot}"
-  },
-  "trade.form.problem.noQuote": {
-    "en": "Nothing on the other side to trade against — place a limit order instead.",
-    "t": "На другой стороне нет заявок — выставьте лимитную."
-  },
-  "trade.form.problem.price": {
-    "en": "Enter a price above zero",
-    "t": "Укажите цену больше нуля"
-  },
-  "trade.form.problem.size": {
-    "en": "Enter a size above zero",
-    "t": "Укажите объём больше нуля"
-  },
-  "trade.form.problem.tick": {
-    "en": "Price must be a multiple of {tick}",
-    "t": "Цена должна быть кратна {tick}"
-  },
-  "trade.form.refusedBody": {
-    "en": "{detail} If you think you should be able to trade this product:",
-    "t": "{detail} Если вы считаете, что должны торговать этим продуктом:"
-  },
-  "trade.form.refusedTitle": {
-    "en": "Order refused",
-    "t": "Заявка отклонена"
-  },
-  "trade.form.sell": {
-    "en": "Sell",
-    "t": "Продать"
-  },
-  "trade.form.size": {
-    "en": "Size (units)",
-    "t": "Объём (юниты)"
-  },
-  "trade.form.submitBuy": {
-    "en": "Place buy order",
-    "t": "Выставить покупку"
-  },
-  "trade.form.submitSell": {
-    "en": "Place sell order",
-    "t": "Выставить продажу"
-  },
-  "trade.form.tif": {
-    "en": "Time in force",
-    "t": "Срок действия"
-  },
-  "trade.form.tifHint.alo": {
-    "en": "Only rests on the book: it is refused rather than filled against an existing order.",
-    "t": "Только встаёт в книгу: если бы она исполнилась по существующей заявке, она отклоняется."
-  },
-  "trade.form.tifHint.gtc": {
-    "en": "Rests on the book until it fills or you cancel it.",
-    "t": "Остаётся в книге, пока не исполнится или вы её не отмените."
-  },
-  "trade.form.tifHint.ioc": {
-    "en": "Fills whatever it can right now; the rest is cancelled at once.",
-    "t": "Исполняется на то, что доступно сейчас; остаток сразу отменяется."
-  },
-  "trade.form.tifLabel.alo": {
-    "en": "Post-only",
-    "t": "Только мейкер"
-  },
-  "trade.form.tifLabel.gtc": {
-    "en": "Good till cancelled",
-    "t": "До отмены"
-  },
-  "trade.form.tifLabel.ioc": {
-    "en": "Immediate or cancel",
-    "t": "Исполнить или отменить"
-  },
-  "trade.orders.col.avgFill": {
-    "en": "Avg fill",
-    "t": "Ср. цена"
-  },
-  "trade.orders.col.fee": {
-    "en": "Fee",
-    "t": "Комиссия"
-  },
-  "trade.orders.col.filled": {
-    "en": "Filled",
-    "t": "Исполнено"
-  },
-  "trade.orders.col.role": {
-    "en": "Role",
-    "t": "Роль"
-  },
-  "trade.orders.col.side": {
-    "en": "Side",
-    "t": "Сторона"
-  },
-  "trade.orders.col.state": {
-    "en": "Status",
-    "t": "Статус"
-  },
-  "trade.orders.col.time": {
-    "en": "Time",
-    "t": "Время"
-  },
-  "trade.orders.col.type": {
-    "en": "Type",
-    "t": "Тип"
-  },
-  "trade.orders.emptyFills": {
-    "en": "No fills yet",
-    "t": "Исполнений ещё нет"
-  },
-  "trade.orders.emptyHistory": {
-    "en": "No orders yet",
-    "t": "Заявок ещё не было"
-  },
-  "trade.orders.emptyOpen": {
-    "en": "No open orders",
-    "t": "Открытых заявок нет"
-  },
-  "trade.orders.fills": {
-    "en": "Fills",
-    "t": "Исполнения"
-  },
-  "trade.orders.history": {
-    "en": "Order history",
-    "t": "История заявок"
-  },
-  "trade.orders.maker": {
-    "en": "Maker",
-    "t": "Мейкер"
-  },
-  "trade.orders.open": {
-    "en": "Open orders",
-    "t": "Открытые заявки"
-  },
-  "trade.orders.taker": {
-    "en": "Taker",
-    "t": "Тейкер"
-  },
-  "trade.state.cancelled": {
-    "en": "Cancelled",
-    "t": "Отменена"
-  },
-  "trade.state.filled": {
-    "en": "Filled",
-    "t": "Исполнена"
-  },
-  "trade.state.open": {
-    "en": "Open",
-    "t": "Открыта"
-  },
-  "trade.state.partialCancelled": {
-    "en": "Partially filled, rest cancelled",
-    "t": "Частично исполнена, остаток отменён"
-  },
-  "trade.state.unfilledCancelled": {
-    "en": "Not filled, cancelled",
-    "t": "Не исполнена, отменена"
-  },
-  "trade.state.partiallyFilled": {
-    "en": "Partially filled",
-    "t": "Частично исполнена"
-  },
-  "trade.state.rejected": {
-    "en": "Rejected",
-    "t": "Отклонена"
-  },
-  "trade.stream.live": {
-    "en": "Live",
-    "t": "В эфире"
-  },
-  "trade.stream.paused": {
-    "en": "Paused",
-    "t": "Пауза"
-  },
-  "trade.stream.polling": {
-    "en": "Polling",
-    "t": "Опрос"
-  },
-  "trade.stream.reconnecting": {
-    "en": "Reconnecting",
-    "t": "Переподключение"
-  },
-  "trade.tape.col.time": {
-    "en": "Time",
-    "t": "Время"
-  },
-  "trade.tape.empty": {
-    "en": "No trades yet",
-    "t": "Сделок ещё нет"
-  },
-  "trade.ticker.change": {
-    "en": "24h change",
-    "t": "За 24 ч"
-  },
-  "trade.ticker.last": {
-    "en": "Last",
-    "t": "Последняя"
-  },
-  "trade.ticker.mid": {
-    "en": "Mid",
-    "t": "Середина"
-  },
-  "trade.ticker.nav": {
-    "en": "NAV",
-    "t": "NAV"
-  },
-  "trade.ticker.navHint": {
-    "en": "The book price is what holders trade at; NAV is the fund's own mark.",
-    "t": "Цена книги — по ней торгуют держатели; NAV — учётная оценка фонда."
-  },
-  "trade.ticker.spread": {
-    "en": "Spread",
-    "t": "Спред"
-  },
-  "trade.ticker.volume": {
-    "en": "24h volume",
-    "t": "Объём 24 ч"
-  },
-  "trade.unbackedNotice": {
-    "en": "Units of this product are a claim on an off-platform asset and cannot be redeemed for fund cash — the book is the only exit.",
-    "t": "Юниты этого продукта — право на актив вне платформы; их нельзя погасить за кэш фонда — книга является единственным выходом."
-  },
   "ui.account": {
     "en": "Account",
     "t": "Аккаунт"
-  },
-  "ui.accountStatus": {
-    "en": "Account status",
-    "t": "Статус аккаунта"
-  },
-  "ui.addFunds": {
-    "en": "Add funds",
-    "t": "Пополнить счёт"
   },
   "ui.address": {
     "en": "address",
@@ -6803,10 +4779,6 @@
     "en": "All",
     "t": "Все"
   },
-  "ui.allocate": {
-    "en": "Allocate",
-    "t": "Разместить"
-  },
   "ui.amount": {
     "en": "Amount",
     "t": "Сумма"
@@ -6814,10 +4786,6 @@
   "ui.back": {
     "en": "Back",
     "t": "Назад"
-  },
-  "ui.browseFunds": {
-    "en": "Browse funds",
-    "t": "Смотреть фонды"
   },
   "ui.cancel": {
     "en": "Cancel",
@@ -6859,10 +4827,6 @@
     "en": "Previous month",
     "t": "Предыдущий месяц"
   },
-  "ui.deliveryTopics": {
-    "en": "Delivery & topics",
-    "t": "Доставка и темы"
-  },
   "ui.deposit": {
     "en": "Deposit",
     "t": "Пополнить"
@@ -6875,29 +4839,9 @@
     "en": "Destination",
     "t": "Получатель"
   },
-  "ui.details": {
-    "en": "Details",
-    "t": "Детали"
-  },
   "ui.edit": {
     "en": "Edit",
     "t": "Изменить"
-  },
-  "ui.email": {
-    "en": "Email",
-    "t": "Эл. почта"
-  },
-  "ui.emailAddress": {
-    "en": "Email address",
-    "t": "Адрес эл. почты"
-  },
-  "ui.inProgress": {
-    "en": "In progress",
-    "t": "В обработке"
-  },
-  "ui.inYourCabinet": {
-    "en": "In your cabinet",
-    "t": "В вашем кабинете"
   },
   "ui.keep": {
     "en": "Keep it",
@@ -6911,10 +4855,6 @@
     "en": "Loading…",
     "t": "Загрузка…"
   },
-  "ui.manage": {
-    "en": "Manage",
-    "t": "Управление"
-  },
   "ui.max": {
     "en": "Max",
     "t": "Макс."
@@ -6923,29 +4863,9 @@
     "en": "Network",
     "t": "Сеть"
   },
-  "ui.networks": {
-    "en": "Networks",
-    "t": "Сети"
-  },
-  "ui.noOperations": {
-    "en": "No activity yet",
-    "t": "Активности пока нет"
-  },
-  "ui.none": {
-    "en": "None",
-    "t": "Нет"
-  },
-  "ui.operations": {
-    "en": "Activity",
-    "t": "Активность"
-  },
   "ui.profile": {
     "en": "Profile",
     "t": "Профиль"
-  },
-  "ui.progress": {
-    "en": "Progress",
-    "t": "Ход выполнения"
   },
   "ui.receiveFunds": {
     "en": "Receive funds into your wallet",
@@ -6955,10 +4875,6 @@
     "en": "Refresh",
     "t": "Обновить"
   },
-  "ui.reloadPage": {
-    "en": "Reload page",
-    "t": "Обновить страницу"
-  },
   "ui.reset": {
     "en": "Reset",
     "t": "Сбросить"
@@ -6967,34 +4883,6 @@
     "en": "Save",
     "t": "Сохранить"
   },
-  "ui.saveChanges": {
-    "en": "Save changes",
-    "t": "Сохранить изменения"
-  },
-  "ui.saved": {
-    "en": "Saved",
-    "t": "Сохранено"
-  },
-  "ui.security": {
-    "en": "Security",
-    "t": "Безопасность"
-  },
-  "ui.sessionsDevices": {
-    "en": "Sessions & devices",
-    "t": "Сеансы и устройства"
-  },
-  "ui.total": {
-    "en": "Total",
-    "t": "Всего"
-  },
-  "ui.trustedSessions": {
-    "en": "Trusted sessions",
-    "t": "Доверенные сеансы"
-  },
-  "ui.verified": {
-    "en": "Verified",
-    "t": "Проверен"
-  },
   "ui.services": {
     "en": "Services",
     "t": "Сервисы"
@@ -7002,10 +4890,6 @@
   "ui.walletHistory": {
     "en": "History",
     "t": "История"
-  },
-  "ui.viewAll": {
-    "en": "View all",
-    "t": "Все операции"
   },
   "ui.wallet": {
     "en": "Wallet",
@@ -7058,34 +4942,6 @@
   "wallet.chain.unknown": {
     "en": "Network",
     "t": "Сеть"
-  },
-  "wallet.chip.avail": {
-    "en": "AVAILABLE",
-    "t": "ДОСТУПНО"
-  },
-  "wallet.chip.availShort": {
-    "en": "AVAIL",
-    "t": "ДОСТ."
-  },
-  "wallet.chip.inOrders": {
-    "en": "IN ORDERS",
-    "t": "В ЗАЯВКАХ"
-  },
-  "wallet.chip.inOrdersShort": {
-    "en": "ORDERS",
-    "t": "ЗАЯВКИ"
-  },
-  "wallet.chip.invest": {
-    "en": "INVESTED",
-    "t": "ИНВЕСТИРОВАНО"
-  },
-  "wallet.chip.investShort": {
-    "en": "INVEST",
-    "t": "ИНВЕСТ"
-  },
-  "wallet.chip.pendingWd": {
-    "en": "PENDING WD",
-    "t": "ОЖИДАЕТ ВЫВОДА"
   },
   "wallet.confirmWithdrawal": {
     "en": "Confirm withdrawal",
@@ -7163,37 +5019,9 @@
     "en": "No deposit networks are available right now — check back soon.",
     "t": "Сети для пополнения сейчас недоступны — загляните позже."
   },
-  "wallet.noRails": {
-    "en": "No deposit or withdrawal networks are available right now — check back soon.",
-    "t": "Сети для пополнения и вывода сейчас недоступны — загляните позже."
-  },
-  "wallet.noRailsTitle": {
-    "en": "No networks available yet",
-    "t": "Пока нет доступных сетей"
-  },
-  "wallet.overviewVerifyTitle": {
-    "en": "Verify your identity to use these networks",
-    "t": "Подтвердите личность, чтобы пользоваться сетями"
-  },
-  "wallet.overviewVerifyBody": {
-    "en": "Deposit addresses are issued and withdrawals open once your identity is verified. Your balance above is unaffected.",
-    "t": "Адреса для пополнения выдаём и вывод открываем после подтверждения личности. Баланс выше при этом не меняется."
-  },
   "wallet.noWithdrawRails": {
     "en": "No withdrawal networks are available right now — check back soon.",
     "t": "Сети для вывода сейчас недоступны — загляните позже."
-  },
-  "wallet.oneFungibleBalance": {
-    "en": "≈ ${amount} · one fungible balance",
-    "t": "≈ ${amount} · единый баланс"
-  },
-  "wallet.overviewSub": {
-    "en": "One USDT balance · networks are how you deposit and withdraw",
-    "t": "Единый баланс USDT · сети — это способ пополнения и вывода"
-  },
-  "wallet.pendWd": {
-    "en": "PEND WD",
-    "t": "ВЫВОД"
   },
   "wallet.placeholder.railAddress": {
     "en": "{network} address",
@@ -7203,10 +5031,6 @@
     "en": "QR code unavailable — use the address below.",
     "t": "QR-код недоступен — используйте адрес ниже."
   },
-  "wallet.railActionUnavailable": {
-    "en": "{action} is not available on this network yet",
-    "t": "{action} пока недоступно в этой сети"
-  },
   "wallet.railHazard": {
     "en": "Only send USDT on the {network} network to this address. Funds sent on any other network will be lost permanently.",
     "t": "Отправляйте на этот адрес только USDT в сети {network}. Средства, отправленные через любую другую сеть, будут потеряны безвозвратно."
@@ -7214,10 +5038,6 @@
   "wallet.railUsdt": {
     "en": "{network} · USDT",
     "t": "{network} · USDT"
-  },
-  "wallet.railsCaption": {
-    "en": "deposit & withdrawal networks",
-    "t": "сети пополнения и вывода"
   },
   "wallet.receiptQueued": {
     "en": "{amount} USDT to {address} is queued — it is sent once {network} liquidity is topped up.",
@@ -7242,10 +5062,6 @@
   "wallet.toAddressLine": {
     "en": "To {address}",
     "t": "На адрес {address}"
-  },
-  "wallet.totalBalance": {
-    "en": "TOTAL BALANCE",
-    "t": "ОБЩИЙ БАЛАНС"
   },
   "wallet.txRef": {
     "en": "tx {ref}",
@@ -7287,78 +5103,6 @@
     "en": "Your {network} deposit address",
     "t": "Ваш адрес для пополнения в сети {network}"
   },
-  "onboarding.allSet.body": {
-    "en": "Your holdings and their split are under {own}; every movement lands in {ops}.",
-    "t": "Ваши позиции и их доли — в блоке «{own}»; каждое движение средств — в «{ops}»."
-  },
-  "onboarding.allSet.dismiss": {
-    "en": "Got it",
-    "t": "Понятно"
-  },
-  "onboarding.allSet.title": {
-    "en": "You're all set",
-    "t": "Всё готово"
-  },
-  "onboarding.deposit.current": {
-    "en": "Send funds to your deposit address — credited once the network confirms it.",
-    "t": "Отправьте средства на адрес для пополнения — зачислим, как только сеть подтвердит перевод."
-  },
-  "onboarding.deposit.done": {
-    "en": "Funds received.",
-    "t": "Средства получены."
-  },
-  "onboarding.deposit.locked": {
-    "en": "Opens once your identity is verified.",
-    "t": "Откроется после подтверждения личности."
-  },
-  "onboarding.deposit.title": {
-    "en": "Make your first deposit",
-    "t": "Сделайте первое пополнение"
-  },
-  "onboarding.invest.current": {
-    "en": "Pick a strategy and subscribe with your available balance.",
-    "t": "Выберите стратегию и подпишитесь на неё доступным балансом."
-  },
-  "onboarding.invest.done": {
-    "en": "You hold units.",
-    "t": "У вас есть юниты."
-  },
-  "onboarding.invest.locked": {
-    "en": "Opens once a deposit is credited.",
-    "t": "Откроется после зачисления пополнения."
-  },
-  "onboarding.invest.title": {
-    "en": "Choose a strategy",
-    "t": "Выберите стратегию"
-  },
-  "onboarding.progress": {
-    "en": "{done} of {total} done",
-    "t": "Готово {done} из {total}"
-  },
-  "onboarding.status.complete": {
-    "en": "Verified · funded · invested",
-    "t": "Личность подтверждена · счёт пополнен · средства вложены"
-  },
-  "onboarding.subtitle": {
-    "en": "Three steps to your first investment.",
-    "t": "Три шага до первой инвестиции."
-  },
-  "onboarding.title": {
-    "en": "Get started",
-    "t": "Начало работы"
-  },
-  "onboarding.verify.done": {
-    "en": "Your deposit address and withdrawals are open.",
-    "t": "Адрес для пополнения и вывод средств открыты."
-  },
-  "onboarding.verify.review": {
-    "en": "Nothing to do on your side — your documents are with our reviewers and we'll email you the decision.",
-    "t": "От вас ничего не требуется — документы у проверяющих, решение пришлём на почту."
-  },
-  "onboarding.verify.title": {
-    "en": "Verify your identity",
-    "t": "Подтвердите личность"
-  },
   "auth.code.back": {
     "en": "Use a different email",
     "t": "Другой адрес"
@@ -7374,10 +5118,6 @@
   "auth.code.label": {
     "en": "Code",
     "t": "Код"
-  },
-  "auth.code.mailMe": {
-    "en": "Email me a code",
-    "t": "Прислать код на почту"
   },
   "auth.code.resend": {
     "en": "Send a new code",
@@ -7398,18 +5138,6 @@
   "auth.dialog.heading": {
     "en": "Sign in or create an account",
     "t": "Войти или создать аккаунт"
-  },
-  "auth.email.confirm": {
-    "en": "Confirm",
-    "t": "Подтвердить"
-  },
-  "auth.email.unverifiedSub": {
-    "en": "Not verified — identity checks need a verified email",
-    "t": "Не подтверждён — для проверки личности нужен подтверждённый адрес"
-  },
-  "auth.email.verified": {
-    "en": "Verified",
-    "t": "Подтверждён"
   },
   "auth.email.verify": {
     "en": "Verify",
@@ -7443,10 +5171,6 @@
     "en": "An account already exists for that address. Sign in instead — with a code if you forgot the password.",
     "t": "Для этого адреса уже есть аккаунт. Войдите — с кодом, если забыли пароль."
   },
-  "auth.err.emailVerifiedElsewhere": {
-    "en": "This address is verified on another account.",
-    "t": "Этот адрес уже подтверждён в другом аккаунте."
-  },
   "auth.err.invalidCode": {
     "en": "That code is not right. Try again.",
     "t": "Неверный код. Попробуйте ещё раз."
@@ -7458,10 +5182,6 @@
   "auth.err.invalidEmail": {
     "en": "Enter a valid email address.",
     "t": "Введите корректный адрес почты."
-  },
-  "auth.err.invalidUsername": {
-    "en": "3–32 characters: letters, digits, '_', '.' or '-'.",
-    "t": "3–32 символа: латинские буквы, цифры, '_', '.' или '-'."
   },
   "auth.err.passwordLocked": {
     "en": "Too many wrong passwords. Sign in with a code instead.",
@@ -7475,18 +5195,6 @@
     "en": "Too many codes went to this address. Try again in a few minutes.",
     "t": "На этот адрес отправлено слишком много кодов. Попробуйте через несколько минут."
   },
-  "auth.err.usernameTaken": {
-    "en": "That username is taken.",
-    "t": "Это имя пользователя занято."
-  },
-  "auth.err.verifyAttemptsExceeded": {
-    "en": "Too many wrong codes in the last 24 hours. Try again tomorrow.",
-    "t": "Слишком много неверных кодов за последние 24 часа. Попробуйте завтра."
-  },
-  "auth.err.verifyThrottled": {
-    "en": "Too many codes went to this address. Try again later — the limit is 10 a day.",
-    "t": "На этот адрес отправлено слишком много кодов. Попробуйте позже — не больше 10 в сутки."
-  },
   "auth.err.weakPassword": {
     "en": "Use at least 8 characters.",
     "t": "Минимум 8 символов."
@@ -7499,41 +5207,13 @@
     "en": "Email or username",
     "t": "Email или имя пользователя"
   },
-  "auth.field.newPassword": {
-    "en": "New password",
-    "t": "Новый пароль"
-  },
   "auth.field.password": {
     "en": "Password",
     "t": "Пароль"
   },
-  "auth.method.code": {
-    "en": "Email code",
-    "t": "Код на почту"
-  },
-  "auth.method.password": {
-    "en": "Password",
-    "t": "Пароль"
-  },
-  "auth.methods.title": {
-    "en": "Sign-in methods",
-    "t": "Способы входа"
-  },
   "auth.orContinueWith": {
     "en": "Or continue with",
     "t": "Или продолжить через"
-  },
-  "auth.password.change": {
-    "en": "Change password",
-    "t": "Сменить пароль"
-  },
-  "auth.password.save": {
-    "en": "Save password",
-    "t": "Сохранить пароль"
-  },
-  "auth.password.set": {
-    "en": "Set password",
-    "t": "Задать пароль"
   },
   "auth.signIn": {
     "en": "Sign in",
@@ -7570,22 +5250,6 @@
   "auth.usePasswordInstead": {
     "en": "Sign in with a password instead",
     "t": "Войти с паролем"
-  },
-  "auth.username.change": {
-    "en": "Change",
-    "t": "Изменить"
-  },
-  "auth.username.none": {
-    "en": "None yet — once set, it signs you in like your email",
-    "t": "Пока нет — когда зададите, с ним можно входить, как с почтой"
-  },
-  "auth.username.save": {
-    "en": "Save",
-    "t": "Сохранить"
-  },
-  "auth.username.title": {
-    "en": "Username",
-    "t": "Имя пользователя"
   },
   "auth.verify.desc": {
     "en": "Your account is ready. Enter the 6 digit code we sent to {email} to verify it, or skip and verify later in Settings.",
@@ -7635,33 +5299,9 @@
     "en": "That took too long. Try the passkey again.",
     "t": "Слишком долго. Попробуйте ключ доступа ещё раз."
   },
-  "auth.err.passkeyRegistered": {
-    "en": "This passkey is registered already.",
-    "t": "Этот ключ доступа уже зарегистрирован."
-  },
   "auth.err.passkeyRejected": {
     "en": "That passkey is not registered here. Sign in with a code instead.",
     "t": "Этот ключ доступа здесь не зарегистрирован. Войдите с кодом."
-  },
-  "auth.passkeys.add": {
-    "en": "Add a passkey",
-    "t": "Добавить ключ доступа"
-  },
-  "auth.passkeys.default": {
-    "en": "Passkey",
-    "t": "Ключ доступа"
-  },
-  "auth.passkeys.remove": {
-    "en": "Remove",
-    "t": "Удалить"
-  },
-  "auth.passkeys.sub": {
-    "en": "Sign in with your fingerprint, face or screen lock — no code, no password",
-    "t": "Вход по отпечатку, лицу или блокировке экрана — без кода и пароля"
-  },
-  "auth.passkeys.title": {
-    "en": "Passkeys",
-    "t": "Ключи доступа"
   },
   "auth.usePasskey": {
     "en": "Use a passkey",
@@ -7706,18 +5346,6 @@
   "admin.withdrawals.source.treasury": {
     "en": "Banking treasury",
     "t": "Казна banking"
-  },
-  "tips.wallet.balance.in-compartments.body": {
-    "en": "USDT you moved into a service's compartment. Still yours and counted in your total — move it back to your main balance to withdraw it.",
-    "t": "USDT, которые вы перевели в отсек сервиса. Они по-прежнему ваши и входят в общий баланс — чтобы вывести их, верните их на основной баланс."
-  },
-  "tips.wallet.balance.in-compartments.title": {
-    "en": "In compartments",
-    "t": "В отсеках"
-  },
-  "wallet.chip.inCompartments": {
-    "en": "IN COMPARTMENTS",
-    "t": "В ОТСЕКАХ"
   },
   "walletAction.back": {
     "en": "Go back",

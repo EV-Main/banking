@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { type ReactNode, Suspense } from "react";
 
+import { CacheWarmer } from "@/application/layout/cache-warmer";
 import { RouteGate } from "@/application/layout/route-gate";
 import { SessionAnalytics } from "@/application/layout/session-analytics";
 import { SessionKeeper } from "@/application/layout/session-keeper";
@@ -21,6 +22,8 @@ import { TimeZoneProvider } from "@/shared/lib/time-zone";
 // Unlike the popup, these pages sit under the conductor's header, so the height keeps
 // `--ev-shell-offset`. `SessionAnalytics` stays from the old shell because `session_created`
 // is the first step of the activation funnel and these pages are now where a session starts.
+// `CacheWarmer` stays for its other half: it drops every cached figure when the session
+// ends, so a tab handed to another account shows none of the previous one's.
 export default async function HostLayout({ children }: { children: ReactNode }) {
   const timeZone = await renderTimeZone();
   const signedIn = isSessionId((await cookies()).get(COOKIES.session)?.value);
@@ -28,6 +31,7 @@ export default async function HostLayout({ children }: { children: ReactNode }) 
     <main className="min-h-[calc(100dvh-var(--ev-shell-offset,0px))] bg-background">
       <SessionKeeper />
       <SessionAnalytics />
+      {signedIn && <CacheWarmer />}
       <TimeZoneProvider value={timeZone}>
         <Suspense>
           <RouteGate signedIn={signedIn}>{children}</RouteGate>
