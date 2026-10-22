@@ -6531,7 +6531,8 @@ export type ConciergeV1FeePolicyApprovalMail = {
  * No code and no decision: the terms were set — by the operator within the house terms,
  * or by the owners' consilium beyond them — and this is the investor being told before
  * they take effect, with the same notice either way. `link` is a CABINET-RELATIVE path —
- * the money plane names no host at all; this plane hangs it off its own cabinet origin.
+ * the money plane names no host at all; this plane hangs it off its own cabinet origin, or
+ * off the cabinet of the scope `link_scope` names.
  */
 export type ConciergeV1FeePolicyNoticeMail = {
     /**
@@ -6572,6 +6573,16 @@ export type ConciergeV1FeePolicyNoticeMail = {
      * Must start with a single `/`; empty means the cabinet's front page.
      */
     link?: string;
+    /**
+     * link_scope
+     *
+     * The scope whose cabinet `link` opens in, e.g. "invest" (`[a-z][a-z0-9_]{0,31}`, else
+     * INVALID_ARGUMENT) — EmitRequest.link_scope's rule. When this plane configures a base
+     * for it (`NOTICE_LINK_BASES`) the mail links to that base plus `link`; empty, or a scope
+     * with no base, keeps `link` under `CABINET_URL`. A base removed after the mail was
+     * queued sends it to `CABINET_URL` itself.
+     */
+    link_scope?: string;
 };
 
 /**

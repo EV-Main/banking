@@ -6615,7 +6615,7 @@
           "concierge.v1.AuthService"
         ],
         "summary": "Redeem a one-time authorization code for a RELYING PARTY's own token pair — the\n back half of the code flow a first-party client on another origin (the Service-Arb\n panel) runs against `GET /auth/authorize` (publicly `evinvest.ltd/api/auth/authorize`).\n Called server-to-server by the client's backend, authenticated by its client\n secret. The code is single-use, lives 60s, and is bound to the client, the exact\n redirect_uri and the PKCE (S256) challenge sent to authorize; presenting a code\n twice is refused AND revokes every token issued off it.",
-        "description": "The access token is `typ=access` with `aud=\u003cthe client's audience\u003e` (e.g. `sa`) and\n a TTL of at most 15 minutes. It opens exactly one RPC in this plane —\n `UserDirectory.GetMe`, which answers it with a trimmed profile (no identity-document\n fields, no KYC level) — and is refused (UNAUTHENTICATED) everywhere else, here and\n on the money plane. Signing out of evinvest.ltd (Logout, RevokeSession, revoke-all)\n revokes the client sessions that sign-in authorized. The refresh token is opaque and bound to the client.",
+        "description": "The access token is `typ=access` with `aud=\u003cthe client's audience\u003e` (e.g. `sa`) and\n a TTL of at most 15 minutes. It opens exactly one RPC in this plane —\n `UserDirectory.GetMe`, which answers it with a trimmed profile (no identity-document\n fields, no KYC level) — and is refused (UNAUTHENTICATED) everywhere else, here and\n on the money plane. Signing out of evinvest.ltd (Logout, RevokeSession, revoke-all)\n revokes the client sessions that sign-in authorized. The refresh token is opaque and bound to the client.\n The access token carries `auth_time` ONLY when the code ended a confirmation that\n this authorization asked for (`max_age`, docs/SCOPES-AND-APPROVALS.md §3.2): the unix\n seconds of the evinvest.ltd session's re-authentication. Any other code gives tokens\n without it. That is how a client proves a fresh confirmation to\n ApprovalExecutionService.Propose.",
         "operationId": "concierge.v1.AuthService.ExchangeCode",
         "parameters": [
           {
@@ -6969,7 +6969,7 @@
           "concierge.v1.AuthService"
         ],
         "summary": "RefreshClientToken",
-        "description": "Rotate a relying party's refresh token. The account is re-checked on EVERY rotation,\n so a suspension ends the session at the next refresh rather than at the family's\n deadline; presenting a rotated-out token revokes the family.",
+        "description": "Rotate a relying party's refresh token. The account is re-checked on EVERY rotation,\n so a suspension ends the session at the next refresh rather than at the family's\n deadline; presenting a rotated-out token revokes the family. The new access token\n keeps the session's original `auth_time`: a refresh never moves it.",
         "operationId": "concierge.v1.AuthService.RefreshClientToken",
         "parameters": [
           {
@@ -15481,11 +15481,16 @@
             "type": "string",
             "title": "link",
             "description": "Cabinet-relative path of the page showing the full terms, e.g. `/funds/qn/fees`.\n Must start with a single `/`; empty means the cabinet's front page."
+          },
+          "link_scope": {
+            "type": "string",
+            "title": "link_scope",
+            "description": "The scope whose cabinet `link` opens in, e.g. \"invest\" (`[a-z][a-z0-9_]{0,31}`, else\n INVALID_ARGUMENT) — EmitRequest.link_scope's rule. When this plane configures a base\n for it (`NOTICE_LINK_BASES`) the mail links to that base plus `link`; empty, or a scope\n with no base, keeps `link` under `CABINET_URL`. A base removed after the mail was\n queued sends it to `CABINET_URL` itself."
           }
         },
         "title": "FeePolicyNoticeMail",
         "additionalProperties": false,
-        "description": "One investor told that the fee terms of a fund they hold are changing.\n\n `subject_user_id` exists beside SendGovernanceMailRequest.user_id for the reason\n PaymentConsentMail gives: no seat is involved, so the only fact this plane can hold\n the money plane to is that the person it is writing to IS the person the notice is\n about. A caller that fans one investor's notice out to a second mailbox has to\n contradict itself in the same message to do it.\n\n No code and no decision: the terms were set — by the operator within the house terms,\n or by the owners' consilium beyond them — and this is the investor being told before\n they take effect, with the same notice either way. `link` is a CABINET-RELATIVE path —\n the money plane names no host at all; this plane hangs it off its own cabinet origin."
+        "description": "One investor told that the fee terms of a fund they hold are changing.\n\n `subject_user_id` exists beside SendGovernanceMailRequest.user_id for the reason\n PaymentConsentMail gives: no seat is involved, so the only fact this plane can hold\n the money plane to is that the person it is writing to IS the person the notice is\n about. A caller that fans one investor's notice out to a second mailbox has to\n contradict itself in the same message to do it.\n\n No code and no decision: the terms were set — by the operator within the house terms,\n or by the owners' consilium beyond them — and this is the investor being told before\n they take effect, with the same notice either way. `link` is a CABINET-RELATIVE path —\n the money plane names no host at all; this plane hangs it off its own cabinet origin, or\n off the cabinet of the scope `link_scope` names."
       },
       "concierge.v1.FeeTerms": {
         "type": "object",

@@ -195,6 +195,7 @@ pub mod wired {
 					proposed: Some(fee_terms(&notice.proposed)),
 					effective_at: notice.effective_at,
 					link: notice.link.clone(),
+					link_scope: String::new(),
 				});
 			}
 			GovernanceMail::PaymentOutcome(outcome) => {
