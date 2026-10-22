@@ -88,6 +88,7 @@ impl ScopeNotifier for ConciergeScopeNotifier {
 			link: notice.link.clone(),
 			dedupe_key: notice.dedupe_key.clone(),
 			occurred_at: 0,
+			link_scope: String::new(),
 		});
 		let token: MetadataValue<_> = format!("Bearer {}", self.service_token)
 			.parse()
