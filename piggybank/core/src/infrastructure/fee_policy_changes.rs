@@ -63,6 +63,9 @@ macro_rules! change_columns {
 
 /// The cabinet-relative path of a product's page, as the holders' notice links to it.
 /// Concierge pins it to its own public origin; this plane never mints a host.
+///
+/// The page belongs to the invest cabinet, but `FeePolicyNoticeMail` has no `link_scope`
+/// (concierge v0.20.0), so the mail joins this path onto `CABINET_URL`, the platform cabinet.
 pub fn product_page_path(service: &ServiceId) -> String {
 	format!("/invest/{service}")
 }

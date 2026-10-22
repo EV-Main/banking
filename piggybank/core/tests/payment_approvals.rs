@@ -1120,6 +1120,7 @@ async fn an_investors_payment_is_answered_in_the_cabinet_and_settles_once() {
 	assert_eq!(emitted.len(), 1);
 	assert_eq!(emitted[0].0, concierge_id);
 	assert!(emitted[0].1.body.contains("30 USDT") && emitted[0].1.body.contains("quarterly rebalance"));
+	assert_eq!(emitted[0].1.link_scope, "", "the order debits the platform wallet, so it is answered in the platform cabinet");
 
 	// The answer: approved, reserved, and executed once the relay has applied the reserve.
 	let outcome = payments_app::answer_consent(&ports(&a), investor, id, ConsentDecision::Approve, &audit(), now())
@@ -1385,4 +1386,27 @@ async fn an_investor_with_no_mirrored_identity_cannot_be_asked() {
 	assert_eq!(orders, 0, "an order nobody can answer must not exist");
 
 	reset(&a.pool).await;
+}
+
+/// A mandate notice names its scope, but the outbox does not keep it yet: what reaches concierge
+/// links into the platform cabinet, as before. When the outbox stores the scope, this test flips
+/// to expect it.
+#[tokio::test]
+async fn a_queued_mandate_notice_reaches_the_inbox_without_its_scope() {
+	let _guard = exclusive().await;
+	let Some(a) = app("payment approvals mandate notice").await else { return };
+	reset(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	let notice = piggybank_core::ports::security_notices::mandate_changed(investor, &Uuid::new_v4().to_string(), true, "invest-core", "invest", usdt("10"), usdt("50"));
+	assert_eq!(notice.link_scope, "invest");
+	let mut conn = a.pool.acquire().await.unwrap();
+	piggybank_core::infrastructure::scope_notifications::enqueue(&mut conn, &notice, None).await.unwrap();
+	drop(conn);
+
+	let inbox = Inbox::default();
+	let worker = ScopeNotificationWorker::new(a.pool.clone(), Arc::new(inbox.clone()));
+	assert_eq!(worker.drain().await.unwrap(), 1);
+	let emitted = inbox.0.lock().unwrap().emitted.clone();
+	assert_eq!(emitted.len(), 1);
+	assert_eq!((emitted[0].1.link.as_str(), emitted[0].1.link_scope.as_str()), ("/wallet", ""));
 }

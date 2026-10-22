@@ -2,7 +2,8 @@
 //! scope inbox (`ScopeInboxService.EmitScopeNotification`), on banking's namespace `bank`.
 //!
 //! A notice is plain text and a relative cabinet path, never markup: concierge renders the
-//! inbox entry and the mail copy itself. It is written to an outbox in the transaction of the
+//! inbox entry and the mail copy itself. The notice may name the scope whose cabinet the path
+//! opens in; concierge, not this plane, owns the host of every cabinet. It is written to an outbox in the transaction of the
 //! fact it announces and delivered by a worker, so this port only has to say how one emit
 //! went.
 
@@ -25,6 +26,11 @@ pub struct ScopeNotice {
 	pub body: String,
 	/// Cabinet-relative path, a single leading `/`, at most 512 characters; may be empty.
 	pub link: String,
+	/// The scope whose cabinet `link` opens in (`[a-z][a-z0-9_]{0,31}`), or empty for the
+	/// platform cabinet (`CABINET_URL`). Concierge stores the link under that scope's base when
+	/// it configures one (`NOTICE_LINK_BASES`) and keeps it relative otherwise, so naming a
+	/// scope with no base is harmless.
+	pub link_scope: String,
 	/// Idempotency key, unique per recipient, at most 128 characters.
 	pub dedupe_key: String,
 }

@@ -426,6 +426,10 @@ const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 /// Where in the cabinet an order is answered. A path and not a URL: concierge joins it onto
 /// `CABINET_URL`, so this plane never mints a host. Relative to the cabinet root, because
 /// `CABINET_URL` already carries the cabinet's prefix.
+///
+/// The notice names no `link_scope`: the order debits the person's own wallet (`main`, see
+/// `PAYMENT_APPROVAL_SCOPE`), and banking records no scope a person belongs to. So the link
+/// stays in the platform cabinet, which serves this page.
 fn answer_link(payment: PaymentId) -> String {
 	format!("/wallet/action/payment/{}", payment.raw())
 }
@@ -592,6 +596,7 @@ async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 			title: "A payment was stopped".to_owned(),
 			body,
 			link: String::new(),
+			link_scope: String::new(),
 			dedupe_key: format!("payment:{}:outcome:{recipient}", order.id()),
 		};
 		scope_notifications::enqueue(conn, &notice, Some(order.id().raw())).await?;
@@ -962,6 +967,7 @@ impl PaymentRepository for PgPayments {
 						},
 					),
 					link: answer_link(order.id()),
+					link_scope: String::new(),
 					dedupe_key: format!("payment:{}:consent:{}", order.id(), session.subject),
 				};
 				scope_notifications::enqueue(&mut tx, &notice, Some(order.id().raw())).await?;
