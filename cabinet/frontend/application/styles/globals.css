@@ -50,14 +50,6 @@
 }
 
 :root {
-  /* Width of the desktop app-shell rail (application/layout/sidebar.tsx). The
-     `(app)` layout reserves the same width as content padding above `lg`;
-     below that breakpoint the sidebar is hidden and a BottomNavbar replaces it. */
-  --cabinet-rail-w: 248px;
-  /* Height of the mobile bottom nav bar (application/layout/bottom-navbar.tsx).
-     The `(app)` layout reserves matching padding-bottom below `lg` so content is
-     never occluded by the fixed bar. */
-  --cabinet-bottom-nav-h: 64px;
   /* The sign-in dialog's off-scale steps (features/auth/ui/sign-in-dialog.tsx). */
   --sign-in-radius: 10px;
   --sign-in-text-title: 0.9375rem;
@@ -171,56 +163,3 @@
   }
 }
 
-/* The rail's active-row marker (application/layout/sidebar.tsx, `Section`): one node
-   per section, placed on the marked row by measurement and moved by a transition on
-   `transform`. The move lives here as CSS rather than in `motion` on purpose — a
-   transition runs on the compositor, so it keeps its frames while the main thread is
-   busy rendering the page that was just navigated to, which is exactly when the
-   `layoutId` projection it replaced used to drop them.
-
-   280ms and the curve restate `DUR.base` / `EASE.out` from `shared/ui/motion/tokens.ts`,
-   the same way the skeleton above restates 200ms: a stylesheet cannot import them.
-
-   Two attribute states. Before the sidebar's layout effect has measured anything
-   (SSR, and every frame up to hydration) the marker has no position, so it stays hidden
-   and the marked row carries the fill itself through the sibling combinator — the first
-   paint is right and the label is legible on its teal. `data-placed` flips both at once.
-   Its value says how the marker arrived: `entered` when it mounted into a section that
-   was already on screen (a move across sections, which reads as a fade), `first` when
-   hydration or the section itself brought it (a cut — the row was already filled, and
-   fading the marker in under a fill that is fading out would dip). A move within a
-   section keeps the node and its attribute, so the entrance never replays over a slide.
-
-   `utilities`, like the skeleton: the fallback fill lands on a row that Tailwind
-   utilities style, and a rule in a lower layer would lose to any `bg-*` a later edit put
-   on the marked row. */
-@layer utilities {
-  @keyframes ev-rail-marker-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  [data-slot="rail-marker"] {
-    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  [data-slot="rail-marker"]:not([data-placed]) {
-    visibility: hidden;
-  }
-  [data-slot="rail-marker"][data-placed="entered"] {
-    animation: ev-rail-marker-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  /* `bg-primary` compiles to this very variable: the kit's `@theme inline` maps
-     `--color-primary` onto `--primary`, and inlines it. */
-  [data-slot="rail-marker"]:not([data-placed]) ~ [aria-current="page"] {
-    background-color: var(--primary);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    [data-slot="rail-marker"] {
-      transition: none;
-      animation: none;
-    }
-  }
-}

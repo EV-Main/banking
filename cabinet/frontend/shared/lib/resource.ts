@@ -21,9 +21,8 @@
 // A server read does not replace this cache, it feeds it: a server component reads once for the first HTML and passes the answer down as a seed
 // (`useSeededResource`), and from then on the value lives, ages and is invalidated here.
 //
-// Why not a store library. The repo already answers this: `shared/lib/use-session.ts` and
-// `shared/lib/use-platform.ts` are hand-rolled copies of this same pattern, each with
-// slightly different staleness rules. This is that pattern
+// Why not a store library. The repo already answers this: `shared/lib/use-session.ts` is a
+// hand-rolled copy of this same pattern with its own staleness rules. This is that pattern
 // written once, with a policy per resource instead of per copy — and no new dependency
 // (see AGENTS.md § Hard rules).
 //

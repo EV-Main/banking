@@ -44,8 +44,8 @@ export function DepositView({ initialNetwork }: { initialNetwork?: string }) {
   useEffect(preloadDepositQr, []);
 
   const { data: wallet, error: walletError, isLoading: walletLoading } = useResource(walletResource);
-  // Shared with the sidebar chip and the profile page, and prefetched at boot, so the tier
-  // is normally known on the first frame of this screen.
+  // Shared with the home card's status chip, so the tier is often known on the first
+  // frame of this screen.
   const { data: profile, error: profileError, isLoading: profileLoading } = useResource(profileResource);
 
   // The tier is unknown only while the read is in flight. A read that FAILED must not gate

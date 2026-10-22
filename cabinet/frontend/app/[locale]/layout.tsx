@@ -35,8 +35,7 @@ export async function generateMetadata({
 }
 
 // Root layout: html/body + cross-cutting providers only. The visible chrome belongs to
-// the route groups — the signed-in app shell (sidebar) lives in `(app)`, the centered
-// auth framing in `(auth)`.
+// the route groups.
 //
 // This is the ROOT layout despite sitting under `[locale]`, and deliberately so:
 // `[locale]` has to be a *root* param for `next/root-params` to expose it to the
@@ -51,9 +50,9 @@ export default async function RootLayout({
   params: Promise<{ locale: string }>;
 }) {
   const nonce = (await requestNonce()) ?? undefined;
-  // The locale is the URL now, not a cookie. `(auth)` needs it as much as `(app)`
-  // — someone who cannot yet sign in is exactly the reader who should not be met
-  // in a language they do not read.
+  // The locale is the URL now, not a cookie. Every group needs it, the signed-out ones
+  // included — someone who cannot yet sign in is exactly the reader who should not be
+  // met in a language they do not read.
   const { locale: raw } = await params;
   if (!isLocale(raw)) notFound();
   const locale = raw;
