@@ -5,7 +5,7 @@ package banking.v1;
 // Health surface for the hub's gRPC service plane.
 //
 //   Check     — liveness: is the process up? Trivial, unauthenticated; backs the
-//               `cabinet` BFF smoke path (browser -> BFF -> gRPC) and service checks.
+//               wallet BFF smoke path (browser -> BFF -> gRPC) and service checks.
 //   Readiness — can this instance actually move money? Pings Postgres + TigerBeetle
 //               and inspects the outbox (parked rows / dispatch backlog). An
 //               orchestrator/LB drains an instance that is up but not ready instead of

@@ -2,9 +2,9 @@
   "name": "ev-banking",
   "private": true,
   "packageManager": "npm@11.11.0",
-  "description": "EV banking hub — Turborepo of client apps (cabinet/frontend). Each client splits into a Next.js frontend and a Rust backend; the backends + the hub (domain, contracts, piggybank/{core,auth,signer}) live in the Cargo workspace.",
+  "description": "EV banking hub — Turborepo of client apps (wallet/frontend). Each client splits into a Next.js frontend and a Rust backend; the backends + the hub (domain, contracts, piggybank/{core,auth,signer}) live in the Cargo workspace.",
   "workspaces": [
-    "cabinet/frontend"
+    "wallet/frontend"
   ],
   "scripts": {
     "dev": "turbo run dev",

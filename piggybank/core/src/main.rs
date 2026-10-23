@@ -159,7 +159,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 			config::PaymentApprovalMode::Consilium => "banking's consilium",
 		},
 		match payment_approval_mode.session {
-			config::PaymentApprovalMode::Concierge => "their own answer in the cabinet",
+			config::PaymentApprovalMode::Concierge => "their own answer in the wallet host",
 			config::PaymentApprovalMode::Consilium => "the emailed token",
 		},
 	);

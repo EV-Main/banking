@@ -14,7 +14,7 @@ use domain::{error::DomainError, money::Usdt};
 
 use crate::ports::withdrawals::LimitProfile;
 
-/// The origin the cabinet itself runs on; the BFF sends it as `AuditContext.origin`.
+/// The origin the wallet host itself runs on; the BFF sends it as `AuditContext.origin`.
 const DEFAULT_FIRST_PARTY_ORIGIN: &str = "https://evinvest.ltd";
 /// Six hours: how long a first-seen address waits before money may go to it, and how long
 /// after a sign-in change a new address stays shut.

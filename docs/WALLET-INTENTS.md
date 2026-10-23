@@ -8,8 +8,8 @@ of the BFF side (controls (a), (b), (d) and (h) of
 [`WALLET-INPAGE-SPEC.md`](./WALLET-INPAGE-SPEC.md)). The proof itself is concierge's
 `docs/STEPUP-PROOF.md`.
 
-The code: `cabinet/backend/src/routes/intents/` (routes, CORS, the confirm order) and
-`cabinet/backend/src/wallet_intents/` (the host matrix, the risk classes, the key, the proof
+The code: `wallet/backend/src/routes/intents/` (routes, CORS, the confirm order) and
+`wallet/backend/src/wallet_intents/` (the host matrix, the risk classes, the key, the proof
 verifier, the store).
 
 ## Off by default
@@ -37,7 +37,7 @@ live, and that is a reviewed change of the matrix, not an env flip.
 The boot refuses (exit 78):
 
 - an origin that is not a matrix entry (in every environment);
-- an origin equal to `CABINET_WS_ORIGIN` (the cabinet's own routes are the first-party ones);
+- an origin equal to `CABINET_WS_ORIGIN` (the wallet host's own routes are the first-party ones);
 - in production: an origin that is not `https`, has a port or a path, or is not a subdomain
   of `evinvest.ltd`. `*`, `null` and a trailing slash do not parse at all;
 - no `WALLET_INTENT_KEY`, or one shorter than 32 bytes;

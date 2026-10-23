@@ -71,7 +71,7 @@ service PaymentConsentService {
 // PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.
 // Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has
 // no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and
-// code: the session is the credential, and the cabinet's gate asks for a fresh login before
+// code: the session is the credential, and the wallet host's gate asks for a fresh login before
 // an approval (a decline asks for none).
 service PaymentConfirmationService {
   // The caller's orders waiting for their answer, newest first.
@@ -215,7 +215,7 @@ message Payment {
   uint64 version = 18;
   // The seat that decides the order: `consilium`, `consent` (the emailed token),
   // `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
-  // the cabinet). Empty only for a row written before seats were recorded.
+  // the wallet host). Empty only for a row written before seats were recorded.
   string seat = 19;
   // Concierge's id of the approval, once banking has opened it; set for `concierge_approval`.
   string approval_id = 20;

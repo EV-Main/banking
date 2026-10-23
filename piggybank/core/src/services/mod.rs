@@ -1,6 +1,6 @@
 //! The hub's inbound **driving adapter** — its data-plane gRPC service surface
 //! (tonic). A closed, internal surface consumed by other services and, via the
-//! `cabinet/backend` BFF, by browsers. Named for the hexagonal role (the services it
+//! `wallet/backend` BFF, by browsers. Named for the hexagonal role (the services it
 //! exposes), not the wire protocol; gRPC/tonic-web is the implementation detail.
 //!
 //! `tonic-web` (`GrpcWebLayer` + `accept_http1`) lets browser/WASM clients reach

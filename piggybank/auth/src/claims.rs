@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TokenType {
-	/// A short-TTL access token for an http client (the cabinet's user), scoped to
+	/// A short-TTL access token for an http client (the wallet host's user), scoped to
 	/// the hub's data-plane audience.
 	Access,
 	/// An inter-service token: another backend authenticating its onward gRPC calls

@@ -268,7 +268,7 @@ macro_rules! session_columns {
 	};
 }
 
-/// The investor's in-cabinet seat behind one order, joined to its subject's address.
+/// The investor's seat in the wallet host behind one order, joined to its subject's address.
 struct SessionRow {
 	subject: Uuid,
 	email: String,
@@ -410,7 +410,7 @@ pub(crate) fn mail_destination(terms: &PaymentTerms, detail: Option<&EndDetail>)
 	}
 }
 
-/// Which way an investor's consent was being asked for: by a mailed token, or in the cabinet.
+/// Which way an investor's consent was being asked for: by a mailed token, or in the wallet host.
 /// The notice that tells the people a dead consent concerns goes the way the consent went.
 #[derive(Clone, Copy)]
 enum SeatKind {
@@ -423,17 +423,17 @@ enum SeatKind {
 const CONSENT_NOTICE_KIND: &str = "payment_consent";
 const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 
-/// Where in the cabinet an order is answered. A path and not a URL: concierge joins it onto
+/// Where in the wallet host an order is answered. A path and not a URL: concierge joins it onto
 /// `CABINET_URL`, or onto the base of the notice's `link_scope`, so this plane never mints a
-/// host. Relative to the cabinet root, because every base already carries the cabinet's prefix.
+/// host. Relative to the wallet host root, because every base already carries the `/cabinet` prefix.
 fn answer_link(payment: PaymentId) -> String {
-	format!("/wallet/action/payment/{}", payment.raw())
+	format!("/wallet/payment/{}", payment.raw())
 }
 
 /// The cabinet a payment's notices open in: the scope of the product the order pays out of or
 /// into, the source first. A fund payment from the admin console names a product at one end,
 /// and its holders are that scope's people. Banking records no scope a person belongs to, so an
-/// order with no product end (user to user, the treasury) stays in the platform cabinet.
+/// order with no product end (user to user, the treasury) stays in the platform wallet host.
 fn payment_link_scope(terms: &PaymentTerms) -> Result<String, DomainError> {
 	let product = match (terms.from(), terms.to()) {
 		(Party::Service(service), _) | (_, PaymentDestination::Internal(Party::Service(service))) => service,
@@ -575,7 +575,7 @@ async fn queue_consent_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 	Ok(())
 }
 
-/// The in-cabinet twin of [`queue_consent_end`], with the same audiences for the same reasons:
+/// The wallet-host twin of [`queue_consent_end`], with the same audiences for the same reasons:
 /// the subject, unless their mailbox is what changed, and the initiator when that is somebody
 /// else. Only the invalidations exist here — there is no code to burn.
 async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: ConsentEnd) -> Result<(), DomainError> {
@@ -615,7 +615,7 @@ async fn queue_session_end(conn: &mut PgConnection, order: &PaymentOrder, end: C
 	Ok(())
 }
 
-/// Why the order's investor consent — mailed or given in the cabinet — no longer stands, read
+/// Why the order's investor consent — mailed or given in the wallet host — no longer stands, read
 /// under whatever lock the caller holds. `None` for an order with neither seat (a consilium's
 /// or an approval's) and for a seat whose pins hold.
 async fn seat_invalidation(conn: &mut PgConnection, payment: PaymentId) -> Result<Option<ConsentInvalidation>, DomainError> {
@@ -716,7 +716,7 @@ async fn lock_subject(conn: &mut PgConnection, payment: PaymentId) -> Result<(),
 /// already made, and a rolled-back transition rolls this back with it. A no-op for a
 /// fund-owned order, whose seat is a consilium's and queues no consent mail.
 async fn withdraw_consent(conn: &mut PgConnection, id: PaymentId) -> Result<(), DomainError> {
-	// The in-cabinet seat's invitation is a notice, not a mail, and carries no secret to blank;
+	// The wallet-host seat's invitation is a notice, not a mail, and carries no secret to blank;
 	// it goes the same way for the same reason. It waits on no seat row, so unlike the mail it
 	// cannot deadlock with the worker whatever lock the caller holds.
 	let notices = scope_notifications::withdraw_undelivered(conn, id.raw(), CONSENT_NOTICE_KIND).await?;
@@ -947,7 +947,7 @@ impl PaymentRepository for PgPayments {
 				// The notice that asks them, in this same transaction (see the mailed seat). The
 				// notice is addressed through the mirror at send time; the check that the mirror
 				// exists is made here all the same, because an investor concierge has never
-				// signed in cannot open the cabinet to answer.
+				// signed in cannot open the wallet host to answer.
 				let mirrored: Option<Uuid> = sqlx::query_scalar("SELECT concierge_user_id FROM users WHERE id = $1")
 					.bind(session.subject.raw())
 					.fetch_optional(&mut *tx)

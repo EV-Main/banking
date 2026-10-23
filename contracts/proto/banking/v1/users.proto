@@ -65,7 +65,7 @@ message UserProfile {
   string language = 13;
   string base_currency = 14;
   string timezone = 15;
-  // Kept wire-identical with concierge.v1.UserProfile (the cabinet TS is aliased to the
+  // Kept wire-identical with concierge.v1.UserProfile (the wallet TS is aliased to the
   // concierge shape). The identity plane OWNS kyc/role; the money plane mirrors them for
   // gating but does not re-serve them on its self-service GetMe, so these stay default
   // here — the fields exist for cross-plane wire parity.
@@ -97,7 +97,7 @@ message UserProfile {
   // Carried here only for wire parity, like `role_is_break_glass` above: the money plane
   // learns of a freeze through the one-way lifecycle bridge's SUSPENDED/REINSTATED
   // events, never by reading this, and never sets it. Absent them the parity round trip
-  // in `cabinet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is
+  // in `wallet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is
   // exactly the drift that test exists to catch.
   string suspended_by = 19;
   // Unix SECONDS an "admin_hold" lapses; 0 when nothing lapses. Parity only, as above.

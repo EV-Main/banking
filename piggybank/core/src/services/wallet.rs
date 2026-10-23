@@ -91,7 +91,7 @@ impl WalletService for WalletSvc {
 		// An empty `address` marks the rail unavailable: there is no fundable address yet
 		// (the underlying address is still a placeholder — or the rail is unconfigured,
 		// in which case no address is ever provisioned). An unverified caller does NOT
-		// land here — that refusal is `permission_denied`, so the cabinet can tell
+		// land here — that refusal is `permission_denied`, so the wallet host can tell
 		// "this rail can't fund you" from "finish verification".
 		Ok(Response::new(pb::DepositAddress {
 			network: network.as_str().to_owned(),

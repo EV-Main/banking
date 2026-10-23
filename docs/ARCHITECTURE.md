@@ -17,7 +17,7 @@ stay documented placeholders until a feature explicitly asks.
 
 ```
    ┌───────────────────────────── banking (this repo) ────────────────────────────┐
-   │  cabinet/frontend ──/api──▶ cabinet/backend ──gRPC──▶ piggybank │
+   │  wallet/frontend ──/api──▶ wallet/backend ──gRPC──▶ piggybank │
    │      ▲  composes <mfe-*>            (the BFF, axum)        │   (one process)     │
    │      │  custom elements              │                     ├─ core : gRPC svcs   │
    │      (Next.js host shell)            │ ──gRPC──▶ concierge  └─ auth : issuance    │
@@ -25,10 +25,10 @@ stay documented placeholders until a feature explicitly asks.
    │                                           Postgres (control) · TigerBeetle      │
    │                                           (money) · Redis (central auth)        │
    └──────────────────────────────────────────────────────────────────────────────┘
-   browser ─HTTP─▶ cabinet/frontend (Next.js) ─/api rewrite─▶ cabinet/backend
+   browser ─HTTP─▶ wallet/frontend (Next.js) ─/api rewrite─▶ wallet/backend
      (the BFF) ─gRPC─▶ piggybank core (money) + concierge (identity, separate repo)
    other service repos (separate): own logic, registered as allocations ─gRPC (evbanking_contracts)─▶ piggybank;
-     verify client tokens locally via evbanking_auth; own microfrontends mount into the cabinet.
+     verify client tokens locally via evbanking_auth; own microfrontends mount into the wallet host.
 ```
 
 **Network segmentation (deployment requirement).** The core/auth gRPC seams do not yet
@@ -66,7 +66,7 @@ cabinet-backend   → evbanking_contracts, evconcierge_contracts (git: EV-invest
 | `evbanking_contracts` (`contracts/`) | gRPC wire contracts: tonic client+server stubs from `proto/`. Other repos import it for the client stubs.                                       | no        |
 | `evbanking_auth` (`piggybank/auth/`) | The auth **service** (issuance gRPC + in-process `Authorizer` channel) **and** the shared verification flow (JWKS verify + interceptor).        | no        |
 | `piggybank-core` (`piggybank/core/`) | The hub server: composition root that runs the core gRPC services and the auth service as in-process tasks; data-plane services + infra.        | no        |
-| `cabinet-backend` (`cabinet/backend/`) | The cabinet **BFF**: a standalone axum HTTP service that runs OAuth, holds the session server-side, and proxies the browser's `/api/*` to piggybank (money) and concierge (identity) over gRPC. The one crate spanning both planes. | no        |
+| `cabinet-backend` (`wallet/backend/`) | The wallet **BFF** (the crate name stays `cabinet-backend`; gitops names the image): a standalone axum HTTP service that runs OAuth, holds the session server-side, and proxies the browser's `/api/*` to piggybank (money) and concierge (identity) over gRPC. The one crate spanning both planes. | no        |
 
 `domain` never depends on an adapter, and the wasm-unsafe `evbanking_auth` is never a
 dependency of `domain` — so `domain` stays wasm-safe for service frontends.
@@ -96,14 +96,14 @@ the clients. `evbanking_contracts` vendors the proto, so a downstream repo adds 
 one git dependency (plus `evbanking_auth` for the verification flow) with no protoc
 toolchain.
 
-The cabinet **backend** (Rust) consumes the generated tonic **client** stubs, so it needs
-no separate toolchain. The cabinet **frontend** ships no wire client at all — it calls the
+The wallet **BFF** (Rust) consumes the generated tonic **client** stubs, so it needs
+no separate toolchain. The wallet host **frontend** ships no wire client at all — it calls the
 backend's same-origin `/api/*` over `fetch`, typed by the generated TS types (`proto →
-protoc-gen-connect-openapi → @hey-api/openapi-ts → cabinet/frontend/shared/contracts/gen`,
+protoc-gen-connect-openapi → @hey-api/openapi-ts → wallet/frontend/shared/contracts/gen`,
 via `nix run .#gen-api`). The backend emits that same snake_case wire shape, so the committed
 types stay valid. No buf, no second toolchain — tonic + tonic-build do everything.
 
-The identity + governance surface the cabinet also consumes comes from **concierge's own
+The identity + governance surface the wallet BFF also consumes comes from **concierge's own
 protos**, read from the `evconcierge_contracts` git checkout that `Cargo.toml` pins. Which
 of them are generated is listed once, in `contracts/concierge-protos.txt`; the same list is
 what `nix run .#concierge-pin-check` guards (pin is an ancestor of concierge `origin/main`;
@@ -180,7 +180,7 @@ rely on the short access TTL. _Slice note:_ the refresh store is in-process by
 default (single-instance/dev); `RefreshStore::from_env` engages the central-Redis
 arm when `REDIS_URL` is set.
 
-**Browser.** The BFF token-handler pattern: the cabinet **backend** (`cabinet/backend`,
+**Browser.** The BFF token-handler pattern: the wallet **BFF** (`wallet/backend`,
 a standalone Rust service) is the OAuth confidential client, holds tokens server-side, and
 gives the browser only a `__Host-`/`HttpOnly`/`SameSite` cookie + CSRF defense, scoped to a
 real apex domain. The Next.js **frontend** rewrites same-origin `/api/*` to it. Implemented as
@@ -197,12 +197,12 @@ the auth refresh Redis), the browser holds only the opaque session id + a readab
 the wallet cross-origin (`WALLET_CORS_ORIGINS`), and it acts only through the intent routes
 `GET /api/wallet/csrf`, `POST /api/wallet/intents` and `POST /api/wallet/intents/{id}/confirm`.
 These routes are mounted only when `WALLET_ACTION_ORIGINS` names a host of the in-code matrix
-(`cabinet/backend/src/wallet_intents/mod.rs`). The BFF computes the terms from the hub, stores
+(`wallet/backend/src/wallet_intents/mod.rs`). The BFF computes the terms from the hub, stores
 the intent in Redis, and executes it only on a confirmation from the same account, page and
 session, with a concierge step-up proof when the risk class asks for one. Contract and
 limits: [`WALLET-INTENTS.md`](./WALLET-INTENTS.md).
 
-**Cross-plane token-trust (the BFF holds two token pairs).** The cabinet spans both planes,
+**Cross-plane token-trust (the BFF holds two token pairs).** The wallet host spans both planes,
 which sign tokens under **separate** issuers and **distinct `aud`** (concierge `aud=concierge`
 vs. banking `aud=banking-core`). So the BFF keeps a token pair **per plane** in its session:
 the concierge pair authorizes identity RPCs (`UserDirectory`), the banking pair authorizes
@@ -235,26 +235,26 @@ distinct `aud`); graduate to SPIFFE/SPIRE only at platform scale.
 
 ## Microfrontends
 
-The host (`cabinet/frontend`, Next.js 16 App Router) composes microfrontends from
+The host (`wallet/frontend`, Next.js 16 App Router) composes microfrontends from
 other repos at runtime. A microfrontend can be a **whole page or an inline
 component**, and may be React or Rust/WASM.
 
 **Universal contract — a custom element.** Every microfrontend ships one
 self-registering ESM bundle that calls `customElements.define('mfe-<team>-<name>',
-…)`. The host renders it with [`<RemoteElement>`](../cabinet/frontend/shared/mfe/RemoteElement.tsx):
+…)`. The host renders it with [`<RemoteElement>`](../wallet/frontend/shared/mfe/RemoteElement.tsx):
 load the bundle by URL → `customElements.whenDefined(tag)` → render the element,
 mapping props to attributes/properties and CustomEvents to callbacks. The boundary
-is identical for React, Dioxus, and Leptos, so the cabinet treats every microfrontend
+is identical for React, Dioxus, and Leptos, so the wallet host treats every microfrontend
 the same. **Light DOM only** — Tailwind v4 `@property` tokens break inside shadow
 roots, and global tokens/uikit must cascade in.
 
-- **Registry.** `cabinet` resolves a logical name → `{tag, scriptUrl, kind}` from a
-  per-env registry (`cabinet/frontend/mfe-registry.json`, which the cabinet frontend
+- **Registry.** The wallet host resolves a logical name → `{tag, scriptUrl, kind}` from a
+  per-env registry (`wallet/frontend/mfe-registry.json`, which the wallet host frontend
   reads server-side). Independent deploys land by editing the
-  registry, not rebuilding the cabinet. Tags are globally unique and versioned (the custom-element
+  registry, not rebuilding the wallet host. Tags are globally unique and versioned (the custom-element
   registry is global).
 - **Page-level** = the same element mounted at a route
-  (`cabinet/frontend/app/(mfe)/[service]/[[...slug]]`); the cabinet keeps its chrome.
+  (`wallet/frontend/app/(mfe)/[service]/[[...slug]]`); the wallet host keeps its chrome.
 - **React producer** (other repos): wrap a component as a custom element with
   `@r2wc/react-to-web-component` directly — the hub ships no producer SDK.
   _Optional_ optimization for React-to-React widgets: Module
@@ -279,15 +279,15 @@ roots, and global tokens/uikit must cascade in.
   on it.
 - **Rejected:** Next.js Multi-Zones as the primary mechanism (path-only; can't
   embed a widget). It IS used one level up, in the sanctioned standalone-sub-site
-  form: the cabinet itself is mounted as a zone of the `site_conductor` domain
-  (`basePath: "/cabinet"`; the conductor rewrites `/cabinet/*` here — see
-  `cabinet/frontend/shared/config/base-path.ts`). Widget-level composition inside
-  cabinet pages stays custom-elements-only.
+  form: the wallet host itself is mounted as a zone of the `site_conductor` domain
+  (`basePath: "/cabinet"`, a public URL prefix that stays; the conductor rewrites `/cabinet/*` here — see
+  `wallet/frontend/shared/config/base-path.ts`). Widget-level composition inside
+  wallet host pages stays custom-elements-only.
 
-**BFF (orthogonal).** The cabinet **backend** (`cabinet/backend`, axum) proxies
+**BFF (orthogonal).** The wallet **BFF** (`wallet/backend`, axum) proxies
 browser HTTP to the hub's tonic backend (and the concierge identity plane) over gRPC, using
-the generated tonic client stubs. No microfrontend talks to a plane directly — the cabinet
-backend is the single auth/egress boundary, reached same-origin via the frontend's `/api/*`
+the generated tonic client stubs. No microfrontend talks to a plane directly — the wallet
+BFF is the single auth/egress boundary, reached same-origin via the frontend's `/api/*`
 rewrite. WASM MFEs call that same-origin `/api/*` over `fetch` (the planes' `tonic-web` layer
 also allows direct gRPC-Web when latency demands it).
 
@@ -393,7 +393,7 @@ authorization matrix: [`piggybank/core/PATTERNS.md`](../piggybank/core/PATTERNS.
 | `init`                | one-shot env setup for a fresh clone (dev `.env` secrets, npm deps)             |
 | `dev`                 | postgres + tigerbeetle + redis + signer + piggybank + cabinet-backend + cabinet |
 | `piggybank`           | hub server: core gRPC + auth tasks (tonic-web)                                  |
-| `cabinet-backend`     | cabinet BFF (axum) → piggybank (money) + concierge (identity)                   |
+| `cabinet-backend`     | wallet BFF (axum) → piggybank (money) + concierge (identity)                   |
 | `cabinet`             | Next.js host shell (proxies `/api/*` → the BFF)                                 |
 | `db` / `tb` / `redis` | SHARED ev_invest Postgres / local TigerBeetle / SHARED Redis                    |
 
@@ -410,5 +410,5 @@ the hub on boot** (idempotent). Author new ones with the sqlx CLI (in the dev sh
 never by hand: `sqlx migrate add --source piggybank/core/migrations --sequential <name>`.
 
 See [`flake.nix`](../flake.nix) for the apps and dev shell, and per-area READMEs
-(e.g. [`cabinet/frontend/README.md`](../cabinet/frontend/README.md) and
-[`cabinet/backend/README.md`](../cabinet/backend/README.md)) for details.
+(e.g. [`wallet/frontend/README.md`](../wallet/frontend/README.md) and
+[`wallet/backend/README.md`](../wallet/backend/README.md)) for details.

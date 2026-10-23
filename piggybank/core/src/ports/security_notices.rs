@@ -10,8 +10,8 @@ use domain::{money::Usdt, scope_operations::WALLET_SECURITY_TOPIC, users::UserId
 
 use crate::ports::scope_notifications::ScopeNotice;
 
-/// The wallet page, relative to the cabinet root: concierge joins it onto `CABINET_URL`, or onto
-/// the base of the notice's `link_scope`, and each base already ends in the cabinet's own
+/// The wallet page, relative to the wallet host root: concierge joins it onto `CABINET_URL`, or onto
+/// the base of the notice's `link_scope`, and each base already ends in the host's own
 /// prefix, so a `/cabinet` here would double it. Cancelling a queued withdrawal and signing out
 /// everywhere both start there.
 const WALLET_PAGE: &str = "/wallet";
@@ -50,7 +50,7 @@ pub fn withdrawal_requested(user: UserId, withdrawal: &Withdrawal, hold_secs: Op
 		body,
 		link: WALLET_PAGE.to_owned(),
 		// A withdrawal leaves the person's own wallet (`main`), which belongs to no scope, and
-		// banking records no scope a person belongs to: the platform cabinet is the only one
+		// banking records no scope a person belongs to: the platform wallet host is the only one
 		// known to be theirs.
 		link_scope: String::new(),
 		dedupe_key: format!("withdrawal:{}:requested", withdrawal.id()),

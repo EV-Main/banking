@@ -39,7 +39,7 @@ const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Cap on establishing a TCP/TLS connection to the hub: a black-holed or half-open
 /// hub must fail fast rather than wedge the awaiting verify task. Mirrors the
-/// cabinet BFF's upstream deadlines.
+/// wallet BFF's upstream deadlines.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Per-RPC deadline on the `Jwks` refresh call. tonic has no default request

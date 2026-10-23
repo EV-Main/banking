@@ -27,10 +27,10 @@ A vendor verdict may grant at most tier 1 (`runner/src/ports.rs:241`,
 (`runner/migrations/0010_kyc_cases.sql:46`, with `0014_kyc_requested_tier_intent.sql`
 explaining why those two numbers differ on purpose). Banking mirrors the value over the
 one-way lifecycle bridge and never authors it; its own ceiling lives in the cabinet BFF
-(`cabinet/backend/src/routes/admin.rs:62`) and in the operator console
-(`cabinet/frontend/views/admin/lib/format.ts:76`, `KYC_LEVELS = [0, 1, 2, 3]`, with
+(`wallet/backend/src/routes/admin.rs:62`) and in the operator console
+(`wallet/frontend/views/admin/lib/format.ts:76`, `KYC_LEVELS = [0, 1, 2, 3]`, with
 `KYC_LEVEL_KEYS` at `:109-114` and the `Select` over them at
-`cabinet/frontend/views/admin/users/ui/users-view.tsx:426-430`).
+`wallet/frontend/views/admin/users/ui/users-view.tsx:426-430`).
 
 **The enforced surface is one comparison, repeated three times.** Everything reads
 `>= KYC_LEVEL_VERIFIED` (= 1):
@@ -75,7 +75,7 @@ Three reasons, in the order they will bite:
    (`contracts/proto/banking/v1/users.proto:86`), with its own RPC
    (`concierge` `contracts/proto/concierge/v1/directory.proto:67`, `SetRole`), its own
    admin vocabulary (`ASSIGNABLE_ROLES` / `ROLES` at
-   `cabinet/frontend/views/admin/lib/format.ts:52,62`) and an owner consilium behind it.
+   `wallet/frontend/views/admin/lib/format.ts:52,62`) and an owner consilium behind it.
    Partner, company partner and service are answers to "what kind of subject is this",
    which is the question `role` is for.
 
@@ -145,7 +145,7 @@ three things become mandatory, not optional:
    must preserve the `NOT VALID` shape of the `user_outbox` constraint.
 3. The contract is generated: a `users.proto` edit requires `nix run .#gen-api` and both
    sides committed together (`contracts/openapi.json` and
-   `cabinet/frontend/shared/contracts/gen/`), or the two planes drift apart silently.
+   `wallet/frontend/shared/contracts/gen/`), or the two planes drift apart silently.
 
 ---
 

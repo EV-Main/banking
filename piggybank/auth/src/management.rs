@@ -9,7 +9,7 @@
 //! backends with identical semantics:
 //!
 //! * [`InProcessRefreshStore`] — a `Mutex` map. Correct and the smallest thing that
-//!   works for a single-instance dev/CI hub (mirrors the cabinet BFF's session store).
+//!   works for a single-instance dev/CI hub (mirrors the wallet BFF's session store).
 //! * [`RedisRefreshStore`] — the one central Redis (`REDIS_URL`), so refresh state
 //!   survives restarts and is shared across replicas. A per-service Redis is never
 //!   introduced — verification stays stateless; this is the *issuing* side's state.

@@ -138,7 +138,7 @@ hidden from the caller is `NOT_FOUND` (and absent from `ListFeePolicies`), unles
 
 An **operator** sees none of the console side of this. Every `/api/admin/fees/*` route is
 gated at the BFF to the `admin` and `owner` roles (`require_fee_admin` beside
-`require_admin` in `cabinet/backend/src/routes/mod.rs`), the `Fees` entry is absent from
+`require_admin` in `wallet/backend/src/routes/mod.rs`), the `Fees` entry is absent from
 their rail, and opening `/admin/fees` by URL lands on a "not available to your role" notice
 rather than a page of silent 403s. This is the coarse gate only: the money plane still
 decides `AllocationManage` per call, and what an operator could always read as an

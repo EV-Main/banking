@@ -201,7 +201,7 @@ mod tests {
 	}
 
 	// FB-22 / BANK-ARCH-01, CROSS-1, BANK-COMM-5: the money plane must reject a token minted
-	// by the concierge identity plane — distinct issuer AND audience — so the cabinet BFF
+	// by the concierge identity plane — distinct issuer AND audience — so the wallet BFF
 	// cannot move money with an identity token. The BFF holds two token pairs precisely
 	// because this verification fails; the money-plane trust direction is exchange-based
 	// (a banking-aud token), never "trust concierge's issuer". See docs/ARCHITECTURE.md.

@@ -27,7 +27,7 @@ pub struct ScopeNotice {
 	/// Cabinet-relative path, a single leading `/`, at most 512 characters; may be empty.
 	pub link: String,
 	/// The scope whose cabinet `link` opens in (`[a-z][a-z0-9_]{0,31}`), or empty for the
-	/// platform cabinet (`CABINET_URL`). Concierge stores the link under that scope's base when
+	/// platform wallet host (`CABINET_URL`). Concierge stores the link under that scope's base when
 	/// it configures one (`NOTICE_LINK_BASES`) and keeps it relative otherwise, so naming a
 	/// scope with no base is harmless.
 	pub link_scope: String,

@@ -4,10 +4,10 @@ cargo-features = ["codegen-backend"]
 # `piggybank/` is the central backend: `core` (the hub server + composition root),
 # `auth` (the auth service + shared verification lib), and `signer` (the separate-
 # process key vault that holds chain private keys at rest) are sibling crates.
-# `cabinet/backend` is the cabinet's BFF — a standalone HTTP service that
+# `wallet/backend` is the wallet host's BFF — a standalone HTTP service that
 # orchestrates the money plane (this repo) and the concierge identity plane.
 members = [
-    "cabinet/backend",
+    "wallet/backend",
     "contracts",
     "domain",
     "piggybank/auth",
@@ -22,7 +22,7 @@ resolver = "3"
 
 [workspace.dependencies]
 async-trait = "0.1.89"
-# Browser-facing HTTP for the cabinet BFF (the rest of the workspace is gRPC-only).
+# Browser-facing HTTP for the wallet BFF (the rest of the workspace is gRPC-only).
 axum = "0.8"
 axum-extra = "0.10"
 base64 = "0.22"
@@ -44,7 +44,7 @@ evbanking_contracts = { path = "contracts" }
 # The shared verify-side flow (JWKS-cached local verification of concierge access
 # JWTs) — the BFF's request credential is the shell-set `ev_access` cookie.
 evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "1fb4de7fcadc2e1a3b3fa4f0bd66881c704db5c3" }
-# The concierge identity plane's wire contracts: the cabinet backend and piggybank-core's
+# The concierge identity plane's wire contracts: the wallet backend and piggybank-core's
 # bridge consumer and mail sender. Moves with `evconcierge_auth`; `nix run .#concierge-pin-check`
 # guards the pin, and `git log -p Cargo.toml` says what each bump brought.
 evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "1fb4de7fcadc2e1a3b3fa4f0bd66881c704db5c3" }
@@ -61,7 +61,7 @@ k256 = "0.13"
 num-bigint = "0.4"
 prost = "0.14"
 prost-build = "0.14"
-# Shared Redis state (refresh families in auth, sessions in the cabinet BFF). rustls
+# Shared Redis state (refresh families in auth, sessions in the wallet BFF). rustls
 # + tokio only, matching the workspace's no-native-tls stance; the connection-manager
 # feature gives a reconnecting multiplexed handle. No-op until REDIS_URL is set.
 redis = { version = "0.32", default-features = false, features = ["tokio-rustls-comp", "connection-manager", "script"] }
@@ -110,6 +110,9 @@ zeroize = "1"
 
 [workspace.lints.rust]
 unused_features = "allow"
+
+[workspace.lints.cargo]
+non_kebab_case_bins = "allow"
 
 # smaller target/: trim debuginfo (deps need none), keep line tables for backtraces
 [profile.dev]

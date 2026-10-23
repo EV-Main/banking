@@ -5,7 +5,7 @@ use std::{fs, path::PathBuf};
 /// depend on this crate (by git) include the clients. Each package's generated
 /// module is pulled into `src/lib.rs` via `tonic::include_proto!("<pkg>.v1")`.
 ///
-/// `banking.v1` is the cabinet-facing surface. `signer.v1` (the internal hub↔signer
+/// `banking.v1` is the wallet-facing surface. `signer.v1` (the internal hub↔signer
 /// seam) and `scope.v1` (the service-facing scope money API and its event stream)
 /// are kept in separate packages so the OpenAPI/TS generation (`nix run .#gen-api`,
 /// which reads only `banking/v1`) never exposes them.

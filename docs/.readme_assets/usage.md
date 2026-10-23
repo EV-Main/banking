@@ -6,14 +6,14 @@
 | [`piggybank/auth/`](piggybank/auth) | auth service + shared verification flow | Rust · tonic · JWKS | — |
 | [`contracts/`](contracts) | gRPC wire contracts (`proto/` → tonic stubs) | Rust · tonic-build · proto3 | — |
 | [`domain/`](domain) | shared domain types (pure, wasm-safe) over `ev::architecture` | Rust | — |
-| [`cabinet/`](cabinet) | host shell + BFF + microfrontend runtime | Next.js 16 · TS · Tailwind | [README](cabinet/README.md) |
+| [`wallet/`](wallet) | wallet host — host shell (`frontend/`) + BFF (`backend/`) + microfrontend runtime | Next.js 16 · TS · Tailwind · Rust · axum | [frontend](wallet/frontend/README.md) · [BFF](wallet/backend/README.md) |
 | [`sdk/wallet/`](sdk/wallet) | `@evinvest/wallet` — host wrappers for the wallet MFEs, published to npm by the `@evinvest/wallet-v*` tag | TS · React · tsup | [README](sdk/wallet/README.md) |
 
 `domain` is the shared source of truth for types — the hub and every service repo
 depend on it, never on each other. `contracts` (vendoring `proto/`) is the single
 gRPC dependency other repos import; the published `@evinvest/uikit` is the shared
 design source of truth for the clients. There is **no HTTP on the hub** — browser
-traffic reaches it through the `cabinet` BFF, which proxies HTTP↔gRPC.
+traffic reaches it through the wallet BFF (`cabinet-backend`), which proxies HTTP↔gRPC.
 
 ## Run
 
@@ -23,9 +23,10 @@ no need to enter the dev shell first.
 | Command | Brings up |
 | ------- | --------- |
 | `nix run .#init` | one-shot env setup for a fresh clone (dev `.env` secrets, npm deps) |
-| `nix run .#dev` | everything: Postgres + TigerBeetle + Redis + piggybank + cabinet |
+| `nix run .#dev` | everything: Postgres + TigerBeetle + Redis + signer + piggybank + cabinet-backend + cabinet |
 | `nix run .#piggybank` | hub server: core gRPC + auth tasks (tonic-web) |
-| `nix run .#cabinet` | Next.js host shell + BFF |
+| `nix run .#cabinet` | the wallet host frontend: Next.js host shell (proxies `/api/*` to the BFF) |
+| `nix run .#cabinet-backend` | the wallet BFF (needs piggybank) |
 | `nix run .#db` | SHARED ev_invest Postgres (data under `~/.local/state/ev_invest/pg`) |
 | `nix run .#tb` | local TigerBeetle (data under `.tb/`, single replica) |
 | `nix run .#redis` | SHARED ev_invest Redis (central auth refresh-token store) |

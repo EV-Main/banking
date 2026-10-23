@@ -52,7 +52,7 @@ Refresh tokens are opaque `"<family>.<secret>"` handles
 ([`management`](src/management.rs)). Each use rotates the secret; presenting an
 already-rotated secret is treated as theft and revokes the whole family (OWASP
 refresh-rotation). The family table is in-process by default (single-instance /
-dev, mirroring the cabinet BFF's session store); `RefreshStore::from_env` engages
+dev, mirroring the wallet BFF's session store); `RefreshStore::from_env` engages
 the Redis arm — the one central Redis, same semantics, rotate/reuse as one atomic
 Lua script — when `REDIS_URL` is set. A per-service Redis is never introduced.
 

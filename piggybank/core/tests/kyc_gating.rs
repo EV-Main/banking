@@ -215,7 +215,7 @@ async fn a_verified_user_gets_a_deposit_address() {
 	assert_eq!(h.address_calls.load(Ordering::SeqCst), 1, "the gateway is reached exactly once");
 }
 
-/// The two refusals must stay distinguishable at the wire: the cabinet shows "try another
+/// The two refusals must stay distinguishable at the wire: the wallet host shows "try another
 /// chain" for one and "finish verification" for the other, and it can only pick from the
 /// shape of the answer. An unconfigured rail is an absent value; an unverified caller is
 /// an error. Folding the second into the first would leave the screen unable to choose.

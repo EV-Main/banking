@@ -246,7 +246,7 @@ async fn investor(h: &Harness) -> UserId {
 }
 
 /// A provisioned investor the identity plane has not mirrored yet — a money-plane row with
-/// no `concierge_user_id`, as the bridge leaves one until the first cabinet login lands.
+/// no `concierge_user_id`, as the bridge leaves one until the first platform sign-in lands.
 async fn unmirrored_investor(h: &Harness) -> UserId {
 	let tag = Uuid::new_v4();
 	h.users
@@ -649,7 +649,7 @@ const NO_MIRROR: &str = "recipient has no mirrored concierge user id";
 /// A holder the identity plane had not mirrored when the change was scheduled (#325): the
 /// notice is queued with no addressee, and the worker names one from the mirror at SEND
 /// time. Until the mirror lands the row is DEFERRED, not charged — units can be issued days
-/// before the holder's first cabinet login, and a row charged per pass would be given up on
+/// before the holder's first platform sign-in, and a row charged per pass would be given up on
 /// five minutes after the scheduling — so a mirror landing after far more passes than the
 /// attempt ceiling is still enough for the notice to go out, addressed to it.
 #[tokio::test]
@@ -684,7 +684,7 @@ async fn a_holder_mirrored_after_the_scheduling_is_still_told() {
 	assert!(relay.seen.lock().unwrap().is_empty(), "nothing was handed over without an address");
 	assert_eq!(change_of(&h, &change).await.notices_given_up, 0, "still being tried, so nothing to acknowledge yet");
 
-	// The bridge mirrors the holder (a first cabinet login): the next pass reaches them,
+	// The bridge mirrors the holder (a first platform sign-in): the next pass reaches them,
 	// addressed to that id in the identity plane, and the row says so afterwards.
 	let concierge_id = mirror(&h, late).await;
 	let_the_backoff_run(&h, &change).await;

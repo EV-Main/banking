@@ -253,7 +253,7 @@
         # ── cabinet production image (Next.js standalone, npm workspace build) ──
         cabinetApp = pkgs.buildNpmPackage {
           pname = "${pname}-cabinet";
-          version = (builtins.fromJSON (builtins.readFile ./cabinet/frontend/package.json)).version;
+          version = (builtins.fromJSON (builtins.readFile ./wallet/frontend/package.json)).version;
           src = buildSrc;
           # build node_modules straight from the root package-lock.json — no FOD hash to drift.
           npmDeps = pkgs.importNpmLock { npmRoot = ./.; };
@@ -293,22 +293,22 @@
           };
           buildPhase = ''
             runHook preBuild
-            npm run build --workspace @evbanking/cabinet
+            npm run build --workspace @evbanking/wallet-host
             runHook postBuild
           '';
           # Monorepo standalone layout: server.js lands under the workspace subdir.
           installPhase = ''
             runHook preInstall
-            test -f cabinet/frontend/.next/standalone/cabinet/frontend/server.js \
-              || { echo "standalone server.js not at the expected monorepo path" >&2; find cabinet/frontend/.next/standalone -maxdepth 3 -name server.js >&2; exit 1; }
+            test -f wallet/frontend/.next/standalone/wallet/frontend/server.js \
+              || { echo "standalone server.js not at the expected monorepo path" >&2; find wallet/frontend/.next/standalone -maxdepth 3 -name server.js >&2; exit 1; }
             mkdir -p $out
-            cp -r cabinet/frontend/.next/standalone/. $out/
-            cp -r cabinet/frontend/.next/static $out/cabinet/frontend/.next/static
-            cp -r cabinet/frontend/public $out/cabinet/frontend/public
+            cp -r wallet/frontend/.next/standalone/. $out/
+            cp -r wallet/frontend/.next/static $out/wallet/frontend/.next/static
+            cp -r wallet/frontend/public $out/wallet/frontend/public
             # Next writes its caches under the (read-only) store path; `/tmp` is the pod's emptyDir.
             # Not a subdir: Next's recursive mkdir fails through a dangling link.
-            ln -sT /tmp $out/cabinet/frontend/.next/cache
-            ln -sT /tmp $out/cabinet/frontend/.next/server/route-cache
+            ln -sT /tmp $out/wallet/frontend/.next/cache
+            ln -sT /tmp $out/wallet/frontend/.next/server/route-cache
             runHook postInstall
           '';
           dontNpmInstall = true;
@@ -452,7 +452,7 @@
               CABINET_WS_ORIGIN = "https://evinvest.ltd";
               # The scope hosts that may READ the wallet cross-origin with cookies (three GET
               # routes, nothing else). Public topology like the line above; mirrors
-              # cabinet/frontend/shared/config/wallet-scopes.ts. Empty would only hide the
+              # wallet/frontend/shared/config/wallet-scopes.ts. Empty would only hide the
               # balance on those hosts, so it is not required at boot.
               WALLET_CORS_ORIGINS = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
               APP_ENV = "production";
@@ -465,9 +465,9 @@
             criticality = "normal";
             # V8 sizes its heap without regard to the 192Mi limit and defers major GC until the OOM kill (site_conductor#236).
             # Soaked on /login: uncapped ratchets to ~370M RSS; these flags plateau at ~158M, the semi-space cap alone saving ~20M.
-            entrypoint = [ "${pkgs.nodejs}/bin/node" "--max-old-space-size=96" "--max-semi-space-size=2" "${cabinetApp}/cabinet/frontend/server.js" ];
+            entrypoint = [ "${pkgs.nodejs}/bin/node" "--max-old-space-size=96" "--max-semi-space-size=2" "${cabinetApp}/wallet/frontend/server.js" ];
             contents = [ pkgs.nodejs cabinetApp ];
-            workingDir = "${cabinetApp}/cabinet/frontend";
+            workingDir = "${cabinetApp}/wallet/frontend";
             # glibc's per-thread arenas keep freed native buffers resident, ratcheting RSS (site_conductor#236)
             imageEnv = [ "PORT=50061" "HOSTNAME=0.0.0.0" "NODE_ENV=production" "MALLOC_ARENA_MAX=2" ];
             env = {
@@ -634,7 +634,7 @@
         # plane (:50051) and the concierge identity plane (:50061 — run from the sibling
         # `concierge` repo). `linkTbClient` is required only so the Cargo workspace (which
         # contains the TB-using piggybank crates) resolves; the BFF itself never uses TB.
-        # Defaults mirror cabinet/backend/.env.example; any value already set wins.
+        # Defaults mirror wallet/backend/.env.example; any value already set wins.
         runCabinetBackend = pkgs.writeShellApplication {
           name = "run-cabinet-backend";
           runtimeInputs = with pkgs; [ rust pkg-config openssl protobuf git ];
@@ -647,9 +647,9 @@
             ${linkTbClient}
 
             set -a
-            if [ -f cabinet/backend/.env ]; then
+            if [ -f wallet/backend/.env ]; then
               # shellcheck disable=SC1091
-              . cabinet/backend/.env
+              . wallet/backend/.env
             fi
             set +a
 
@@ -683,7 +683,7 @@
             [ -d node_modules/next ] || npm install
             ${portEnv}
             export CABINET_BACKEND_URL="''${CABINET_BACKEND_URL:-http://127.0.0.1:$CABINET_BACKEND_PORT}"
-            exec npm run dev --workspace @evbanking/cabinet -- --port "$CABINET_FRONTEND_PORT"
+            exec npm run dev --workspace @evbanking/wallet-host -- --port "$CABINET_FRONTEND_PORT"
           '';
         };
 
@@ -720,8 +720,8 @@
               "''${cc_protos[@]/#/$cc_dir/proto/}"
             echo "▶ openapi.json → cabinet TypeScript types"
             [ -d node_modules ] || npm install
-            npm run gen:api --workspace @evbanking/cabinet
-            echo "✓ regenerated contracts/openapi.json + cabinet/shared/contracts/gen"
+            npm run gen:api --workspace @evbanking/wallet-host
+            echo "✓ regenerated contracts/openapi.json + wallet/frontend/shared/contracts/gen"
           '';
         };
 
@@ -792,7 +792,7 @@
             cargo metadata --locked --format-version 1 >/dev/null
 
             echo "▶ the committed contract is what the protos generate"
-            generated=(contracts/openapi.json cabinet/frontend/shared/contracts/gen)
+            generated=(contracts/openapi.json wallet/frontend/shared/contracts/gen)
             # Ahead of gen-api's own `npm install` fallback, and deliberately `ci`: on a
             # fresh checkout `install` is free to move a generator inside its semver range,
             # which would show up here as contract drift nobody caused.
@@ -898,13 +898,13 @@
             npm ci
 
             echo "▶ tsc --noEmit"
-            npm run check --workspace @evbanking/cabinet
+            npm run check --workspace @evbanking/wallet-host
 
             echo "▶ cabinet tests"
-            npm run test --workspace @evbanking/cabinet
+            npm run test --workspace @evbanking/wallet-host
 
             echo "▶ cabinet i18n catalogues"
-            npm run i18n:check --workspace @evbanking/cabinet
+            npm run i18n:check --workspace @evbanking/wallet-host
 
             # `npm run lint` is deliberately absent: it reports 5 errors on main today
             # (profile-schema.ts, instrumentation.ts, next.config.ts, profile-view.tsx,
