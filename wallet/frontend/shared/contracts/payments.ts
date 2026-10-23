@@ -34,38 +34,6 @@ import type { Decimal, Timestamp } from "./governance";
  *  plane and survive only as {@link PaymentEndKind} on orders opened before. */
 export type PartyKind = "service" | "user";
 
-/**
- * One internal end of an order. `id` is the product id for `service` (`fee` / `fund`
- * for the reserved allocations), and for `user` the CONCIERGE user id the console
- * carries (`AdminUserSummary.user_id`) — the plane resolves it to its own id and echoes
- * THAT back in `PaymentEnd.id`, so the two never round-trip (payments.proto).
- */
-export interface Party {
-  kind: PartyKind;
-  id: string;
-}
-
-/** An on-chain destination. The only external shape; an external SOURCE is unrepresentable. */
-export interface ExternalDestination {
-  network: string;
-  /** Rendered in full wherever it is shown — see `FullAddress` (policy 13). */
-  address: string;
-}
-
-/** Exactly one of the two: either an internal party or an external address. */
-export interface PaymentDestination {
-  internal?: Party;
-  external?: ExternalDestination;
-}
-
-export interface OpenPaymentRequest {
-  source: Party;
-  destination: PaymentDestination;
-  amount: Decimal;
-  /** Required and bounded (≤ 500 bytes); it is what the approvers read. */
-  reason: string;
-}
-
 // ── An end as the plane renders it back ────────────────────────────────────────
 
 export type PaymentEndKind = PartyKind | "external" | "piggybank" | "revenue";
@@ -152,10 +120,6 @@ export interface Payment {
   version: number;
 }
 
-export interface PaymentList {
-  items: Payment[];
-}
-
 // ── Public: the emailed consent ────────────────────────────────────────────────
 
 export type ConsentDecision = "approve" | "reject";
@@ -215,10 +179,6 @@ export interface PaymentConfirmation {
   decision: string;
   invalidated: boolean;
   failure_reason: string | null;
-}
-
-export interface PaymentConfirmationList {
-  items: PaymentConfirmation[];
 }
 
 // ── The terms as a consilium carries them ──────────────────────────────────────

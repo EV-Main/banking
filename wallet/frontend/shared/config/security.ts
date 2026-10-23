@@ -70,57 +70,16 @@ function splitList(value: string | undefined): string[] {
   return (value ?? "").split(/[\s,]+/).filter(Boolean);
 }
 
-/**
- * The `ws://` or `wss://` form of the origin this document was served from, for
- * `connect-src` — or null when the host is unknown or unusable.
- *
- * This exists because `'self'` does not reliably cover a websocket. CSP Level 3 made
- * `'self'` match a same-origin `wss:` handshake and current browsers implement that, but
- * the behaviour was absent for years and the failure mode is the worst kind: the socket is
- * blocked before it opens, with no error the page can catch — it simply never connects, and
- * the consilium quietly falls back to polling forever on the browsers that got it wrong.
- * Naming the origin explicitly costs one token and removes the question.
- *
- * The host comes from the request rather than an env var because the wallet host is a zone
- * mounted under the conductor's domain: the public origin is whatever the conductor was
- * asked for, and only the request knows it. `x-forwarded-*` win over `host` for the same
- * reason — behind the conductor, `host` is the internal upstream name, and a CSP naming
- * that origin would allow a socket nobody opens while blocking the one the browser does.
- *
- * A host is emitted only if it parses as one. The header is attacker-controllable, and a
- * malformed or injected value must fall out of the allow-list rather than into it.
- */
-export function websocketOrigin(host: string | null | undefined, forwardedProto?: string | null): string | null {
-  if (!host) return null;
-  // The first entry of a comma-joined forwarded chain is the client-facing one.
-  const proto = (forwardedProto ?? "").split(",")[0]?.trim().toLowerCase();
-  const scheme = proto === "http" ? "ws" : proto === "https" ? "wss" : IN_PRODUCTION ? "wss" : "ws";
-  try {
-    const url = new URL(`${scheme}://${host.split(",")[0]!.trim()}`);
-    // `new URL` tolerates a path, a userinfo section and a query; an origin must have none
-    // of them, and CSP would silently take the whole string as a source expression.
-    return url.host && url.pathname === "/" && !url.username && !url.search ? url.origin : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Cloudflare Turnstile's script and frame, which the credential forms carry. */
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
 /**
  * The Content-Security-Policy for the host document, bound to a per-request nonce.
- *
- * `socketOrigin` is the value of {@link websocketOrigin} for this request. It is optional
- * so that a caller with no request in hand (the tests, any static evaluation) still gets a
- * complete policy — one that is stricter, never looser.
  */
-export function contentSecurityPolicy(nonce: string, socketOrigin?: string | null): string {
+export function contentSecurityPolicy(nonce: string): string {
   const script = ["'self'", `'nonce-${nonce}'`, TURNSTILE_ORIGIN, ...mfeOrigins()];
   if (IN_DEVELOPMENT) script.push("'unsafe-eval'");
-  // The consilium's revision stream is same-origin (`/cabinet/api/owners/consilium/ws`,
-  // rewritten to the BFF), so this adds a scheme, not a new host to trust.
-  const connect = ["'self'", ...connectOrigins(), ...(socketOrigin ? [socketOrigin] : [])];
+  const connect = ["'self'", ...connectOrigins()];
   return [
     `default-src 'self'`,
     `base-uri 'self'`,

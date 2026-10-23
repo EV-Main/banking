@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { contentSecurityPolicy, staticSecurityHeaders, websocketOrigin } from "./security.ts";
+import { contentSecurityPolicy, staticSecurityHeaders } from "./security.ts";
 
 test("CSP forbids inline/eval and clickjacking, and carries the nonce", () => {
   const csp = contentSecurityPolicy("testnonce123");
@@ -32,30 +32,6 @@ test("CSP derives an explicit allow-list from cross-origin MFE/observability hos
     else process.env.MFE_ALLOWED_ORIGINS = prev.mfe;
     if (prev.ph === undefined) delete process.env.NEXT_PUBLIC_POSTHOG_HOST;
     else process.env.NEXT_PUBLIC_POSTHOG_HOST = prev.ph;
-  }
-});
-
-test("the consilium socket origin reaches connect-src", () => {
-  // Without this the browser blocks the handshake before it opens — silently, with nothing
-  // the page can catch — and the owners' room degrades to polling for no visible reason.
-  const csp = contentSecurityPolicy("n", websocketOrigin("cabinet.example.com", "https"));
-  const connectSrc = csp.split("; ").find((d) => d.startsWith("connect-src "))!;
-  assert.ok(connectSrc.includes("wss://cabinet.example.com"), "the socket origin is allow-listed");
-  assert.ok(connectSrc.includes("'self'"), "same-origin XHR is still allowed");
-});
-
-test("the socket scheme follows the scheme the reader was served over", () => {
-  assert.equal(websocketOrigin("cabinet.example.com", "https"), "wss://cabinet.example.com");
-  assert.equal(websocketOrigin("localhost:3000", "http"), "ws://localhost:3000");
-  // A forwarded chain names the client-facing hop first.
-  assert.equal(websocketOrigin("cabinet.example.com", "https, http"), "wss://cabinet.example.com");
-});
-
-test("a host that is not a host is dropped, not allow-listed", () => {
-  // `Host` is attacker-controllable. Anything that would smuggle a second source
-  // expression, a path or credentials into the directive has to fall out of the list.
-  for (const host of [null, undefined, "", "evil.com/../*", "user:pw@evil.com", "a b", "evil.com?x=1"]) {
-    assert.equal(websocketOrigin(host, "https"), null, String(host));
   }
 });
 

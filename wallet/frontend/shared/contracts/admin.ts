@@ -42,117 +42,6 @@ export interface SessionInfo {
   permissions: string[];
 }
 
-// ── users ─────────────────────────────────────────────────────────────────────
-export interface AdminUserSummary {
-  user_id: string;
-  email: string;
-  status: string;
-  kyc_level: number;
-  role: string;
-  /** @see SessionUser.roleIsBreakGlass — same flag, the BFF's snake_case spelling. */
-  role_is_break_glass: boolean;
-  token_version: string;
-  created_at: string;
-  /**
-   * WHY the account is disabled — and therefore which control the console may offer.
-   * THREE cases, not two:
-   *
-   *   · `"admin_hold"`  — one operator's brake. Lapses by itself at {@link hold_expires_at},
-   *                       and `/api/admin/users/reinstate` lifts it in one act.
-   *   · `"governance"`  — the owners' ratified verdict. Never lapses; reinstatement is a
-   *                       proposal, and the one-act route refuses it.
-   *   · `""`            — empty on an ACTIVE user, and also on one suspended before this
-   *                       field existed. Those keep the old one-act, never-lapsing
-   *                       semantics they were actually suspended under, so an empty string
-   *                       is not a synonym for "active": read it together with `status`.
-   *
-   * Which is why this is a string and not a boolean. A two-way branch files the third case
-   * under whichever of the other two it happened to be compared against, and the account it
-   * mis-files is the one nobody can act on correctly.
-   */
-  suspended_by: string;
-  /** Unix seconds an `admin_hold` lapses; `"0"` when nothing lapses. Format through
-   *  `shared/lib/datetime`, which is where this wire shape (seconds-as-string, `"0"` for
-   *  absent) is already understood. */
-  hold_expires_at: string;
-}
-
-export interface AdminUserList {
-  users: AdminUserSummary[];
-  total: string;
-}
-
-export interface AdminUserProfile {
-  user_id: string;
-  email: string;
-  email_verified: boolean;
-  status: string;
-  token_version: string;
-  legal_name: string;
-  preferred_name: string;
-  phone: string;
-  date_of_birth: string;
-  nationality: string;
-  tax_residence: string;
-  residential_address: string;
-  language: string;
-  base_currency: string;
-  timezone: string;
-  kyc_level: number;
-  role: string;
-  /** @see SessionUser.roleIsBreakGlass — same flag, the BFF's snake_case spelling. */
-  role_is_break_glass: boolean;
-  /**
-   * WHY the account is disabled — and therefore which control the console may offer.
-   * THREE cases, not two:
-   *
-   *   · `"admin_hold"`  — one operator's brake. Lapses by itself at {@link hold_expires_at},
-   *                       and `/api/admin/users/reinstate` lifts it in one act.
-   *   · `"governance"`  — the owners' ratified verdict. Never lapses; reinstatement is a
-   *                       proposal, and the one-act route refuses it.
-   *   · `""`            — empty on an ACTIVE user, and also on one suspended before this
-   *                       field existed. Those keep the old one-act, never-lapsing
-   *                       semantics they were actually suspended under, so an empty string
-   *                       is not a synonym for "active": read it together with `status`.
-   *
-   * Which is why this is a string and not a boolean. A two-way branch files the third case
-   * under whichever of the other two it happened to be compared against, and the account it
-   * mis-files is the one nobody can act on correctly.
-   */
-  suspended_by: string;
-  /** Unix seconds an `admin_hold` lapses; `"0"` when nothing lapses. Format through
-   *  `shared/lib/datetime`, which is where this wire shape (seconds-as-string, `"0"` for
-   *  absent) is already understood. */
-  hold_expires_at: string;
-}
-
-/** A user's whole cash: `amount = main + in_compartments` — the `main` claim plus every
- *  scope compartment, which is still the user's money. */
-export interface UserBalance {
-  amount: string;
-  pending: string;
-  authoritative: boolean;
-  as_of: string;
-  main: string;
-  in_compartments: string;
-}
-
-// ── outbox ────────────────────────────────────────────────────────────────────
-export interface ParkedEvent {
-  seq: string;
-  event_id: string;
-  aggregate: string;
-  aggregate_id: string;
-  kind: string;
-  reason: string;
-  parked_at: string;
-  compensated: boolean;
-}
-
-export interface ParkedEventList {
-  events: ParkedEvent[];
-}
-
 // ── treasury ──────────────────────────────────────────────────────────────────
 export interface RailLiquidity {
   network: string;
@@ -294,10 +183,6 @@ export interface FeePolicy extends FeeTerms {
   pending?: FeePolicyChange | null;
 }
 
-export interface FeePolicyList {
-  policies: FeePolicy[];
-}
-
 /** Where a change stands. Typed as an open string like every other lifecycle on this wire
  *  (`./governance`): a member the plane grows later must render as its wire word, not
  *  break the build. The names this build knows are `admin.feeChange.state.*`. */
@@ -358,68 +243,6 @@ export interface FeePolicyChange extends FeeTerms {
   undelivered_notices: number;
   notices_given_up: number;
   notices_unacknowledged: number;
-}
-
-export interface FeePolicyChangeList {
-  changes: FeePolicyChange[];
-}
-
-/** `POST /api/admin/fees/policy`. `effective_from` is unix seconds as a NUMBER — the BFF
- *  reads it with `as_i64` — and `0` asks for the earliest moment the notice allows.
- *  `reason` is required by the hub exactly when the owners must approve. */
-export interface ScheduleFeePolicyRequest extends FeeTerms {
-  service: string;
-  effective_from: number;
-  reason: string;
-}
-
-/** `POST /api/admin/fees/policy/cancel`. Idempotent on an already-cancelled change. */
-export interface CancelFeePolicyChangeRequest {
-  service: string;
-  change_id: string;
-}
-
-/** `POST /api/admin/fees/policy/acknowledge-notices`. Idempotent on a change already
- *  acknowledged (the first record stands). 409 when the change is not `scheduled` or every
- *  notice has been delivered; 403 for a caller who is neither the requester nor an owner. */
-export interface AcknowledgeUndeliveredNoticesRequest {
-  service: string;
-  change_id: string;
-}
-
-/** Uncollected fee units in one fund. `value` is what a settlement would convert them to
- *  at the current NAV. */
-export interface FeeShares {
-  service: string;
-  units: string;
-  value: string;
-}
-
-export interface FeeSettlement {
-  service: string;
-  units: string;
-  nav: string;
-  cash: string;
-}
-
-/** One charge against one holding. `charged_cash` falls short of
- *  `management + performance` exactly when the rest went to `debt_carried`. */
-export interface FeeAssessment {
-  service: string;
-  trigger: string;
-  nav: string;
-  management: string;
-  performance: string;
-  debt_opening: string;
-  charged_units: string;
-  charged_cash: string;
-  debt_carried: string;
-  high_water_mark: string;
-  assessed_at: string;
-}
-
-export interface FeeAssessmentList {
-  assessments: FeeAssessment[];
 }
 
 export interface Allocation {
@@ -521,70 +344,6 @@ export interface UnitHolding {
   units: string;
 }
 
-/** `queued` until the relay posts the mint, then `applied`. A `queued` row is real — the
- *  hub has accepted it — but the units are not on the ledger yet, so a holders read
- *  taken straight after the POST still shows the supply as it was. */
-export type UnitIssuanceState = "queued" | "applied";
-
-/** Where the units came from — or went: `mint` (`/allocations/issue` or an executed
- *  holder grant — the supply grew by `units`) or `retire` (`/allocations/retire` — burned
- *  out of a holder, the supply SHRANK by `units`). Always populated; a row that predates
- *  the field reads as `mint`. */
-export type UnitIssuanceSource = "mint" | "retire";
-
-/** One in-kind issuance — a mint or a retirement — as the hub recorded it. */
-export interface UnitIssuance {
-  id: string;
-  service: string;
-  holder_kind: UnitHolderKind;
-  /** The banking user id for `user`; the holding allocation's slug for `allocation`. */
-  holder_id: string;
-  units: string;
-  /** Decimal USDT per unit the mint was recorded at. */
-  nav: string;
-  /** Decimal USDT the holder is deemed to have paid — what P&L and the management fee
-   *  are measured from. */
-  cost_basis: string;
-  state: UnitIssuanceState;
-  /** Unix seconds. */
-  created_at: string;
-  source: UnitIssuanceSource;
-}
-
-/** The retirement body, exactly as the BFF reads it (`POST /api/admin/allocations/
- *  retire`). The mirror of a mint: units are burned out of ONE person — the reserved
- *  allocations are never burned from here — and the supply shrinks by them; no cash moves
- *  either way. `cost_basis` follows the mint's rule (absent = `units × NAV`, an empty
- *  string is malformed). `force` is the operator's explicit override to burn out of a
- *  live (draft or open) product — omitted, not `false`, when the product is closed and
- *  needs none. */
-export interface RetireUnitsBody {
-  service: string;
-  /** Whose units are burnt — the id the console carries. */
-  user_id: string;
-  /** Decimal units, > 0, at most what the holder has available. */
-  units: string;
-  /** Decimal USDT of book value written off; omitted = `units × NAV`. */
-  cost_basis?: string;
-  /** 1..64 chars, in the same per-product key space as `/allocations/issue`. */
-  idempotency_key: string;
-  force?: true;
-}
-
-/** A product's cap table (#245): the settled supply and every holder of it, largest first
- *  — people and the `fee` allocation alike, each a line. Σ `holders[].units` =
- *  `units_outstanding` is the supply invariant the hub checks; it is read here, never
- *  derived. All units decimal. */
-export interface UnitHolders {
-  service: string;
-  units_outstanding: string;
-  /** In-kind mints the relay has accepted but not yet posted — not part of
-   *  `units_outstanding` until they land, so a cap pinned to the settled figure alone
-   *  would leave them to land above it. */
-  queued_units: string;
-  holders: UnitHolding[];
-}
-
 // ── valuation + redemptions ─────────────────────────────────────────────────────
 export interface FundNav {
   service: string;
@@ -600,19 +359,6 @@ export interface FundNav {
   remaining_capacity: string;
 }
 
-export interface RedemptionQueueItem {
-  redemption_id: string;
-  user_id: string;
-  email: string;
-  service: string;
-  units: string;
-  created_at: string;
-}
-
-export interface RedemptionQueue {
-  items: RedemptionQueueItem[];
-}
-
 export interface Redemption {
   id: string;
   service: string;
@@ -622,63 +368,9 @@ export interface Redemption {
   state: string;
 }
 
-// ── withdrawals (operator queue) ─────────────────────────────────────────────────
-export interface WithdrawalQueueItem {
-  withdrawal_id: string;
-  /** Which account funds it. A `treasury` row is an approved payment out of banking's own
-   *  treasury (D17), so it carries empty `user_id`/`email` — label it rather than rendering
-   *  a blank investor. */
-  source: "user" | "treasury";
-  user_id: string;
-  email: string;
-  network: string;
-  address: string;
-  amount: string;
-  net_amount: string;
-  state: string;
-  created_at: string;
-}
-
-export interface WithdrawalQueue {
-  items: WithdrawalQueueItem[];
-}
-
-// ── revenue (the reserved `fee` allocation) ─────────────────────────────────────
-//
-// `GET /api/admin/revenue` answers an `AllocationTreasury` — the `fee` allocation in the
-// treasury's own shape (#245): its cash claim, supply, price and the people who hold it,
-// plus `banking_treasury` beside it — the withdrawal fees go there since D17, not to `fee`.
-// Nothing pays it out from that surface any more: a holder redeems, or the owners approve
-// a payment out of `service:fee` on the Payments screen.
-
-// ── cabinet (platform config + money-plane read-only) ───────────────────────────
-export interface FeatureFlag {
-  key: string;
-  description: string;
-  enabled: boolean;
-  rollout: number;
-}
-
-export interface PlatformConfig {
-  maintenance_mode: boolean;
-  announcement_title: string;
-  announcement_body: string;
-  announcement_active: boolean;
-  flags: FeatureFlag[];
-}
-
-export interface OperationsMode {
-  read_only: boolean;
-}
-
 export interface Rail {
   network: string;
   configured: boolean;
   frozen: boolean;
   gas_coin: string;
-}
-
-export interface WalletHostConfig {
-  platform: PlatformConfig;
-  read_only: boolean;
 }

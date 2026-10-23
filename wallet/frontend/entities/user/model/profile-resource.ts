@@ -1,20 +1,11 @@
 "use client";
 
-// The caller's profile: one read shared by the sidebar account chip, the Profile page and
-// Settings, and the one mutation that moves it.
-//
-// `saveProfile` publishes its own response rather than invalidating: a PATCH answers with
-// the profile it just wrote, so a refetch would ask the BFF a question it has already been
-// told the answer to. That write-through is what makes the chip's name change the instant
-// the form saves — the behaviour the old `publishProfile` seam existed to provide, now the
-// default for every consumer.
+// The caller's profile: one read shared by the KYC status chip and the deposit and
+// withdraw views.
 
-import { fetchProfile, saveProfile as saveProfileRequest } from "@/entities/user/api/profile-client";
-import type { UpdateProfileRequest, UserProfile } from "@/shared/contracts";
+import { fetchProfile } from "@/entities/user/api/profile-client";
 import { TAG } from "@/shared/lib/cache-tags";
 import { defineResource } from "@/shared/lib/resource";
-
-import { rememberProfile } from "./identity-cache";
 
 export const profileResource = defineResource({
   name: "user.profile",
@@ -33,11 +24,3 @@ export const profileResource = defineResource({
   // it does. `kyc_level` moving off 0 is that arrival, and closes the loop.
   poll: { while: (p) => (p?.kyc_level ?? 0) === 0, startMs: 5_000, maxMs: 60_000 },
 });
-
-export async function saveProfile(fields: UpdateProfileRequest): Promise<UserProfile> {
-  const updated = await saveProfileRequest(fields);
-  profileResource.publish(updated);
-  // The header chip is another bundle with its own resource cache; this is how it hears.
-  rememberProfile(updated);
-  return updated;
-}

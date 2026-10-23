@@ -9,7 +9,7 @@ import { zonePagePath, isNonPagePath, localeRepairedPath, walletActionPage } fro
 import { COOKIES } from "@/shared/config/cookies";
 import { movedPageTarget, renamedPaymentTarget } from "@/shared/config/moved-pages";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
-import { contentSecurityPolicy, websocketOrigin } from "@/shared/config/security";
+import { contentSecurityPolicy } from "@/shared/config/security";
 import { isSessionId, needsRenewal, renewAccess, type Renewal } from "@/shared/lib/access-renewal";
 import { localeIsGuessed } from "@/shared/lib/locale-guess";
 import { decideSession } from "@/shared/lib/session-gate";
@@ -54,16 +54,7 @@ export async function proxy(req: NextRequest) {
   // it to its own inline bootstrap scripts (keeping script-src free of
   // 'unsafe-inline'), and echoed on the response so the browser enforces the CSP.
   const nonce = crypto.randomUUID().replaceAll("-", "");
-  // The consilium's revision socket is same-origin, but `'self'` has not always covered a
-  // websocket handshake and a blocked one fails silently — so the origin is named
-  // explicitly, derived from the request because only it knows the public host.
-  const csp = contentSecurityPolicy(
-    nonce,
-    websocketOrigin(
-      req.headers.get("x-forwarded-host") ?? req.headers.get("host"),
-      req.headers.get("x-forwarded-proto"),
-    ),
-  );
+  const csp = contentSecurityPolicy(nonce);
   req.headers.set(CSP_HEADER, csp);
 
   // Before the locale repair, so an unprefixed old link takes one hop to an off-site

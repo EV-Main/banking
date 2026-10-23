@@ -7,12 +7,9 @@
 // see docs/CONSILIUM.md § The two planes). When the surface does get a proto, this file is
 // what `./gen` replaces.
 //
-// Two rules from the policy are encoded in the *types* rather than left to a view:
-//
-//   · A vote is a decision, not a number. The public GET carries `attempts_remaining` and a
-//     settled `decision`, never a running tally the client could add to.
-//   · A socket frame carries a REVISION and nothing else. There is no tally on the wire,
-//     so there is no type here that could accidentally be rendered as one.
+// A rule from the policy is encoded in the *types* rather than left to a view: a vote is a
+// decision, not a number. The public GET carries `attempts_remaining` and a settled
+// `decision`, never a running tally the client could add to.
 //
 // Lifecycle states travel as plain strings on purpose. The state machine lives in the money
 // plane and gains members there (`ExecutionFailed` arrived after `Approved`); a closed union
@@ -182,148 +179,11 @@ export interface Owner {
 }
 
 /**
- * The roster, plus the one derived fact the page has to lead with.
- *
- * `below_payout_floor` is computed by the plane that owns the rule, not re-derived here
- * from `items.length`. A fund under three owners can never authorize a payout again
- * (policy: quorum arithmetic), and that is the sort of arithmetic a client must read
- * rather than reimplement.
- */
-export interface OwnerList {
-  items: Owner[];
-  below_payout_floor: boolean;
-}
-
-export type RemovalVote = "remove" | "keep";
-
-/**
- * One eligible peer voter and their answer.
- *
- * A peer who has not voted arrives with `vote` as an empty string, not as null or absent —
- * so this is the wire's spelling and must go through `peerVote` (`shared/lib/decision.ts`).
- * Reading `""` as a cast vote both mislabels them in the roster and removes the vote
- * buttons from someone who still has a vote to give.
- */
-export interface RemovalPeer {
-  user_id: string;
-  email: string;
-  vote?: string | null;
-  voted_at?: Timestamp | null;
-}
-
-/**
- * An open (or settled) proposal to remove an owner.
- *
- * `peers` is the snapshot of who may vote, frozen when the removal was opened — the
- * initiator and the target are both absent from it by construction, so membership of this
- * array IS the eligibility test. A view must not re-derive eligibility from the roster:
- * an owner added since the removal opened is not a voter (policy 3), and the roster does
- * not record that.
- */
-export interface OwnerRemoval {
-  id: string;
-  state: string;
-  target_user_id: string;
-  target_email: string;
-  initiator_user_id: string;
-  initiator_email: string;
-  reason: string;
-  peers: RemovalPeer[];
-  /** The target's own answer from their mailbox — the other path to a decision. Wire
-   *  spelling; read through `settledRemoval`. */
-  target_decision?: string | null;
-  target_decided_at?: Timestamp | null;
-  target_notified: boolean;
-  owner_count: number;
-  created_at: Timestamp;
-  expires_at: Timestamp;
-  decided_at?: Timestamp | null;
-  void_reason?: string | null;
-  /** Serialised as a string by the BFF's integer encoding; never do arithmetic on it here. */
-  version: number | string;
-}
-
-export interface OwnerRemovalList {
-  items: OwnerRemoval[];
-}
-
-/**
- * An answer to an admission. Its own union, not a reuse of {@link RemovalVote}, mirroring
- * the plane's own split — `reject` here refuses a candidate, while `reject` on a removal
- * keeps an owner. A single shared type would make posting the wrong verb a type-correct
- * mistake, and this is the one surface where that mistake seats or unseats someone.
- */
-export type AdmissionVote = "admit" | "reject";
-
-/**
- * One eligible peer voter on an admission and their answer.
- *
- * Same wire caveat as {@link RemovalPeer}: an unanswered peer arrives as `""` or
- * `"pending"`, so `vote` goes through `admissionVote` (`shared/lib/decision.ts`), never a
- * `?? null`.
- */
-export interface AdmissionPeer {
-  user_id: string;
-  email: string;
-  vote?: string | null;
-  voted_at?: Timestamp | null;
-}
-
-/**
- * A proposal to grant someone a seat — the ONLY way `Role::Owner` is granted once the fund
- * holds two owners (`SetRole` refuses it outside an executed admission).
- *
- * Two differences from {@link OwnerRemoval}, and neither is cosmetic:
- *
- *   · There is no target-decision trio. The candidate is not an owner yet, so they have no
- *     say in their own admission and there is no mailbox path that could carry it.
- *   · `peers` is every owner except the initiator, and admission passes only on UNANIMITY
- *     of that set with at least one member in it. Removal has a second path (the target's
- *     own acceptance); admission has none, so an absent peer is a proposal that cannot
- *     pass rather than one that passes another way.
- *
- * As with removals, membership of `peers` IS the eligibility test — it is the voter set
- * frozen at open, and an owner seated since is not in it (docs/CONSILIUM.md, policy 3).
- */
-export interface OwnerAdmission {
-  id: string;
-  state: string;
-  candidate_user_id: string;
-  candidate_email: string;
-  initiator_user_id: string;
-  initiator_email: string;
-  reason: string;
-  peers: AdmissionPeer[];
-  owner_count: number;
-  created_at: Timestamp;
-  expires_at: Timestamp;
-  decided_at?: Timestamp | null;
-  void_reason?: string | null;
-  /** Serialised as a string by the BFF's integer encoding; never do arithmetic on it here. */
-  version: number | string;
-}
-
-export interface OwnerAdmissionList {
-  items: OwnerAdmission[];
-}
-
-/**
  * What a user proposal decides. Three kinds share one message because all three ask the
  * same question — "do the owners agree to change this person's standing?" — differing only
  * in what the verdict writes.
  */
 export type UserProposalKind = "suspension" | "reinstatement" | "admin_admission";
-
-/**
- * An answer to a user proposal. Deliberately NEUTRAL, where {@link RemovalVote} says
- * remove/keep and {@link AdmissionVote} says admit/reject.
- *
- * Three kinds share this vote, so a kind-specific verb would only mean something read
- * against `kind` — and a vocabulary that is correct only when cross-referenced is one that
- * eventually gets rendered wrong. The kind-specific verb belongs on the SURFACE, which
- * knows the kind; this is which way the voter pushed.
- */
-export type ProposalVote = "for" | "against";
 
 /** One eligible owner voter and their answer. Same wire caveat as {@link RemovalPeer}: an
  *  unanswered peer arrives as `""` or `"pending"`, never as null. */
@@ -373,10 +233,6 @@ export interface UserProposal {
   version: number | string;
 }
 
-export interface UserProposalList {
-  items: UserProposal[];
-}
-
 // ── The NAV mark being authorized ──────────────────────────────────────────────
 
 /**
@@ -389,67 +245,4 @@ export interface UserProposalList {
 export interface ValuationOverride {
   service: string;
   aum: Decimal;
-}
-
-/**
- * A consilium as the owners' room sees it. Five kinds: a payment order (`payment`), a NAV
- * mark past the move guard (`valuation_override`), a change of a product's fee terms
- * (`fee_policy`), a person seated on a reserved allocation (`holder_grant`) and a seed of
- * the platform's capital (`seed_capital`), told apart by which sibling is set — exactly one is, and a kind is
- * never expressed by widening another one's field.
- *
- * The fields past `expires_at` are the ones the money plane records as a request settles.
- * They are optional because an open request carries none of them, and because a client
- * that hard-requires an outcome field cannot render a request that has no outcome yet.
- */
-export interface Consilium {
-  id: string;
-  state: string;
-  payment?: ConsiliumPaymentTerms | null;
-  valuation_override?: ValuationOverride | null;
-  fee_policy?: ConsiliumFeePolicyTerms | null;
-  holder_grant?: HolderGrantTerms | null;
-  seed_capital?: SeedCapitalTerms | null;
-  payload_hash: string;
-  initiator_user_id?: string;
-  initiator_email: string;
-  threshold: number;
-  approvals: number;
-  owner_count: number;
-  created_at: Timestamp;
-  expires_at: Timestamp;
-  decided_at?: Timestamp | null;
-  /** Why a request that reached `Approved` did not move money (policy 16). */
-  failure_reason?: string | null;
-  executed_withdrawal_id?: string | null;
-  /** The payment order a payment consilium carried into execution. */
-  executed_payment_id?: string | null;
-  /** The valuation a NAV-mark consilium recorded on execution. */
-  executed_valuation_id?: string | null;
-  /** The change a fee-policy consilium scheduled when the owners carried it. */
-  executed_fee_policy_change_id?: string | null;
-  /** The in-kind issuance a holder-grant consilium minted when the owners carried it. */
-  executed_issuance_id?: string | null;
-  /** The `fund` subscription a seed-capital consilium booked when the owners carried it. */
-  executed_subscription_id?: string | null;
-}
-
-export interface ConsiliumList {
-  items: Consilium[];
-}
-
-// ── The realtime frame ─────────────────────────────────────────────────────────
-
-/**
- * Everything the websocket is allowed to say.
- *
- * A frame is a doorbell, not a delivery: `revision` moves, the client re-reads the
- * authoritative snapshot over REST, and a stale or spoofed frame can therefore only ever
- * cause a redundant fetch — never a wrong count on screen (policy 21). A `heartbeat` frame
- * proves the connection is alive and carries no revision change.
- */
-export interface ConsiliumFrame {
-  revision?: number;
-  at?: Timestamp;
-  heartbeat?: boolean;
 }

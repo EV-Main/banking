@@ -23,7 +23,7 @@
 
 import type { Locale, Translate } from "@evinvest/i18n";
 
-// Relative with extensions, like `money.ts`: `fund-figures.test.ts` pulls this module
+// Relative with extensions, like `money.ts`: `datetime.test.ts` pulls this module
 // through the node runner, which resolves no `@/` alias.
 import { intlLocale } from "./intl-locale.ts";
 import { hasUnixStamp, unixStampToDate } from "./unix-stamp.ts";

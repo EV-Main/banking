@@ -4,12 +4,8 @@
 // replaces the token-and-code of `entities/approval`. The body of an answer names only the
 // decision: the terms are the stored order's, so a page cannot approve more than it showed.
 
-import type { ConsentDecision, PaymentConfirmation, PaymentConfirmationList } from "@/shared/contracts/payments";
+import type { ConsentDecision, PaymentConfirmation } from "@/shared/contracts/payments";
 import { getJson, postJson } from "@/shared/lib/api-client";
-
-export function fetchPaymentConfirmations(): Promise<PaymentConfirmationList> {
-  return getJson<PaymentConfirmationList>("/api/wallet/payments");
-}
 
 /** 404 for an order that is not the caller's, is not answered here, or does not exist — alike. */
 export function fetchPaymentConfirmation(id: string): Promise<PaymentConfirmation> {

@@ -117,7 +117,6 @@
       "profile.kyc.unavailable",
       "profile.kyc.verifyEmailSub",
       "profile.kyc.verifyEmailTitle",
-      "ui.account",
       "ui.kycLevel"
     ],
     "app/[locale]/cabinet/(host)/wallet/activity/page.tsx": [
@@ -198,7 +197,6 @@
       "tips.wallet.deposit.min-confirmations.title",
       "tips.wallet.deposit.network.body",
       "tips.wallet.deposit.network.title",
-      "ui.account",
       "ui.back",
       "ui.copied",
       "ui.copy",
@@ -592,7 +590,6 @@
       "tips.wallet.withdraw.network.title",
       "tips.wallet.withdraw.you-receive.body",
       "tips.wallet.withdraw.you-receive.title",
-      "ui.account",
       "ui.amount",
       "ui.back",
       "ui.destination",
@@ -774,6 +771,7 @@
     "tips.wallet.withdraw.queueing.title",
     "tips.wallet.withdraw.review.body",
     "tips.wallet.withdraw.review.title",
+    "ui.account",
     "ui.profile",
     "ui.services"
   ]

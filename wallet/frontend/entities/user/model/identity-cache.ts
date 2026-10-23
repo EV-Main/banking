@@ -5,9 +5,8 @@
 // used to show. The entry is the user's own, already-visible identity — email, display
 // name, initials — and nothing else is ever written here.
 //
-// Two bundles share it. The wallet host app writes it when a profile save lands
-// (`saveProfile`), and the chip — a separate bundle on the same origin, with its own copy
-// of every module — reads it. A same-document write fires no `storage` event, so writers
+// Two bundles share it. The wallet host app writes it, and the chip — a separate bundle
+// on the same origin, with its own copy of every module — reads it. A same-document write fires no `storage` event, so writers
 // announce themselves with `IDENTITY_EVENT` on `window`; other tabs still hear `storage`.
 //
 // Every entry carries `savedAt` and goes stale after IDENTITY_TTL_MS. The cache is painted

@@ -27,35 +27,18 @@ export type {
   BankingV1WithdrawalList as WithdrawalList,
   BankingV1Deposit as Deposit,
   BankingV1DepositList as DepositList,
-  BankingV1RequestWithdrawalRequest as RequestWithdrawalRequest,
-  BankingV1CancelWithdrawalRequest as CancelWithdrawalRequest,
-  BankingV1UserBalanceResponse as UserBalanceResponse,
   // Fund shares (the service currency).
-  BankingV1Position as Position,
-  BankingV1PositionList as PositionList,
   BankingV1FundNav as FundNav,
-  // The performance chart: a fund's posted marks over a window and the caller's own
-  // participation through it (`GET /api/funds/nav/history?allocation=&from=&to=`).
-  BankingV1FundNavHistory as FundNavHistory,
-  BankingV1NavMark as NavMark,
-  BankingV1ParticipationPoint as ParticipationPoint,
   BankingV1Subscription as Subscription,
-  BankingV1SubscribeRequest as SubscribeRequest,
-  BankingV1RedeemRequest as RedeemRequest,
   BankingV1Redemption as Redemption,
-  BankingV1RedemptionList as RedemptionList,
-  BankingV1CancelRedemptionRequest as CancelRedemptionRequest,
   // The unified activity timeline — one read model over all four money kinds.
   BankingV1Operation as Operation,
-  BankingV1OperationList as OperationList,
-  BankingV1PayoutReviewLine as PayoutReviewLine,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
   BankingV1CompartmentList as CompartmentList,
   BankingV1CompartmentMove as CompartmentMove,
   // What a fund charges, and what the caller's holding owes for it right now.
   BankingV1FeePolicy as FeePolicy,
-  BankingV1AccruedFees as AccruedFees,
   // Payment orders are NOT re-exported from `./gen`: the BFF reshapes them (resolved ends
   // with a `detail`, a nested consent, lowercase states, string stamps), so the
   // hand-written `./payments` is the wallet host's contract for that surface.
@@ -96,24 +79,8 @@ export type {
 // Identity surface — owned by the concierge plane.
 export type {
   ConciergeV1UserProfile as UserProfile,
-  ConciergeV1UpdateProfileRequest as UpdateProfileRequest,
   ConciergeV1Session as Session,
-  ConciergeV1ListSessionsResponse as SessionList,
-  // What a user holds inside a tenant's namespace, read and changed through
-  // `/api/admin/tenants/{namespace}/grants`.
-  ConciergeV1PermissionGrant as PermissionGrant,
-  ConciergeV1GrantHolder as GrantHolder,
-  ConciergeV1ListGrantsResponse as GrantHolderList,
 } from "./gen";
-
-import type { BankingV1PayoutLinesPage as HubPayoutLinesPage } from "./gen";
-
-/**
- * The hub's page plus the one field only the BFF can fill: whether the page's `lines_digest`
- * is the one the approval's voters hold (it needs the caller's concierge session, which the
- * hub never sees). `false` or absent means the lines are NOT the ones being approved.
- */
-export type PayoutLinesPage = HubPayoutLinesPage & { digest_matches?: boolean };
 
 // Mandates: hand-written for the reason given above.
 export type { GrantMandateBody, Mandate, MandateList, MandateOperation, MandateRequest } from "./mandate";

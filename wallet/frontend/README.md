@@ -166,8 +166,8 @@ Rules:
 - **A mutation names what it moved**, it does not refetch. `submitWithdrawal`
   names `wallet · withdrawals · operations`, so the balance on *every* open
   surface follows — no call site has to know which screens are mounted. A write
-  whose response IS the new state (`saveProfile`, `postValuation`) publishes it
-  rather than invalidating.
+  whose response IS the new state publishes it rather than
+  invalidating.
 - **`isLoading` is the only state that earns a skeleton.** It is true only when
   there is nothing to show and nothing has failed. Cached data renders on the
   first frame and refreshes behind itself; see the `Settled` rule below, which

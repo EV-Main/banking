@@ -49,8 +49,8 @@ export const TAG = {
   bookPolicy: "book.policy",
 
   // ── fund governance ───────────────────────────────────────────────────────────
-  // Three facts, not three endpoints, and they move together often enough that the
-  // websocket names all three at once: a removal that carries changes the roster, and a
+  // Three facts, not three endpoints, and they move together often enough that one
+  // mutation names all three at once: a removal that carries changes the roster, and a
   // roster that shrinks past the floor changes whether a payout can be opened at all.
   /** Who the fund's owners are, and whether the roster is below the payout floor. */
   owners: "owners",
