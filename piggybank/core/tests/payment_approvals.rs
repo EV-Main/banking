@@ -1099,7 +1099,7 @@ async fn an_investors_payment_is_answered_in_the_wallet_host_and_settles_once() 
 	assert_eq!((queued[0].1.as_str(), queued[0].2.as_str()), ("payment_consent", MONEY_MOVEMENT_TOPIC));
 	assert_eq!(
 		queued[0].3,
-		format!("/wallet/action/payment/{}", id.raw()),
+		format!("/wallet/payment/{}", id.raw()),
 		"a path relative to the wallet host root, never a link carrying a secret"
 	);
 

@@ -427,7 +427,7 @@ const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 /// `CABINET_URL`, or onto the base of the notice's `link_scope`, so this plane never mints a
 /// host. Relative to the wallet host root, because every base already carries the `/cabinet` prefix.
 fn answer_link(payment: PaymentId) -> String {
-	format!("/wallet/action/payment/{}", payment.raw())
+	format!("/wallet/payment/{}", payment.raw())
 }
 
 /// The cabinet a payment's notices open in: the scope of the product the order pays out of or

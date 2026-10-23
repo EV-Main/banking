@@ -159,11 +159,13 @@ const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate|payment\/[A-Za-z0-9
 
 /**
  * The zone-relative page behind a wallet action address — `/wallet/withdraw` →
- * `/wallet/action/withdraw`, `/wallet/payment/<id>` → `/wallet/action/payment/<id>` — or
+ * `/wallet/action/withdraw`, `/wallet/payment/<id>` → itself, under the zone — or
  * `null` for any other path. The proxy redirects there under the reader's locale with the
  * query intact (opener, state, scope, invoice).
  */
 export const walletActionPage = (pathname: string): `/${string}` | null => {
   const match = WALLET_ACTION.exec(pathname);
-  return match ? `/wallet/action/${match[1]}` : null;
+  if (!match) return null;
+  // The payment page has no `action/` segment: its path is the one notices carry.
+  return match[1].startsWith("payment/") ? `/wallet/${match[1]}` : `/wallet/action/${match[1]}`;
 };

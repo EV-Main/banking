@@ -7,7 +7,7 @@ import { experiments } from "@/application/experiments";
 import { config as appConfig } from "@/config";
 import { zonePagePath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
 import { COOKIES } from "@/shared/config/cookies";
-import { movedPageTarget } from "@/shared/config/moved-pages";
+import { movedPageTarget, renamedPaymentTarget } from "@/shared/config/moved-pages";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
 import { contentSecurityPolicy, websocketOrigin } from "@/shared/config/security";
 import { isSessionId, needsRenewal, renewAccess, type Renewal } from "@/shared/lib/access-renewal";
@@ -74,6 +74,9 @@ export async function proxy(req: NextRequest) {
     investCabinet: appConfig.public.investCabinetUrl,
   });
   if (moved) return withCsp(NextResponse.redirect(new URL(moved, req.nextUrl), 307), csp);
+
+  const renamed = renamedPaymentTarget(pathname, search);
+  if (renamed) return withCsp(NextResponse.redirect(new URL(renamed, req.nextUrl), 308), csp);
 
   // A scope host's money action (`https://evinvest.ltd/wallet/withdraw?opener=…&state=…`)
   // lands on its zone page in the reader's language, query intact — the page reads its

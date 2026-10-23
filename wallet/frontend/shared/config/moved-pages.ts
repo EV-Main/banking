@@ -72,3 +72,22 @@ export function movedPageTarget(pathname: string, search: string, origins: Moved
   if (tail.length === 2 && tail[0] === "wallet" && tail[1] === "withdraw") return sameSite("/wallet/action/withdraw");
   return null;
 }
+
+// The SDK's payment id rule (`walletActionPage` in base-path.ts uses the same).
+const PAYMENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * Where the payment page of a notice sent before the move lives now: those carry
+ * `/cabinet/wallet/action/payment/<id>`, the page is `/cabinet/wallet/payment/<id>`. Locale and
+ * query stay. Permanent, unlike `movedPageTarget`: the new path is the canonical one. The id
+ * passes through only after the shape check, so no request picks the target.
+ */
+export function renamedPaymentTarget(pathname: string, search: string): string | null {
+  const at = zoneTail(pathname);
+  if (!at) return null;
+  const [wallet, action, payment, id, ...more] = at.tail.filter(Boolean);
+  if (wallet !== "wallet" || action !== "action" || payment !== "payment" || more.length > 0) return null;
+  if (id === undefined || !PAYMENT_ID.test(id)) return null;
+  const path = `/wallet/payment/${id}` as const;
+  return (at.locale ? zonePagePath(at.locale, path) : `${BASE_PATH}${path}`) + search;
+}

@@ -216,10 +216,10 @@ test("a wallet action address with a trailing slash is not an action", () => {
   assert.equal(walletActionPage("/wallet/withdraw/"), null);
 });
 
-test("a wallet payment address maps onto the payment action page", () => {
+test("a wallet payment address keeps its path under the zone", () => {
   const id = "4f0c2d1e-0000-4000-8000-0123456789ab";
-  assert.equal(walletActionPage(`/wallet/payment/${id}`), `/wallet/action/payment/${id}`);
-  assert.equal(walletActionPage(`/wallet/payment/${"a".repeat(128)}`), `/wallet/action/payment/${"a".repeat(128)}`);
+  assert.equal(walletActionPage(`/wallet/payment/${id}`), `/wallet/payment/${id}`);
+  assert.equal(walletActionPage(`/wallet/payment/${"a".repeat(128)}`), `/wallet/payment/${"a".repeat(128)}`);
 });
 
 test("a wallet payment address with an unsafe or missing id is not an action", () => {
