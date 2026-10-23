@@ -1,7 +1,7 @@
 //! `GET /api/platform` — the public platform status for the signed-in shell (system
-//! banner + admin env badge). Session-authed for ANY role (unlike `/api/admin/cabinet`)
-//! and best-effort end to end: the banner must never break a page, so every upstream
-//! failure degrades to inactive defaults instead of an error. Feature flags are
+//! banner + admin env badge). Session-authed for ANY role and best-effort end to end: the
+//! banner must never break a page, so every upstream failure degrades to inactive defaults
+//! instead of an error. Feature flags are
 //! deliberately dropped — they never reach the browser through this route.
 
 use axum::{Json, extract::State};
@@ -38,8 +38,8 @@ pub async fn status(State(st): State<AppState>, jar: CookieJar) -> Result<Json<P
 		Default::default()
 	});
 
-	// The read-only kill-switch lives on the money plane; best-effort exactly like
-	// `admin::cabinet_config` (investor money tokens lack TreasuryRead ⇒ false).
+	// The read-only kill-switch lives on the money plane; best-effort, because investor
+	// money tokens lack TreasuryRead and must read it as false.
 	let read_only = match require_money_token(&st, &jar).await {
 		Ok(mt) => st.grpc.operations_mode(&mt).await.map(|m| m.read_only).unwrap_or(false),
 		Err(_) => false,

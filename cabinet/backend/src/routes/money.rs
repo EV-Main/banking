@@ -522,7 +522,14 @@ mod tests {
 /// JWKS: each assertion is on a decision the BFF makes before it reaches the money plane.
 #[cfg(test)]
 mod wallet_gate_tests {
-	use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+	use std::{
+		collections::HashMap,
+		net::SocketAddr,
+		sync::{
+			Arc,
+			atomic::{AtomicUsize, Ordering},
+		},
+	};
 
 	use axum::{
 		body::{Body, to_bytes},
@@ -533,7 +540,7 @@ mod wallet_gate_tests {
 	use evconcierge_contracts::concierge::v1::auth_service_server::AuthServiceServer;
 	use tokio::net::TcpListener;
 	use tokio_stream::wrappers::TcpListenerStream;
-	use tonic::transport::Server;
+	use tonic::{Code, transport::Server};
 	use tower::ServiceExt;
 
 	use super::exceeds;
@@ -627,11 +634,14 @@ mod wallet_gate_tests {
 
 	/// The money plane as the BFF reaches it, for the routes whose verdict depends on what the
 	/// hub says or on what reaches it: the banking token exchange, an invoice with a chosen
-	/// amount, and a withdrawal that is only recorded. Everything else is unimplemented, so a
-	/// route that strays past its gate onto another RPC fails loudly.
+	/// amount, a withdrawal that is only recorded, and a wallet read refused with a chosen
+	/// code. Everything else is unimplemented, so a route that strays past its gate onto
+	/// another RPC fails loudly.
 	#[derive(Clone)]
 	struct StubHub {
 		invoice_amount: &'static str,
+		wallet_refusal: Code,
+		mints: Arc<AtomicUsize>,
 		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
 		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
 	}
@@ -645,6 +655,7 @@ mod wallet_gate_tests {
 	#[tonic::async_trait]
 	impl bk::auth_service_server::AuthService for StubHub {
 		async fn issue_user_token(&self, _: tonic::Request<bk::IssueUserTokenRequest>) -> Result<tonic::Response<bk::TokenResponse>, tonic::Status> {
+			self.mints.fetch_add(1, Ordering::SeqCst);
 			let now = now_secs();
 			Ok(tonic::Response::new(bk::TokenResponse {
 				access_token: "stub-money-token".into(),
@@ -703,7 +714,7 @@ mod wallet_gate_tests {
 	#[tonic::async_trait]
 	impl bk::wallet_service_server::WalletService for StubHub {
 		async fn get_wallet(&self, _: tonic::Request<bk::GetWalletRequest>) -> Result<tonic::Response<bk::Wallet>, tonic::Status> {
-			unimplemented_rpc()
+			Err(tonic::Status::new(self.wallet_refusal, "the stub refuses the wallet"))
 		}
 
 		async fn get_deposit_address(&self, _: tonic::Request<bk::GetDepositAddressRequest>) -> Result<tonic::Response<bk::DepositAddress>, tonic::Status> {
@@ -739,19 +750,22 @@ mod wallet_gate_tests {
 
 	struct Hub {
 		addr: SocketAddr,
+		mints: Arc<AtomicUsize>,
 		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
 		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
 	}
 
-	async fn stub_hub(invoice_amount: &'static str) -> Hub {
+	async fn stub_hub(invoice_amount: &'static str, wallet_refusal: Code) -> Hub {
 		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
 		let addr = listener.local_addr().expect("the listener has an address");
 		let hub = StubHub {
 			invoice_amount,
+			wallet_refusal,
+			mints: Arc::default(),
 			withdrawals: Arc::default(),
 			payments: Arc::default(),
 		};
-		let (withdrawals, payments) = (hub.withdrawals.clone(), hub.payments.clone());
+		let (mints, withdrawals, payments) = (hub.mints.clone(), hub.withdrawals.clone(), hub.payments.clone());
 		tokio::spawn(async move {
 			Server::builder()
 				.add_service(bk::auth_service_server::AuthServiceServer::new(hub.clone()))
@@ -761,13 +775,17 @@ mod wallet_gate_tests {
 				.await
 				.expect("the stub hub serves");
 		});
-		Hub { addr, withdrawals, payments }
+		Hub { addr, mints, withdrawals, payments }
 	}
 
 	/// An app wired to a stub concierge (for the session) and a stub hub (for the money plane).
 	async fn app_with_hub(invoice_amount: &'static str) -> (axum::Router, Hub) {
+		app_with_stub(invoice_amount, Code::Unimplemented).await
+	}
+
+	async fn app_with_stub(invoice_amount: &'static str, wallet_refusal: Code) -> (axum::Router, Hub) {
 		let concierge = jwks().await;
-		let hub = stub_hub(invoice_amount).await;
+		let hub = stub_hub(invoice_amount, wallet_refusal).await;
 		let app = router(state(Env {
 			concierge: format!("http://{concierge}"),
 			hub: format!("http://{}", hub.addr),
@@ -781,8 +799,9 @@ mod wallet_gate_tests {
 	}
 
 	/// A stub concierge on an ephemeral port that answers only `Jwks`, so a signed
-	/// `ev_access` cookie verifies. The listener is handed over, never re-bound — see the
-	/// same helper in `admin.rs` for the race that rules out.
+	/// `ev_access` cookie verifies. The listener is handed over, never re-bound: binding to
+	/// claim a port and letting `serve` bind it again opens a window in which a sibling test,
+	/// running in parallel in this process, is handed the port and talks to the wrong stub.
 	async fn jwks() -> SocketAddr {
 		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
 		let addr = listener.local_addr().expect("the listener has an address");
@@ -1249,5 +1268,33 @@ mod wallet_gate_tests {
 			let (_, headers, _) = send(&app, request("GET", uri, "", Some(SCOPE_HOST), false)).await;
 			assert_eq!(cors_of(&headers), (None, None), "{uri}");
 		}
+	}
+
+	/// An `UNAUTHENTICATED` from the money plane — a banking token below the plane's
+	/// revoke floor — must drop the cached pair, so the frontend's single heal-replay
+	/// mints afresh instead of presenting the same refused token. Pinned by counting
+	/// mints: the same two reads against a plane refusing for any OTHER reason share
+	/// one mint, which is the cache doing its job.
+	#[tokio::test]
+	async fn an_unauthenticated_money_rpc_drops_the_cached_pair_so_the_replay_re_mints() {
+		async fn mints_over_two_reads(refusal: Code, expected: StatusCode) -> usize {
+			let (app, hub) = app_with_stub("1", refusal).await;
+			for _ in 0..2 {
+				let (status, _, body) = send(&app, request("GET", "/api/wallet", "", None, true)).await;
+				assert_eq!(status, expected, "{body}");
+			}
+			hub.mints.load(Ordering::SeqCst)
+		}
+
+		assert_eq!(
+			mints_over_two_reads(Code::Unauthenticated, StatusCode::UNAUTHORIZED).await,
+			2,
+			"the replay after a 401 must mint a new banking token"
+		);
+		assert_eq!(
+			mints_over_two_reads(Code::PermissionDenied, StatusCode::FORBIDDEN).await,
+			1,
+			"any other refusal leaves the cached pair in place"
+		);
 	}
 }

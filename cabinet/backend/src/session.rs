@@ -156,7 +156,7 @@ mod tests {
 
 	/// An eviction leaves nothing behind for the user — not even the empty slot a
 	/// failed mint parks — and is a no-op for a user the cache never saw. The route-level
-	/// half (a 401 from the money plane triggers it) is pinned in `routes::admin::tests`.
+	/// half (a 401 from the money plane triggers it) is pinned in `routes::money::wallet_gate_tests`.
 	#[tokio::test]
 	async fn evict_forgets_the_users_slot() {
 		let cache = BankingTokens::new();

@@ -257,8 +257,8 @@ pub async fn open_suspension(State(st): State<AppState>, jar: CookieJar, headers
 }
 
 /// `POST /api/owners/proposals/reinstatement` — CSRF-checked: propose lifting a suspension
-/// THE OWNERS imposed. A hold needs nothing from here — `/api/admin/users/reinstate` lifts
-/// one in a single act, and the console decides which to offer from `suspended_by`.
+/// THE OWNERS imposed. A hold needs nothing from here — one admin lifts it in a
+/// single act, and the console decides which to offer from `suspended_by`.
 pub async fn open_reinstatement(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::UserProposal>, ApiError> {
 	let (token, user_id, reason) = proposal_open(&st, &jar, &headers, &body).await?;
 	Ok(Json(st.grpc.open_user_reinstatement(&token, &user_id, &reason).await?.into()))
@@ -397,8 +397,6 @@ mod route_tests {
 			("GET", "/api/owners/removals"),
 			("GET", "/api/owners/admissions"),
 			("GET", "/api/owners/proposals"),
-			("GET", "/api/admin/payments"),
-			("GET", "/api/admin/payments/p-1"),
 		];
 		for (method, uri) in reads {
 			let (status, _) = send(method, uri, None).await;
@@ -426,22 +424,11 @@ mod route_tests {
 			("/api/owners/proposals/p-1/vote", r#"{"vote":"for"}"#),
 			("/api/owners/proposals/p-1/cancel", "{}"),
 			("/api/owners/resign", r#"{"confirm_email":"ada@example.com"}"#),
-			("/api/admin/payments/p-1/cancel", "{}"),
 		];
 		for (uri, body) in mutations {
 			let (status, _) = send("POST", uri, Some(body)).await;
 			assert_eq!(status, StatusCode::FORBIDDEN, "POST {uri} must be refused as CSRF");
 		}
-	}
-
-	/// Opening a payment is not served here any more (banking#565, F3): the old form relayed
-	/// the session token as proof without a fresh sign-in gate. The path still serves GET,
-	/// so the router's answer to a POST is 405, and it comes before any CSRF or session gate.
-	#[tokio::test]
-	async fn opening_a_payment_is_not_served() {
-		let body = r#"{"source":{"kind":"service","id":"fee"},"destination":{"internal":{"kind":"user","id":"u-1"}},"amount":"10","reason":"rent"}"#;
-		let (status, _) = send("POST", "/api/admin/payments", Some(body)).await;
-		assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
 	}
 
 	/// The emailed surface is the opposite: no session, no CSRF, and it must still reach

@@ -11,8 +11,8 @@ use serde::Serialize;
 /// fields the wire shape carries alongside it, and the `From` that builds it from the proto
 /// message. Every name is spelled out at the call site rather than derived from the DTO's,
 /// because none of them line up reliably — the field is not always the plural of the element
-/// type (`ParkedEventList.events`), and the source message is not always `<Dto>`
-/// (`AdminUserList` comes from `cc::ListUsersResponse`).
+/// type (`ConsiliumList.items`), and the source message is not always `<Dto>`
+/// (`NotificationList` comes from `cc::ListNotificationsResponse`).
 ///
 /// The second form names the source binding so extra fields can be given as expressions over
 /// it, which is what a field needing more than a move requires (`total: r.total.to_string()`).
@@ -82,7 +82,7 @@ pub struct UserProfile {
 	/// two it was compared against.
 	pub suspended_by: String,
 	/// Unix seconds an `admin_hold` lapses; `"0"` when nothing lapses. A string like every
-	/// other stamp the BFF emits — see [`AdminUserSummary::created_at`].
+	/// other stamp the BFF emits.
 	pub hold_expires_at: String,
 	/// What the caller may do, concrete (no alias, no wildcard). Only `/api/users` (GetMe)
 	/// fills it; every other profile the BFF relays carries it empty, which means "not
@@ -114,70 +114,6 @@ impl From<cc::UserProfile> for UserProfile {
 			suspended_by: p.suspended_by,
 			hold_expires_at: p.hold_expires_at.to_string(),
 			permissions: p.permissions,
-		}
-	}
-}
-
-/// One grant of a target inside a tenant's namespace. `orphaned`: the tenant's current
-/// catalog defines nothing the target names, so it grants nothing. Stamps cross as strings
-/// like every other int64.
-#[derive(Serialize)]
-pub struct PermissionGrant {
-	pub id: String,
-	pub user_id: String,
-	pub target: String,
-	pub granted_by: String,
-	pub granted_at: String,
-	pub reason: String,
-	pub orphaned: bool,
-}
-
-impl From<cc::PermissionGrant> for PermissionGrant {
-	fn from(g: cc::PermissionGrant) -> Self {
-		Self {
-			id: g.id.to_string(),
-			user_id: g.user_id,
-			target: g.target,
-			granted_by: g.granted_by,
-			granted_at: g.granted_at.to_string(),
-			reason: g.reason,
-			orphaned: g.orphaned,
-		}
-	}
-}
-
-/// One holder of a grant for the allocation's "Access" tab. Both names are empty for a
-/// caller who is only a delegate: the team sees each other's email and grant, nothing more.
-#[derive(Serialize)]
-pub struct GrantHolder {
-	pub grant: PermissionGrant,
-	pub email: String,
-	pub legal_name: String,
-	pub preferred_name: String,
-}
-
-/// A namespace's active grants, oldest first. A row concierge sends without its grant
-/// names nobody the tab could act on, so it is dropped rather than rendered half-empty.
-#[derive(Serialize)]
-pub struct GrantHolderList {
-	pub holders: Vec<GrantHolder>,
-}
-
-impl From<cc::ListGrantsResponse> for GrantHolderList {
-	fn from(r: cc::ListGrantsResponse) -> Self {
-		Self {
-			holders: r
-				.holders
-				.into_iter()
-				.filter_map(|h| {
-					Some(GrantHolder {
-						grant: h.grant?.into(),
-						email: h.email,
-						legal_name: h.legal_name,
-						preferred_name: h.preferred_name,
-					})
-				})
-				.collect(),
 		}
 	}
 }
@@ -597,91 +533,6 @@ list_dto! {
 	}
 }
 
-// ── piggybank: fees (operator) ───────────────────────────────────────────────
-
-list_dto! {
-	/// Every configured policy, for the operator's fees table. The element type is the same
-	/// `FeePolicy` the investor read returns — the operator sees no more of a fund's terms
-	/// than the people paying them do.
-	FeePolicyList from bk::FeePolicyList { policies: Vec<FeePolicy> }
-}
-
-/// The manager's uncollected fee units in one fund. `value` is `units × current NAV` —
-/// what a settlement would convert them to if it ran now.
-#[derive(Serialize)]
-pub struct FeeShares {
-	pub service: String,
-	pub units: String,
-	pub value: String,
-}
-
-impl From<bk::FeeShares> for FeeShares {
-	fn from(f: bk::FeeShares) -> Self {
-		Self {
-			service: f.service,
-			units: f.units,
-			value: f.value,
-		}
-	}
-}
-
-#[derive(Serialize)]
-pub struct FeeSettlement {
-	pub service: String,
-	pub units: String,
-	pub nav: String,
-	pub cash: String,
-}
-
-impl From<bk::FeeSettlement> for FeeSettlement {
-	fn from(s: bk::FeeSettlement) -> Self {
-		Self {
-			service: s.service,
-			units: s.units,
-			nav: s.nav,
-			cash: s.cash,
-		}
-	}
-}
-
-/// One charge against one holding. `charged_cash` is below `management + performance`
-/// exactly when the holding could not cover the whole charge and the rest went to
-/// `debt_carried`.
-#[derive(Serialize)]
-pub struct FeeAssessment {
-	pub service: String,
-	pub trigger: String,
-	pub nav: String,
-	pub management: String,
-	pub performance: String,
-	pub debt_opening: String,
-	pub charged_units: String,
-	pub charged_cash: String,
-	pub debt_carried: String,
-	pub high_water_mark: String,
-	pub assessed_at: String,
-}
-
-impl From<bk::FeeAssessment> for FeeAssessment {
-	fn from(a: bk::FeeAssessment) -> Self {
-		Self {
-			service: a.service,
-			trigger: a.trigger,
-			nav: a.nav,
-			management: a.management,
-			performance: a.performance,
-			debt_opening: a.debt_opening,
-			charged_units: a.charged_units,
-			charged_cash: a.charged_cash,
-			debt_carried: a.debt_carried,
-			high_water_mark: a.high_water_mark,
-			assessed_at: a.assessed_at.to_string(),
-		}
-	}
-}
-
-list_dto! { FeeAssessmentList from bk::FeeAssessmentList { assessments: Vec<FeeAssessment> } }
-
 // ── piggybank: allocations (the registry of investable products) ─────────────
 
 /// One catalog entry. Carries no money — units/NAV/P&L come from the funds surface
@@ -738,141 +589,6 @@ impl From<bk::Allocation> for Allocation {
 }
 
 list_dto! { AllocationList from bk::AllocationList { allocations: Vec<Allocation> } }
-
-/// One investor raised above a product's default level. `user_id` and `granted_by` are
-/// the ids the console carries for a person — the concierge id when the bridge has
-/// mirrored them, the banking id as a fallback — the same order the hub accepts on a
-/// grant or revoke, so either can be echoed straight back. `email` is filled in by the
-/// grants route from the identity plane and is `null` when the directory cannot name
-/// the id (a banking-only mirror, or a directory outage): the grant still lists.
-/// `granted_at` crosses as a string like every other int64.
-#[derive(Serialize)]
-pub struct AllocationAccessGrant {
-	pub service: String,
-	pub user_id: String,
-	pub email: Option<String>,
-	/// `view` | `invest`.
-	pub level: String,
-	pub granted_by: String,
-	pub granted_at: String,
-}
-
-impl From<bk::AllocationAccessGrant> for AllocationAccessGrant {
-	fn from(g: bk::AllocationAccessGrant) -> Self {
-		Self {
-			service: g.service,
-			user_id: g.user_id,
-			email: None,
-			level: g.level,
-			granted_by: g.granted_by,
-			granted_at: g.granted_at.to_string(),
-		}
-	}
-}
-
-list_dto! { AllocationAccessGrantList from bk::AllocationAccessGrantList { grants: Vec<AllocationAccessGrant> } }
-
-/// One in-kind issuance — units moved with no cash behind them: minted (`source: mint`,
-/// by an operator or an executed holder grant) or burnt out of the holder's account
-/// (`source: retire`, supply shrank). `units` is always the magnitude; `source` is the
-/// direction. `holder_id` is a BANKING user id for a `user` holder and the holding
-/// allocation's slug for an `allocation` holder (the `fee` allocation holding a product's
-/// fee class) — never resolve the latter as a user. `state` is `queued` until the relay posts the
-/// leg, then `applied`; the console polls for the latter before it shows the holder
-/// their units.
-#[derive(Serialize)]
-pub struct UnitIssuance {
-	pub id: String,
-	pub service: String,
-	/// `user` | `allocation`.
-	pub holder_kind: String,
-	pub holder_id: String,
-	pub units: String,
-	pub nav: String,
-	pub cost_basis: String,
-	/// `queued` | `applied`.
-	pub state: String,
-	pub created_at: String,
-	/// `mint` | `retire`.
-	pub source: String,
-}
-
-impl From<bk::UnitIssuance> for UnitIssuance {
-	fn from(i: bk::UnitIssuance) -> Self {
-		Self {
-			id: i.id,
-			service: i.service,
-			holder_kind: i.holder_kind,
-			holder_id: i.holder_id,
-			units: i.units,
-			nav: i.nav,
-			cost_basis: i.cost_basis,
-			state: i.state,
-			created_at: i.created_at.to_string(),
-			source: i.source,
-		}
-	}
-}
-
-/// One holder of an allocation's units, as the cap table and the treasury name them:
-/// `kind` is `user` (`id` is the banking user id) or `allocation` (`id` is the holding
-/// allocation's slug — the reserved `fee` allocation holding a product's fee class). A
-/// screen resolves a `user` through the directory and renders an `allocation` by its
-/// slug; it never looks the latter up as a person.
-#[derive(Serialize)]
-pub struct UnitHolderRef {
-	/// `user` | `allocation`.
-	pub kind: String,
-	pub id: String,
-}
-
-impl From<bk::UnitHolderRef> for UnitHolderRef {
-	fn from(h: bk::UnitHolderRef) -> Self {
-		Self { kind: h.kind, id: h.id }
-	}
-}
-
-/// One line of a cap table: who, and how many units (decimal). Zero holdings are not
-/// listed. `holder` is never `null`: the plane always names one, and a line without a
-/// holder would be the very "unit that is nobody's" #245 rules out — it is dropped
-/// rather than rendered as a blank row.
-#[derive(Serialize)]
-pub struct UnitHolding {
-	pub holder: UnitHolderRef,
-	pub units: String,
-}
-
-impl UnitHolding {
-	fn from_wire(h: bk::UnitHolding) -> Option<Self> {
-		Some(Self {
-			holder: h.holder.map(UnitHolderRef::from)?,
-			units: h.units,
-		})
-	}
-}
-
-/// A product's cap table (#245): the settled supply and every holder of it, largest
-/// first — people and the `fee` allocation alike, each a line. `queued_units` are mints
-/// recorded but not yet on the ledger — the console must not pin the cap to
-/// `units_outstanding` while it is non-zero.
-#[derive(Serialize)]
-pub struct UnitHolders {
-	pub service: String,
-	pub units_outstanding: String,
-	pub queued_units: String,
-	pub holders: Vec<UnitHolding>,
-}
-
-impl From<bk::UnitHolders> for UnitHolders {
-	fn from(h: bk::UnitHolders) -> Self {
-		Self {
-			service: h.service,
-			units_outstanding: h.units_outstanding,
-			queued_units: h.queued_units,
-			holders: h.holders.into_iter().filter_map(UnitHolding::from_wire).collect(),
-		}
-	}
-}
 
 // ── piggybank: funds (the service currency) ──────────────────────────────────
 
@@ -1076,9 +792,8 @@ impl From<bk::FeePolicy> for FeePolicy {
 	}
 }
 
-/// One row of a fund's fee-policy history — the shape `ScheduleFeePolicy`,
-/// `CancelFeePolicyChange` and `AcknowledgeUndeliveredNotices` answer with, and the rows of
-/// `/api/admin/fees/changes`. `state` is awaiting_consilium | scheduled | active |
+/// One row of a fund's fee-policy history: the change of terms that is still pending on
+/// a fund's fee policy. `state` is awaiting_consilium | scheduled | active |
 /// superseded | rejected | cancelled; `requirement` is admin | owner_consilium. Timestamps
 /// are unix seconds as strings, `"0"` where the moment has not come.
 #[derive(Serialize)]
@@ -1151,8 +866,6 @@ impl From<bk::FeePolicyChange> for FeePolicyChange {
 		}
 	}
 }
-
-list_dto! { FeePolicyChangeList from bk::FeePolicyChangeList { changes: Vec<FeePolicyChange> } }
 
 /// What a holding owes right now without being charged. `high_water_mark` travels with it
 /// because it is the single number that explains why two investors in the same fund at the
@@ -1428,399 +1141,7 @@ impl From<bk::BookEvent> for BookEvent {
 	}
 }
 
-// ── admin console ─────────────────────────────────────────────────────────────
-
-/// A user row in the operator user list.
-#[derive(Serialize)]
-pub struct AdminUserSummary {
-	pub user_id: String,
-	pub email: String,
-	pub status: String,
-	pub kyc_level: u32,
-	pub role: String,
-	pub role_is_break_glass: bool,
-	pub token_version: String,
-	pub created_at: String,
-	/// Why the account is disabled — on the LIST and not only the drawer, because a held
-	/// account and a suspended one need different action buttons and a console that cannot
-	/// tell them apart offers the wrong one. See [`UserProfile::suspended_by`] for why
-	/// this is three cases rather than two.
-	pub suspended_by: String,
-	/// Unix seconds an `admin_hold` lapses; `"0"` when nothing lapses.
-	pub hold_expires_at: String,
-}
-
-impl From<cc::AdminUserSummary> for AdminUserSummary {
-	fn from(u: cc::AdminUserSummary) -> Self {
-		Self {
-			user_id: u.user_id,
-			email: u.email,
-			status: u.status,
-			kyc_level: u.kyc_level,
-			role: u.role,
-			role_is_break_glass: u.role_is_break_glass,
-			token_version: u.token_version.to_string(),
-			created_at: u.created_at.to_string(),
-			suspended_by: u.suspended_by,
-			hold_expires_at: u.hold_expires_at.to_string(),
-		}
-	}
-}
-
-list_dto! {
-	AdminUserList from cc::ListUsersResponse as r {
-		users: Vec<AdminUserSummary>,
-		total: String = r.total.to_string(),
-	}
-}
-
-/// A live user balance (the user-detail drawer): `amount = main + in_compartments`.
-#[derive(Serialize)]
-pub struct UserBalance {
-	pub amount: String,
-	pub pending: String,
-	pub authoritative: bool,
-	pub as_of: String,
-	pub main: String,
-	pub in_compartments: String,
-}
-
-impl From<bk::UserBalanceResponse> for UserBalance {
-	fn from(b: bk::UserBalanceResponse) -> Self {
-		Self {
-			amount: b.amount,
-			pending: b.pending,
-			authoritative: b.authoritative,
-			as_of: b.as_of.to_string(),
-			main: b.main,
-			in_compartments: b.in_compartments,
-		}
-	}
-}
-
-/// Per-rail liquidity plus the operator funding view (`treasury_*`/`onchain_*` are
-/// best-effort chain reads — empty means the rail is unconfigured or the read was
-/// unavailable, never an error).
-#[derive(Serialize)]
-pub struct RailLiquidity {
-	pub network: String,
-	pub custody: String,
-	pub treasury_address: String,
-	pub onchain_usdt: String,
-	pub onchain_gas: String,
-	/// The rail's sweep gas-station wallet — fund native coin here (never USDT).
-	pub gas_station_address: String,
-	pub gas_station_gas: String,
-	/// Whether the addresses above are testnet-tagged (TON renders a different friendly
-	/// address per realm); false on the rails whose address form is network-agnostic.
-	pub is_testnet: bool,
-}
-
-/// An allocation's cash claim, read off one ledger balance: `posted` is settled,
-/// `reserved` is spoken for by approved payments out of it, `available` is the difference.
-#[derive(Default, Serialize)]
-pub struct AllocationClaim {
-	pub posted: String,
-	pub available: String,
-	pub reserved: String,
-}
-
-impl From<bk::AllocationClaim> for AllocationClaim {
-	fn from(c: bk::AllocationClaim) -> Self {
-		Self {
-			posted: c.posted,
-			available: c.available,
-			reserved: c.reserved,
-		}
-	}
-}
-
-/// One allocation as the treasury shows it (#245): name, cash, supply, price and who
-/// holds it — the same shape for a product and for the hidden `fee` / `fund` allocations
-/// (`access: hidden`), which is also what the Revenue screen reads for `fee`.
-/// `nav_posted_at` is `"0"` while nothing under it has been marked (seed-priced). A
-/// missing `claim` on the wire (a plane older than this contract) crosses as zeros
-/// rather than `null`, so a figure is always a figure.
-#[derive(Serialize)]
-pub struct AllocationTreasury {
-	pub service: String,
-	pub title: String,
-	/// `hidden` | `view` | `invest`.
-	pub access: String,
-	pub claim: AllocationClaim,
-	pub units_outstanding: String,
-	pub nav: String,
-	pub nav_posted_at: String,
-	pub holders: Vec<UnitHolding>,
-	/// banking's own treasury beside the `fee` allocation (D17) — set on the Revenue
-	/// screen's answer only, absent from every treasury line.
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub banking_treasury: Option<AllocationClaim>,
-}
-
-impl From<bk::AllocationTreasury> for AllocationTreasury {
-	fn from(a: bk::AllocationTreasury) -> Self {
-		Self {
-			service: a.service,
-			title: a.title,
-			access: a.access,
-			claim: a.claim.map(AllocationClaim::from).unwrap_or_default(),
-			units_outstanding: a.units_outstanding,
-			nav: a.nav,
-			nav_posted_at: a.nav_posted_at_unix.to_string(),
-			holders: a.holders.into_iter().filter_map(UnitHolding::from_wire).collect(),
-			banking_treasury: a.banking_treasury.map(AllocationClaim::from),
-		}
-	}
-}
-
-/// The two-layer treasury picture (Treasury screen): per-rail custody, and who the claims
-/// on it belong to — people directly (`held_by_users`) or through the units of an
-/// allocation (`allocations`, the hidden `fee` and `fund` included). No remainder: each
-/// figure is read off its own accounts.
-#[derive(Serialize)]
-pub struct Treasury {
-	pub rails: Vec<RailLiquidity>,
-	pub bank: String,
-	pub total_custody: String,
-	pub reserved_for_withdrawals: String,
-	pub held_by_users: String,
-	pub allocations: Vec<AllocationTreasury>,
-	/// banking's own treasury (D17), a line of its own; zeros from a plane older than it.
-	pub banking_treasury: AllocationClaim,
-	/// Σ users' scope compartments — still people's.
-	pub held_in_compartments: String,
-}
-
-impl From<bk::Treasury> for Treasury {
-	fn from(t: bk::Treasury) -> Self {
-		Self {
-			rails: t
-				.rails
-				.into_iter()
-				.map(|r| RailLiquidity {
-					network: r.network,
-					custody: r.custody,
-					treasury_address: r.treasury_address,
-					onchain_usdt: r.onchain_usdt,
-					onchain_gas: r.onchain_gas,
-					gas_station_address: r.gas_station_address,
-					gas_station_gas: r.gas_station_gas,
-					is_testnet: r.is_testnet,
-				})
-				.collect(),
-			bank: t.bank,
-			total_custody: t.total_custody,
-			reserved_for_withdrawals: t.reserved_for_withdrawals,
-			held_by_users: t.held_by_users,
-			allocations: t.allocations.into_iter().map(AllocationTreasury::from).collect(),
-			banking_treasury: t.banking_treasury.map(AllocationClaim::from).unwrap_or_default(),
-			held_in_compartments: t.held_in_compartments,
-		}
-	}
-}
-
-/// What `POST /api/admin/treasury/seed-capital` answers: a seed is a consilium, not a
-/// write, so `recorded` is always false and `consilium_id` is where the proposal lives.
-#[derive(Serialize)]
-pub struct SeedCapitalProposal {
-	pub recorded: bool,
-	pub amount: String,
-	pub consilium_id: String,
-}
-
-impl From<bk::SeedCapitalResponse> for SeedCapitalProposal {
-	fn from(r: bk::SeedCapitalResponse) -> Self {
-		Self {
-			recorded: r.recorded,
-			amount: r.amount,
-			consilium_id: r.consilium_id,
-		}
-	}
-}
-
-/// One outbox row the relay parked — the "money didn't move" set (Outbox screen).
-/// `reason` is the relay's last error; a `compensated` row already ran its recovery and
-/// must never be unparked (the hub refuses).
-#[derive(Serialize)]
-pub struct ParkedEvent {
-	pub seq: String,
-	pub event_id: String,
-	pub aggregate: String,
-	pub aggregate_id: String,
-	pub kind: String,
-	pub reason: String,
-	pub parked_at: String,
-	pub compensated: bool,
-}
-
-impl From<bk::ParkedEvent> for ParkedEvent {
-	fn from(e: bk::ParkedEvent) -> Self {
-		Self {
-			seq: e.seq.to_string(),
-			event_id: e.event_id,
-			aggregate: e.aggregate,
-			aggregate_id: e.aggregate_id,
-			kind: e.kind,
-			reason: e.reason,
-			parked_at: e.parked_at.to_string(),
-			compensated: e.compensated,
-		}
-	}
-}
-
-list_dto! { ParkedEventList from bk::ParkedEventList { events: Vec<ParkedEvent> } }
-
-/// One queued redemption in the Valuation screen's queue.
-#[derive(Serialize)]
-pub struct RedemptionQueueItem {
-	pub redemption_id: String,
-	pub user_id: String,
-	pub email: String,
-	pub service: String,
-	pub units: String,
-	pub created_at: String,
-}
-
-#[derive(Serialize)]
-pub struct RedemptionQueue {
-	pub items: Vec<RedemptionQueueItem>,
-}
-
-impl From<bk::RedemptionQueue> for RedemptionQueue {
-	fn from(q: bk::RedemptionQueue) -> Self {
-		Self {
-			items: q
-				.items
-				.into_iter()
-				.map(|i| RedemptionQueueItem {
-					redemption_id: i.redemption_id,
-					user_id: i.user_id,
-					email: i.email,
-					service: i.service,
-					units: i.units,
-					created_at: i.created_at.to_string(),
-				})
-				.collect(),
-		}
-	}
-}
-
-/// One withdrawal awaiting operator action (admin Withdrawals screen). `source` is `user`
-/// (the row names its investor) or `treasury` — an approved payment out of banking's
-/// treasury (D17), with empty `user_id` and `email`.
-#[derive(Serialize)]
-pub struct WithdrawalQueueItem {
-	pub withdrawal_id: String,
-	pub source: String,
-	pub user_id: String,
-	pub email: String,
-	pub network: String,
-	pub address: String,
-	pub amount: String,
-	pub net_amount: String,
-	pub state: String,
-	pub created_at: String,
-}
-
-#[derive(Serialize)]
-pub struct WithdrawalQueue {
-	pub items: Vec<WithdrawalQueueItem>,
-}
-
-impl From<bk::WithdrawalQueue> for WithdrawalQueue {
-	fn from(q: bk::WithdrawalQueue) -> Self {
-		Self {
-			items: q
-				.items
-				.into_iter()
-				.map(|i| WithdrawalQueueItem {
-					withdrawal_id: i.withdrawal_id,
-					source: i.source,
-					user_id: i.user_id,
-					email: i.email,
-					network: i.network,
-					address: i.address,
-					amount: i.amount,
-					net_amount: i.net_amount,
-					state: i.state,
-					created_at: i.created_at.to_string(),
-				})
-				.collect(),
-		}
-	}
-}
-
-/// A rail on the Coins screen.
-#[derive(Serialize)]
-pub struct Rail {
-	pub network: String,
-	pub configured: bool,
-	pub frozen: bool,
-	pub gas_coin: String,
-}
-
-impl From<bk::Rail> for Rail {
-	fn from(r: bk::Rail) -> Self {
-		Self {
-			network: r.network,
-			configured: r.configured,
-			frozen: r.frozen,
-			gas_coin: r.gas_coin,
-		}
-	}
-}
-
-/// The money-plane read-only kill-switch state (Cabinet screen).
-#[derive(Serialize)]
-pub struct OperationsMode {
-	pub read_only: bool,
-}
-
-impl From<bk::OperationsMode> for OperationsMode {
-	fn from(m: bk::OperationsMode) -> Self {
-		Self { read_only: m.read_only }
-	}
-}
-
-#[derive(Serialize)]
-pub struct FeatureFlag {
-	pub key: String,
-	pub description: String,
-	pub enabled: bool,
-	pub rollout: u32,
-}
-
-/// The platform/cabinet config (Cabinet screen: maintenance, announcement, flags).
-#[derive(Serialize)]
-pub struct PlatformConfig {
-	pub maintenance_mode: bool,
-	pub announcement_title: String,
-	pub announcement_body: String,
-	pub announcement_active: bool,
-	pub flags: Vec<FeatureFlag>,
-}
-
-impl From<cc::PlatformConfig> for PlatformConfig {
-	fn from(c: cc::PlatformConfig) -> Self {
-		Self {
-			maintenance_mode: c.maintenance_mode,
-			announcement_title: c.announcement_title,
-			announcement_body: c.announcement_body,
-			announcement_active: c.announcement_active,
-			flags: c
-				.flags
-				.into_iter()
-				.map(|f| FeatureFlag {
-					key: f.key,
-					description: f.description,
-					enabled: f.enabled,
-					rollout: f.rollout,
-				})
-				.collect(),
-		}
-	}
-}
+// ── concierge: notifications ──────────────────────────────────────────────────
 
 /// One inbox entry. Unix-second timestamps are rendered as strings for the same
 /// reason every other i64 here is: the old proto-loader emitted `longs: String`, and
@@ -2292,11 +1613,6 @@ fn rfc3339(secs: i64) -> String {
 	format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", t.year(), u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second())
 }
 
-/// A stamp the proto leaves at 0 while the event has not happened yet.
-fn rfc3339_opt(secs: i64) -> Option<String> {
-	(secs != 0).then(|| rfc3339(secs))
-}
-
 /// A string the proto leaves empty when the field does not apply.
 fn non_empty(value: String) -> Option<String> {
 	(!value.is_empty()).then_some(value)
@@ -2335,104 +1651,6 @@ impl From<bk::PaymentEnd> for PaymentEnd {
 			network: e.network,
 			address: e.address,
 			detail: e.detail,
-		}
-	}
-}
-
-/// The consent seat of an investor-sourced order, as the operator surface sees it.
-#[derive(Serialize)]
-pub struct PaymentConsent {
-	/// Masked by the plane (`a***@example.com`).
-	pub subject_email: String,
-	/// `pending` | `approve` | `reject`.
-	pub decision: String,
-	pub notified: bool,
-	pub attempts_remaining: u32,
-	/// True when a pin recorded at open (the subject's token version, their mailbox) has
-	/// moved: the seat can no longer be answered or executed.
-	pub invalidated: bool,
-	pub invalidation_reason: String,
-}
-
-impl From<bk::PaymentConsent> for PaymentConsent {
-	fn from(c: bk::PaymentConsent) -> Self {
-		let decision = enum_label(c.decision().as_str_name(), "CONSENT_DECISION_");
-		Self {
-			subject_email: c.subject_email,
-			decision,
-			notified: c.notified,
-			attempts_remaining: c.attempts_remaining,
-			invalidated: c.invalidated,
-			invalidation_reason: c.invalidation_reason,
-		}
-	}
-}
-
-/// One payment order in full — the Admin/Owner view.
-#[derive(Serialize)]
-pub struct Payment {
-	pub id: String,
-	/// `pending` | `approved` | `executed` | `execution_failed` | `rejected` | `expired` |
-	/// `cancelled`.
-	pub state: String,
-	/// `internal` | `service` | `external` — derived from the destination.
-	pub tier: String,
-	pub source: PaymentEnd,
-	pub destination: PaymentEnd,
-	pub amount: String,
-	pub reason: String,
-	/// `owner_consilium` | `subject_consent` — the one requirement, read off the source.
-	pub requirement: String,
-	pub payload_hash: String,
-	pub initiator_email: String,
-	/// Set exactly when the requirement is the owner consilium.
-	pub consilium_id: Option<String>,
-	/// Set exactly when the requirement is the subject's consent.
-	pub consent: Option<PaymentConsent>,
-	pub created_at: String,
-	pub expires_at: String,
-	/// `null` while pending.
-	pub decided_at: Option<String>,
-	/// Set on EXECUTED for an external order only: an internal one settled as a ledger
-	/// transfer and records no id of its own.
-	pub executed_withdrawal_id: Option<String>,
-	pub failure_reason: Option<String>,
-	/// Monotonic per order.
-	pub version: u64,
-	/// `consilium` | `consent` | `concierge_approval` | `session` — the seat that decides it.
-	pub seat: Option<String>,
-	/// Concierge's id of the `bank:payment` approval, once opened.
-	pub approval_id: Option<String>,
-	/// The investor's own answer in the cabinet, for a `session` seat.
-	pub session_decision: Option<String>,
-}
-
-impl From<bk::Payment> for Payment {
-	fn from(p: bk::Payment) -> Self {
-		let state = enum_label(p.state().as_str_name(), "PAYMENT_STATE_");
-		let session_decision = (p.seat == "session").then(|| enum_label(p.session_decision().as_str_name(), "CONSENT_DECISION_"));
-		Self {
-			id: p.id,
-			state,
-			tier: p.tier,
-			source: p.source.map(PaymentEnd::from).unwrap_or_default(),
-			destination: p.destination.map(PaymentEnd::from).unwrap_or_default(),
-			amount: p.amount,
-			reason: p.reason,
-			requirement: p.requirement,
-			payload_hash: p.payload_hash,
-			initiator_email: p.initiator_email,
-			consilium_id: non_empty(p.consilium_id),
-			consent: p.consent.map(PaymentConsent::from),
-			created_at: rfc3339(p.created_at),
-			expires_at: rfc3339(p.expires_at),
-			decided_at: rfc3339_opt(p.decided_at),
-			executed_withdrawal_id: non_empty(p.executed_withdrawal_id),
-			failure_reason: non_empty(p.failure_reason),
-			version: p.version,
-			seat: non_empty(p.seat),
-			approval_id: non_empty(p.approval_id),
-			session_decision,
 		}
 	}
 }
@@ -2481,10 +1699,8 @@ impl From<bk::PaymentConfirmation> for PaymentConfirmation {
 
 list_dto! { PaymentConfirmationList from bk::PaymentConfirmationList { items: Vec<PaymentConfirmation> } }
 
-list_dto! { PaymentList from bk::PaymentList { items: Vec<Payment> } }
-
-/// What the emailed investor is shown before answering. Deliberately narrower than
-/// [`Payment`]: the terms they are consenting to and nothing about the operator beyond a
+/// What the emailed investor is shown before answering. Deliberately narrow: the terms
+/// they are consenting to and nothing about the operator beyond a
 /// masked address — and both addresses are masked here as well as by the plane, because
 /// this is the one payments surface reachable with no session.
 #[derive(Default, Serialize)]
@@ -2890,149 +2106,6 @@ mod tests {
 		);
 	}
 
-	/// An issuance crosses with its `source` intact: the console tells a mint (supply
-	/// grew) from a retirement (it shrank) by this field alone.
-	#[test]
-	fn an_issuance_carries_its_source_and_holder() {
-		let issuance = UnitIssuance::from(bk::UnitIssuance {
-			id: "7c1e".into(),
-			service: "service_arb".into(),
-			holder_kind: "user".into(),
-			holder_id: "d4d6".into(),
-			units: "13000".into(),
-			nav: "1.25".into(),
-			cost_basis: "16250".into(),
-			state: "queued".into(),
-			created_at: 1_700_000_000,
-			source: "retire".into(),
-		});
-		assert_eq!(
-			(issuance.holder_kind.as_str(), issuance.holder_id.as_str(), issuance.source.as_str(), issuance.state.as_str()),
-			("user", "d4d6", "retire", "queued")
-		);
-		assert_eq!(
-			(issuance.units.as_str(), issuance.cost_basis.as_str(), issuance.created_at.as_str()),
-			("13000", "16250", "1700000000")
-		);
-	}
-
-	/// The treasury lists every allocation with its holders (#245): a holder is named by
-	/// kind and id — a person or the `fee` allocation — a line without a holder is
-	/// dropped rather than rendered as nobody's units, a missing claim crosses as zeros,
-	/// and the seed-priced `nav_posted_at` is the string `"0"` like every stamp here.
-	#[test]
-	fn the_treasury_names_every_allocation_and_its_holders() {
-		let holding = |kind: &str, id: &str, units: &str| bk::UnitHolding {
-			holder: Some(bk::UnitHolderRef { kind: kind.into(), id: id.into() }),
-			units: units.into(),
-		};
-		let treasury = Treasury::from(bk::Treasury {
-			rails: vec![],
-			bank: "0".into(),
-			total_custody: "1500".into(),
-			reserved_for_withdrawals: "10".into(),
-			held_by_users: "400".into(),
-			allocations: vec![
-				bk::AllocationTreasury {
-					service: "fee".into(),
-					title: "Fees".into(),
-					access: "hidden".into(),
-					claim: Some(bk::AllocationClaim {
-						posted: "100".into(),
-						available: "90".into(),
-						reserved: "10".into(),
-					}),
-					units_outstanding: "80".into(),
-					nav: "1.25".into(),
-					nav_posted_at_unix: 0,
-					holders: vec![holding("user", "d4d6", "64"), holding("user", "e5e7", "16")],
-					banking_treasury: None,
-				},
-				bk::AllocationTreasury {
-					service: "quy-nhon".into(),
-					title: "Quy Nhon".into(),
-					access: "invest".into(),
-					claim: None,
-					units_outstanding: "1000".into(),
-					nav: "1.00".into(),
-					nav_posted_at_unix: 1_750_000_000,
-					holders: vec![holding("allocation", "fee", "20"), bk::UnitHolding { holder: None, units: "5".into() }],
-					banking_treasury: None,
-				},
-			],
-			banking_treasury: Some(bk::AllocationClaim {
-				posted: "7".into(),
-				available: "5".into(),
-				reserved: "2".into(),
-			}),
-			held_in_compartments: "30".into(),
-		});
-		assert_eq!((treasury.held_by_users.as_str(), treasury.total_custody.as_str()), ("400", "1500"));
-		assert_eq!(
-			(
-				treasury.banking_treasury.posted.as_str(),
-				treasury.banking_treasury.reserved.as_str(),
-				treasury.held_in_compartments.as_str()
-			),
-			("7", "2", "30"),
-			"banking's treasury and the compartments cross as lines of their own"
-		);
-		assert!(treasury.allocations.iter().all(|line| line.banking_treasury.is_none()), "never per allocation line");
-		let [fee, product] = treasury.allocations.as_slice() else { panic!("two allocations") };
-		assert_eq!((fee.service.as_str(), fee.access.as_str(), fee.nav_posted_at.as_str()), ("fee", "hidden", "0"));
-		assert_eq!((fee.claim.posted.as_str(), fee.claim.available.as_str(), fee.claim.reserved.as_str()), ("100", "90", "10"));
-		assert_eq!(
-			fee.holders.iter().map(|h| (h.holder.kind.as_str(), h.holder.id.as_str(), h.units.as_str())).collect::<Vec<_>>(),
-			[("user", "d4d6", "64"), ("user", "e5e7", "16")]
-		);
-		assert_eq!(
-			(product.claim.posted.as_str(), product.nav_posted_at.as_str()),
-			("", "1750000000"),
-			"a missing claim is zeros, never null"
-		);
-		assert_eq!(product.holders.len(), 1, "a line with no holder is not a line");
-		assert_eq!((product.holders[0].holder.kind.as_str(), product.holders[0].holder.id.as_str()), ("allocation", "fee"));
-	}
-
-	/// The cap table crosses line by line, in the hub's order, with nothing summed.
-	#[test]
-	fn the_cap_table_keeps_the_hubs_order_and_sums_nothing() {
-		let holders = UnitHolders::from(bk::UnitHolders {
-			service: "quy-nhon".into(),
-			units_outstanding: "13250".into(),
-			queued_units: "100".into(),
-			holders: vec![
-				bk::UnitHolding {
-					holder: Some(bk::UnitHolderRef {
-						kind: "user".into(),
-						id: "d4d6".into(),
-					}),
-					units: "13000".into(),
-				},
-				bk::UnitHolding {
-					holder: Some(bk::UnitHolderRef {
-						kind: "allocation".into(),
-						id: "fee".into(),
-					}),
-					units: "250".into(),
-				},
-			],
-		});
-		assert_eq!((holders.units_outstanding.as_str(), holders.queued_units.as_str()), ("13250", "100"));
-		assert_eq!(
-			holders
-				.holders
-				.iter()
-				.map(|h| (h.holder.kind.as_str(), h.holder.id.as_str(), h.units.as_str()))
-				.collect::<Vec<_>>(),
-			[("user", "d4d6", "13000"), ("allocation", "fee", "250")]
-		);
-		let json = serde_json::to_value(&holders).unwrap();
-		for retired in ["company_units", "fee_units", "investor_units"] {
-			assert!(json.get(retired).is_none(), "`{retired}` is not on the wire any more");
-		}
-	}
-
 	/// The two #245 kinds cross as their own siblings, `null` on every other kind, and
 	/// their effect ids follow the same empty-means-null rule as the older ones.
 	#[test]
@@ -3067,6 +2140,17 @@ mod tests {
 			("0xabc:0", "bep20", "250.5", "d4d6")
 		);
 		assert!(seed.holder_grant.is_none());
+	}
+
+	/// `/api/users` carries the caller's permissions from GetMe, so the cabinet can offer
+	/// the panel link without a second round trip.
+	#[test]
+	fn the_profile_carries_the_callers_permissions() {
+		let profile = UserProfile::from(cc::UserProfile {
+			permissions: vec!["sa:work:leads:read".into(), "bank:treasury:read".into()],
+			..Default::default()
+		});
+		assert_eq!(profile.permissions, ["sa:work:leads:read", "bank:treasury:read"]);
 	}
 
 	/// A non-ASCII local part must not be sliced mid-character — a byte slice would panic
@@ -3119,40 +2203,6 @@ mod tests {
 		assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
 		assert_eq!(rfc3339(1_757_669_400), "2025-09-12T09:30:00Z");
 		assert_eq!(rfc3339(4_102_444_799), "2099-12-31T23:59:59Z");
-		assert_eq!(rfc3339_opt(0), None);
-		assert_eq!(rfc3339_opt(1_757_669_400).as_deref(), Some("2025-09-12T09:30:00Z"));
-	}
-
-	/// The proto's "empty means unset" sentinels cross as `null` on this family, so the
-	/// screen never has to know that `0` means "not decided" and `""` means "no consilium".
-	#[test]
-	fn a_pending_payment_carries_nulls_where_nothing_has_happened() {
-		let payment = Payment::from(bk::Payment {
-			state: bk::PaymentState::Pending as i32,
-			created_at: 1_757_669_400,
-			expires_at: 1_757_928_600,
-			..Default::default()
-		});
-		assert_eq!(payment.state, "pending");
-		assert_eq!(payment.created_at, "2025-09-12T09:30:00Z");
-		assert!(payment.decided_at.is_none());
-		assert!(payment.consilium_id.is_none() && payment.consent.is_none());
-		assert!(payment.executed_withdrawal_id.is_none() && payment.failure_reason.is_none());
-		assert_eq!(payment.version, 0);
-
-		let executed = Payment::from(bk::Payment {
-			state: bk::PaymentState::ExecutionFailed as i32,
-			consilium_id: "c-1".into(),
-			decided_at: 1_757_669_400,
-			failure_reason: "rail unconfigured".into(),
-			version: 3,
-			..Default::default()
-		});
-		assert_eq!(executed.state, "execution_failed");
-		assert_eq!(executed.consilium_id.as_deref(), Some("c-1"));
-		assert_eq!(executed.decided_at.as_deref(), Some("2025-09-12T09:30:00Z"));
-		assert_eq!(executed.failure_reason.as_deref(), Some("rail unconfigured"));
-		assert_eq!(executed.version, 3);
 	}
 
 	/// A payment consilium's ends arrive from the plane as words; they land in `label`,

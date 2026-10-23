@@ -111,10 +111,6 @@ impl Grpc {
 		bk::health_service_client::HealthServiceClient::new(self.piggybank.clone())
 	}
 
-	fn users_svc(&self) -> bk::users_service_client::UsersServiceClient<Channel> {
-		bk::users_service_client::UsersServiceClient::new(self.piggybank.clone())
-	}
-
 	fn balance(&self) -> bk::balance_service_client::BalanceServiceClient<Channel> {
 		bk::balance_service_client::BalanceServiceClient::new(self.piggybank.clone())
 	}
@@ -125,10 +121,6 @@ impl Grpc {
 
 	fn consilium_approval(&self) -> bk::consilium_approval_service_client::ConsiliumApprovalServiceClient<Channel> {
 		bk::consilium_approval_service_client::ConsiliumApprovalServiceClient::new(self.piggybank.clone())
-	}
-
-	fn payments(&self) -> bk::payments_service_client::PaymentsServiceClient<Channel> {
-		bk::payments_service_client::PaymentsServiceClient::new(self.piggybank.clone())
 	}
 
 	fn payment_confirmations(&self) -> bk::payment_confirmation_service_client::PaymentConfirmationServiceClient<Channel> {
@@ -350,61 +342,6 @@ impl Grpc {
 		Ok(self.allocations().get_allocation(bearer(token, req)?).await?.into_inner())
 	}
 
-	pub async fn register_allocation(&self, token: &str, req: bk::RegisterAllocationRequest) -> Result<bk::Allocation, Status> {
-		Ok(self.allocations().register_allocation(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn update_allocation(&self, token: &str, req: bk::UpdateAllocationRequest) -> Result<bk::Allocation, Status> {
-		Ok(self.allocations().update_allocation(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_allocation_state(&self, token: &str, req: bk::SetAllocationStateRequest) -> Result<bk::Allocation, Status> {
-		Ok(self.allocations().set_allocation_state(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_allocation_unit_cap(&self, token: &str, req: bk::SetAllocationUnitCapRequest) -> Result<bk::Allocation, Status> {
-		Ok(self.allocations().set_allocation_unit_cap(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_allocation_access(&self, token: &str, req: bk::SetAllocationAccessRequest) -> Result<bk::Allocation, Status> {
-		Ok(self.allocations().set_allocation_access(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn grant_allocation_access(&self, token: &str, req: bk::GrantAllocationAccessRequest) -> Result<bk::AllocationAccessGrant, Status> {
-		Ok(self.allocations().grant_allocation_access(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn revoke_allocation_access(&self, token: &str, req: bk::RevokeAllocationAccessRequest) -> Result<(), Status> {
-		self.allocations().revoke_allocation_access(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	pub async fn list_allocation_access_grants(&self, token: &str, service: &str) -> Result<bk::AllocationAccessGrantList, Status> {
-		let req = bk::ListAllocationAccessGrantsRequest { service: service.to_string() };
-		Ok(self.allocations().list_allocation_access_grants(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn issue_units(&self, token: &str, req: bk::IssueUnitsRequest) -> Result<bk::UnitIssuance, Status> {
-		Ok(self.allocations().issue_units(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn retire_units(&self, token: &str, req: bk::RetireUnitsRequest) -> Result<bk::UnitIssuance, Status> {
-		Ok(self.allocations().retire_units(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_allocation_backing(&self, token: &str, service: &str, backing: &str) -> Result<bk::Allocation, Status> {
-		let req = bk::SetAllocationBackingRequest {
-			service: service.to_string(),
-			backing: backing.to_string(),
-		};
-		Ok(self.allocations().set_allocation_backing(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn list_unit_holders(&self, token: &str, service: &str) -> Result<bk::UnitHolders, Status> {
-		let req = bk::ListUnitHoldersRequest { service: service.to_string() };
-		Ok(self.allocations().list_unit_holders(bearer(token, req)?).await?.into_inner())
-	}
-
 	pub async fn fund_nav(&self, token: &str, service: &str) -> Result<bk::FundNav, Status> {
 		let req = bk::GetFundNavRequest { service: service.to_string() };
 		Ok(self.funds().get_fund_nav(bearer(token, req)?).await?.into_inner())
@@ -428,70 +365,6 @@ impl Grpc {
 	pub async fn accrued_fees(&self, token: &str, service: &str) -> Result<bk::AccruedFees, Status> {
 		let req = bk::GetAccruedFeesRequest { service: service.to_string() };
 		Ok(self.fees().get_accrued_fees(bearer(token, req)?).await?.into_inner())
-	}
-
-	// ── operator: the fee plane ──────────────────────────────────────────────
-	// These five are how a fund's fee gets configured, watched and collected at all.
-	// Until they existed the whole plane was unreachable from the cabinet: the sweeper
-	// ran, but nothing could give a fund a policy for it to act on.
-
-	/// Every configured policy, for the operator's fees table.
-	pub async fn fee_policies(&self, token: &str) -> Result<bk::FeePolicyList, Status> {
-		Ok(self.fees().list_fee_policies(bearer(token, bk::ListFeePoliciesRequest {})?).await?.into_inner())
-	}
-
-	/// Propose a change of a fund's terms. Never an in-place write: the hub records a
-	/// versioned change that binds after the holders' notice period — and after the owners'
-	/// quorum when it tightens the terms beyond the house envelope.
-	pub async fn schedule_fee_policy(&self, token: &str, req: bk::ScheduleFeePolicyRequest) -> Result<bk::FeePolicyChange, Status> {
-		Ok(self.fees().schedule_fee_policy(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Withdraw a pending change of terms.
-	pub async fn cancel_fee_policy_change(&self, token: &str, service: &str, change_id: &str) -> Result<bk::FeePolicyChange, Status> {
-		let req = bk::CancelFeePolicyChangeRequest {
-			service: service.to_string(),
-			change_id: change_id.to_string(),
-		};
-		Ok(self.fees().cancel_fee_policy_change(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Take responsibility for the holders of a scheduled change who could not be told, so a
-	/// tightening binds over them. The hub decides who may: the requester or an owner.
-	pub async fn acknowledge_undelivered_notices(&self, token: &str, service: &str, change_id: &str) -> Result<bk::FeePolicyChange, Status> {
-		let req = bk::AcknowledgeUndeliveredNoticesRequest {
-			service: service.to_string(),
-			change_id: change_id.to_string(),
-		};
-		Ok(self.fees().acknowledge_undelivered_notices(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// A fund's whole history of terms, newest version first.
-	pub async fn fee_policy_changes(&self, token: &str, service: &str) -> Result<bk::FeePolicyChangeList, Status> {
-		let req = bk::ListFeePolicyChangesRequest { service: service.to_string() };
-		Ok(self.fees().list_fee_policy_changes(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// The manager's uncollected fee units in one fund, and what they are worth now.
-	pub async fn fee_shares(&self, token: &str, service: &str) -> Result<bk::FeeShares, Status> {
-		let req = bk::GetFeeSharesRequest { service: service.to_string() };
-		Ok(self.fees().get_fee_shares(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Convert accumulated fee units into cash. Empty `units` settles the whole balance.
-	pub async fn settle_fee_shares(&self, token: &str, service: &str, units: &str) -> Result<bk::FeeSettlement, Status> {
-		let req = bk::SettleFeeSharesRequest {
-			service: service.to_string(),
-			units: units.to_string(),
-		};
-		Ok(self.fees().settle_fee_shares(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Every charge this fund has made, across all its holders — the audit trail behind
-	/// the units the settlement above is about to convert.
-	pub async fn fund_fee_assessments(&self, token: &str, service: &str) -> Result<bk::FeeAssessmentList, Status> {
-		let req = bk::ListFundFeeAssessmentsRequest { service: service.to_string() };
-		Ok(self.fees().list_fund_fee_assessments(bearer(token, req)?).await?.into_inner())
 	}
 
 	// ── piggybank book (the secondary market in an allocation's units) ─────────
@@ -564,96 +437,6 @@ impl Grpc {
 	pub async fn get_book_policy(&self, token: &str, service: &str) -> Result<bk::BookPolicy, Status> {
 		let req = bk::GetBookPolicyRequest { service: service.to_string() };
 		Ok(self.book().get_book_policy(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_book_policy(&self, token: &str, req: bk::SetBookPolicyRequest) -> Result<bk::BookPolicy, Status> {
-		Ok(self.book().set_book_policy(bearer(token, req)?).await?.into_inner())
-	}
-
-	// ── admin: concierge identity plane (identity token) ────────────────────────
-	pub async fn admin_list_users(&self, token: &str, req: cc::ListUsersRequest) -> Result<cc::ListUsersResponse, Status> {
-		Ok(self.directory().list_users(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn admin_get_user(&self, token: &str, user_id: &str) -> Result<cc::UserProfile, Status> {
-		let req = cc::GetUserRequest { user_id: user_id.to_string() };
-		Ok(self.directory().get_user(bearer(token, req)?).await?.into_inner())
-	}
-
-	// Every identity mutation below carries a `reason`, recorded verbatim on the plane's
-	// audit row. Only the hold's is REQUIRED — see [`Self::admin_hold_user`]; the rest
-	// take whatever the console sent and an empty string where it sent nothing, because
-	// an audit note nobody typed must not become a refusal the operator cannot act on.
-
-	pub async fn admin_set_role(&self, token: &str, user_id: &str, role: &str, reason: &str) -> Result<cc::SetRoleResponse, Status> {
-		let req = cc::SetRoleRequest {
-			user_id: user_id.to_string(),
-			role: role.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.directory().set_role(bearer(token, req)?).await?.into_inner())
-	}
-
-	// Tenant grants. Forwarded with the caller's own identity token, never a service one:
-	// concierge decides who may list or change a namespace, so the BFF must ask as the caller.
-
-	pub async fn list_grants(&self, token: &str, namespace: String) -> Result<cc::ListGrantsResponse, Status> {
-		Ok(self.directory().list_grants(bearer(token, cc::ListGrantsRequest { namespace })?).await?.into_inner())
-	}
-
-	pub async fn grant_permission(&self, token: &str, req: cc::GrantPermissionRequest) -> Result<cc::GrantPermissionResponse, Status> {
-		Ok(self.directory().grant_permission(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn revoke_permission(&self, token: &str, req: cc::RevokePermissionRequest) -> Result<(), Status> {
-		self.directory().revoke_permission(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	/// The emergency brake: freeze the account NOW, lapsing on its own after 24h unless
-	/// the owners ratify it with [`Self::open_user_suspension`].
-	///
-	/// This replaces `DisableUser`, which the plane now always refuses. The verb was
-	/// ambiguous in the one way that mattered — it was both the instant freeze the money
-	/// plane re-reads at dispatch AND a permanent judgement one person made with no record
-	/// of why — so the caller has to say which it means. The reason is required here and
-	/// not merely forwarded: it is what the owners asked to ratify are reading, and a
-	/// brake that stops someone's money with no stated cause cannot be reviewed afterwards.
-	pub async fn admin_hold_user(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::HoldUserResponse, Status> {
-		let req = cc::HoldUserRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.directory().hold_user(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Lift a hold in one act. Refuses with `FAILED_PRECONDITION` when the suspension was
-	/// the owners' verdict — that one needs [`Self::open_user_reinstatement`], or one admin
-	/// could overturn a consilium and the consilium would be advisory.
-	pub async fn admin_reinstate_user(&self, token: &str, user_id: &str, reason: &str) -> Result<(), Status> {
-		let req = cc::ReinstateUserRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		self.directory().reinstate_user(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	pub async fn admin_revoke_tokens(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::RevokeTokensResponse, Status> {
-		let req = cc::RevokeTokensRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.directory().revoke_tokens(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn admin_set_kyc_level(&self, token: &str, user_id: &str, kyc_level: u32, reason: &str) -> Result<cc::SetKycLevelResponse, Status> {
-		let req = cc::SetKycLevelRequest {
-			user_id: user_id.to_string(),
-			kyc_level,
-			reason: reason.to_string(),
-		};
-		Ok(self.directory().set_kyc_level(bearer(token, req)?).await?.into_inner())
 	}
 
 	pub async fn platform_config(&self, token: &str) -> Result<cc::PlatformConfig, Status> {
@@ -790,8 +573,8 @@ impl Grpc {
 		Ok(self.governance().open_user_suspension(bearer(token, req)?).await?.into_inner())
 	}
 
-	/// Lift a suspension THE OWNERS imposed. A hold needs nothing from here —
-	/// [`Self::admin_reinstate_user`] lifts one in a single act.
+	/// Lift a suspension THE OWNERS imposed. A hold needs nothing from here — one admin
+	/// lifts it in a single act.
 	pub async fn open_user_reinstatement(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::UserProposal, Status> {
 		let req = cc::OpenUserReinstatementRequest {
 			user_id: user_id.to_string(),
@@ -844,102 +627,6 @@ impl Grpc {
 		Ok(self.removal_approval().submit_self_decision(req).await?.into_inner())
 	}
 
-	pub async fn set_maintenance_mode(&self, token: &str, enabled: bool) -> Result<cc::PlatformConfig, Status> {
-		let req = cc::SetMaintenanceModeRequest { enabled };
-		Ok(self.platform().set_maintenance_mode(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_announcement(&self, token: &str, req: cc::SetAnnouncementRequest) -> Result<cc::PlatformConfig, Status> {
-		Ok(self.platform().set_announcement(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_feature_flag(&self, token: &str, req: cc::SetFeatureFlagRequest) -> Result<cc::PlatformConfig, Status> {
-		Ok(self.platform().set_feature_flag(bearer(token, req)?).await?.into_inner())
-	}
-
-	// ── admin: piggybank money plane (money token) ──────────────────────────────
-	pub async fn treasury(&self, token: &str) -> Result<bk::Treasury, Status> {
-		Ok(self.balance().get_treasury(bearer(token, bk::GetTreasuryRequest {})?).await?.into_inner())
-	}
-
-	/// Record an out-of-band on-chain arrival against the ledger, chain-proven and
-	/// idempotent by `tx_ref`. The chain names the deposit address's owner, so this always
-	/// credits a person; a transfer to the treasury address is refused here and attributed
-	/// through [`Self::seed_capital`] instead.
-	pub async fn record_deposit(&self, token: &str, req: bk::RecordDepositRequest) -> Result<bk::RecordDepositResponse, Status> {
-		Ok(self.balance().record_deposit(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Propose a seed of the platform's capital (#245): a chain-proven treasury arrival
-	/// attributed to a person as their deposit and subscription into `fund`. Opens a
-	/// consilium; nothing is booked until the owners' quorum executes it.
-	pub async fn seed_capital(&self, token: &str, req: bk::SeedCapitalRequest) -> Result<bk::SeedCapitalResponse, Status> {
-		Ok(self.balance().seed_capital(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn admin_user_balance(&self, token: &str, user_id: &str) -> Result<bk::UserBalanceResponse, Status> {
-		let req = bk::AdminBalanceRequest { user_id: user_id.to_string() };
-		Ok(self.users_svc().get_user_balance(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn redemption_queue(&self, token: &str) -> Result<bk::RedemptionQueue, Status> {
-		Ok(self.balance().list_redemption_queue(bearer(token, bk::ListRedemptionQueueRequest {})?).await?.into_inner())
-	}
-
-	pub async fn post_valuation(&self, token: &str, req: bk::PostFundValuationRequest) -> Result<bk::FundNav, Status> {
-		Ok(self.balance().post_fund_valuation(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn settle_redemption(&self, token: &str, redemption_id: &str) -> Result<bk::Redemption, Status> {
-		let req = bk::SettleRedemptionRequest {
-			redemption_id: redemption_id.to_string(),
-		};
-		Ok(self.balance().settle_redemption(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn fail_redemption(&self, token: &str, redemption_id: &str) -> Result<bk::Redemption, Status> {
-		let req = bk::FailRedemptionRequest {
-			redemption_id: redemption_id.to_string(),
-		};
-		Ok(self.balance().fail_redemption(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn withdrawal_queue(&self, token: &str) -> Result<bk::WithdrawalQueue, Status> {
-		Ok(self.balance().list_withdrawal_queue(bearer(token, bk::ListWithdrawalQueueRequest {})?).await?.into_inner())
-	}
-
-	pub async fn dispatch_withdrawal(&self, token: &str, withdrawal_id: &str) -> Result<(), Status> {
-		let req = bk::DispatchWithdrawalRequest {
-			withdrawal_id: withdrawal_id.to_string(),
-		};
-		self.balance().dispatch_withdrawal(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	pub async fn settle_withdrawal(&self, token: &str, withdrawal_id: &str, tx_ref: &str) -> Result<(), Status> {
-		let req = bk::SettleWithdrawalRequest {
-			withdrawal_id: withdrawal_id.to_string(),
-			tx_ref: tx_ref.to_string(),
-		};
-		self.balance().settle_withdrawal(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	pub async fn fail_withdrawal(&self, token: &str, withdrawal_id: &str, reason: &str) -> Result<(), Status> {
-		let req = bk::FailWithdrawalRequest {
-			withdrawal_id: withdrawal_id.to_string(),
-			reason: reason.to_string(),
-		};
-		self.balance().fail_withdrawal(bearer(token, req)?).await?;
-		Ok(())
-	}
-
-	/// What the platform has earned: the `fee` allocation, in the treasury's shape — cash,
-	/// supply, price and holders (#245). Nothing pays it out from here.
-	pub async fn fund_revenue(&self, token: &str) -> Result<bk::AllocationTreasury, Status> {
-		Ok(self.balance().get_fund_revenue(bearer(token, bk::GetFundRevenueRequest {})?).await?.into_inner())
-	}
-
 	// ── consilium: multi-owner authorization over the platform's own money ──────
 	// The tally lives in the MONEY plane, against the owner roster this plane already
 	// mirrors: `docs/ARCHITECTURE.md` rejects letting a concierge-signed artifact
@@ -966,13 +653,6 @@ impl Grpc {
 		Ok(self.consilium().open_holder_grant(bearer(token, req)?).await?.into_inner())
 	}
 
-	/// Put a NAV mark past the move guard to the owners (banking#232). Same plane and same
-	/// token as the payout above: the mark reprices fund-owned money.
-	pub async fn open_valuation_override(&self, token: &str, terms: bk::ValuationOverrideTerms) -> Result<bk::Consilium, Status> {
-		let req = bk::OpenValuationOverrideRequest { terms: Some(terms) };
-		Ok(self.consilium().open_valuation_override(bearer(token, req)?).await?.into_inner())
-	}
-
 	pub async fn cancel_consilium(&self, token: &str, consilium_id: &str) -> Result<bk::Consilium, Status> {
 		let req = bk::CancelConsiliumRequest {
 			consilium_id: consilium_id.to_string(),
@@ -997,26 +677,7 @@ impl Grpc {
 		Ok(self.consilium_approval().submit_decision(req).await?.into_inner())
 	}
 
-	// ── payments: the order that moves money between two named ends ──────────
-	// Same plane and same token as the consilium above: the requirement (the owners'
-	// quorum or the subject's consent) is decided and seated by the plane inside
-	// `OpenPayment`. This BFF does not open an order (banking#565, F3): it reads one back
-	// and lets its initiator cancel it.
-
-	pub async fn list_payments(&self, token: &str, req: bk::ListPaymentsRequest) -> Result<bk::PaymentList, Status> {
-		Ok(self.payments().list_payments(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn get_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {
-		let req = bk::GetPaymentRequest { payment_id: payment_id.to_string() };
-		Ok(self.payments().get_payment(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn cancel_payment(&self, token: &str, payment_id: &str) -> Result<bk::Payment, Status> {
-		let req = bk::CancelPaymentRequest { payment_id: payment_id.to_string() };
-		Ok(self.payments().cancel_payment(bearer(token, req)?).await?.into_inner())
-	}
-
+	// ── payments: the subject's consent to an order ─────────────────────────────
 	// No bearer on the two below, for the same reason as the consilium approval pair: the
 	// emailed token is the credential, and the investor clicking it may not be signed in.
 
@@ -1032,31 +693,8 @@ impl Grpc {
 		Ok(self.payment_consent().submit_consent(req).await?.into_inner())
 	}
 
-	pub async fn parked_events(&self, token: &str) -> Result<bk::ParkedEventList, Status> {
-		Ok(self.balance().list_parked_events(bearer(token, bk::ListParkedEventsRequest {})?).await?.into_inner())
-	}
-
-	pub async fn unpark_event(&self, token: &str, seq: i64) -> Result<(), Status> {
-		let req = bk::UnparkEventRequest { seq };
-		self.balance().unpark_event(bearer(token, req)?).await?;
-		Ok(())
-	}
-
 	pub async fn operations_mode(&self, token: &str) -> Result<bk::OperationsMode, Status> {
 		Ok(self.balance().get_operations_mode(bearer(token, bk::GetOperationsModeRequest {})?).await?.into_inner())
-	}
-
-	pub async fn set_operations_mode(&self, token: &str, read_only: bool) -> Result<bk::OperationsMode, Status> {
-		let req = bk::SetOperationsModeRequest { read_only };
-		Ok(self.balance().set_operations_mode(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn rails(&self, token: &str) -> Result<bk::RailList, Status> {
-		Ok(self.balance().list_rails(bearer(token, bk::ListRailsRequest {})?).await?.into_inner())
-	}
-
-	pub async fn set_rail_frozen(&self, token: &str, req: bk::SetRailFrozenRequest) -> Result<bk::RailList, Status> {
-		Ok(self.balance().set_rail_frozen(bearer(token, req)?).await?.into_inner())
 	}
 }
 

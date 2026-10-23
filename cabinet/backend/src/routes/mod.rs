@@ -1,16 +1,13 @@
-pub mod admin;
 pub mod approval;
 pub mod book;
 pub mod book_ws;
 pub mod consilium;
 pub mod cors;
 pub mod governance_ws;
-pub mod grants;
 pub mod identity;
 pub mod intents;
 pub mod money;
 pub mod notifications;
-pub mod payments;
 pub mod payout_review;
 pub mod platform;
 pub mod system;
@@ -30,7 +27,6 @@ use axum::{
 	routing::{get, post},
 };
 use axum_extra::extract::cookie::CookieJar;
-use concierge_iam::{Permission, PermissionSet};
 use evbanking_contracts::banking::v1 as bk;
 use evconcierge_auth::Claims;
 use serde_json::Value;
@@ -130,72 +126,6 @@ fn requests(state: AppState) -> Router {
 		.route("/api/book/orders/cancel", post(book::cancel_order))
 		.route("/api/book/orders/history", get(book::list_order_history))
 		.route("/api/book/fills", get(book::list_fills))
-		// Admin console — gated at the BFF on a named permission per route AND re-checked
-		// per-permission by the owning plane (defense in depth). Identity/platform routes hit concierge; money/treasury routes
-		// hit the piggybank money plane.
-		.route("/api/admin/users", get(admin::list_users))
-		.route("/api/admin/users/detail", get(admin::get_user))
-		.route("/api/admin/users/role", post(admin::set_role))
-		// `/hold` and not `/suspend`: the plane split the verb, and the path says which half
-		// this is. Permanent suspension is a proposal, under `/api/owners/proposals`.
-		.route("/api/admin/users/hold", post(admin::hold_user))
-		.route("/api/admin/users/reinstate", post(admin::reinstate_user))
-		.route("/api/admin/users/revoke", post(admin::revoke_sessions))
-		.route("/api/admin/users/kyc", post(admin::set_kyc))
-		.route("/api/admin/users/balance", get(admin::user_balance))
-		.route("/api/admin/treasury", get(admin::treasury))
-		.route("/api/admin/treasury/record-deposit", post(admin::record_treasury_deposit))
-		.route("/api/admin/treasury/seed-capital", post(admin::seed_capital))
-		.route("/api/admin/allocations", get(admin::list_allocations))
-		.route("/api/admin/allocations/register", post(admin::register_allocation))
-		.route("/api/admin/allocations/update", post(admin::update_allocation))
-		.route("/api/admin/allocations/state", post(admin::set_allocation_state))
-		.route("/api/admin/allocations/cap", post(admin::set_allocation_unit_cap))
-		.route("/api/admin/allocations/access", post(admin::set_allocation_access))
-		.route("/api/admin/allocations/grants", get(admin::list_allocation_access_grants))
-		.route("/api/admin/allocations/grants/grant", post(admin::grant_allocation_access))
-		.route("/api/admin/allocations/grants/revoke", post(admin::revoke_allocation_access))
-		.route("/api/admin/allocations/issue", post(admin::issue_units))
-		.route("/api/admin/allocations/retire", post(admin::retire_units))
-		.route("/api/admin/allocations/backing", post(admin::set_allocation_backing))
-		.route("/api/admin/allocations/holders", get(admin::list_unit_holders))
-		.route("/api/admin/allocations/book", post(admin::set_book_policy))
-		// Gated on the session alone: a tenant's delegate usually holds no global role, so
-		// concierge — not a coarse role gate here — decides.
-		.route("/api/admin/tenants/{namespace}/grants", get(grants::list).post(grants::grant).delete(grants::revoke))
-		.route("/api/admin/fees/policies", get(admin::list_fee_policies))
-		.route("/api/admin/fees/policy", post(admin::schedule_fee_policy))
-		.route("/api/admin/fees/policy/cancel", post(admin::cancel_fee_policy_change))
-		.route("/api/admin/fees/policy/acknowledge-notices", post(admin::acknowledge_undelivered_notices))
-		.route("/api/admin/fees/changes", get(admin::list_fee_policy_changes))
-		.route("/api/admin/fees/shares", get(admin::fee_shares))
-		.route("/api/admin/fees/settle", post(admin::settle_fee_shares))
-		.route("/api/admin/fees/assessments", get(admin::fund_fee_assessments))
-		.route("/api/admin/valuation/queue", get(admin::redemption_queue))
-		.route("/api/admin/valuation/post", post(admin::post_valuation))
-		.route("/api/admin/valuation/override", post(admin::propose_valuation_override))
-		.route("/api/admin/valuation/settle", post(admin::settle_redemption))
-		.route("/api/admin/valuation/fail", post(admin::fail_redemption))
-		.route("/api/admin/withdrawals/queue", get(admin::withdrawal_queue))
-		.route("/api/admin/withdrawals/dispatch", post(admin::dispatch_withdrawal))
-		.route("/api/admin/withdrawals/settle", post(admin::settle_withdrawal))
-		.route("/api/admin/withdrawals/fail", post(admin::fail_withdrawal))
-		.route("/api/admin/revenue", get(admin::fund_revenue))
-		.route("/api/admin/outbox/parked", get(admin::parked_events))
-		.route("/api/admin/outbox/unpark", post(admin::unpark_event))
-		.route("/api/admin/cabinet", get(admin::cabinet_config))
-		.route("/api/admin/cabinet/maintenance", post(admin::set_maintenance))
-		.route("/api/admin/cabinet/read-only", post(admin::set_read_only))
-		.route("/api/admin/rails", get(admin::rails))
-		.route("/api/admin/rails/frozen", post(admin::set_rail_frozen))
-		.route("/api/admin/cabinet/announcement", post(admin::set_announcement))
-		.route("/api/admin/cabinet/flag", post(admin::set_flag))
-		// Payments — an order between two named ends. Money plane, Admin|Owner. Read and
-		// cancel only: an order is opened from the central admin, which gates it on a fresh
-		// sign-in (banking#565, F3).
-		.route("/api/admin/payments", get(payments::list))
-		.route("/api/admin/payments/{id}", get(payments::get))
-		.route("/api/admin/payments/{id}/cancel", post(payments::cancel))
 		// Consilium — the platform's own money moving or changing hands, gated on a quorum
 		// of owners. Money plane: the tally is computed and verified where the money is.
 		.route("/api/consilium", get(consilium::list))
@@ -248,8 +178,8 @@ fn requests(state: AppState) -> Router {
 /// on the 401 itself is what makes the replay re-mint against the current floor.
 ///
 /// One layer here rather than a check inside [`require_money_token`]: that helper hands
-/// out the token BEFORE the RPC, and the verdict comes back through sixty-odd handlers'
-/// `map_err`s, each of which would have to be taught to report it. The status of the
+/// out the token BEFORE the RPC, and the verdict comes back through every money handler's
+/// `map_err`, each of which would have to be taught to report it. The status of the
 /// finished response is the one place every verdict passes through.
 ///
 /// The identity is re-verified from the cookie rather than trusted from the request, and
@@ -346,20 +276,6 @@ pub fn require_fresh_login(claims: &Claims, now: u64) -> Result<(), ApiError> {
 		Some(at) if now.saturating_sub(at) <= STEP_UP_MAX_AGE_SECS => Ok(()),
 		_ => Err(ApiError::StepUpRequired),
 	}
-}
-
-/// The console gate: the verified caller must hold `permission` among what concierge's
-/// first-party `GetMe` resolves for their seat. Defense in depth — the owning plane re-checks
-/// its own act; refusing here keeps an investor out before any privileged call, and answers
-/// a screen whose plane would refuse everything at the BFF, where it can act on it. Read per
-/// request: the JWT carries no permissions.
-pub async fn require_permission(state: &AppState, jar: &CookieJar, permission: impl Permission) -> Result<(), ApiError> {
-	let (token, _claims) = require_identity(state, jar).await?;
-	let me = state.grpc.get_me(&token).await.map_err(|_| ApiError::Unauthenticated)?;
-	if !me.permissions.into_iter().collect::<PermissionSet>().may(permission) {
-		return Err(ApiError::Grpc(Status::permission_denied(format!("requires {}", permission.as_str()))));
-	}
-	Ok(())
 }
 
 /// The first-party gate of a mutating wallet route (`wallet.proto`, FIRST-PARTY ONLY): the
@@ -482,19 +398,6 @@ pub fn parse_json_body(headers: &HeaderMap, body: &Bytes) -> Result<Value, ApiEr
 /// A required string field: `None` when missing OR empty (matches the TS `!body?.field`).
 pub fn required(v: &Value, key: &str) -> Option<String> {
 	v.get(key).and_then(|x| x.as_str()).map(str::to_string).filter(|s| !s.is_empty())
-}
-/// A REQUIRED whole-number field that fits a `u32`: `None` when the field is missing, or
-/// is not a non-negative integer inside the `u32` range.
-///
-/// The numeric counterpart to [`required`], and deliberately not a defaulting read.
-/// `serde_json`'s `as_u64` answers `None` for `-1`, for `2.5` and for a quoted `"2"`
-/// alike, so a caller that unwraps it to zero cannot tell "the operator asked for zero"
-/// from "this layer could not read what the operator asked for" — and zero is a
-/// meaningful value on every ladder that crosses the BFF, so inventing one answers
-/// "saved" to a request nobody understood. `u32::try_from` closes the other half: `as u32`
-/// truncates silently, which turns 2^32 into a perfectly plausible 0.
-pub fn required_u32(v: &Value, key: &str) -> Option<u32> {
-	v.get(key).and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok())
 }
 /// An editable string field: missing ⇒ `""` (full-replace semantics; empty clears).
 pub fn editable(v: &Value, key: &str) -> String {

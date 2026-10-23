@@ -19,7 +19,6 @@ axum = { workspace = true, features = ["ws"] }
 axum-extra = { workspace = true, features = ["cookie"] }
 color-eyre.workspace = true
 concierge_domain.workspace = true
-concierge_iam.workspace = true
 # The hub's own money types (`Usdt`, `Network`, `WalletAddress`), so an intent's amounts and
 # addresses are read by the rules the hub applies.
 domain.workspace = true

@@ -290,14 +290,13 @@ mod book_route_tests {
 		trades: Option<bk::ListTradesRequest>,
 		candles: Option<bk::ListCandlesRequest>,
 		watch: Option<bk::WatchBookRequest>,
-		set_policy: Option<bk::SetBookPolicyRequest>,
 		money_tokens_issued: usize,
 	}
 
 	#[derive(Clone)]
 	struct Hub {
 		role: String,
-		/// What `GetMe` resolves the seat to — what `require_permission` gates the policy write on.
+		/// What `GetMe` resolves the seat to.
 		permissions: Vec<String>,
 		/// When set, every book RPC fails with this code (the upstream-refusal cases).
 		fail_with: Option<Code>,
@@ -406,35 +405,21 @@ mod book_route_tests {
 		}
 	}
 
-	fn stub_policy(req: Option<&bk::SetBookPolicyRequest>) -> bk::BookPolicy {
-		match req {
-			Some(r) => bk::BookPolicy {
-				service: r.service.clone(),
-				book_open: r.book_open,
-				taker_fee_bps: r.taker_fee_bps,
-				price_tick: if r.price_tick.is_empty() { "0.01".into() } else { r.price_tick.clone() },
-				lot_size: if r.lot_size.is_empty() { "0.0001".into() } else { r.lot_size.clone() },
-				market_slippage_bps: r.market_slippage_bps,
-				allow_unbacked_trading: r.allow_unbacked_trading,
-				updated_at: 1_750_000_300,
-			},
-			None => bk::BookPolicy {
-				service: SERVICE.into(),
-				book_open: true,
-				taker_fee_bps: 25,
-				price_tick: "0.01".into(),
-				lot_size: "0.0001".into(),
-				market_slippage_bps: 100,
-				allow_unbacked_trading: true,
-				updated_at: 1_750_000_300,
-			},
+	fn stub_policy() -> bk::BookPolicy {
+		bk::BookPolicy {
+			service: SERVICE.into(),
+			book_open: true,
+			taker_fee_bps: 25,
+			price_tick: "0.01".into(),
+			lot_size: "0.0001".into(),
+			market_slippage_bps: 100,
+			allow_unbacked_trading: true,
+			updated_at: 1_750_000_300,
 		}
 	}
 
 	#[tonic::async_trait]
 	impl UserDirectory for Hub {
-		/// `require_permission` reads the caller's permissions from here per request — the
-		/// only thing standing between an investor and the policy write.
 		async fn get_me(&self, _: GrpcRequest<cc::GetMeRequest>) -> Result<GrpcResponse<cc::UserProfile>, Status> {
 			Ok(GrpcResponse::new(cc::UserProfile {
 				user_id: "user-1".into(),
@@ -622,14 +607,12 @@ mod book_route_tests {
 
 		async fn get_book_policy(&self, request: GrpcRequest<bk::GetBookPolicyRequest>) -> Result<GrpcResponse<bk::BookPolicy>, Status> {
 			self.guard_money_plane(&request)?;
-			Ok(GrpcResponse::new(stub_policy(None)))
+			Ok(GrpcResponse::new(stub_policy()))
 		}
 
 		async fn set_book_policy(&self, request: GrpcRequest<bk::SetBookPolicyRequest>) -> Result<GrpcResponse<bk::BookPolicy>, Status> {
 			self.guard_money_plane(&request)?;
-			let req = request.into_inner();
-			self.seen.lock().unwrap().set_policy = Some(req.clone());
-			Ok(GrpcResponse::new(stub_policy(Some(&req))))
+			Err(Status::unimplemented("the BFF no longer writes the book policy"))
 		}
 	}
 
@@ -802,7 +785,6 @@ mod book_route_tests {
 			("GET", "/api/book/fills", None),
 			("POST", "/api/book/orders", Some(PLACE)),
 			("POST", "/api/book/orders/cancel", Some(r#"{"order_id":"x"}"#)),
-			("POST", "/api/admin/allocations/book", Some(r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":25}"#)),
 		] {
 			// The CSRF pair and the page's origin are present so the mutations get past the
 			// first-party gate (which runs first) and are refused on the SESSION, the thing
@@ -826,7 +808,7 @@ mod book_route_tests {
 
 		let seen = seen.lock().unwrap();
 		assert_eq!(seen.money_tokens_issued, 0, "an unauthenticated request must never mint a money-plane token");
-		assert!(seen.place.is_none() && seen.cancel.is_none() && seen.set_policy.is_none() && seen.watch.is_none());
+		assert!(seen.place.is_none() && seen.cancel.is_none() && seen.watch.is_none());
 	}
 
 	/// The double-submit gate on the mutations. A valid session is not enough: a cross-site
@@ -841,15 +823,9 @@ mod book_route_tests {
 		assert_eq!(status, StatusCode::FORBIDDEN, "placing must require the CSRF echo");
 		let (status, _) = send(&app, signed("POST", "/api/book/orders/cancel", Some(r#"{"order_id":"x"}"#), false)).await;
 		assert_eq!(status, StatusCode::FORBIDDEN, "cancelling must require the CSRF echo");
-		let body = r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":25}"#;
-		let (status, _) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), false)).await;
-		assert_eq!(status, StatusCode::FORBIDDEN, "setting the policy must require the CSRF echo");
 
 		let seen = seen.lock().unwrap();
-		assert!(
-			seen.place.is_none() && seen.cancel.is_none() && seen.set_policy.is_none(),
-			"a CSRF failure must be decided before the hub is called"
-		);
+		assert!(seen.place.is_none() && seen.cancel.is_none(), "a CSRF failure must be decided before the hub is called");
 		assert_eq!(seen.money_tokens_issued, 0, "a request refused on CSRF must not cost a money-token mint");
 	}
 
@@ -898,20 +874,6 @@ mod book_route_tests {
 		let seen = seen.lock().unwrap();
 		assert!(seen.watch.is_none(), "a refused handshake must never subscribe upstream");
 		assert_eq!(seen.money_tokens_issued, 0, "a refused handshake must not cost a money-token mint");
-	}
-
-	/// The policy write is the operator's alone. A plain investor holds a perfectly valid
-	/// session — the role is what stops them, read from the directory per request.
-	#[tokio::test]
-	async fn an_investor_cannot_set_the_policy() {
-		let hub = Hub::new("investor");
-		let seen = hub.seen.clone();
-		let app = app(serve(hub).await);
-
-		let body = r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":25}"#;
-		let (status, _) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-		assert_eq!(status, StatusCode::FORBIDDEN);
-		assert!(seen.lock().unwrap().set_policy.is_none(), "a refused caller must never reach the hub");
 	}
 
 	// ── reading ─────────────────────────────────────────────────────────────────
@@ -1189,83 +1151,6 @@ mod book_route_tests {
 		let (status, body) = send(&app, signed("POST", "/api/book/orders", Some(PLACE), true)).await;
 		assert_eq!(status, StatusCode::PRECONDITION_FAILED);
 		assert_eq!(body["error"], "upstream refused");
-	}
-
-	/// The operator's write forwards every term as given; an omitted tick or lot crosses
-	/// empty (the hub's defaults), an omitted slippage as zero.
-	#[tokio::test]
-	async fn setting_the_policy_forwards_the_whole_schedule() {
-		let hub = Hub::new("admin");
-		let seen = hub.seen.clone();
-		let app = app(serve(hub).await);
-
-		let body = r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":30,"price_tick":"0.05","lot_size":"0.01","market_slippage_bps":50}"#;
-		let (status, response) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-		assert_eq!(status, StatusCode::OK);
-		assert_eq!(response["book_open"], true);
-		assert_eq!(response["taker_fee_bps"], 30);
-		assert_eq!(response["price_tick"], "0.05");
-		assert_eq!(response["updated_at"], "1750000300");
-
-		let forwarded = seen.lock().unwrap().set_policy.clone().expect("the hub saw the write");
-		assert_eq!(forwarded.service, SERVICE);
-		assert!(forwarded.book_open);
-		assert_eq!((forwarded.taker_fee_bps, forwarded.market_slippage_bps), (30, 50));
-		assert_eq!((forwarded.price_tick.as_str(), forwarded.lot_size.as_str()), ("0.05", "0.01"));
-
-		let body = r#"{"service":"quy-nhon","book_open":false,"taker_fee_bps":0}"#;
-		let (status, _) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-		assert_eq!(status, StatusCode::OK, "closing a book with the default tick and lot is a whole schedule");
-		let forwarded = seen.lock().unwrap().set_policy.clone().expect("the hub saw the write");
-		assert!(!forwarded.book_open);
-		assert_eq!((forwarded.taker_fee_bps, forwarded.market_slippage_bps), (0, 0));
-		assert_eq!((forwarded.price_tick.as_str(), forwarded.lot_size.as_str()), ("", ""));
-	}
-
-	/// The unbacked-trading acknowledgement crosses as given and comes back on the policy;
-	/// left out, it crosses as `false` — the hub, not the BFF, decides whether the product
-	/// needed it.
-	#[tokio::test]
-	async fn the_unbacked_trading_acknowledgement_is_forwarded_and_echoed() {
-		let hub = Hub::new("admin");
-		let seen = hub.seen.clone();
-		let app = app(serve(hub).await);
-
-		let body = r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":0,"allow_unbacked_trading":true}"#;
-		let (status, response) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-		assert_eq!(status, StatusCode::OK);
-		assert_eq!(response["allow_unbacked_trading"], true);
-		assert!(seen.lock().unwrap().set_policy.clone().expect("the hub saw the write").allow_unbacked_trading);
-
-		let body = r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":0}"#;
-		let (status, response) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-		assert_eq!(status, StatusCode::OK);
-		assert_eq!(response["allow_unbacked_trading"], false);
-		assert!(!seen.lock().unwrap().set_policy.clone().expect("the hub saw the write").allow_unbacked_trading);
-	}
-
-	/// `book_open` and the taker fee are read as a whole: a missing or malformed one must
-	/// fail loudly here rather than close a book, or price it at nothing, while the console
-	/// answers "saved".
-	#[tokio::test]
-	async fn a_partial_policy_is_refused_before_it_reaches_the_hub() {
-		let hub = Hub::new("admin");
-		let seen = hub.seen.clone();
-		let app = app(serve(hub).await);
-
-		for body in [
-			r#"{"book_open":true,"taker_fee_bps":25}"#,
-			r#"{"service":"quy-nhon","taker_fee_bps":25}"#,
-			r#"{"service":"quy-nhon","book_open":"yes","taker_fee_bps":25}"#,
-			r#"{"service":"quy-nhon","book_open":true}"#,
-			r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":"25"}"#,
-			r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":-1}"#,
-			r#"{"service":"quy-nhon","book_open":true,"taker_fee_bps":25,"market_slippage_bps":2.5}"#,
-		] {
-			let (status, _) = send(&app, signed("POST", "/api/admin/allocations/book", Some(body), true)).await;
-			assert_eq!(status, StatusCode::BAD_REQUEST, "an incomplete policy must be refused: {body}");
-		}
-		assert!(seen.lock().unwrap().set_policy.is_none(), "an incomplete policy must never reach the hub");
 	}
 
 	// ── the socket ──────────────────────────────────────────────────────────────
