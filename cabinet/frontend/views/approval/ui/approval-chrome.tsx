@@ -243,6 +243,24 @@ export function ApprovalUnavailable() {
 }
 
 /**
+ * The request is of a kind that no longer exists (banking#568).
+ *
+ * Neutral on purpose: no retry, because the terms will never arrive, and no decision, because
+ * there is nothing on screen to agree to. Unlike {@link ApprovalUnrenderable} this is not a
+ * fault on our side.
+ */
+export function ApprovalRetired() {
+  const t = useT();
+  return (
+    <ApprovalOutcome
+      icon={<Link2Off />}
+      title={t("approval.retired.title", "This request is no longer available")}
+      description={t("approval.retired.body", "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.")}
+    />
+  );
+}
+
+/**
  * The deadline passed while nobody answered.
  *
  * A settled state in its own right, and not a disabled form: a reader arriving four hours

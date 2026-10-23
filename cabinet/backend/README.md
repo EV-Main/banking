@@ -6,7 +6,9 @@ requests to two gRPC planes:
 
 - **concierge** (identity) — `UserDirectory` `GetMe`, and the ownership plane's emailed
   removal answer.
-- **piggybank** (money) — `WalletService`, `BalanceService`, `ConsiliumService`, `HealthService`.
+- **piggybank** (money) — `WalletService`, `CompartmentService`, `InvoicePaymentService`,
+  `OperationsService`, `PaymentConfirmationService`, `HealthService`, and the two emailed
+  approval services `ConsiliumApprovalService` and `PaymentConsentService`.
 
 ## Auth is shell-owned
 
@@ -39,30 +41,26 @@ in production.
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
-| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`, `consilium`, `approval`; `ws` holds the `Origin` check of the first-party gate |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`, `approval`; `ws` holds the `Origin` check of the first-party gate |
 
 ## The governance surface
 
-Nothing about the platform's own money is one person's decision — a payment out of an
-allocation's pooled claim, a new holder of the `fee` or `fund` allocation, a seed of the
-platform's capital — and neither is taking an owner's seat away. All are gated by a
-**consilium**; `docs/CONSILIUM.md` is the policy and the threat model. A **payment** — an
-order between two named ends of the platform — is gated the same way: the plane seats the
-one approval the order needs on open (the owners' consilium for a source that is an
-allocation's claim, the investor's own consent for a user-owned one), and the answer comes
-from a mailbox through `/api/approval/**`. The platform holds no money outside an
-allocation (#245): what it earns is the `fee` allocation's, held by people through units.
+Nothing about the platform's own money is one person's decision, and neither is taking an
+owner's seat away. Both are gated by a **consilium**; `docs/CONSILIUM.md` is the policy and
+the threat model. A **payment** — an order between two named ends of the platform — is
+gated the same way: the plane seats the one approval the order needs on open (the owners'
+consilium for a source that is an allocation's claim, the investor's own consent for a
+user-owned one). This BFF opens none of them. It carries only the answer, which comes from
+a mailbox through `/api/approval/**`.
 
 | Route | Plane | Token |
 | ----- | ----- | ----- |
-| `GET /api/consilium`, `GET /api/consilium/{id}` | money | banking |
-| `POST /api/consilium/holder-grant` (`{ allocation, user_id, units }`), `POST /api/consilium/{id}/cancel` | money | banking |
 | `GET`/`POST /api/approval/{payout,removal,consent}/{token}` | money / ownership / money | none — the emailed token |
 
 The split is architectural: the money plane must be able to audit its own authorization, so
 its tally is computed against the owner roster it already mirrors; ownership is a
-concierge-owned fact, so only that plane may mutate it. Each handler forwards its own
-plane's token and never the other's.
+concierge-owned fact, so only that plane may mutate it. Each handler calls its own plane
+and forwards no user token: the emailed token is the whole credential.
 
 ## The wallet surface and the scope hosts
 
