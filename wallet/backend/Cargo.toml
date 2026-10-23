@@ -2,7 +2,7 @@
 name = "cabinet-backend"
 version = "0.1.0"
 edition = "2024"
-description = "The cabinet BFF — a standalone, stateless HTTP service that verifies the shell-set access-JWT cookie against the concierge JWKS and proxies the browser's JSON requests to the concierge identity plane and the piggybank money plane over gRPC."
+description = "The wallet BFF — a standalone, stateless HTTP service that verifies the shell-set access-JWT cookie against the concierge JWKS and proxies the browser's JSON requests to the concierge identity plane and the piggybank money plane over gRPC."
 license = "BlueOak-1.0.0"
 publish = false
 default-run = "cabinet-backend"

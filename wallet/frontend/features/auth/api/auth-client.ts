@@ -1,5 +1,5 @@
 // The identity plane's sign-in surface, reached at the site root (`/api/auth/*`, which the
-// conductor sends to concierge) — not through the cabinet's BFF, which never sees a
+// conductor sends to concierge) — not through the wallet host's BFF, which never sees a
 // credential. Every answer is `{"ok":true,…}` or `{"error":"<code>"}` from one closed
 // vocabulary; the dialog words the code.
 

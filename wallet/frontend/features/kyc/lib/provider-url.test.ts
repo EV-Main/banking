@@ -48,11 +48,11 @@ test("extra hosts add to the vendor's, they do not replace it", () => {
   assert.equal(providerUrl("https://other.didit.example/s", ["sandbox.didit.example"]), null);
 });
 
-test("the cabinet's own host is admitted, for KYC_STUB", () => {
-  // The stub provider hands back a page on the cabinet's own origin, so a same-origin
+test("the wallet host's own host is admitted, for KYC_STUB", () => {
+  // The stub provider hands back a page on the wallet host's own origin, so a same-origin
   // redirect is not a hand-off to a third party and there is nothing to protect against.
   assert.equal(providerUrl("https://evinvest.test/cabinet/kyc/stub", NONE, "evinvest.test"), "https://evinvest.test/cabinet/kyc/stub");
-  assert.equal(providerUrl("https://evinvest.test/cabinet/kyc/stub", NONE), null, "…and only when it IS this cabinet");
+  assert.equal(providerUrl("https://evinvest.test/cabinet/kyc/stub", NONE), null, "…and only when it IS this wallet host");
   assert.equal(providerUrl("https://evil.example/s", NONE, "evinvest.test"), null);
 });
 

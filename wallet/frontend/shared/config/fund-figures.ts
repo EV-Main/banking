@@ -1,9 +1,9 @@
-// The fund's headline figures — the ONLY place in the cabinet a number about the fund is
+// The fund's headline figures — the ONLY place in the wallet host a number about the fund is
 // typed.
 //
 // MIRROR of the public site's `frontend/shared/config/fund-figures.ts` (site_conductor),
 // field for field — less its `kycTiming`, which is an English sentence and lives in the
-// catalogue here as `kyc.dialog.timeBody`. The landing's hero and the cabinet's sign-in panel quote the same fund,
+// catalogue here as `kyc.dialog.timeBody`. The landing's hero and the wallet host's sign-in panel quote the same fund,
 // and a visitor who clicks through from one to the other must not watch it contradict
 // itself (site_conductor #204, banking #385). The two repos share no code yet; until this
 // object moves into an `@evinvest/*` package, a change on either side is a change on both.

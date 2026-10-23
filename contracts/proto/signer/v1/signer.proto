@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 // The signer service contract — INTERNAL hub↔signer wire, deliberately kept in its
-// own package (not `banking.v1`) so it stays out of the cabinet-facing OpenAPI/TS
+// own package (not `banking.v1`) so it stays out of the wallet-facing OpenAPI/TS
 // generation (`nix run .#gen-api` only reads `proto/banking/v1`). The signer is a
 // separate trust domain: it holds the encrypted chain private keys; the hub never
 // does. It exposes key provisioning and ERC-20 transfer signing — the hub fetches the

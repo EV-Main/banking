@@ -21,7 +21,7 @@ import { BASE_PATH } from "@/shared/config/base-path";
 // next-app-loader never resolves this file and the built-in page comes back.
 //
 // `app/[locale]/cabinet/not-found.tsx` still handles the other half — a
-// `notFound()` from a route that *did* match, which is every unknown cabinet URL.
+// `notFound()` from a route that *did* match, which is every unknown zone URL.
 //
 // English-only, and the copy comes straight from the uikit rather than the
 // catalogue: reaching a catalogue needs a locale, and the whole definition of this

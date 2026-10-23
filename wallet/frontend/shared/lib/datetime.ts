@@ -1,4 +1,4 @@
-// The cabinet's one answer to "when was that" for absolute stamps and deadlines.
+// The wallet host's one answer to "when was that" for absolute stamps and deadlines.
 //
 // It lives in `shared/` rather than beside the governance views because three slices now
 // render the same deadline — the two emailed approval pages and the owners' room — and a
@@ -19,7 +19,7 @@
 //
 // Plain TypeScript: no translator of its own, so anything that produces words takes the
 // caller's `t`. Locale-aware formatting goes through `intlLocale`, which is where the
-// cabinet decides what `en` means to `Intl`.
+// wallet host decides what `en` means to `Intl`.
 
 import type { Locale, Translate } from "@evinvest/i18n";
 

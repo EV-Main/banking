@@ -899,7 +899,7 @@ async fn the_icon_is_stored_survives_a_reload_and_is_editable() {
 		"the new icon survives a reload"
 	);
 
-	// The catalog read carries it too — that projection is what the cabinet renders.
+	// The catalog read carries it too — that projection is what the wallet host renders.
 	let listed = h.allocations.list_for(UserId::new(), true).await.unwrap();
 	let row = listed.iter().find(|r| r.allocation.service() == &service).expect("the registered product is in the catalog");
 	assert_eq!(row.allocation.icon(), AllocationIcon::Arbitrage);
@@ -940,7 +940,7 @@ async fn a_row_written_by_a_pod_that_predates_the_icon_column_reads_back_as_the_
 		.unwrap();
 	assert_eq!(stored, "fund", "the column DEFAULT is what fills the gap the old writer leaves");
 	assert_eq!(h.allocations.find(&service).await.unwrap().unwrap().icon(), AllocationIcon::Fund);
-	// And it is in the catalog the cabinet renders, not just readable one row at a time.
+	// And it is in the catalog the wallet host renders, not just readable one row at a time.
 	let listed = h.allocations.list_for(UserId::new(), true).await.unwrap();
 	let row = listed.iter().find(|r| r.allocation.service() == &service).expect("the legacy row is in the catalog");
 	assert_eq!(row.allocation.icon(), AllocationIcon::Fund);

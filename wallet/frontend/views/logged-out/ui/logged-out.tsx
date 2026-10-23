@@ -1,6 +1,6 @@
 import { translator } from "@evinvest/i18n";
 
-import { Link } from "@/shared/ui/cabinet-link";
+import { Link } from "@/shared/ui/zone-link";
 
 import { Logo } from "@/shared/ui/logo";
 import { messagesFor } from "@/shared/config/i18n";

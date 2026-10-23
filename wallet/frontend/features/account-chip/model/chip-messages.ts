@@ -2,7 +2,7 @@ import type { Locale, Messages } from "@evinvest/i18n";
 
 // The strings the account chip renders, and nothing else.
 //
-// The chip is not a cabinet screen. It is bundled as a custom element and injected
+// The chip is not a wallet host screen. It is bundled as a custom element and injected
 // by the conductor into **every page of the public site**, where there is no
 // `I18nProvider` above it — so it reads the locale itself and builds its own
 // translator. The obvious way to feed that translator is `messagesFor()`, and the

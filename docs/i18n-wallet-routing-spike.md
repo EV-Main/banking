@@ -1,4 +1,4 @@
-# Cabinet i18n routing spike — `/{locale}/cabinet/*`
+# Wallet host i18n routing spike — `/{locale}/cabinet/*`
 
 Verified 2026-08-21 against Next 16.2.11 (Turbopack), in `next dev` **and** a
 production `next build`. Everything below is measured, not inferred.
@@ -21,7 +21,7 @@ by rendering four links on a page with `basePath: "/cabinet"`:
 | `<a href="/ru/cabinet/wallet">` | `/ru/cabinet/wallet` (untouched) |
 
 So a locale segment *before* the basePath doubles it. Only a raw `<a>` survives,
-and rewriting the cabinet's navigation to raw anchors would cost client-side
+and rewriting the wallet host's navigation to raw anchors would cost client-side
 routing and prefetching across the whole app — a real regression, not a detail.
 
 `basePath` is static at build time; there is no per-request form of it, and App
@@ -38,7 +38,7 @@ assetPrefix: BASE_PATH,   // "/cabinet" — keeps /_next isolated
 // basePath: removed
 ```
 
-and move the routes under `app/[locale]/cabinet/…` so the cabinet's own route
+and move the routes under `app/[locale]/cabinet/…` so the wallet host's own route
 tree *is* the public URL. Measured with that config:
 
 - `GET /ru/cabinet/spike` → **200**, `params.locale === "ru"`.
@@ -60,7 +60,7 @@ assetPrefix: '/cabinet'
 
 ## Three things this turned up
 
-**1. The root-level `[service]` slug collides.** The cabinet already has a
+**1. The root-level `[service]` slug collides.** The wallet host already has a
 root-level dynamic segment for microfrontends (`app/(mfe)/[service]`). Adding
 `app/[locale]` next to it fails the build outright:
 
@@ -86,7 +86,7 @@ source must become explicit:
 Getting this wrong would not 404 — it would collide with shell auth routes, which
 is a far worse failure than a missing page.
 
-**3. The conductor's SSG landmine does not apply here.** Every cabinet route
+**3. The conductor's SSG landmine does not apply here.** Every wallet host route
 builds as `ƒ (Dynamic) server-rendered on demand`, so the `dynamicParams = false` /
 `generateStaticParams` trap documented for the public site
 (`site_conductor/docs/i18n-routing-spike.md`) has no equivalent here. Nothing needs

@@ -1,4 +1,4 @@
-// The registry is the sole source of trust for which code runs in the cabinet
+// The registry is the sole source of trust for which code runs in the wallet host
 // origin (shared/mfe/RemoteElement.tsx injects each entry's bundle as first-party
 // ESM), so it is validated against a strict schema before any entry is trusted:
 // known shape, an SRI hash present for cross-origin bundles, and an origin on a
@@ -20,7 +20,7 @@ function extraAllowedOrigins(): string[] {
   return raw.split(/[\s,]+/).filter(Boolean);
 }
 
-/** A relative scriptUrl is same-origin (the cabinet itself), already trusted by 'self'. */
+/** A relative scriptUrl is same-origin (the wallet host itself), already trusted by 'self'. */
 export function isSameOrigin(scriptUrl: string): boolean {
   try {
     new URL(scriptUrl);

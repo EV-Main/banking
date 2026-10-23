@@ -14,7 +14,7 @@
  * for the case the plane also admits — a sandbox, a staging tenant or a self-hosted base
  * URL, which concierge covers by admitting the origin of `DIDIT_BASE_URL` alongside its own
  * constant (`DiditKyc::session_origins`). An operator who points the plane at one of those
- * must set this too, or the cabinet refuses the redirect the plane just approved.
+ * must set this too, or the wallet host refuses the redirect the plane just approved.
  */
 import { config } from "@/config";
 

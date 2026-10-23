@@ -1,4 +1,4 @@
-//! FB-24 / BANK-COMM-1, BANK-COMM-2: the cabinet identity surface is byte-straddled —
+//! FB-24 / BANK-COMM-1, BANK-COMM-2: the wallet host's identity surface is byte-straddled —
 //! the browser TS is aliased to concierge's `UserProfile`/`Session` (the serving plane),
 //! while the BFF `dto.rs` maps concierge's gRPC, and banking's own proto carries a
 //! duplicate copy of the same messages for its admin/operator path. Those duplicates MUST
@@ -42,7 +42,7 @@ fn user_profile_is_wire_identical_across_planes() {
 		suspended_by: "admin_hold".into(),
 		hold_expires_at: 1_700_086_400,
 		// Empty on purpose, the one field banking's duplicate does NOT mirror: concierge
-		// fills it on GetMe only, and the cabinet reads it from there. The money plane's
+		// fills it on GetMe only, and the wallet host reads it from there. The money plane's
 		// copy serves its admin/operator path, where it never travels.
 		permissions: Vec::new(),
 		username: "ada".into(),

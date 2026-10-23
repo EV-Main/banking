@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, X } from "lucide-react";
-import { Link } from "@/shared/ui/cabinet-link";
+import { Link } from "@/shared/ui/zone-link";
 import { type CSSProperties, useState } from "react";
 
 import { Button, Skeleton, Spinner } from "@evinvest/uikit";

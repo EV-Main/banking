@@ -7,10 +7,10 @@
 // whole character of these pages. `requestJson` is built around a session: it rotates the
 // access cookie before a request that might present a stale one, and it heals a 401 by
 // refreshing the session and replaying once. Every one of those steps is right for the
-// signed-in cabinet and wrong here:
+// signed-in wallet host and wrong here:
 //
 //   · There is no session. The reader followed a link from an email, quite possibly on a
-//     phone that has never signed in to this cabinet at all. A pre-flight to the shell's
+//     phone that has never signed in to this wallet host at all. A pre-flight to the shell's
 //     session endpoint is a round-trip that can only ever answer "no", and it makes an
 //     inert, read-only page look like it is doing authentication.
 //   · A 401 here is not a lapsed session. The credential on these routes is the token plus

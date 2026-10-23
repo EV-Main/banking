@@ -1,9 +1,9 @@
 // Motion tokens — the design-system half of `motion`. Every animation in the
-// cabinet picks its curve and duration from here, the same way colour picks from
+// wallet host picks its curve and duration from here, the same way colour picks from
 // the `ev/*` variables: one place to retune the feel of the whole surface, and no
 // per-screen easing invented on the spot.
 //
-// The cabinet is a money surface, so its motion is quieter than the landing's:
+// The wallet host is a money surface, so its motion is quieter than the landing's:
 // shorter, smaller travel, never decorative. Motion here has one job — to say
 // *what changed* — and anything that delays a number appearing is wrong.
 

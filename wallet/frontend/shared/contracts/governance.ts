@@ -2,7 +2,7 @@
 // the two token-addressed approval endpoints an owner reaches from their mailbox.
 //
 // Hand-written rather than generated, like `./notifications` and `./admin`: these are BFF
-// DTOs shaped for this cabinet, not a direct projection of a banking proto message (the
+// DTOs shaped for this wallet host, not a direct projection of a banking proto message (the
 // removal half is concierge-owned, the payout half banking-owned, and the BFF joins them —
 // see docs/CONSILIUM.md § The two planes). When the surface does get a proto, this file is
 // what `./gen` replaces.

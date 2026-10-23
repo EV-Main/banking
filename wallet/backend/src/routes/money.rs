@@ -20,7 +20,7 @@ use crate::{
 	util::now_secs,
 };
 
-/// The machine-readable body the cabinet keys on to offer verification instead of reporting
+/// The machine-readable body the wallet host keys on to offer verification instead of reporting
 /// a fault. A token rather than a sentence: it is matched in the browser and worded there,
 /// the way the identity plane's own `kyc_unavailable` is.
 pub const VERIFICATION_REQUIRED: &str = "verification_required";
@@ -292,7 +292,7 @@ pub async fn list_payment_confirmations(State(st): State<AppState>, jar: CookieJ
 }
 
 /// `GET /api/wallet/payments/{id}` — one such payment, in whatever state it is. An order that
-/// is not the caller's, is not answered in the cabinet, or does not exist is the same 404.
+/// is not the caller's, is not answered in the wallet host, or does not exist is the same 404.
 pub async fn get_payment_confirmation(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>) -> Result<Json<dto::PaymentConfirmation>, ApiError> {
 	let token = require_money_token(&st, &jar).await?;
 	let payment = st.grpc.get_payment_confirmation(&token, &id).await.map_err(|s| ApiError::read(s, "payment unavailable"))?;
@@ -348,7 +348,7 @@ mod tests {
 		(status, body["error"].as_str().unwrap().to_string())
 	}
 
-	/// The cabinet offers verification off the back of this token. If it ever went back to
+	/// The wallet host offers verification off the back of this token. If it ever went back to
 	/// the generic string, the deposit screen would silently return to reporting the one
 	/// refusal a user can clear themselves as an outage they cannot.
 	#[tokio::test]

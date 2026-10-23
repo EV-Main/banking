@@ -1,7 +1,7 @@
 //! Liveness (`Check`) and readiness (`Readiness`) probes for the gRPC surface.
 //!
 //! `Check` is trivial and unauthenticated — "is the process up?" — and backs the
-//! `cabinet` BFF smoke path (browser → BFF → gRPC). `Readiness` answers the distinct
+//! wallet BFF smoke path (browser → BFF → gRPC). `Readiness` answers the distinct
 //! question "can this instance actually move money?": it pings Postgres and TigerBeetle
 //! and inspects the outbox, so an orchestrator/LB drains an instance that is up but
 //! wedged (dead DB, unreachable ledger, parked rows, or a growing dispatch backlog)

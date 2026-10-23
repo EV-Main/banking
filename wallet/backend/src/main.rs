@@ -1,13 +1,13 @@
-//! The cabinet BFF — a standalone, stateless HTTP orchestration service.
+//! The wallet BFF — a standalone, stateless HTTP orchestration service.
 //!
-//! It is the cabinet's egress boundary: it proxies the browser's same-origin `/api/*`
+//! It is the wallet host's egress boundary: it proxies the browser's same-origin `/api/*`
 //! JSON requests to two gRPC planes — **concierge** (identity: profile/directory) and
 //! **piggybank** (money: wallet, consilium, health). Auth is SHELL-owned: the concierge
 //! auth web surface (reached via the conductor's `/api/auth/*` on the shared origin)
 //! signs users in and sets the zone-shared `ev_access` JWT cookie; the BFF verifies
 //! that cookie locally against the concierge JWKS and, for money routes, mints the
-//! SEPARATE banking (`aud=banking-core`) pair for the verified subject. The cabinet
-//! runs no OAuth and holds no session.
+//! SEPARATE banking (`aud=banking-core`) pair for the verified subject. The wallet
+//! host runs no OAuth and holds no session.
 
 // `ev::settings!` walks `AppConfig` one field and one attribute at a time; with the wallet
 // fields the expansion passes the default limit of 128.
@@ -103,7 +103,7 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 		bind = %bind_addr,
 		piggybank = %config.piggybank_grpc_addr,
 		concierge = %config.concierge_grpc_addr,
-		"cabinet BFF listening"
+		"wallet BFF listening"
 	);
 
 	// Local verification of the shell-set access JWT: the JWKS is cached from the
@@ -141,14 +141,14 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 	//
 	// Graceful on SIGTERM: the kubelet sends it on every rollout of this pod, and without
 	// this the listener and every in-flight response died with the process — a read that
-	// was a millisecond from its answer became a bodyless proxy error in the cabinet.
+	// was a millisecond from its answer became a bodyless proxy error in the wallet host.
 	// Now the listener closes, the in-flight requests finish (each already bounded by
 	// the router's outer deadline), and only then does the process exit;
 	// `terminationGracePeriodSeconds` remains the SIGKILL backstop.
 	let serve = axum::serve(listener, routes::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>()).with_graceful_shutdown(shutdown_signal());
 	tokio::select! {
 		never = AppConfig::watch_drift() => match never {},
-		result = serve => result.context("cabinet BFF HTTP server error"),
+		result = serve => result.context("wallet BFF HTTP server error"),
 	}
 }
 

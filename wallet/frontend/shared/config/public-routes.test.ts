@@ -39,7 +39,7 @@ test("a page that merely starts with a token page's name is not one", () => {
 
 test("only the token pages ask for no-referrer", () => {
   // The URL is the credential on these two and nowhere else, so the stricter header is
-  // scoped to them rather than weakening the referrer policy of the whole cabinet.
+  // scoped to them rather than weakening the referrer policy of the whole wallet host.
   assert.equal(isTokenApprovalPath("/en/cabinet/approve/tok"), true);
   assert.equal(isTokenApprovalPath("/fr/cabinet/owner-removal/tok"), true);
   assert.equal(isTokenApprovalPath("/ru/cabinet/consent/tok"), true);
@@ -62,7 +62,7 @@ test("the approval pages are never observed by analytics or error monitoring", (
 
 test("every other page is still observed", () => {
   // The opt-out is scoped to the pages that hold a secret in their URL; turning telemetry
-  // off more widely than that would be a silent regression in the cabinet's monitoring.
+  // off more widely than that would be a silent regression in the wallet host's monitoring.
   for (const path of [
     "/en/cabinet",
     "/en/cabinet/consilium",

@@ -2,7 +2,7 @@
 # FB-24 / CROSS-5: guard the cross-repo concierge pin.
 #
 # Banking compiles the identity + governance wire contract from the `evconcierge_contracts`
-# git dep (Cargo.toml) and re-aliases the cabinet's TS from concierge's proto. This
+# git dep (Cargo.toml) and re-aliases the wallet frontend's TS from concierge's proto. This
 # asserts that pin is trustworthy:
 #   1. the pinned rev is an ANCESTOR of concierge `origin/main` (not an orphaned /
 #      force-pushed SHA — the supply-chain fragility the audit flagged);

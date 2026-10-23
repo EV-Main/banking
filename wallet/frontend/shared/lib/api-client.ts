@@ -20,7 +20,7 @@
 //
 // Only a shell that answers "genuinely signed out" ends as SessionExpiredError (the
 // keeper picks the same answer up and moves to /login). An unreachable session endpoint
-// is left as an ordinary failure, so a blip never bounces anyone out of the cabinet.
+// is left as an ordinary failure, so a blip never bounces anyone out of the wallet host.
 
 import type { Translate } from "@evinvest/i18n";
 
@@ -136,7 +136,7 @@ type Method = "GET" | "POST" | "PATCH" | "DELETE";
 interface JsonRequest {
   method?: Method;
   body?: unknown;
-  /** `zone` = this cabinet's BFF (basePath-prefixed); `shell` = the site-root auth surface. */
+  /** `zone` = this wallet host's BFF (basePath-prefixed); `shell` = the site-root auth surface. */
   scope?: "zone" | "shell";
 }
 

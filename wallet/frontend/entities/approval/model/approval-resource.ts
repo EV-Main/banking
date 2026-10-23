@@ -2,7 +2,7 @@
 
 // The token-addressed reads, as resources.
 //
-// They go through `defineResource` for the same reason every other read in this cabinet
+// They go through `defineResource` for the same reason every other read in this wallet host
 // does: it is the one place a read is started, and it starts it from `useResource`'s
 // subscription rather than from a `useEffect`. A hand-rolled fetch-on-mount is a `setState`
 // running synchronously inside an effect — cascading renders, and the thing

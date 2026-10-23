@@ -19,7 +19,7 @@ export const COOKIES = {
   // the proxy renews it when it is about to lapse, and server renders forward it.
   access: `${PREFIX}ev_access`,
   // The one cookie this zone MINTS rather than reads, so the header comment
-  // above does not cover it. It carries the reader's locale, because the cabinet
+  // above does not cover it. It carries the reader's locale, because the wallet host
   // — unlike the public site — has no reason to put the locale in the URL: it is
   // entirely behind auth, so there is no crawler to serve alternates to and no
   // indexed URL to keep stable. See the i18n section of README.md.

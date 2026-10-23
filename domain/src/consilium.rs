@@ -562,7 +562,7 @@ impl Consilium {
 		}
 		let owner_count = roster.len() as u32;
 		if owner_count < MIN_OWNERS {
-			// "needs at least", "owners" and "this fund has N" are what the cabinet's
+			// "needs at least", "owners" and "this fund has N" are what the wallet frontend's
 			// `consilium-refusal.ts` classifies this refusal by; only the noun varies.
 			let noun = terms.kind().noun();
 			return Err(DomainError::Validation(format!(

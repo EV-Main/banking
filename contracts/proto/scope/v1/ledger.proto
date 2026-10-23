@@ -2,9 +2,9 @@ syntax = "proto3";
 
 // The scope money surface — the SERVICE-facing wire through which a scope's own
 // service (invest, the SA panel, …) moves money inside its scope. Kept in its own
-// package, not `banking.v1`, so it stays out of the cabinet-facing OpenAPI/TS
+// package, not `banking.v1`, so it stays out of the wallet-facing OpenAPI/TS
 // generation (`nix run .#gen-api` only reads `proto/banking/v1`): no browser ever
-// calls it, and its types must not leak into the cabinet as if it could.
+// calls it, and its types must not leak into the wallet frontend as if it could.
 //
 // THE MODEL. A scope is a concierge tenant (`invest`, `sa`, …); banking only knows the
 // scopes concierge announced. Two kinds of account live in a scope:

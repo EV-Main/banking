@@ -1,4 +1,4 @@
-// Fee rates, in the two units the cabinet speaks.
+// Fee rates, in the two units the wallet host speaks.
 //
 // The money plane stores and charges **basis points** — integers, where 10000 is 100% —
 // because a rate that charges real money must be exact, and a fraction of a percent held
@@ -21,7 +21,7 @@ export function pct(bps: number | undefined): string {
  *  whole resolution the money plane has — a third would be a rate it cannot store. The
  *  fraction is optional down to nothing so a half-typed "2." does not flash an error at
  *  someone in the middle of typing "2.5". Either separator on the way IN: four of the
- *  cabinet's five locales write a half as "2,5". The way OUT (`pct`, `toPercentInput`)
+ *  wallet host's five locales write a half as "2,5". The way OUT (`pct`, `toPercentInput`)
  *  stays the point in every locale — one policy here, and the hint under the field names
  *  both spellings rather than teaching a separator the figures beside it do not use.
  *

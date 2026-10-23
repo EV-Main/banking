@@ -2,13 +2,13 @@ import { StatusScreen } from "@evinvest/uikit";
 import { localePath, translator, type Locale, type Translate } from "@evinvest/i18n";
 
 import { messagesFor } from "@/shared/config/i18n";
-import { cabinetPath } from "@/shared/config/base-path";
+import { zonePagePath } from "@/shared/config/base-path";
 
 /**
  * The 404 / 403 / 401 surfaces, in the reader's language.
  *
  * The uikit's ready-made `NotFound` / `Forbidden` pages bake their copy in, which
- * is what the cabinet rendered until now: an English apology under Russian chrome,
+ * is what the wallet host rendered until now: an English apology under Russian chrome,
  * at the one moment the product is already failing the reader. `StatusScreen` is
  * the same component underneath and takes every string as a prop, so this needs no
  * uikit release. Same shape as the conductor's `views/status`, and the catalogue
@@ -20,8 +20,8 @@ import { cabinetPath } from "@/shared/config/base-path";
  * hook. The 500 cannot use this — Next requires `error.tsx` to be a Client
  * Component — and reads the catalogue through `I18nProvider` instead.
  *
- * "Home" here is the cabinet dashboard, not the landing: someone signed in who hit
- * a dead cabinet URL wants their portfolio back, not the marketing site. The
+ * "Home" here is the wallet host dashboard, not the landing: someone signed in who hit
+ * a dead zone URL wants their portfolio back, not the marketing site. The
  * secondary CTA does leave the zone — contact and sign-in are shell-owned.
  */
 export type StatusKind = "notFound" | "forbidden" | "unauthorized";
@@ -61,10 +61,10 @@ export function LocalisedStatus({ kind, locale }: { kind: StatusKind; locale: Lo
   const t = translator(messagesFor(locale), locale);
   const secondary =
     kind === "unauthorized"
-      ? { label: t("status.signIn", "Sign in"), href: cabinetPath(locale, "/login") }
+      ? { label: t("status.signIn", "Sign in"), href: zonePagePath(locale, "/login") }
       : {
           // The landing's contact page is a conductor route on the same origin, so
-          // `localePath`, not `cabinetPath`.
+          // `localePath`, not `zonePagePath`.
           label: kind === "forbidden" ? t("status.requestAccess", "Request access") : t("status.contactTeam", "Contact the team"),
           href: localePath(locale, "/contact"),
         };
@@ -74,7 +74,7 @@ export function LocalisedStatus({ kind, locale }: { kind: StatusKind; locale: Lo
       code={CODE[kind]}
       {...COPY[kind](t)}
       links={[
-        { label: t("status.backHome", "Back to home"), href: cabinetPath(locale, "/"), leadingArrow: true },
+        { label: t("status.backHome", "Back to home"), href: zonePagePath(locale, "/"), leadingArrow: true },
         { ...secondary, variant: "outline" },
       ]}
     />

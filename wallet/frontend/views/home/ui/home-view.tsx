@@ -3,7 +3,7 @@
 import { useT } from "@evinvest/i18n/react";
 
 import { KycStatusChip, StartVerificationRow } from "@/features/kyc";
-import { Link } from "@/shared/ui/cabinet-link";
+import { Link } from "@/shared/ui/zone-link";
 import { Chevron, ListCard, ListCardTitle, ROW_INTERACTIVE, Row, RowLabel } from "@/shared/ui/list-card";
 import { PageFrame } from "@/shared/ui/page-frame";
 

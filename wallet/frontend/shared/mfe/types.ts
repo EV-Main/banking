@@ -14,7 +14,7 @@ export interface MfeEntry {
    * Subresource-Integrity hash for the bundle (e.g. "sha384-…"), delivered
    * atomically with `scriptUrl` so a swapped bundle fails to load. Required for
    * cross-origin remotes; optional for same-origin (relative) bundles served by
-   * the cabinet itself, which the origin allow-list already constrains.
+   * the wallet host itself, which the origin allow-list already constrains.
    */
   integrity?: string;
   /** Whether the remote is an inline widget or owns a whole route. */

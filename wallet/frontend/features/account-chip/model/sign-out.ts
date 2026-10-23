@@ -8,7 +8,7 @@
 import type { Locale } from "@evinvest/i18n";
 
 // Relative on purpose: `node --test` runs this file and cannot resolve the `@/` alias.
-import { cabinetPath } from "../../../shared/config/base-path.ts";
+import { zonePagePath } from "../../../shared/config/base-path.ts";
 
 export const LOGOUT_ENDPOINT = "/api/auth/logout";
 
@@ -39,6 +39,6 @@ export async function performSignOut({ fetch, csrfHeader, clearIdentity, clearRe
   }
   // The hard navigation clears the in-memory reads anyway; this clears the persisted ones.
   clearResources();
-  navigate(cabinetPath(locale, "/loggedout"));
+  navigate(zonePagePath(locale, "/loggedout"));
   return true;
 }

@@ -1,7 +1,7 @@
 // The payments surface: a payment ORDER between two named ends of the platform, and the
 // emailed consent an investor gives when the money is their own.
 //
-// Hand-written like `./governance`: these are the BFF's DTOs, shaped for this cabinet, not
+// Hand-written like `./governance`: these are the BFF's DTOs, shaped for this wallet host, not
 // the proto messages `./gen` projects (`PaymentEnd.detail`, the nested `consent`, the
 // lowercase states and the string timestamps are all the BFF's doing — docs/CONSILIUM.md
 // § Payments). When the surface is ever served straight off the proto, this file is what
@@ -136,7 +136,7 @@ export interface Payment {
   consent: PaymentConsent | null;
   /** The seat that decides the order: `consilium` · `consent` · `concierge_approval` (a
    *  `bank:payment` approval of the platform owners) · `session` (the investor's own answer
-   *  in the cabinet). Null for a row older than seats. */
+   *  in the wallet host). Null for a row older than seats. */
   seat: string | null;
   /** Concierge's id of the approval, once opened; `concierge_approval` only. */
   approval_id: string | null;

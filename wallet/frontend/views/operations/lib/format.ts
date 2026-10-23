@@ -1,4 +1,4 @@
-// Display vocabulary for the activity timeline. Amounts are formatted by the cabinet's
+// Display vocabulary for the activity timeline. Amounts are formatted by the wallet host's
 // one money module (`@/shared/lib/money`); everything here is the mapping from a wire
 // `kind`/`state` onto the badge, tone and wording the Figma `operations` screens use.
 //

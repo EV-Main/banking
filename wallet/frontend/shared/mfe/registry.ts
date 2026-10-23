@@ -1,8 +1,8 @@
 // Server-side reader for the microfrontend registry.
 //
-// The registry maps logical names to {tag, scriptUrl, kind}. The cabinet server reads
+// The registry maps logical names to {tag, scriptUrl, kind}. The wallet host server reads
 // `mfe-registry.json` from its working directory, so an independent deploy lands by
-// editing that file — never by rebuilding cabinet.
+// editing that file — never by rebuilding the wallet host.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";

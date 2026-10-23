@@ -534,6 +534,6 @@ test("a session cookie of the wrong shape renders the page as a guest's, with no
   });
 });
 
-test("a session cookie of the wrong shape on /login gets the sign-in dialog, not the cabinet", () => {
+test("a session cookie of the wrong shape on /login gets the sign-in dialog, not the wallet host", () => {
   assert.deepEqual(decideSession({ ...GATE, pathname: "/en/cabinet/login", hasSession: isSessionId("short") }).redirect, { pathname: "/en/cabinet", search: "?login=" });
 });

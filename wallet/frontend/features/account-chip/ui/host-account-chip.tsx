@@ -6,7 +6,7 @@ import { chipTranslator } from "../lib/chip-translator";
 import type { HostChipProps } from "../lib/host-attributes";
 import { AccountMenu, type MenuIdentity } from "./account-menu";
 
-/** Same cap as the cabinet chip, so both hosts lay the label out alike. */
+/** Same cap as the wallet host chip, so both hosts lay the label out alike. */
 const MAX_LABEL = 28;
 
 export type HostAccountChipProps = HostChipProps & {

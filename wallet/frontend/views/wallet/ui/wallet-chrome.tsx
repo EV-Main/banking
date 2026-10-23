@@ -7,7 +7,7 @@ import { MobileAppBar } from "@/shared/ui/mobile-appbar";
 import { PageFrame } from "@/shared/ui/page-frame";
 
 // Shared chrome for the four wallet screens (Figma `cabinet/wallet/*` desktop +
-// `cabinet/mobile/wallet/*`): the cabinet's page frame with the mobile app bar the profile
+// `cabinet/mobile/wallet/*`): the wallet host's page frame with the mobile app bar the profile
 // and settings screens use, so a wallet screen is titled the same way at both breakpoints
 // as every other investor screen. Each screen supplies its own sections as `StaggerItem`s.
 export function WalletScreen({ title, subtitle, back, actions, entrance, children }: { title: string; subtitle?: string; back?: `/${string}`; actions?: ReactNode; entrance?: boolean; children: ReactNode }) {

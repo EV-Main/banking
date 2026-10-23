@@ -1,7 +1,8 @@
 # cabinet-backend
 
-The cabinet's **BFF** (backend-for-frontend): a standalone, **stateless** HTTP service that
-is the cabinet's egress boundary. It proxies the browser's same-origin `/api/*` JSON
+The wallet host's **BFF** (backend-for-frontend; the crate keeps the name `cabinet-backend`
+because gitops names the image): a standalone, **stateless** HTTP service that
+is the wallet host's egress boundary. It proxies the browser's same-origin `/api/*` JSON
 requests to two gRPC planes:
 
 - **concierge** (identity) — `UserDirectory` `GetMe`, and the ownership plane's emailed
@@ -105,7 +106,7 @@ to `.env`).
 > request-auth is a cookie: it must be reached **only** through the frontend's same-origin
 > `/api/*` reverse proxy. Widen the bind (`0.0.0.0`) only behind an upstream firewall that
 > keeps `/api/*` off any public interface — see
-> [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md).
+> [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
 
 > **Two token pairs (cross-plane trust).** The two planes sign under separate issuers and
 > distinct audiences (concierge `aud=concierge`, banking `aud=banking-core`). The BFF

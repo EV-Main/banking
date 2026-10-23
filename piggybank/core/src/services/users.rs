@@ -128,7 +128,7 @@ fn user_to_proto(user: &User) -> pb::UserProfile {
 		timezone: user.timezone().unwrap_or_default().to_owned(),
 		// Identity (kyc/role) is OWNED by concierge; banking mirrors it onto the bridge
 		// projection for gating but does not re-serve it on this self-service profile (the
-		// cabinet reads identity from concierge). Default here — present for wire parity.
+		// wallet host reads identity from concierge). Default here — present for wire parity.
 		kyc_level: 0,
 		role: String::new(),
 		// Likewise: the emergency allowlist lives in concierge, so there is nothing here to

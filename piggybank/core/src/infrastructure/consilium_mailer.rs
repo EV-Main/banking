@@ -322,7 +322,7 @@ impl ConsiliumMailer {
 		//
 		// What a missing mirror costs the row depends on the kind. A holder's NOTICE is queued
 		// whether or not the holder was mirrored at the time (#325): units can be issued
-		// before the holder ever opens the cabinet, and the mirror lands with their first
+		// before the holder ever signs in to the platform, and the mirror lands with their first
 		// login — hours or days later. Nothing about the message was refused, so the row is
 		// DEFERRED like a relay outage, charged no attempt, and the mirror landing anywhere
 		// inside the notice period is enough for the next pass to reach them; past the

@@ -8,7 +8,7 @@ import { AuthWall, Button } from "@evinvest/uikit";
 
 import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
 import { requiredPermission } from "@/shared/config/route-permissions";
-import { useCabinetPathname } from "@/shared/lib/cabinet-route";
+import { useZonePathname } from "@/shared/lib/zone-route";
 import { SESSION_UNAVAILABLE, useSession } from "@/shared/lib/use-session";
 import { ForbiddenScreen } from "@/shared/ui/forbidden-screen";
 
@@ -24,7 +24,7 @@ import { ForbiddenScreen } from "@/shared/ui/forbidden-screen";
 export function RouteGate({ signedIn, children }: { signedIn: boolean; children: ReactNode }) {
   const t = useT();
   const session = useSession();
-  const pathname = useCabinetPathname();
+  const pathname = useZonePathname();
   const dialog = useSignInDialog();
 
   const needed = requiredPermission(pathname);

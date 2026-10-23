@@ -31,7 +31,7 @@ export const kycStatusResource = defineResource({
     // one of them:
     //   · a running case — the verdict can land at any moment, and nothing else announces it;
     //   · tier 0 with no case — an operator can still raise the tier by hand, which is the
-    //     path this cabinet is actually on today (see `@/shared/config/support`);
+    //     path this wallet host is actually on today (see `@/shared/config/support`);
     //   · `null` — and `null` now means ONE thing, which is what makes polling on it safe:
     //     a 404, i.e. a concierge that has not shipped the route (#75). Everything else —
     //     5xx, a network failure, an expired session — is re-raised by `fetchKycStatus`

@@ -1,6 +1,6 @@
 import { isLocale, type Locale } from "@evinvest/i18n";
 
-// The zone mount prefix. The cabinet is a Next.js multi-zone served under the
+// The zone mount prefix. The wallet host is a Next.js multi-zone served under the
 // conductor's domain at /cabinet.
 //
 // Two different things now live under this prefix and they no longer have the
@@ -11,7 +11,7 @@ import { isLocale, type Locale } from "@evinvest/i18n";
 //
 // `basePath` used to make the first case automatic and is gone (it would have
 // prepended itself to the second, turning /ru/cabinet/wallet into
-// /cabinet/ru/cabinet/wallet — see docs/i18n-cabinet-routing-spike.md).
+// /cabinet/ru/cabinet/wallet — see docs/i18n-wallet-routing-spike.md).
 // `assetPrefix` covers `/_next/*`; everything else is explicit through the two
 // helpers below, and which one you want is decided by whether a *reader* sees it.
 export const BASE_PATH = "/cabinet";
@@ -24,17 +24,17 @@ export const BASE_PATH = "/cabinet";
 export const apiPath = (path: `/${string}`): string => `${BASE_PATH}${path}`;
 
 /**
- * A page URL the reader can end up looking at. Every in-cabinet link goes through
+ * A page URL the reader can end up looking at. Every in-zone link goes through
  * here — with `basePath` gone, a bare `<Link href="/wallet">` now points at the
  * conductor's origin root instead of the zone, which fails as a 404 on a page
- * that has nothing to do with the cabinet.
+ * that has nothing to do with the wallet host.
  */
-export const cabinetPath = (locale: Locale, path: `/${string}`): string =>
+export const zonePagePath = (locale: Locale, path: `/${string}`): string =>
   path === "/" ? `/${locale}${BASE_PATH}` : `/${locale}${BASE_PATH}${path}`;
 
 /**
- * The page URL a cabinet request *should* have had, when its locale segment is
- * missing or is not a locale we serve — or `null` when the path is not a cabinet
+ * The page URL a zone request *should* have had, when its locale segment is
+ * missing or is not a locale we serve — or `null` when the path is not a zone
  * page at all and there is nothing to repair.
  *
  *   /cabinet/wallet      → /{locale}/cabinet/wallet   (an old link, or the
@@ -49,26 +49,26 @@ export const cabinetPath = (locale: Locale, path: `/${string}`): string =>
  * ROOT layout and so has no `not-found.tsx` boundary above it to render: Next
  * served its own black "404 | This page could not be found" instead of ours.
  * Repairing the URL is better than any 404 anyway. Someone typing `/pt/cabinet`
- * wants their cabinet, and we have five languages to offer them.
+ * wants their wallet, and we have five languages to offer them.
  */
 export const localeRepairedPath = (pathname: string, locale: Locale): string | null => {
   const zone = BASE_PATH.slice(1);
   const [, first, ...rest] = pathname.split("/");
   // `/cabinet/…` — nothing in front of the zone prefix.
-  if (first === zone) return cabinetPath(locale, zoneSuffix(rest));
+  if (first === zone) return zonePagePath(locale, zoneSuffix(rest));
   // `/<not-a-locale>/cabinet/…` — a segment in front of it that has to go.
-  if (rest[0] === zone) return cabinetPath(locale, zoneSuffix(rest.slice(1)));
+  if (rest[0] === zone) return zonePagePath(locale, zoneSuffix(rest.slice(1)));
   return null;
 };
 
-/** Path segments after the zone prefix, rebuilt as the `/`-rooted tail `cabinetPath` takes. */
+/** Path segments after the zone prefix, rebuilt as the `/`-rooted tail `zonePagePath` takes. */
 const zoneSuffix = (parts: string[]): `/${string}` => {
   const tail = parts.filter(Boolean).join("/");
   return (tail ? `/${tail}` : "/") as `/${string}`;
 };
 
 /**
- * The inverse of {@link cabinetPath}: a real request path back to the zone-relative
+ * The inverse of {@link zonePagePath}: a real request path back to the zone-relative
  * one the app reasons in.
  *
  * `usePathname()` used to hand back a basePath-stripped path for free, so the nav
@@ -105,7 +105,7 @@ export const zonePathname = (pathname: string): `/${string}` => {
  * nothing, and every stylesheet, script, font and API call is treated as a
  * locale-less page: 307 to `/{locale}/cabinet/…`, then bounced to `/login`,
  * which answers `200 text/html`. The browser refuses each one for its MIME type,
- * so the cabinet renders unstyled and never hydrates. That shipped in v0.2.57.
+ * so the wallet host renders unstyled and never hydrates. That shipped in v0.2.57.
  *
  * The set of names is deliberately unchanged from the matcher's original list —
  * widening it (say, to all of `_next/`) would quietly ungate paths this zone has
@@ -126,10 +126,10 @@ export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathna
  * pages (see {@link isNonPagePath}), and a sibling route like `/cabinets` is not this zone.
  *
  * The account chip needs the answer from the document it was mounted into: the same
- * bundle renders on the public site and inside the cabinet, and where its link goes
+ * bundle renders on the public site and inside the wallet host, and where its link goes
  * depends on which of the two the reader is looking at.
  */
-export const isCabinetPage = (pathname: string): boolean => {
+export const isZonePage = (pathname: string): boolean => {
   if (isNonPagePath(pathname)) return false;
   const zone = BASE_PATH.slice(1);
   // Whole segments, so `/cabinets` and `/en/cabinets/list` stay someone else's routes.
@@ -138,22 +138,22 @@ export const isCabinetPage = (pathname: string): boolean => {
 };
 
 /**
- * The same cabinet page, in another locale — path, query and hash intact.
+ * The same zone page, in another locale — path, query and hash intact.
  *
  * Two callers relocalise the current page (the settings language switcher and
  * `LocaleSync`) and they must agree: one of them dropping the query string is a
- * bug that only appears the first time a cabinet page takes a parameter. Takes
+ * bug that only appears the first time a zone page takes a parameter. Takes
  * the URL parts rather than reading `window` so it stays pure and testable
  * alongside its siblings here.
  */
 export const relocalise = (
   locale: Locale,
   url: { pathname: string; search: string; hash: string },
-): string => cabinetPath(locale, zonePathname(url.pathname)) + url.search + url.hash;
+): string => zonePagePath(locale, zonePathname(url.pathname)) + url.search + url.hash;
 
 // The money actions scope hosts open on evinvest.ltd, by the exact paths the host SDK
 // (`@evinvest/wallet` `WALLET_ACTION_PATHS`, `walletPaymentUrl`) builds: no locale, no zone
-// prefix, because they are the wallet's public addresses rather than cabinet pages. The
+// prefix, because they are the wallet's public addresses rather than zone pages. The
 // payment id has the SDK's id rule, so nothing but a plain segment reaches the page route.
 const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate|payment\/[A-Za-z0-9_-]{1,128})$/;
 

@@ -28,7 +28,7 @@ const eslintConfig = [
     },
   },
   {
-    // The cabinet had accumulated 386 arbitrary Tailwind values — 24 distinct font
+    // The wallet host had accumulated 386 arbitrary Tailwind values — 24 distinct font
     // sizes and 10 radii against the 8 and 5 the design system defines. That happened
     // because nothing stopped it, not because anyone chose it, so the guard is a lint
     // rule rather than a convention.

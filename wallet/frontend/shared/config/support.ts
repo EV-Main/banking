@@ -1,5 +1,5 @@
 /**
- * Where a cabinet user is sent when the product cannot finish something on its own.
+ * Where a wallet user is sent when the product cannot finish something on its own.
  *
  * A constant rather than a value read from `config`: this exists precisely as the fallback
  * for a response that was SUPPOSED to carry an address and did not, so sourcing it from

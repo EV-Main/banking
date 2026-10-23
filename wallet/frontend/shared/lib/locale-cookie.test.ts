@@ -1,6 +1,6 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The reason these need pinning down: this module is the only place the cabinet and the
+// The reason these need pinning down: this module is the only place the wallet host and the
 // public site have to agree on a cookie *name*, and they compute it independently in two
 // repositories (site_conductor `scripts/locale-cookie.ts`). If the two disagree the
 // symptom is not an error — the conductor writes one cookie, the proxy reads another and

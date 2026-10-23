@@ -137,7 +137,7 @@ fn decision_from_proto(raw: i32) -> Result<VoteDecision, Status> {
 
 /// The valuation-override terms as the wire carries them — the third of the "exactly one
 /// terms field is set" siblings. `None` for the other kinds, and NEVER an empty message:
-/// the cabinet treats an empty object as unrenderable, and `Option` is what the generated
+/// the wallet frontend treats an empty object as unrenderable, and `Option` is what the generated
 /// DTO folds to `null`.
 fn valuation_override_terms_to_proto(terms: &ConsiliumTerms) -> Option<pb::ValuationOverrideTerms> {
 	match terms {

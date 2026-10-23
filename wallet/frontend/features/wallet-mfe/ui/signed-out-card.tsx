@@ -2,7 +2,7 @@ import { useLocale, useT } from "@evinvest/i18n/react";
 
 import { Button, Card, Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@evinvest/uikit";
 
-import { cabinetPath } from "@/shared/config/base-path";
+import { zonePagePath } from "@/shared/config/base-path";
 
 /**
  * No session on the wallet origin. Sign-in happens on evinvest.ltd, in a new tab: the host
@@ -21,7 +21,7 @@ export function SignedOutCard({ origin }: { origin: string }) {
         </EmptyHeader>
         <EmptyContent>
           <Button asChild>
-            <a href={new URL(cabinetPath(locale, "/login"), origin).href} target="_blank" rel="noopener">
+            <a href={new URL(zonePagePath(locale, "/login"), origin).href} target="_blank" rel="noopener">
               {t("walletMfe.signIn", "Sign in to EV Invest")}
             </a>
           </Button>

@@ -10,7 +10,7 @@ import test from "node:test";
 
 import { LOCALES } from "@evinvest/i18n";
 
-import { cabinetPath } from "../../../shared/config/base-path.ts";
+import { zonePagePath } from "../../../shared/config/base-path.ts";
 import { loginHref, loginReturnTo, safeReturnTo } from "./return-to.ts";
 
 test("a zone-relative returnTo is prefixed exactly once", () => {
@@ -19,16 +19,16 @@ test("a zone-relative returnTo is prefixed exactly once", () => {
   assert.equal(loginReturnTo("de", "/admin/revenue#top"), "/de/cabinet/admin/revenue#top");
 });
 
-test("the zone root and a missing returnTo both land on the cabinet home", () => {
+test("the zone root and a missing returnTo both land on the wallet host home", () => {
   for (const locale of LOCALES) {
-    assert.equal(loginReturnTo(locale, "/"), cabinetPath(locale, "/"), locale);
-    assert.equal(loginReturnTo(locale, null), cabinetPath(locale, "/"), locale);
-    assert.equal(loginReturnTo(locale, undefined), cabinetPath(locale, "/"), locale);
-    assert.equal(loginReturnTo(locale, ""), cabinetPath(locale, "/"), locale);
+    assert.equal(loginReturnTo(locale, "/"), zonePagePath(locale, "/"), locale);
+    assert.equal(loginReturnTo(locale, null), zonePagePath(locale, "/"), locale);
+    assert.equal(loginReturnTo(locale, undefined), zonePagePath(locale, "/"), locale);
+    assert.equal(loginReturnTo(locale, ""), zonePagePath(locale, "/"), locale);
   }
 });
 
-test("a full cabinet path is accepted and not prefixed twice", () => {
+test("a full zone path is accepted and not prefixed twice", () => {
   // The shapes production actually produced (issue #390) plus an old bookmark of the
   // unprefixed mount.
   assert.equal(loginReturnTo("en", "/en/cabinet"), "/en/cabinet");
@@ -47,14 +47,14 @@ test("the login page's locale wins over one carried in a full path", () => {
 test("every locale round-trips its own pages through the login", () => {
   for (const locale of LOCALES) {
     for (const path of ["/", "/wallet", "/admin/revenue"] as const) {
-      const full = cabinetPath(locale, path);
+      const full = zonePagePath(locale, path);
       assert.equal(loginReturnTo(locale, path), full, `${locale} ${path} (zone-relative)`);
       assert.equal(loginReturnTo(locale, full), full, `${locale} ${path} (full)`);
     }
   }
 });
 
-test("an open redirect is refused and falls back to the cabinet home", () => {
+test("an open redirect is refused and falls back to the wallet host home", () => {
   for (const raw of ["//evil.example", "/\\evil.example", "/wallet\\..", "https://evil.example/", "wallet"]) {
     assert.equal(safeReturnTo(raw), "/", raw);
     assert.equal(loginReturnTo("en", raw), "/en/cabinet", raw);

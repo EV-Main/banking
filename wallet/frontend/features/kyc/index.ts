@@ -10,5 +10,5 @@ export { StartVerificationRow } from "@/features/kyc/ui/start-verification-row";
 export { KycStatusChip } from "@/features/kyc/ui/status-chip";
 export { VerificationRequired } from "@/features/kyc/ui/verification-required";
 // The trust line beside a money input (#385): what verification protects, said next to the
-// figure it protects rather than in a footer the cabinet does not have.
+// figure it protects rather than in a footer the wallet host does not have.
 export { CustodyNote } from "@/features/kyc/ui/custody-note";

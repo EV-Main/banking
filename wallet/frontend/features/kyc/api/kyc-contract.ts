@@ -56,7 +56,7 @@ export interface KycCase {
   /**
    * The plane's own status word. Kept as an open string on purpose: today it is one of
    * {@link RUNNING_CASE_STATUSES}, but the column is a persistent dictionary that may grow a
-   * value before this cabinet ships again. Rejecting an unrecognised word would make the
+   * value before this wallet host ships again. Rejecting an unrecognised word would make the
    * whole status unreadable, and an unreadable status falls back to offering Start — i.e. a
    * new running state would buy a second paid vendor session. A word we do not recognise
    * still means a case is running, which is the only thing the gate needs.
@@ -69,7 +69,7 @@ export interface KycCase {
   /**
    * Whether the vendor session behind this case can still be re-entered. `false` means the
    * case is alive and holds the start gate, but there is no link to send the user back to:
-   * the cabinet must offer a fresh start, never a dead link.
+   * the wallet host must offer a fresh start, never a dead link.
    */
   resumable: boolean;
 }
@@ -127,7 +127,7 @@ function parseCase(raw: unknown): KycCase | null {
  * {@link KYC_ERROR_CODES}.
  *
  * `contact` is checked for the shape of an address, not merely for being a non-empty string.
- * It is the one field of these bodies that the cabinet puts back into a URL — the support
+ * It is the one field of these bodies that the wallet host puts back into a URL — the support
  * `mailto:` — and `real@support.tld?cc=…&body=…` there turns "write to support" into a
  * pre-addressed letter to someone else. An address that does not look like one degrades to
  * `null`, which every reader already handles by falling back to `SUPPORT_EMAIL`.

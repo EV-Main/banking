@@ -66,12 +66,12 @@ ev::settings! {
 		/// Seconds between bridge pulls when the backlog is drained.
 		bridge_poll_secs: u64 = "5",
 		/// Base URL of the consilium approval page the emailed link points at
-		/// (`<base>/<token>`). The page is served by the cabinet; the hub only mints the
+		/// (`<base>/<token>`). The page is served by the wallet host; the hub only mints the
 		/// link. A wrong value here sends owners somewhere that cannot take their vote, so
 		/// it is worth checking per environment.
 		consilium_approval_url_base: String = "https://evinvest.ltd/cabinet/approve",
 		/// Base URL of the payment CONSENT page the emailed link points at (`<base>/<token>`)
-		/// — the investor-facing twin of the approval base, served by the cabinet on a
+		/// — the investor-facing twin of the approval base, served by the wallet host on a
 		/// public route for the same reason: the person clicking holds a token, not a
 		/// session.
 		payment_consent_url_base: String = "https://evinvest.ltd/cabinet/consent",
@@ -177,7 +177,7 @@ impl PaymentApprovalMode {
 /// | variable | decides | default |
 /// | --- | --- | --- |
 /// | `PAYMENT_APPROVALS_FUND` | a payment out of fund money: `concierge` = a `bank:payment` approval of the platform owners, proposed in the initiator's name (the proof of who asked); `consilium` = banking's consilium | `consilium` |
-/// | `PAYMENT_APPROVALS_SESSION` | a payment out of an investor's claim: `concierge` = the investor's own answer in the cabinet; `consilium` = the emailed token | `concierge` |
+/// | `PAYMENT_APPROVALS_SESSION` | a payment out of an investor's claim: `concierge` = the investor's own answer in the wallet host; `consilium` = the emailed token | `concierge` |
 /// | `PAYMENT_APPROVALS` | the old single name: when set, the default of BOTH above; either specific variable overrides it | — |
 ///
 /// Fund money defaults to the old path because the `concierge` path needs the initiator's
@@ -1597,7 +1597,7 @@ gRI8JvM30gtx/NBsGEV927PGd7imCZpKdAlR1pYzGA==
 	///
 	/// An owner opens their approval mail on whatever device the mail is on — a phone with no
 	/// session, someone else's laptop — holding a single-use token with a 72h life. The
-	/// cabinet's `/cabinet/consilium` is the OWNER-ONLY console and is not in the frontend's
+	/// wallet host's `/cabinet/consilium` is the OWNER-ONLY console and is not in the frontend's
 	/// public-route list, so a signed-out owner following a link there is bounced to
 	/// `/login`; by the time they have signed in, the deep link is gone and so, often, is the
 	/// token. `/cabinet/approve/{token}` is the public page built for exactly this.

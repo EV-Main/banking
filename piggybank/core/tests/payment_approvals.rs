@@ -1,5 +1,5 @@
 //! Integration tests for payments decided over concierge's `bank:payment` approvals and by the
-//! investor's own answer in the cabinet — real Postgres and TigerBeetle, no mocks of either
+//! investor's own answer in the wallet host — real Postgres and TigerBeetle, no mocks of either
 //! (project rule); only concierge, which is another plane's service, is played by a fake that
 //! keeps its rules (a catalog gates the kinds, `dedupe_key` makes a proposal idempotent, an
 //! outcome is closed once).
@@ -8,7 +8,7 @@
 //!
 //! What they pin is the money: a decision approves an order once, however many times and from
 //! however many places it is served; a decision that is not the stored order's, or about an
-//! order that ended otherwise, moves nothing; and an investor's answer inside the cabinet is
+//! order that ended otherwise, moves nothing; and an investor's answer inside the wallet host is
 //! the old emailed consent's equal — the same pins, the same execution, the same outcome.
 
 use std::{
@@ -992,9 +992,9 @@ async fn the_consilium_mode_still_routes_a_fund_payment_to_the_old_path() {
 }
 
 /// The defaults: fund money stays on the old path (no proof of who asked is needed or asked
-/// for), an investor's goes to their own answer in the cabinet.
+/// for), an investor's goes to their own answer in the wallet host.
 #[tokio::test]
-async fn by_default_fund_money_stays_on_the_consilium_and_an_investors_is_answered_in_the_cabinet() {
+async fn by_default_fund_money_stays_on_the_consilium_and_an_investors_is_answered_in_the_wallet_host() {
 	let _guard = exclusive().await;
 	let Some(a) = app("payment approvals defaults").await else { return };
 	reset(&a.pool).await;
@@ -1074,7 +1074,7 @@ async fn notices(pool: &PgPool, payment: PaymentId) -> Vec<(Uuid, String, String
 /// in their inbox (never a mail with a token), and their approval executes it once — read back
 /// from the ledger.
 #[tokio::test]
-async fn an_investors_payment_is_answered_in_the_cabinet_and_settles_once() {
+async fn an_investors_payment_is_answered_in_the_wallet_host_and_settles_once() {
 	let _guard = exclusive().await;
 	let Some(a) = app("payment approvals session flow").await else { return };
 	reset(&a.pool).await;
@@ -1100,7 +1100,7 @@ async fn an_investors_payment_is_answered_in_the_cabinet_and_settles_once() {
 	assert_eq!(
 		queued[0].3,
 		format!("/wallet/action/payment/{}", id.raw()),
-		"a path relative to the cabinet root, never a link carrying a secret"
+		"a path relative to the wallet host root, never a link carrying a secret"
 	);
 
 	// Only the subject sees it; a stranger finds nothing and cannot answer.
@@ -1444,7 +1444,7 @@ async fn link_scopes(pool: &PgPool, payment: PaymentId) -> Vec<(String, String)>
 }
 
 /// The consent notice opens in the scope of the order's product end; an order with no product
-/// end stays in the platform cabinet, the only one banking knows is the person's.
+/// end stays in the platform wallet host, the only one banking knows is the person's.
 #[tokio::test]
 async fn a_consent_notice_opens_in_the_scope_of_the_product_it_pays() {
 	let _guard = exclusive().await;

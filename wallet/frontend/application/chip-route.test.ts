@@ -1,6 +1,6 @@
 // Run with `node --test --experimental-strip-types application/chip-route.test.ts`.
 //
-// The cabinet routes an account chip's `ev:navigate` itself only when the event came out of a
+// The wallet host routes an account chip's `ev:navigate` itself only when the event came out of a
 // chip element and the destination is one of its own localized pages, `/{locale}/cabinet…`.
 // Everything else stays a full load: the BFF and auth endpoints, other zones, the unprefixed
 // `/cabinet/…` only the proxy can repair, and anything that is not a path-absolute string on
@@ -8,9 +8,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cabinetRouteFor, fromChip } from "./chip-route.ts";
+import { zoneRouteFor, fromChip } from "./chip-route.ts";
 
-const at = (href: unknown) => cabinetRouteFor({ href });
+const at = (href: unknown) => zoneRouteFor({ href });
 
 // ── fromChip ────────────────────────────────────────────────────────────────
 
@@ -28,21 +28,21 @@ test("an event from anywhere else, or with only document and window in its path,
   assert.equal(fromChip([]), false, "empty path");
 });
 
-// ── cabinetRouteFor: taken ──────────────────────────────────────────────────
+// ── zoneRouteFor: taken ──────────────────────────────────────────────────
 
-test("a localized cabinet page is routed with its query and hash", () => {
+test("a localized zone page is routed with its query and hash", () => {
   assert.equal(at("/en/cabinet/settings?tab=security#top"), "/en/cabinet/settings?tab=security#top");
 });
 
-test("the profile page and the cabinet home are routed", () => {
+test("the profile page and the wallet host home are routed", () => {
   assert.equal(at("/en/cabinet/profile"), "/en/cabinet/profile");
   assert.equal(at("/en/cabinet"), "/en/cabinet");
   assert.equal(at("/ru/cabinet"), "/ru/cabinet");
 });
 
-// ── cabinetRouteFor: left to the browser ────────────────────────────────────
+// ── zoneRouteFor: left to the browser ────────────────────────────────────
 
-test("an unprefixed cabinet path is left to the proxy's locale repair", () => {
+test("an unprefixed zone path is left to the proxy's locale repair", () => {
   assert.equal(at("/cabinet/wallet"), null);
 });
 
@@ -52,7 +52,7 @@ test("BFF and auth endpoints are never routed", () => {
   assert.equal(at("/cabinet/api/users"), null, "BFF");
 });
 
-test("other zones and look-alike segments are not the cabinet", () => {
+test("other zones and look-alike segments are not the wallet host", () => {
   assert.equal(at("/en/cabinets"), null, "a sibling route");
   assert.equal(at("/"), null, "the site root");
   assert.equal(at("/zz/cabinet/x"), null, "not a locale");
@@ -70,8 +70,8 @@ test("anything that leaves this origin is refused", () => {
 test("a detail that is not { href: string } is refused", () => {
   assert.equal(at(42), null, "numeric href");
   assert.equal(at(undefined), null, "missing href");
-  assert.equal(cabinetRouteFor({}), null, "no href key");
-  assert.equal(cabinetRouteFor(null), null, "null detail");
-  assert.equal(cabinetRouteFor(undefined), null, "undefined detail");
-  assert.equal(cabinetRouteFor("/en/cabinet"), null, "a bare string");
+  assert.equal(zoneRouteFor({}), null, "no href key");
+  assert.equal(zoneRouteFor(null), null, "null detail");
+  assert.equal(zoneRouteFor(undefined), null, "undefined detail");
+  assert.equal(zoneRouteFor("/en/cabinet"), null, "a bare string");
 });

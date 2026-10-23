@@ -23,7 +23,7 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 // Light DOM, like the account chip: the host's tokens and fonts cascade in, and the
 // element's own utilities arrive as `@layer reamfe`, below every host layer.
 
-// esbuild `define` (mfe/build.mjs): the element's own keys cut from the cabinet catalogues,
+// esbuild `define` (mfe/build.mjs): the element's own keys cut from the wallet host catalogues,
 // already resolved per locale — not `messagesFor()`, which would ship all five catalogues.
 declare const __WALLET_MESSAGES__: Partial<Record<Locale, Messages>>;
 

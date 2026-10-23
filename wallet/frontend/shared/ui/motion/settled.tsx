@@ -18,7 +18,7 @@ export interface SettledProps {
 }
 
 /**
- * The skeleton → content handover. Every data surface in the cabinet swapped its
+ * The skeleton → content handover. Every data surface in the wallet host swapped its
  * skeleton for real content in a single frame, which reads as a flicker: the eye
  * registers that *something* changed without registering *what*. Here the
  * skeleton is replaced and the content fades and rises the last few pixels into

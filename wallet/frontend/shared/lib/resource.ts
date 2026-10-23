@@ -1,6 +1,6 @@
 "use client";
 
-// The cabinet's read cache: one value per endpoint, shared by every screen that reads it.
+// The wallet host's read cache: one value per endpoint, shared by every screen that reads it.
 //
 // Why this exists. Every view owned its own `useEffect(() => fetchX().then(setX))`, so the
 // balance was re-fetched on Home, again on Wallet, again on Deposit, again on Withdraw,
@@ -9,7 +9,7 @@
 // between two screens of the SAME account looked like loading a different account.
 //
 // Why not Next's fetch cache. `fetch(url, { next: { revalidate, tags } })` is a SERVER
-// extension — it only applies to fetches Next itself issues while rendering. This cabinet
+// extension — it only applies to fetches Next itself issues while rendering. This wallet host
 // reads nothing on the server: `/api/*` is a rewrite straight to the Rust BFF
 // (next.config.ts), there are no route handlers, and every read is a browser call from a
 // client component carrying the user's session cookie. So the cache has to live in the
@@ -446,7 +446,7 @@ function watchFocus(): void {
 /** Smallest gap between two checks of the same polling entry — the sweep's own clock. */
 const POLL_TICK_MS = 5_000;
 
-// One timer for every polling entry in the cabinet, not one per entry: `poll` is rare
+// One timer for every polling entry in the wallet host, not one per entry: `poll` is rare
 // (one resource, at the time of writing) and a single low-frequency sweep costs nothing
 // idle, whereas N independent `setInterval`s would each need their own drift-free
 // rescheduling. `nextPollAt` is what makes this a per-entry backoff despite the shared

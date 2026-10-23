@@ -19,9 +19,9 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 // inline widgets — just mounted at a route. (Not Multi-Zones: this is runtime
 // component composition, which also covers inline widgets.)
 //
-// This route sits at the root of the cabinet tree, so it is also what every URL
+// This route sits at the root of the wallet host tree, so it is also what every URL
 // under `/{locale}/cabinet/` that matches nothing else falls into — a typo, a
-// stale bookmark, a scanner. That makes its miss branch the cabinet's real 404,
+// stale bookmark, a scanner. That makes its miss branch the wallet host's real 404,
 // not a developer aside: it used to render a soft-200 "Unknown microfrontend —
 // add it to mfe-registry.json" panel, which the conductor proxies straight onto
 // the public origin. `notFound()` instead, so the reader gets the branded 404 in

@@ -2,7 +2,7 @@ import { DEFAULT_LOCALE, isLocale, type Locale } from "@evinvest/i18n";
 
 // Browser-side access to the `ev_locale` cookie — the one cookie this zone mints
 // rather than reads (shared/config/cookies.ts), and the carrier that lets the
-// public site hand a reader's chosen language to the cabinet.
+// public site hand a reader's chosen language to the wallet host.
 //
 // Two callers need it from the browser and neither can use the server-side
 // COOKIES map:
@@ -62,7 +62,7 @@ function writeCookie(name: string, value: string): void {
  *
  * `<html lang>` is set from the URL by both apps' root layouts, so on a
  * conductor page it is the language the reader is actually reading and on a
- * cabinet page it is the `[locale]` segment. That makes it the right source for
+ * zone page it is the `[locale]` segment. That makes it the right source for
  * the account chip, which renders on one host and links into the other: the
  * cookie is a remembered preference and can be stale, the rendered document
  * cannot be.

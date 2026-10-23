@@ -6,7 +6,7 @@
 // The COPY is not here. Each entry's heading and explanation live in `./copy.ts` as
 // `t("tips.<key>.title", …)` / `t("tips.<key>.body", …)`, and <TipAnchor> resolves them
 // with `useT()` — a tip is prose a reader reads, so it has to be translatable like every
-// other sentence in the cabinet. What stays in this file is exactly what the copy is
+// other sentence in the wallet host. What stays in this file is exactly what the copy is
 // not: `type` picks the primitive and `roles` gates the render, and both are decided at
 // compile time. English text is edited in `./copy.ts`; `copy.ts` is typed by `TipKey`,
 // so a tip added here without its words fails `tsc`.

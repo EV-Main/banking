@@ -2,10 +2,10 @@
 
 // Ties this browser's PostHog person to the signed-in account, once per session.
 //
-// This is the cabinet's ONE deliberate exception to the hard rule that observability goes
+// This is the wallet host's ONE deliberate exception to the hard rule that observability goes
 // through `@evinvest/analytics` and never a vendor SDK by hand: the shared seam is
 // `capture(event, props)` only, and `identify` has no place in it yet. The vendor call is
-// confined to this module — nothing else in the cabinet imports `posthog-js` — until
+// confined to this module — nothing else in the wallet host imports `posthog-js` — until
 // `@evinvest/analytics` grows `identify()`, at which point this file becomes a call to it.
 //
 // The ordering is the whole difficulty. The provider boots posthog-js lazily: it imports
@@ -105,7 +105,7 @@ export function createIdentifier(options: IdentifierOptions): Identifier {
   };
 }
 
-/** The cabinet's identifier, wired to the same `posthog-js` the provider boots. */
+/** The wallet host's identifier, wired to the same `posthog-js` the provider boots. */
 export const identity: Identifier = createIdentifier({
   enabled: () => typeof window !== "undefined" && Boolean(config.public.posthogKey),
   load: () => import("posthog-js").then((mod) => mod.default),

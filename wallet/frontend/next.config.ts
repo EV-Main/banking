@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
   // Self-contained production server (.next/standalone) — the container runs
   // `node server.js` without an `npm install` (mirrors the conductor's setup).
   output: "standalone",
-  // Multi-zone mount: the cabinet lives under the conductor's domain at
+  // Multi-zone mount: the wallet host lives under the conductor's domain at
   // /cabinet. basePath prefixes every page AND /_next asset with it, so nothing
   // collides with the conductor's own routes/assets; the conductor rewrites
   // /cabinet/* to this deployment. The rewrite source below is basePath-aware
@@ -40,7 +40,7 @@ const nextConfig: NextConfig = {
   // `/ru/cabinet/wallet` would come out as `/cabinet/ru/cabinet/wallet`. Trading
   // it for `assetPrefix` keeps `/_next/*` isolated under /cabinet (so the
   // conductor's beforeFiles rewrite is untouched) while letting the route tree
-  // own the whole public path. Measured both ways in docs/i18n-cabinet-routing-spike.md.
+  // own the whole public path. Measured both ways in docs/i18n-wallet-routing-spike.md.
   experimental: {
     // No `rootParams` flag: since Next 16.4 `next/root-params` is on by default and
     // the option is gone from the config type. `currentLocale()` still depends on
@@ -62,7 +62,7 @@ const nextConfig: NextConfig = {
     // drops the header before its zone proxy forwards the request (site_conductor#229),
     // so a second validation here expects a different hash — each side 307s to the
     // other's value until the browser gives up and reloads the document (banking#491).
-    // The check guards CDN caches that ignore `Vary`; every cabinet page is private,
+    // The check guards CDN caches that ignore `Vary`; every zone page is private,
     // no-store and never cached, so nothing is lost by leaving it to the conductor.
     validateRSCRequestHeaders: false,
   },

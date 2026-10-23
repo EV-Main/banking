@@ -1,6 +1,6 @@
 // A React hook under Node's built-in test runner, with no DOM library.
 //
-// The cabinet's tests run on `node --test`, and a hook needs a renderer for its effects to
+// The wallet host's tests run on `node --test`, and a hook needs a renderer for its effects to
 // run. The real `react-dom/client` is enough when the probe component renders nothing: the
 // root container is only asked for a few properties, which the stand-in below provides.
 // What a hook does to the page it does through the host element and globals the test hands

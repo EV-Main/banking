@@ -7,7 +7,7 @@
 /**
  * The token-addressed approval pages specifically.
  *
- * These get `Referrer-Policy: no-referrer` on top of the cabinet's default
+ * These get `Referrer-Policy: no-referrer` on top of the wallet host's default
  * `strict-origin-when-cross-origin`, which would still send the origin — and, to a
  * same-origin destination, the whole URL — onward. The URL *is* the credential here, so
  * every leak channel it can be pushed down (browser history is unavoidable; `Referer`,

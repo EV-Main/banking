@@ -1,6 +1,6 @@
 "use client";
 
-// The one composition primitive the cabinet host knows. It loads a microfrontend's
+// The one composition primitive the wallet host host knows. It loads a microfrontend's
 // self-registering ESM bundle by URL, waits for its custom element to upgrade,
 // then mounts <tag> inside a host node — mapping props to attributes and
 // CustomEvents back to callbacks. Identical for React and Rust/WASM microfrontends.

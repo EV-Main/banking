@@ -141,7 +141,7 @@ function offerToHost(e: MouseEvent<HTMLDivElement>) {
 }
 
 /**
- * Name and email, as an explicit way in: "Cabinet" (or "Profile" inside the cabinet) and a
+ * Name and email, as an explicit way in: "Cabinet" (or "Profile" inside the wallet host) and a
  * chevron on the right, so it reads as a row you can press and not as a caption. With no
  * destination it is plain text — no label, no chevron, nothing that promises a link.
  */

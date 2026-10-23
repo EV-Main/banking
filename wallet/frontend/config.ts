@@ -47,7 +47,7 @@ function getSettings() {
       // build-time literal in flake.nix, not a pod secret — see `cabinetApp.env` there.
       NEXT_PUBLIC_POSTHOG_KEY: opt(str()),
       NEXT_PUBLIC_POSTHOG_HOST: opt(str()),
-      // Unset ⇒ browser error monitoring is a silent no-op: the cabinet's
+      // Unset ⇒ browser error monitoring is a silent no-op: the wallet host's
       // client-side crashes reach nobody. Acceptable locally, not in a deploy.
       NEXT_PUBLIC_SENTRY_DSN: requiredIn(opt(str()), "production"),
       // The Service-Arb panel Home links to. Unset ⇒ no card: a link to nowhere is worse
@@ -58,7 +58,7 @@ function getSettings() {
       // build-time literal in flake.nix.
       NEXT_PUBLIC_PLATFORM_URL: opt(url()),
       // The invest cabinet, zone prefix included: the investor pages moved there, and the
-      // proxy sends their old addresses in this cabinet to it. Public; a build-time literal in
+      // proxy sends their old addresses in this wallet host to it. Public; a build-time literal in
       // flake.nix, with the prod value as the default so no build loses the redirect.
       NEXT_PUBLIC_INVEST_CABINET_URL: withDefault(url(), "https://invest.evinvest.ltd/cabinet"),
       // Cloudflare Turnstile site key for the sign-in dialog; locally Cloudflare's
@@ -74,7 +74,7 @@ function getSettings() {
     // runs with NODE_ENV=production, but a NEXT_PUBLIC_* value is inlined from the
     // BUILD environment while the deploy only supplies the DSN to the running pod — so
     // a production-required client key can never be satisfied here, and instead fails
-    // page-data collection (the whole cabinet image stops building). Same build-phase
+    // page-data collection (the whole wallet host image stops building). Same build-phase
     // carve-out `assertConfig()` already makes; the boot assert is what enforces this.
     profile: process.env.NEXT_PHASE === "phase-production-build" ? "build" : process.env.NODE_ENV,
     runtimeEnv: {

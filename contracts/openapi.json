@@ -12704,7 +12704,7 @@
           "seat": {
             "type": "string",
             "title": "seat",
-            "description": "The seat that decides the order: `consilium`, `consent` (the emailed token),\n `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in\n the cabinet). Empty only for a row written before seats were recorded."
+            "description": "The seat that decides the order: `consilium`, `consent` (the emailed token),\n `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in\n the wallet host). Empty only for a row written before seats were recorded."
           },
           "approval_id": {
             "type": "string",
@@ -14792,7 +14792,7 @@
           "kyc_level": {
             "type": "integer",
             "title": "kyc_level",
-            "description": "Kept wire-identical with concierge.v1.UserProfile (the cabinet TS is aliased to the\n concierge shape). The identity plane OWNS kyc/role; the money plane mirrors them for\n gating but does not re-serve them on its self-service GetMe, so these stay default\n here — the fields exist for cross-plane wire parity.\n\n The tier ladder, written down here because the money plane is what ENFORCES it and\n no authoritative range was stated in either plane before this:\n   0 — registered. Sign-up plus a confirmed email address; nothing else is verified.\n       No deposit address is issued and no withdrawal is accepted.\n   1 — verified. Identity document, liveness, a face match against the document, and\n       a passed sanctions/PEP screen. Deposits and withdrawals are permitted.\n   2 — enhanced. Everything in 1 plus proof of address and source of funds. Carries\n       raised transaction limits (the limits themselves are not modelled yet).\n   3 — elevated. Enhanced due diligence; set only by a human reviewer, never\n       automatically.\n Banking gates BOTH directions of money movement on \u003e= 1. The value is set by an\n admin in the identity plane and mirrored onto the money plane by the one-way\n lifecycle bridge; banking never authors it."
+            "description": "Kept wire-identical with concierge.v1.UserProfile (the wallet TS is aliased to the\n concierge shape). The identity plane OWNS kyc/role; the money plane mirrors them for\n gating but does not re-serve them on its self-service GetMe, so these stay default\n here — the fields exist for cross-plane wire parity.\n\n The tier ladder, written down here because the money plane is what ENFORCES it and\n no authoritative range was stated in either plane before this:\n   0 — registered. Sign-up plus a confirmed email address; nothing else is verified.\n       No deposit address is issued and no withdrawal is accepted.\n   1 — verified. Identity document, liveness, a face match against the document, and\n       a passed sanctions/PEP screen. Deposits and withdrawals are permitted.\n   2 — enhanced. Everything in 1 plus proof of address and source of funds. Carries\n       raised transaction limits (the limits themselves are not modelled yet).\n   3 — elevated. Enhanced due diligence; set only by a human reviewer, never\n       automatically.\n Banking gates BOTH directions of money movement on \u003e= 1. The value is set by an\n admin in the identity plane and mirrored onto the money plane by the one-way\n lifecycle bridge; banking never authors it."
           },
           "role": {
             "type": "string",
@@ -14853,7 +14853,7 @@
           "role": {
             "type": "string",
             "title": "role",
-            "description": "Kept wire-identical with concierge.v1.UserSummary (the cabinet TS is aliased to the\n concierge shape). The money plane doesn't serve the role here — the cabinet reads it\n from concierge's login summary — so this stays empty; the field exists for parity."
+            "description": "Kept wire-identical with concierge.v1.UserSummary (the wallet TS is aliased to the\n concierge shape). The money plane doesn't serve the role here — the wallet host reads it\n from concierge's login summary — so this stays empty; the field exists for parity."
           },
           "role_is_break_glass": {
             "type": "boolean",
@@ -17817,7 +17817,7 @@
     },
     {
       "name": "banking.v1.AuthService",
-      "description": "AuthService — the money plane's token issuance and authorization surface.\n\n This is the MONEY plane: it does NOT do third-party (Google) OAuth — identity and\n sign-in live wholly in the concierge plane. Users are mirrored here by the one-way\n cross-plane bridge (concierge `CREATED` → a local row keyed by `auth_subject`).\n This service only issues/rotates the hub's OWN first-party asymmetric JWTs\n (EdDSA/Ed25519, `aud=banking-core`) for those already-identified users, and\n publishes verification keys. Services do NOT call this per request to authorize:\n they verify access tokens locally against the cached JWKS via the shared\n `evbanking_auth` flow (no round trip, no per-service token storage). They DO call\n `Jwks` periodically to refresh that cache, since the hub speaks only gRPC (no HTTP\n `.well-known` endpoint).\n\n `IssueUserToken` is the concierge→banking token-exchange seam: after the cabinet\n BFF authenticates a user against concierge, it calls this server-to-server (with the\n shared bridge issuance token, NOT a user token) to mint the money-plane pair for that\n user. Banking trusts its OWN service credential, never concierge's issuer — so a\n leaked concierge token can't move money. See docs/ARCHITECTURE.md."
+      "description": "AuthService — the money plane's token issuance and authorization surface.\n\n This is the MONEY plane: it does NOT do third-party (Google) OAuth — identity and\n sign-in live wholly in the concierge plane. Users are mirrored here by the one-way\n cross-plane bridge (concierge `CREATED` → a local row keyed by `auth_subject`).\n This service only issues/rotates the hub's OWN first-party asymmetric JWTs\n (EdDSA/Ed25519, `aud=banking-core`) for those already-identified users, and\n publishes verification keys. Services do NOT call this per request to authorize:\n they verify access tokens locally against the cached JWKS via the shared\n `evbanking_auth` flow (no round trip, no per-service token storage). They DO call\n `Jwks` periodically to refresh that cache, since the hub speaks only gRPC (no HTTP\n `.well-known` endpoint).\n\n `IssueUserToken` is the concierge→banking token-exchange seam: after the wallet host\n BFF authenticates a user against concierge, it calls this server-to-server (with the\n shared bridge issuance token, NOT a user token) to mint the money-plane pair for that\n user. Banking trusts its OWN service credential, never concierge's issuer — so a\n leaked concierge token can't move money. See docs/ARCHITECTURE.md."
     },
     {
       "name": "banking.v1.FundsService",
@@ -17845,7 +17845,7 @@
     },
     {
       "name": "banking.v1.HealthService",
-      "description": "Health surface for the hub's gRPC service plane.\n\n   Check     — liveness: is the process up? Trivial, unauthenticated; backs the\n               `cabinet` BFF smoke path (browser -\u003e BFF -\u003e gRPC) and service checks.\n   Readiness — can this instance actually move money? Pings Postgres + TigerBeetle\n               and inspects the outbox (parked rows / dispatch backlog). An\n               orchestrator/LB drains an instance that is up but not ready instead of\n               routing money-moving traffic to it."
+      "description": "Health surface for the hub's gRPC service plane.\n\n   Check     — liveness: is the process up? Trivial, unauthenticated; backs the\n               wallet BFF smoke path (browser -\u003e BFF -\u003e gRPC) and service checks.\n   Readiness — can this instance actually move money? Pings Postgres + TigerBeetle\n               and inspects the outbox (parked rows / dispatch backlog). An\n               orchestrator/LB drains an instance that is up but not ready instead of\n               routing money-moving traffic to it."
     },
     {
       "name": "banking.v1.WalletService",
@@ -17873,11 +17873,11 @@
     },
     {
       "name": "banking.v1.PaymentConfirmationService",
-      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and\n code: the session is the credential, and the cabinet's gate asks for a fresh login before\n an approval (a decline asks for none)."
+      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and\n code: the session is the credential, and the wallet host's gate asks for a fresh login before\n an approval (a decline asks for none)."
     },
     {
       "name": "banking.v1.PayoutReviewService",
-      "description": "PayoutReviewService — the lines of a `bank:scope_payout` operation, for the people who\n are asked to approve it (banking#529, SCOPE-LEDGER checklist item 9).\n\n The approval concierge shows carries only totals, the largest single line and two flags;\n the approvers could not see WHO is paid HOW MUCH. This is the read behind the page that\n shows them. It reads the operation banking STORED when the payout was requested — the same\n rows the approval's `lines_digest` was taken over and the executor pays from — never\n anything a caller sends.\n\n Read-only: it moves no money and writes nothing. Who may read is decided at the cabinet's\n BFF, which has the caller's concierge session: only a voter on the approval's frozen roster\n gets a page. This service refuses what it can check itself — an unknown operation, one that\n is not a payout, one whose approval is not opened, and a caller-supplied `approval_id` that\n is not the operation's own — all with one identical NOT_FOUND, so a probe learns nothing\n about which ids exist. Amounts are canonical decimal USDT strings."
+      "description": "PayoutReviewService — the lines of a `bank:scope_payout` operation, for the people who\n are asked to approve it (banking#529, SCOPE-LEDGER checklist item 9).\n\n The approval concierge shows carries only totals, the largest single line and two flags;\n the approvers could not see WHO is paid HOW MUCH. This is the read behind the page that\n shows them. It reads the operation banking STORED when the payout was requested — the same\n rows the approval's `lines_digest` was taken over and the executor pays from — never\n anything a caller sends.\n\n Read-only: it moves no money and writes nothing. Who may read is decided at the wallet host's\n BFF, which has the caller's concierge session: only a voter on the approval's frozen roster\n gets a page. This service refuses what it can check itself — an unknown operation, one that\n is not a payout, one whose approval is not opened, and a caller-supplied `approval_id` that\n is not the operation's own — all with one identical NOT_FOUND, so a probe learns nothing\n about which ids exist. Amounts are canonical decimal USDT strings."
     },
     {
       "name": "banking.v1.UsersService",

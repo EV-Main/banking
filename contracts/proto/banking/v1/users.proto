@@ -65,7 +65,7 @@ message UserProfile {
   string language = 13;
   string base_currency = 14;
   string timezone = 15;
-  // Kept wire-identical with concierge.v1.UserProfile (the cabinet TS is aliased to the
+  // Kept wire-identical with concierge.v1.UserProfile (the wallet TS is aliased to the
   // concierge shape). The identity plane OWNS kyc/role; the money plane mirrors them for
   // gating but does not re-serve them on its self-service GetMe, so these stay default
   // here — the fields exist for cross-plane wire parity.

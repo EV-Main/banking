@@ -1,6 +1,6 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The cabinet half of a two-sided contract: concierge's `runner/tests/kyc.rs` pins the exact
+// The wallet host half of a two-sided contract: concierge's `runner/tests/kyc.rs` pins the exact
 // JSON documents these functions are given here. A rename on either side turns one of these
 // red instead of turning into "please try again" in front of a healthy provider (#193).
 import assert from "node:assert/strict";
@@ -47,7 +47,7 @@ test("a case missing a field is drift, and takes the whole document down", () =>
 });
 
 test("an unrecognised running status still counts as a running case", () => {
-  // The status column is a persistent dictionary that can grow a value before this cabinet
+  // The status column is a persistent dictionary that can grow a value before this wallet host
   // ships again; refusing the word would re-open the second-paid-case hole (#190).
   const parsed = parseStatus({ level: 0, case: { status: "on_hold", requested_tier: 1, created_at: 1789459200, resumable: true } });
   assert.equal(parsed?.case?.status, "on_hold");
@@ -89,7 +89,7 @@ test("a `case` that is present but not an object is drift, not 'nothing running'
 });
 
 test("a contact that is not an address is dropped", () => {
-  // It is the one field of these bodies the cabinet puts back into a URL (`mailto:`), so
+  // It is the one field of these bodies the wallet host puts back into a URL (`mailto:`), so
   // query syntax in it would turn "write to support" into a letter addressed elsewhere.
   for (const contact of ["kyc@evinvest.ltd?cc=attacker@evil.example", "kyc@evinvest.ltd&body=x", "https://evil.example", "plain text", "a@b"]) {
     assert.deepEqual(parseErrorBody({ error: "kyc_unavailable", contact }), { error: "kyc_unavailable", contact: null }, contact);

@@ -1,6 +1,6 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The contract these cases lock down is what kept the cabinet showing
+// The contract these cases lock down is what kept the wallet host showing
 // `unauthenticated` after an idle spell: the short-TTL access cookie is only re-set by a
 // round-trip to the shell session endpoint, so the refresh has to coalesce (one request
 // per page, not one per consumer), has to happen again once the session goes stale, and

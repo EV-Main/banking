@@ -1,7 +1,7 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
 // `wordFor` is what stands between a value the hub sends and a blank cell: every word table
-// in the cabinet is looked up through it, so the three ways a lookup can miss are pinned here.
+// in the wallet host is looked up through it, so the three ways a lookup can miss are pinned here.
 import assert from "node:assert/strict";
 import test from "node:test";
 

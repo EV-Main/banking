@@ -38,7 +38,7 @@ export type MenuIdentity = { label: string; email: string | null; initials: stri
 export type MenuLinks = {
   /**
    * The name/email row of the panel and what it is labelled: `cabinet` from outside the
-   * cabinet (and on hosts), `profile` inside it. Null renders the row as plain text.
+   * wallet host zone (and on hosts), `profile` inside it. Null renders the row as plain text.
    */
   profile: { href: string; kind: "cabinet" | "profile" } | null;
   manage: string | null;

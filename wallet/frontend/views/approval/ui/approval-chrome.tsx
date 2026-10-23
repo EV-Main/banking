@@ -2,7 +2,7 @@
 
 // The framing and the shared states of the two token-approval pages.
 //
-// These pages are unlike everything else in the cabinet: no session, no rail, no shell, and
+// These pages are unlike everything else in the wallet host: no session, no rail, no shell, and
 // for most readers exactly one visit. That makes the non-happy states the majority of the
 // design surface rather than an afterthought — a link that has expired, been used, or been
 // closed is a page someone will genuinely land on, having done nothing wrong, with no
@@ -38,7 +38,7 @@ import { cn } from "@/shared/lib/cn";
 /**
  * The page frame: centered column, brand mark, and nothing else.
  *
- * `--ev-shell-offset` is the one contract the cabinet has with the conductor's header, and
+ * `--ev-shell-offset` is the one contract the wallet host has with the conductor's header, and
  * it is honoured here as everywhere else — these pages are chromeless, not context-free.
  *
  * A `<main>` because nothing else on these routes provides one: the `(public)` layout is

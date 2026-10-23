@@ -85,7 +85,7 @@ export interface RevealProps extends Omit<HTMLMotionProps<"div">, "ref" | "child
  * {@link RISE}px, once, on mount.
  *
  * Unlike the landing's equivalent this does **not** trigger on scroll. The
- * cabinet's surfaces are short and dense; a reveal that waits for the viewport
+ * wallet host's surfaces are short and dense; a reveal that waits for the viewport
  * would leave a signed-in user looking at blank cards.
  */
 export function Reveal({ delay = 0, as = "div", children, onAnimationComplete, ...props }: RevealProps) {

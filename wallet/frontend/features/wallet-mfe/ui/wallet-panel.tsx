@@ -4,7 +4,7 @@ import { useId } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle, ResourceError, Skeleton } from "@evinvest/uikit";
 
-import { cabinetPath } from "@/shared/config/base-path";
+import { zonePagePath } from "@/shared/config/base-path";
 import { formatUsdt } from "@/shared/lib/money";
 
 import type { WalletAction } from "../lib/wallet-action";
@@ -59,7 +59,7 @@ export function WalletPanel({ origin, scope, onAction }: WalletPanelProps) {
               {t("walletMfe.history", "Recent activity")}
             </h3>
             {ready.history ? (
-              <HistoryList history={ready.history} allHref={new URL(cabinetPath(locale, "/wallet/activity"), origin).href} />
+              <HistoryList history={ready.history} allHref={new URL(zonePagePath(locale, "/wallet/activity"), origin).href} />
             ) : (
               <ResourceError message={t("walletMfe.historyUnavailable", "Your activity could not be loaded.")} onRetry={reload} />
             )}

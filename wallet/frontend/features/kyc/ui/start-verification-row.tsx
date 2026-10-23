@@ -56,7 +56,7 @@ export function StartVerificationRow() {
         <Hairline />
         <div className="flex min-w-0 items-center justify-between gap-3 py-3.5">
           <RowLabel title={t("profile.kyc.verifyEmailTitle", "Verify your email first")} sub={t("profile.kyc.verifyEmailSub", "Identity checks open once your address is confirmed")} />
-          {/* Concierge owns the account, so this leaves the cabinet: a plain anchor, no locale or base path. */}
+          {/* Concierge owns the account, so this leaves the wallet host: a plain anchor, no locale or base path. */}
           <a href={platformAccountHref(config.public.platformUrl, "security")} className="shrink-0 text-sm font-semibold text-primary-ink">
             {t("auth.email.verify", "Verify")}
           </a>

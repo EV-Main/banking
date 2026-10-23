@@ -5,10 +5,10 @@ import { isLocale, type Locale } from "@evinvest/i18n";
  * The reader's locale, from the URL.
  *
  * It used to come from a cookie the proxy minted, on the reasoning that the
- * cabinet sits behind auth and a prefix would buy nothing. That is true of SEO
- * and false of the reader: the cabinet is mounted inside the conductor's shell at
+ * wallet host sits behind auth and a prefix would buy nothing. That is true of SEO
+ * and false of the reader: the wallet host is mounted inside the conductor's shell at
  * `/{locale}/cabinet/…`, and someone reading evinvest.ltd in Russian who clicks
- * through to their cabinet should not have the language silently decided by a
+ * through to their wallet should not have the language silently decided by a
  * cookie that may say something else. One URL shape across both, one answer to
  * "what language is this page".
  *

@@ -3,7 +3,7 @@
 // Turning an arbitrary element or component into a motion one, without adding a
 // wrapper around it.
 //
-// Why this exists. The cabinet's sections are grid and flex items that carry
+// Why this exists. The wallet host's sections are grid and flex items that carry
 // their own placement — `xl:col-start-1`, `lg:order-3`, `flex-1`. Wrapping such
 // a section in a `<motion.div>` moves the section one level away from the track
 // it was placed on: the wrapper becomes the item, the placement classes stay on

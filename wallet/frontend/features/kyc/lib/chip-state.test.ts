@@ -9,7 +9,7 @@ test("tier 0 with nothing running has not started", () => {
 });
 
 test("a running case is in review, whatever word the plane uses for it", () => {
-  for (const status of ["pending", "in_progress", "in_review", "a_status_shipped_after_this_cabinet"]) {
+  for (const status of ["pending", "in_progress", "in_review", "a_status_shipped_after_this_release"]) {
     assert.equal(kycChipState({ level: 0, runningCase: { status }, settled: true })?.state, "review", status);
   }
   assert.equal(kycChipState({ level: 0, runningCase: { status: "in_review" }, settled: true })?.tone, "pending");

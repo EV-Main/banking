@@ -15,7 +15,7 @@
  * BOTH reads have failed, and a chip that took that for tier 0 would call a verified reader
  * "Not verified" over a network blip.
  *
- * Pure, so `node --test` can run it: the cabinet has no component tests.
+ * Pure, so `node --test` can run it: the wallet host has no component tests.
  */
 export type KycChipState = "notStarted" | "review" | "verified" | "attention";
 

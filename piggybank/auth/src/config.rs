@@ -53,7 +53,7 @@ pub struct AuthConfig {
 	pub scope_token_ttl_secs: u64,
 	/// Signing/verification key material. `None` ⇒ auth disabled (dev/CI).
 	pub signing: Option<SigningConfig>,
-	/// Shared bearer the cabinet BFF presents on `IssueUserToken` (the concierge→banking
+	/// Shared bearer the wallet BFF presents on `IssueUserToken` (the concierge→banking
 	/// token-exchange seam). `None` ⇒ issuance is not configured and every call fails
 	/// closed. Must match `BANKING_ISSUANCE_TOKEN` on the BFF side.
 	pub issuance_token: Option<IssuanceToken>,

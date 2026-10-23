@@ -115,7 +115,7 @@ export function requirementFor(current: FeeTermsLike | null, next: FeeTermsLike)
 }
 
 // ── words ─────────────────────────────────────────────────────────────────────
-// One wire value has one name across the cabinet: the admin console, the product page and
+// One wire value has one name across the wallet host: the admin console, the product page and
 // the owners' room all point at the same catalogue entries.
 
 const basisWords = (t: Translate): Readonly<Record<string, string>> => ({

@@ -1,7 +1,7 @@
 // The reader's time zone as a cookie value — the one part of the zone handshake both the
 // server and the browser need, so it is import-free and runs in either.
 //
-// Why a cookie at all: the cabinet shows times in the device's own zone, and a server
+// Why a cookie at all: the wallet host shows times in the device's own zone, and a server
 // render has no device. Without the zone, a server-rendered timeline groups and labels its
 // rows in the server's zone (UTC in the container) and the browser hydrates them in the
 // reader's — different text, a hydration error, and rows moving between day headings. The

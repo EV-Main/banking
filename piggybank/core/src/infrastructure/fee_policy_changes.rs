@@ -68,7 +68,7 @@ pub fn product_page_path(service: &ServiceId) -> String {
 }
 
 /// The scope whose cabinet serves [`product_page_path`]: the invest cabinet serves
-/// `/invest/<service>` for every product, and the platform cabinet no longer does (banking#584).
+/// `/invest/<service>` for every product, and the platform wallet host no longer does (banking#584).
 /// The mail names it rather than the queue row, so a notice queued before the scope existed
 /// links there too.
 pub const PRODUCT_PAGE_SCOPE: &str = "invest";
@@ -352,7 +352,7 @@ async fn notice_roster(conn: &mut PgConnection, service: &ServiceId) -> Result<V
 /// A holder with no mirrored identity-plane id is still queued, with an empty
 /// `subject_user_id`, rather than this path silently skipping someone the notice period
 /// exists to protect. The worker names the addressee from the mirror at SEND time, so a
-/// holder mirrored after the scheduling (a first cabinet login) is still reached; one still
+/// holder mirrored after the scheduling (a first platform sign-in) is still reached; one still
 /// unmirrored when the worker gets to the row is retired loudly ("recipient has no mirrored
 /// concierge user id"). The id written here is what the row shows until then.
 async fn enqueue_notices(conn: &mut PgConnection, change: &FeePolicyChange, from: Option<&FeePolicy>, holders: &[Holder]) -> Result<(), DomainError> {

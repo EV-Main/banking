@@ -1,4 +1,4 @@
-// Public API of the panel half of the cabinet's motion. Import from
+// Public API of the panel half of the wallet host's motion. Import from
 // `@/shared/ui/motion-panel`.
 //
 // Why this is not in `@/shared/ui/motion` with the other primitives. `Panel`

@@ -1,9 +1,9 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The cabinet paints the uikit's palette, never a private copy of it. Two things undid
+// The wallet host paints the uikit's palette, never a private copy of it. Two things undid
 // that once and neither announced itself: markup written against a token vocabulary the
 // kit had already retired (kept alive by a local alias sheet, PR #290), and kit tokens
-// re-pointed in the cabinet's own CSS so half the screens drifted from the design system.
+// re-pointed in the wallet host's own CSS so half the screens drifted from the design system.
 // These tests fail the build on either, so a fix has to land upstream in EV-invest/lib's
 // `tokens.css` — or sit in the marked block below, which forces its own deletion.
 import assert from "node:assert/strict";
@@ -43,17 +43,17 @@ const LEGACY_NAMES: Record<string, string> = {
 };
 
 // A temporary token fix mirrored from lib ahead of the npm bump lives between these two
-// comments in a cabinet stylesheet (`application/styles/globals.css`). Nothing else may
+// comments in a wallet host stylesheet (`application/styles/globals.css`). Nothing else may
 // redeclare a kit token.
 const BLOCK_BEGIN = "/* BEGIN temporary token override */";
 const BLOCK_END = "/* END temporary token override */";
 
-// Theme choices the cabinet makes on purpose, in the kit's own contract (a consumer
+// Theme choices the wallet host makes on purpose, in the kit's own contract (a consumer
 // re-themes by writing token values). Each needs a reason here, not just a name.
 const THEME_CHOICES: Record<string, string> = {
   // Single-typeface surface: the kit's display serif is retired so uikit's own `font-serif`
   // classes (NotFound / Forbidden / ServerError) fall back to Inter too.
-  "--font-serif": "the cabinet is Inter-only; see globals.css",
+  "--font-serif": "the wallet host is Inter-only; see globals.css",
 };
 
 const SKIP_DIRS = new Set(["node_modules", ".next", ".turbo", "public", "dist"]);
@@ -136,7 +136,7 @@ test("the kit's sheet is the one this test knows how to read", () => {
   }
 });
 
-test("no cabinet stylesheet redeclares a kit token outside the marked block", () => {
+test("no wallet host stylesheet redeclares a kit token outside the marked block", () => {
   const strays: string[] = [];
   for (const file of sources(FRONTEND_ROOT, [".css"])) {
     for (const { name, line, inBlock } of declarations(readFileSync(file, "utf8"))) {
@@ -147,7 +147,7 @@ test("no cabinet stylesheet redeclares a kit token outside the marked block", ()
   assert.deepEqual(
     strays,
     [],
-    `kit tokens redeclared in the cabinet — fix them in EV-invest/lib tokens.css, or mirror the fix between\n${BLOCK_BEGIN} … ${BLOCK_END}:\n${strays.join("\n")}`,
+    `kit tokens redeclared in the wallet host — fix them in EV-invest/lib tokens.css, or mirror the fix between\n${BLOCK_BEGIN} … ${BLOCK_END}:\n${strays.join("\n")}`,
   );
 });
 

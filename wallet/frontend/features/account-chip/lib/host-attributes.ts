@@ -1,6 +1,6 @@
 // What a host page tells the chip in host mode (`data-mode="host"`), read off the custom
 // element's attributes. Host mode exists for apps on another origin with their own session
-// (the Service-Arb panel): the chip cannot ask the cabinet who is signed in there, so the
+// (the Service-Arb panel): the chip cannot ask the wallet host who is signed in there, so the
 // host says it, and the chip fetches nothing.
 //
 // Every attribute is outside input — a host on another release, a typo, a stale template —

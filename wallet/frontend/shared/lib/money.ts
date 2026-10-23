@@ -1,4 +1,4 @@
-// The cabinet's one money module. Amounts cross the wire as exact decimal strings (the
+// The wallet host's one money module. Amounts cross the wire as exact decimal strings (the
 // authoritative value is the string); everything here is display-only — never feed a
 // parsed number back into a money operation. The exact-math helpers at the bottom are the
 // only place a money value is ever computed, and they work on bigint base units.
@@ -111,7 +111,7 @@ export function formatNav(value: string | number | undefined, locale: Locale = D
  *
  * No float anywhere: the integer part is grouped through `BigInt`, which has no precision
  * ceiling, and the fraction is passed through untouched apart from being padded to the two
- * decimals every money figure in this cabinet shows. The locale only chooses the separators
+ * decimals every money figure in this wallet host shows. The locale only chooses the separators
  * — the digits themselves never pass through anything that could round them.
  */
 export function formatExactUsdt(value: string | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {

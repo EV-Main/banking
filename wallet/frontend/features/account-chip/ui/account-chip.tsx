@@ -13,7 +13,7 @@ import {
   writeIdentity,
   type CachedIdentity,
 } from "@/entities/user/model/identity-cache";
-import { cabinetPath, isCabinetPage } from "@/shared/config/base-path";
+import { zonePagePath, isZonePage } from "@/shared/config/base-path";
 import { platformAccountHref } from "@/shared/config/platform";
 import { cn } from "@/shared/lib/cn";
 import { csrfHeader } from "@/shared/lib/csrf-client";
@@ -40,7 +40,7 @@ const PLATFORM_URL = process.env.NEXT_PUBLIC_PLATFORM_URL;
 /** Keeps the label from pushing the host's central nav off-centre. */
 const MAX_LABEL = 28;
 
-// The account chip in cabinet mode — on the public site and in the cabinet zone, where the
+// The account chip in cabinet mode — on the public site and in the wallet host zone, where the
 // cabinet's own session cookie is readable. It owns the session, the profile read and the
 // logout; `AccountMenu` only draws. States:
 //   • no cache, session loading            → AccountMenu skeleton (final box, w-24 bar)
@@ -50,8 +50,8 @@ const MAX_LABEL = 28;
 //   • signed in                             → live chip; profile name refines the label
 //   • signed out                            → the Cabinet CTA
 //
-// Framework-agnostic: no next/link or next/navigation (no cabinet router on the conductor
-// origin). Destinations are hard <a href>s built with cabinetPath() for the document's own
+// Framework-agnostic: no next/link or next/navigation (no wallet host router on the conductor
+// origin). Destinations are hard <a href>s built with zonePagePath() for the document's own
 // locale, so the reader lands in the language they were reading. It NEVER redirects on a
 // dropped session: an anonymous visitor on the public site must not be bounced to login.
 export type AccountChipProps = {
@@ -76,8 +76,8 @@ export function AccountChip({ className, intent, returnTo }: AccountChipProps) {
   if (session === null || session === SESSION_UNAVAILABLE) {
     // Unconfirmed: paint the last visit's name rather than a skeleton or the CTA, but not
     // its email and not its menu — that cache may be someone else's.
-    if (cached) return <CabinetMenu className={className} identity={{ ...menuIdentity(cached), email: null }} locked />;
-    if (session === null) return <CabinetMenu className={className} identity={null} />;
+    if (cached) return <WalletMenu className={className} identity={{ ...menuIdentity(cached), email: null }} locked />;
+    if (session === null) return <WalletMenu className={className} identity={null} />;
   }
   if (!session?.authenticated) return <SignInCta className={className} intent={intent} returnTo={returnTo} />;
   const email = session.user?.email ?? null;
@@ -111,11 +111,11 @@ function AuthedChip({ className, email, seed }: { className?: string; email: str
   // is in flight — it would visibly correct itself a beat later.
   const identity =
     name !== undefined ? labelled(email, name) : seed ? menuIdentity(seed) : isLoading ? null : labelled(email, null);
-  return <CabinetMenu className={className} identity={identity} />;
+  return <WalletMenu className={className} identity={identity} />;
 }
 
-/** AccountMenu with the cabinet's own links, groups and logout. */
-function CabinetMenu({ className, identity, locked }: { className?: string; identity: MenuIdentity | null; locked?: boolean }) {
+/** AccountMenu with the wallet host's own links, groups and logout. */
+function WalletMenu({ className, identity, locked }: { className?: string; identity: MenuIdentity | null; locked?: boolean }) {
   const t = chipTranslator();
   const [failed, setFailed] = useState(false);
   const onSignOut = async () => {
@@ -127,7 +127,7 @@ function CabinetMenu({ className, identity, locked }: { className?: string; iden
       className={className}
       identity={identity}
       locked={locked}
-      links={cabinetLinks()}
+      links={zoneLinks()}
       groups={serviceGroups()}
       error={failed ? t("auth.err.signOut", "We couldn't sign you out. Please try again.") : null}
       onSwitchAccount={clearIdentity}
@@ -152,15 +152,15 @@ function signOut(): Promise<boolean> {
 
 /**
  * Read at render, like the locale — the conductor swaps documents under a chip that never
- * remounts. The header opens the cabinet home from the public site (an investor arriving
- * from the landing wants their portfolio) and the profile from inside the cabinet.
+ * remounts. The header opens the wallet host home from the public site (an investor arriving
+ * from the landing wants their portfolio) and the profile from inside the wallet host.
  */
-function cabinetLinks(): MenuLinks {
+function zoneLinks(): MenuLinks {
   const locale = documentLocale();
   const here = typeof document === "undefined" ? "/" : document.location.pathname + document.location.search;
-  const inCabinet = typeof document !== "undefined" && isCabinetPage(document.location.pathname);
+  const inZone = typeof document !== "undefined" && isZonePage(document.location.pathname);
   return {
-    profile: inCabinet ? { href: platformAccountHref(PLATFORM_URL, "profile"), kind: "profile" } : { href: cabinetPath(locale, "/"), kind: "cabinet" },
+    profile: inZone ? { href: platformAccountHref(PLATFORM_URL, "profile"), kind: "profile" } : { href: zonePagePath(locale, "/"), kind: "cabinet" },
     manage: platformAccountHref(PLATFORM_URL, "security"),
     // Google's chooser is on every sign-in; the new session closes this one.
     switchAccount: `/api/auth/login?returnTo=${encodeURIComponent(here)}`,
@@ -196,7 +196,7 @@ function serviceGroups(): MenuGroup[] {
 // primary-ink text utility in a higher layer cannot pin them (chip-parts.ts).
 //
 // Not instrumented: the `cta_clicked` event is captured by the HOST (site_conductor's
-// `CabinetEntryTracker`, keyed on `data-cta`). If the chip ever fires its own, the host side
+// `WalletEntryTracker`, keyed on `data-cta`). If the chip ever fires its own, the host side
 // must stop, or the funnel double-counts.
 function SignInCta({ className, intent, returnTo }: AccountChipProps) {
   const t = chipTranslator();

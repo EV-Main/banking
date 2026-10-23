@@ -56,9 +56,9 @@ async function walletKeys() {
 }
 
 /**
- * The wallet's catalogue per locale, resolved the way the cabinet's policy resolves it: a
+ * The wallet's catalogue per locale, resolved the way the wallet host's policy resolves it: a
  * translation whose stored English has drifted from today's is served as English. Cut from
- * the cabinet catalogues at build time so the copy is never a second hand-kept table.
+ * the wallet host catalogues at build time so the copy is never a second hand-kept table.
  */
 async function walletMessages() {
   const load = async (locale) => JSON.parse(await readFile(`messages/${locale}/common.json`, "utf8"));

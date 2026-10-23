@@ -4,7 +4,7 @@
 //
 // Props are never PII: no email, no name, no free text, no URL (a `returnTo` is a URL).
 export const ACTIVATION = {
-  /** The cabinet sign-in page was rendered. */
+  /** The wallet host sign-in page was rendered. */
   loginView: "login_view",
   /** This tab rendered as a signed-in user for the first time. */
   sessionCreated: "session_created",

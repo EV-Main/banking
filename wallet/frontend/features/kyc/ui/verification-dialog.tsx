@@ -10,7 +10,7 @@ import { useStartVerification } from "@/features/kyc/model/use-start-verificatio
 import { Step } from "@/features/kyc/ui/step";
 import { StartVerificationButton, VerificationOutcome } from "@/features/kyc/ui/verification-controls";
 
-// The one explanation of verification in the cabinet, and the one place its primary action
+// The one explanation of verification in the wallet host, and the one place its primary action
 // lives. Every entry point — the profile's identity card, Home's checklist, and the wallet —
 // opens THIS, rather than each writing its own account of what the user is about to do.
 //

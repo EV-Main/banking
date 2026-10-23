@@ -1008,7 +1008,7 @@ mod tests {
 	}
 
 	/// The wallet's five lifecycle figures cross one-to-one — `in_orders` in particular,
-	/// which the cabinet shows beside `available` so a resting buy order explains the dip.
+	/// which the wallet host shows beside `available` so a resting buy order explains the dip.
 	#[test]
 	fn the_balance_carries_every_lifecycle_figure() {
 		let balance = Balance::from(bk::Balance {
@@ -1064,7 +1064,7 @@ mod tests {
 		assert!(seed.holder_grant.is_none());
 	}
 
-	/// `/api/users` carries the caller's permissions from GetMe, so the cabinet can offer
+	/// `/api/users` carries the caller's permissions from GetMe, so the wallet host can offer
 	/// the panel link without a second round trip.
 	#[test]
 	fn the_profile_carries_the_callers_permissions() {

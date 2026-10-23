@@ -1,7 +1,7 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
 // These two functions are a pair, and the bug that prompted the tests was them being
-// only half-implemented: `cabinetPath` existed, its inverse did not, and every caller
+// only half-implemented: `zonePagePath` existed, its inverse did not, and every caller
 // comparing `usePathname()` against a plain `/wallet` silently stopped matching when
 // `basePath` was removed. Nothing failed loudly — the nav just never highlighted. So
 // the round-trip is the property worth pinning down.
@@ -11,8 +11,8 @@ import test from "node:test";
 import { LOCALES } from "@evinvest/i18n";
 
 import {
-  cabinetPath,
-  isCabinetPage,
+  zonePagePath,
+  isZonePage,
   isNonPagePath,
   localeRepairedPath,
   relocalise,
@@ -23,7 +23,7 @@ import {
 test("every locale round-trips back to the path the app reasons in", () => {
   for (const locale of LOCALES) {
     for (const path of ["/", "/wallet", "/admin/revenue", "/invest/alpha-fund"] as const) {
-      assert.equal(zonePathname(cabinetPath(locale, path)), path, `${locale} ${path}`);
+      assert.equal(zonePathname(zonePagePath(locale, path)), path, `${locale} ${path}`);
     }
   }
 });
@@ -31,7 +31,7 @@ test("every locale round-trips back to the path the app reasons in", () => {
 test("the zone prefix comes off, locale and all", () => {
   assert.equal(zonePathname("/en/cabinet/admin/revenue"), "/admin/revenue");
   assert.equal(zonePathname("/ru/cabinet/wallet"), "/wallet");
-  // The cabinet root is "/" — not "" — so `active: (p) => p === "/"` still matches.
+  // The wallet host root is "/" — not "" — so `active: (p) => p === "/"` still matches.
   assert.equal(zonePathname("/de/cabinet"), "/");
 });
 
@@ -114,12 +114,12 @@ test("a page that merely mentions an excluded name is still a page", () => {
 test("relocalising a page keeps its query and hash", () => {
   // Two callers relocalise the current page — the settings language switcher and
   // LocaleSync — and a version that drops the query string is a bug that only shows up
-  // the first time a cabinet page takes a parameter. Pinned so they cannot diverge.
+  // the first time a zone page takes a parameter. Pinned so they cannot diverge.
   const url = { pathname: "/ru/cabinet/wallet", search: "?filter=deposits", hash: "#top" };
   assert.equal(relocalise("de", url), "/de/cabinet/wallet?filter=deposits#top");
 });
 
-test("relocalising to English keeps the locale segment the cabinet actually serves", () => {
+test("relocalising to English keeps the locale segment the wallet host actually serves", () => {
   // Unlike the public site, the zone has no unprefixed form: /cabinet/* is the entry
   // the proxy redirects AWAY from, so English pages really do live under /en.
   assert.equal(
@@ -128,11 +128,11 @@ test("relocalising to English keeps the locale segment the cabinet actually serv
   );
 });
 
-test("relocalising the cabinet root does not grow a trailing slash", () => {
+test("relocalising the wallet host root does not grow a trailing slash", () => {
   assert.equal(relocalise("vi", { pathname: "/en/cabinet", search: "", hash: "" }), "/vi/cabinet");
 });
 
-test("a cabinet path with no locale is repaired into one", () => {
+test("a zone path with no locale is repaired into one", () => {
   // The conductor's unprefixed mount, and every link written before the locale
   // moved into the URL.
   assert.equal(localeRepairedPath("/cabinet", "ru"), "/ru/cabinet");
@@ -150,7 +150,7 @@ test("a first segment that is not a locale is replaced, not kept", () => {
   assert.equal(localeRepairedPath("/zz/cabinet/", "vi"), "/vi/cabinet");
 });
 
-test("a path that is not a cabinet page is left for someone else", () => {
+test("a path that is not a zone page is left for someone else", () => {
   // Null, not a guess: the conductor owns these routes on the same origin, and
   // redirecting them into the zone would break the site around it.
   assert.equal(localeRepairedPath("/zz/anything", "ru"), null);
@@ -160,47 +160,47 @@ test("a path that is not a cabinet page is left for someone else", () => {
 });
 
 // The account chip mounts on both origins and links to a different place from each: into
-// the cabinet home from the public site, to the profile from inside the cabinet. The
+// the wallet host home from the public site, to the profile from inside the wallet host. The
 // answer comes from `document.location.pathname`, so it has to be right for the real
 // shapes both hosts produce — locale-prefixed pages, the unprefixed mount, and the
 // conductor's own routes that merely share the origin.
-test("a cabinet page is a cabinet page, with or without its locale", () => {
+test("a zone page is a zone page, with or without its locale", () => {
   for (const path of ["/cabinet", "/cabinet/", "/cabinet/wallet", "/en/cabinet", "/ru/cabinet/", "/de/cabinet/admin/revenue"]) {
-    assert.equal(isCabinetPage(path), true, path);
+    assert.equal(isZonePage(path), true, path);
   }
   for (const locale of LOCALES) {
     for (const path of ["/", "/wallet", "/profile"] as const) {
-      assert.equal(isCabinetPage(cabinetPath(locale, path)), true, `${locale} ${path}`);
+      assert.equal(isZonePage(zonePagePath(locale, path)), true, `${locale} ${path}`);
     }
   }
 });
 
-test("the conductor's own routes are not cabinet pages", () => {
+test("the conductor's own routes are not zone pages", () => {
   for (const path of ["/", "/en", "/en/about", "/ru/invest", "/zz/anything"]) {
-    assert.equal(isCabinetPage(path), false, path);
+    assert.equal(isZonePage(path), false, path);
   }
 });
 
-test("a sibling that merely starts with the zone name is not a cabinet page", () => {
+test("a sibling that merely starts with the zone name is not a zone page", () => {
   for (const path of ["/cabinets", "/cabinets/list", "/en/cabinets/list", "/cabinetry"]) {
-    assert.equal(isCabinetPage(path), false, path);
+    assert.equal(isZonePage(path), false, path);
   }
 });
 
-test("assets and BFF calls under the prefix are not cabinet pages", () => {
+test("assets and BFF calls under the prefix are not zone pages", () => {
   // The chip never renders inside one of these, but the function is public and the
   // proxy's distinction between pages and non-pages should hold here too.
   for (const path of ["/cabinet/_next/static/chunks/x.css", "/cabinet/api/session", "/cabinet/mfe/account-chip.js", "/cabinet/favicon.ico"]) {
-    assert.equal(isCabinetPage(path), false, path);
+    assert.equal(isZonePage(path), false, path);
   }
 });
 
-test("repairing agrees with cabinetPath for every locale", () => {
+test("repairing agrees with zonePagePath for every locale", () => {
   // One rule, two directions — the same property the round-trip test above pins.
   for (const locale of LOCALES) {
     for (const path of ["/", "/wallet", "/admin/revenue"] as const) {
-      const bogus = `/zz${cabinetPath("en", path).slice("/en".length)}`;
-      assert.equal(localeRepairedPath(bogus, locale), cabinetPath(locale, path), `${locale} ${path}`);
+      const bogus = `/zz${zonePagePath("en", path).slice("/en".length)}`;
+      assert.equal(localeRepairedPath(bogus, locale), zonePagePath(locale, path), `${locale} ${path}`);
     }
   }
 });

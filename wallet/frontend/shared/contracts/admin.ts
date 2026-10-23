@@ -22,7 +22,7 @@ export interface SessionUser {
    * difference is not a typo. This shape is NOT one of the BFF's: `/api/auth/session` is
    * the site-root auth surface, and ingress sends `/api/auth/*` straight to concierge,
    * whose `SessionUser` carries `#[serde(rename_all = "camelCase")]`. The admin DTOs come
-   * from the cabinet's own BFF (`wallet/backend/src/dto.rs`), which renames nothing.
+   * from the wallet host's own BFF (`wallet/backend/src/dto.rs`), which renames nothing.
    *
    * True only while the fund has no persisted owner — the window closes on the first
    * genesis seeding and cannot reopen. Render it as a warning, never as ownership: it is
@@ -678,7 +678,7 @@ export interface Rail {
   gas_coin: string;
 }
 
-export interface CabinetConfig {
+export interface WalletHostConfig {
   platform: PlatformConfig;
   read_only: boolean;
 }

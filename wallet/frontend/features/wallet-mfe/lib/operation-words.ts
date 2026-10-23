@@ -1,6 +1,6 @@
 // Operation kinds and states in words, for the wallet element. The keys and English are the
 // operations timeline's (`views/operations/lib/format.ts`) on purpose: same word, same
-// translation, and the element's catalogue is cut from the cabinet's at build time, so it
+// translation, and the element's catalogue is cut from the wallet host's at build time, so it
 // carries them without a second copy. A view cannot be imported from a feature, hence the
 // small mirror rather than a shared import.
 

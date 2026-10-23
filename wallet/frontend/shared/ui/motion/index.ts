@@ -1,4 +1,4 @@
-// Public API of the cabinet's motion slice. Import from `@/shared/ui/motion` —
+// Public API of the wallet host's motion slice. Import from `@/shared/ui/motion` —
 // never from a file inside it, and never from `motion/react` directly in a view:
 // the point of the slice is that curves, durations and travel distances are
 // decided once, in ./tokens, rather than per screen.
@@ -12,7 +12,7 @@
 //   Stagger   — a screen, list or grid arrives in sequence (+ StaggerItem per part)
 //
 // All of them respect `prefers-reduced-motion`, animate only `opacity` and
-// `transform`, and play once. The cabinet is a money surface: motion here exists
+// `transform`, and play once. The wallet host is a money surface: motion here exists
 // to say what changed, never to decorate, and must never delay a figure landing
 // on screen.
 //

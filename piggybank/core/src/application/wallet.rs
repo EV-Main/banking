@@ -261,7 +261,7 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 /// the caller can act on, so the screen offers another rail. [`DomainError::Forbidden`]
 /// means **the caller is not verified yet** — a state they can leave, and the one screen
 /// worth showing them is "finish verification". Folding the second into the first would
-/// leave the cabinet unable to tell "try another chain" from "verify your identity", so
+/// leave the wallet host unable to tell "try another chain" from "verify your identity", so
 /// the verification failure is an error rather than an absent value.
 ///
 /// Both gates sit ABOVE the port, in that order: the rail check is free and answers

@@ -1,6 +1,6 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The chip is the public site's entry into the cabinet, so the host may tell it where the
+// The chip is the public site's entry into the wallet host, so the host may tell it where the
 // visitor was going and why (#392). The properties pinned here: nothing from the host
 // changes the destination page, only its query; a missing attribute is today's plain
 // login link; and a `returnTo` that could leave the origin is neutralised by the same
@@ -10,14 +10,14 @@ import test from "node:test";
 
 import { LOCALES } from "@evinvest/i18n";
 
-import { cabinetPath } from "../../../shared/config/base-path.ts";
+import { zonePagePath } from "../../../shared/config/base-path.ts";
 import { signInHref, signInIntent } from "./sign-in-href.ts";
 
 test("without host attributes the link is the plain login page", () => {
   for (const locale of LOCALES) {
-    assert.equal(signInHref(locale), cabinetPath(locale, "/login"), locale);
-    assert.equal(signInHref(locale, { intent: null, returnTo: null }), cabinetPath(locale, "/login"), locale);
-    assert.equal(signInHref(locale, { intent: "", returnTo: "" }), cabinetPath(locale, "/login"), locale);
+    assert.equal(signInHref(locale), zonePagePath(locale, "/login"), locale);
+    assert.equal(signInHref(locale, { intent: null, returnTo: null }), zonePagePath(locale, "/login"), locale);
+    assert.equal(signInHref(locale, { intent: "", returnTo: "" }), zonePagePath(locale, "/login"), locale);
   }
 });
 
@@ -27,7 +27,7 @@ test("intent and a zone-relative returnTo are forwarded as the login page's quer
   assert.equal(signInHref("de", { returnTo: "/wallet?tab=deposit" }), "/de/cabinet/login?returnTo=%2Fwallet%3Ftab%3Ddeposit");
 });
 
-test("an intent the cabinet does not know is dropped, not forwarded", () => {
+test("an intent the wallet host does not know is dropped, not forwarded", () => {
   assert.equal(signInIntent("signup"), "signup");
   assert.equal(signInIntent("login"), "login");
   assert.equal(signInIntent("upgrade"), null);
@@ -42,7 +42,7 @@ test("a returnTo that could escape the origin is neutralised before it is forwar
   }
 });
 
-test("a full cabinet path is passed through untouched; the login page reduces it", () => {
+test("a full zone path is passed through untouched; the login page reduces it", () => {
   // The login page's `loginReturnTo` accepts both shapes and prefixes exactly once (#390),
   // so the chip does not need a second copy of that rule.
   assert.equal(signInHref("en", { returnTo: "/en/cabinet/invest" }), "/en/cabinet/login?returnTo=%2Fen%2Fcabinet%2Finvest");

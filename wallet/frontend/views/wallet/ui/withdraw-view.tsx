@@ -46,7 +46,7 @@ function withdrawableFor(wallet: Wallet | null | undefined, network: string): Ne
 // `cabinet/mobile/wallet/withdraw`). Review is a distinct step: the reviewed figures are
 // snapshotted so Confirm can never submit something the user didn't see.
 // `onWithdrawn` lets the evinvest.ltd action page (a host's popup) report the request once
-// the hub has accepted it; the cabinet's own route leaves it unset.
+// the hub has accepted it; the wallet host's own route leaves it unset.
 export function WithdrawView({ initialNetwork, onWithdrawn }: { initialNetwork?: string; onWithdrawn?: (withdrawal: Withdrawal) => void }) {
   const t = useT();
   const locale = useLocale();

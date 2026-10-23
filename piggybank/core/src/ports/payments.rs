@@ -54,11 +54,11 @@ pub enum ApprovalSeat {
 	/// approval. Nothing to supply: the repository renders the approval's fields from the
 	/// order and stores what it sent, and the executor proposes it.
 	Concierge,
-	/// The source is one investor's claim and that investor answers inside the cabinet.
+	/// The source is one investor's claim and that investor answers inside the wallet host.
 	Session(SessionSeat),
 }
 
-/// The investor's in-cabinet seat. The repository writes the notice that asks them to answer
+/// The investor's seat in the wallet host. The repository writes the notice that asks them to answer
 /// it in the same transaction as the seat, for the reason a consent mail was: an order nobody
 /// was told about looks open for 72 hours and was unanswerable from the first instant.
 pub struct SessionSeat {
@@ -173,7 +173,7 @@ impl ConsentDecision {
 	}
 }
 
-/// The investor's in-cabinet seat as a surface renders it.
+/// The investor's seat in the wallet host as a surface renders it.
 #[derive(Debug)]
 pub struct SessionConsentView {
 	pub subject: UserId,
@@ -223,7 +223,7 @@ pub struct PaymentView {
 	pub consent: Option<ConsentView>,
 	/// Present exactly when the owners decide over a concierge approval.
 	pub concierge: Option<ConciergeSeatView>,
-	/// Present exactly when the subject answers inside the cabinet.
+	/// Present exactly when the subject answers inside the wallet host.
 	pub session: Option<SessionConsentView>,
 	/// The receiving end's recognisable detail, when it has one.
 	pub destination_detail: Option<EndDetail>,
@@ -447,10 +447,10 @@ pub trait PaymentRepository: Send + Sync {
 	/// refused with a Conflict and the order is rejected with it.
 	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &ConsentAudit, at: i64) -> Result<ConsentOutcome, DomainError>;
 
-	/// The orders waiting for `subject`'s answer inside the cabinet, newest first.
+	/// The orders waiting for `subject`'s answer inside the wallet host, newest first.
 	async fn awaiting_session_consent(&self, subject: UserId) -> Result<Vec<PaymentView>, DomainError>;
 
-	/// One order as its in-cabinet subject may see it; anyone else's, or an order with no such
+	/// One order as its subject in the wallet host may see it; anyone else's, or an order with no such
 	/// seat, is `None`.
 	async fn find_for_session_subject(&self, id: PaymentId, subject: UserId) -> Result<Option<PaymentView>, DomainError>;
 }

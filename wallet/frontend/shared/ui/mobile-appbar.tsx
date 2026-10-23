@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
-import { Link } from "@/shared/ui/cabinet-link";
+import { Link } from "@/shared/ui/zone-link";
 import type { ReactNode } from "react";
 
 import { useT } from "@evinvest/i18n/react";

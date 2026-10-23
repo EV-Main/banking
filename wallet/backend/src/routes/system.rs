@@ -15,7 +15,7 @@ use crate::state::AppState;
 /// dials piggybank, so with piggybank mid-rollout it answers 502, and a probe wired to
 /// it fails through no fault of the BFF. With a single BFF replica that failure has
 /// no upside and one real cost — the readiness probe pulls the only endpoint off the
-/// Service, the liveness probe restarts the pod after three misses, and the cabinet's
+/// Service, the liveness probe restarts the pod after three misses, and the wallet host's
 /// Next proxy meets ECONNREFUSED and answers a bodyless 500 where the BFF would have
 /// answered a JSON error the UI can render. A probe must only ask "is this process
 /// alive and listening", which is exactly what this endpoint answers.

@@ -13,7 +13,7 @@ import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 // utilities ship in a sibling stylesheet, read and inlined as `@layer reamfe` (stylesheet.ts).
 //
 // Two modes, picked by `data-mode`:
-//   • cabinet (default) — the chip reads the cabinet session, profile and identity cache.
+//   • cabinet (default) — the chip reads the wallet host session, profile and identity cache.
 //   • host (`data-mode="host"`) — a host on another origin, with its own session, passes the
 //     identity, links and service groups as attributes; the chip fetches nothing and turns
 //     Sign out into a `signout` event for the host to act on.
@@ -35,7 +35,7 @@ const TAG = CHIP_TAG;
 
 // Until the stylesheet applies the chip is invisible, so an unstyled first frame never paints.
 // Its box is the host's when the host gave the element one — a class on the element itself
-// (the cabinet zone's shell: flex, a fixed width below `sm`, `hidden` when signed out) or a
+// (the wallet host zone's shell: flex, a fixed width below `sm`, `hidden` when signed out) or a
 // flex/grid parent: an inline display or size here would beat those, and in the zone it
 // grew the row 42 → 48 px for half a second. Only an element left in inline flow, which
 // would collapse to nothing, gets the chip's own final box with its name still unknown

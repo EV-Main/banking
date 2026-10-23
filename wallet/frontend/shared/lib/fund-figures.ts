@@ -1,4 +1,4 @@
-// The fund figures as the locale writes them — the cabinet's twin of the site's
+// The fund figures as the locale writes them — the wallet host's twin of the site's
 // `shared/lib/fund-figures.ts`, so the sign-in panel renders the same shape the hero does:
 // "16.4% +" / "16,4 % +" and "$100M". The digits localise; the `$` and `M` do not, on
 // purpose — `Intl`'s compact currency would restyle it to "$100m" under en-GB.

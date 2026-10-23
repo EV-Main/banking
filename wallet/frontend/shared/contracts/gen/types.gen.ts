@@ -3626,7 +3626,7 @@ export type BankingV1Payment = {
      *
      * The seat that decides the order: `consilium`, `consent` (the emailed token),
      * `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
-     * the cabinet). Empty only for a row written before seats were recorded.
+     * the wallet host). Empty only for a row written before seats were recorded.
      */
     seat?: string;
     /**
@@ -5844,7 +5844,7 @@ export type BankingV1UserProfile = {
     /**
      * kyc_level
      *
-     * Kept wire-identical with concierge.v1.UserProfile (the cabinet TS is aliased to the
+     * Kept wire-identical with concierge.v1.UserProfile (the wallet TS is aliased to the
      * concierge shape). The identity plane OWNS kyc/role; the money plane mirrors them for
      * gating but does not re-serve them on its self-service GetMe, so these stay default
      * here — the fields exist for cross-plane wire parity.
@@ -5933,8 +5933,8 @@ export type BankingV1UserSummary = {
     /**
      * role
      *
-     * Kept wire-identical with concierge.v1.UserSummary (the cabinet TS is aliased to the
-     * concierge shape). The money plane doesn't serve the role here — the cabinet reads it
+     * Kept wire-identical with concierge.v1.UserSummary (the wallet TS is aliased to the
+     * concierge shape). The money plane doesn't serve the role here — the wallet host reads it
      * from concierge's login summary — so this stays empty; the field exists for parity.
      */
     role?: string;

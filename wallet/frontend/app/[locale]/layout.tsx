@@ -12,7 +12,7 @@ import { notFound } from "next/navigation";
 import { messagesFor, shellMessages } from "@/shared/config/i18n";
 import { requestNonce } from "@/shared/config/security";
 
-// The tab title is the first words of the cabinet a reader sees, often before the page has
+// The tab title is the first words of the wallet host a reader sees, often before the page has
 // painted, so it is translated like everything else. It has to be `generateMetadata` to be:
 // a static `metadata` export is evaluated once, with no request and therefore no locale, so
 // whatever language it was authored in is the language every reader would get.
@@ -62,7 +62,7 @@ export default async function RootLayout({
         {/* Only the keys the layouts and boundary files render; each page's
             `<I18nScope>` adds its own (`shellMessages`, `routeMessages`). */}
         <I18nProvider locale={locale} messages={shellMessages(locale)}>
-          {/* Every cabinet page: the account chip in the conductor's shell asks the page's
+          {/* Every zone page: the account chip in the conductor's shell asks the page's
               router to take its menu links (`ev:navigate`), which only a client listener can. */}
           <ChipNavigation />
           <Providers nonce={nonce}>{children}</Providers>

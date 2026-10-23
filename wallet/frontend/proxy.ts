@@ -5,7 +5,7 @@ import { isLocale, negotiate, type Locale } from "@evinvest/i18n";
 
 import { experiments } from "@/application/experiments";
 import { config as appConfig } from "@/config";
-import { cabinetPath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
+import { zonePagePath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
 import { COOKIES } from "@/shared/config/cookies";
 import { movedPageTarget } from "@/shared/config/moved-pages";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
@@ -76,7 +76,7 @@ export async function proxy(req: NextRequest) {
   if (moved) return withCsp(NextResponse.redirect(new URL(moved, req.nextUrl), 307), csp);
 
   // A scope host's money action (`https://evinvest.ltd/wallet/withdraw?opener=…&state=…`)
-  // lands on its cabinet page in the reader's language, query intact — the page reads its
+  // lands on its zone page in the reader's language, query intact — the page reads its
   // opener and nonce from it. Same locale choice as the repair below; no guess mark, since
   // the popup is not where a reader settles their language.
   const actionPage = walletActionPage(pathname);
@@ -84,7 +84,7 @@ export async function proxy(req: NextRequest) {
     const remembered = req.cookies.get(COOKIES.locale)?.value;
     const chosen = isLocale(remembered) ? remembered : negotiate(req.headers.get("accept-language"));
     const url = req.nextUrl.clone();
-    url.pathname = cabinetPath(chosen, actionPage);
+    url.pathname = zonePagePath(chosen, actionPage);
     return withCsp(NextResponse.redirect(url), csp);
   }
 
@@ -97,7 +97,7 @@ export async function proxy(req: NextRequest) {
   // The cookie is now written by the public site too (site_conductor
   // `scripts/locale-cookie.ts`), mirroring the locale of whatever page the reader
   // was on, so "their last choice" finally includes the language they were reading
-  // on the landing a moment ago rather than only a previous cabinet visit.
+  // on the landing a moment ago rather than only a previous wallet visit.
   //
   // The `/<not-a-locale>/cabinet/…` half is why this is not a plain prefix test.
   // Those requests used to reach `app/[locale]/layout.tsx` and its `notFound()`,
@@ -178,7 +178,7 @@ export async function proxy(req: NextRequest) {
 //
 // A router prefetch cannot be told apart here: Next strips `next-router-prefetch` (with
 // the other flight headers) from the request before the proxy sees it. None arrive today
-// because `shared/ui/cabinet-link.tsx` turns link prefetching off; turning it back on would
+// because `shared/ui/zone-link.tsx` turns link prefetching off; turning it back on would
 // let a hovered link slide the session's expiry.
 async function renewIfLapsing(req: NextRequest): Promise<Renewal | null> {
   const authWebUrl = appConfig.authWebUrl;
@@ -206,11 +206,11 @@ function withSetCookies(res: NextResponse, lines: readonly string[]): NextRespon
   return res;
 }
 
-// On the two approval pages the URL *is* the credential, so the cabinet's default
+// On the two approval pages the URL *is* the credential, so the wallet host's default
 // `strict-origin-when-cross-origin` is not enough: it still sends the full URL along with
 // same-origin requests, and the origin alone to everywhere else. `no-referrer` closes that
 // channel for exactly the pages that have something to leak (docs/CONSILIUM.md, policy 6).
-// Scoped rather than global — the rest of the cabinet gains nothing from it and loses the
+// Scoped rather than global — the rest of the wallet host gains nothing from it and loses the
 // same-origin referrer that analytics and error reports read.
 function withReferrerPolicy(res: NextResponse, pathname: string): NextResponse {
   if (isTokenApprovalPath(pathname)) res.headers.set(REFERRER_HEADER, "no-referrer");

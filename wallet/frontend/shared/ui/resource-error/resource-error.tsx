@@ -104,7 +104,7 @@ export type ResourceErrorProps = ResourceErrorBase &
  * belongs beside them rather than in place of them.
  *
  * Given an `error`, this is where it becomes words, and it is the only place: every banner
- * in the cabinet lands here, so one call to `errorMessage` translates all of them and no
+ * in the wallet host lands here, so one call to `errorMessage` translates all of them and no
  * view has to hold a translator to report a failure it did not cause.
  */
 export function ResourceError({ message, error, variant = "inline", title, onRetry, retrying = false, className }: ResourceErrorProps) {

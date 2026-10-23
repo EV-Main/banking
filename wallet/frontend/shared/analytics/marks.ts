@@ -8,7 +8,7 @@
 // id, a tx ref) so the next account on the same machine is not silenced by the previous one.
 //
 // Storage throws outright in a Safari private window and when site data is blocked, and a
-// blank cabinet is not a price worth paying for a metric — so every access is wrapped, and
+// blank wallet host is not a price worth paying for a metric — so every access is wrapped, and
 // the fallback is an in-memory set that still holds for the life of the page.
 
 export type MarkScope = "tab" | "browser";

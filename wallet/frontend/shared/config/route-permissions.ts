@@ -1,4 +1,4 @@
-// What each cabinet section needs the caller's seat to hold — the one table the route gate
+// What each wallet host section needs the caller's seat to hold — the one table the route gate
 // reads. A guest holds the guest seat's permissions (`/auth/session`), so a section opens to
 // guests by holding something the guest seat lists, and nothing here changes.
 

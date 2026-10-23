@@ -41,7 +41,7 @@ export interface RunningCase {
  *
  * Three states, not two:
  *
- *  · **no case** — offer the start; this is the only state the cabinet modelled before.
+ *  · **no case** — offer the start; this is the only state the wallet host modelled before.
  *  · **a running case that is resumable** — still offer it. A repeat start returns the SAME
  *    vendor session rather than buying a new one (concierge#55), so the action is a "continue",
  *    and refusing it would strand a user who closed the vendor tab by accident.

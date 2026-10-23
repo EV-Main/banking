@@ -44,7 +44,7 @@ export async function startVerification(): Promise<KycStart> {
     if (url !== null) return { kind: "started", redirectUrl: url };
     // A redirect we refused is not the same event as an answer we could not read, even
     // though the reader is owed the same sentence for both. Somebody tried to send an
-    // authenticated cabinet user to a host that is not the vendor's — or the vendor moved
+    // authenticated wallet user to a host that is not the vendor's — or the vendor moved
     // and nobody said so — and the reader's response to "please try again" is to try again,
     // not to write in. Unreported, that lasts exactly as long as nobody looks.
     if (started !== null) reportRefusedRedirect(started.redirectUrl);
@@ -56,7 +56,7 @@ export async function startVerification(): Promise<KycStart> {
 
 /**
  * The caller's tier and their running case. `null` ONLY for a plane that does not have the
- * route: a cabinet deployed ahead of the concierge release that adds it (#75) gets a 404
+ * route: a wallet host deployed ahead of the concierge release that adds it (#75) gets a 404
  * here and must keep working exactly as it does today, falling back to the tier the profile
  * already carries.
  *

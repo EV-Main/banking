@@ -13,7 +13,7 @@ import { loginHref } from "@/features/auth/lib/return-to";
 import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
 import { GithubMark, GoogleMark } from "@/features/auth/ui/provider-marks";
 import { Turnstile } from "@/features/auth/ui/turnstile";
-import { useLocale } from "@/shared/lib/cabinet-route";
+import { useLocale } from "@/shared/lib/zone-route";
 import { Logo } from "@/shared/ui/logo";
 
 type Screen = { kind: "code" } | { kind: "codeSent"; email: string } | { kind: "password" } | { kind: "signup" } | { kind: "verifyNow"; email: string };
@@ -88,7 +88,7 @@ function oauthErrorText(t: T, reason: string): string {
 
 /**
  * "Sign in or create an account" — one dialog for every method. Opened by `?login` on any
- * cabinet page (`useSignInDialog`), so a link, an AuthWall and the rail open the same one.
+ * zone page (`useSignInDialog`), so a link, an AuthWall and the rail open the same one.
  * A success reloads the page it was opened over, now as the signed-in account's.
  */
 export function SignInDialog() {

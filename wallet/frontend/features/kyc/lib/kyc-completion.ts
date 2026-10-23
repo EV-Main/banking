@@ -1,6 +1,6 @@
 // When does a tier this tab has just read count as "verification completed"?
 //
-// The cabinet only ever sees tiers, never verdicts: `/kyc/status` drops a case the moment
+// The wallet host only ever sees tiers, never verdicts: `/kyc/status` drops a case the moment
 // it resolves, and the mirrored `kyc_level` simply moves. So completion is a transition,
 // and a transition needs a "before". Two befores are trusted: a tier of 0 read earlier in
 // this page's life (the profile poll, or an operator raising the tier by hand while the

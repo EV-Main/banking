@@ -2,7 +2,7 @@ import { useLocale, useT } from "@evinvest/i18n/react";
 
 import { Button } from "@evinvest/uikit";
 
-import { cabinetPath } from "@/shared/config/base-path";
+import { zonePagePath } from "@/shared/config/base-path";
 
 import type { WalletAction } from "../lib/wallet-action";
 
@@ -18,7 +18,7 @@ export function WalletActions({ origin, scope, onAction }: { origin: string; sco
   return (
     <div className="flex flex-wrap gap-2">
       {scope === null && (
-        <Button size="sm" href={new URL(cabinetPath(locale, "/wallet/deposit"), origin).href}>
+        <Button size="sm" href={new URL(zonePagePath(locale, "/wallet/deposit"), origin).href}>
           {t("ui.deposit", "Deposit")}
         </Button>
       )}

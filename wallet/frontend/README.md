@@ -1,6 +1,6 @@
-# cabinet frontend — host shell
+# wallet host frontend — host shell
 
-The Next.js host shell for the bank's cabinet. Two jobs:
+The Next.js host shell for the bank's wallet host (npm workspace `@evbanking/wallet-host`). Two jobs:
 
 1. **Microfrontend composition.** Every microfrontend (React or Rust/WASM, inline
    widget or whole page) is a self-registering **custom element**. The host mounts
@@ -18,7 +18,7 @@ The Next.js host shell for the bank's cabinet. Two jobs:
    (`CABINET_BACKEND_URL`), so the `__Host-`/HttpOnly session cookie + CSRF model
    stays same-origin. The browser never holds a token.
 
-See [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) for the full contract and
+See [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) for the full contract and
 the React / Rust-WASM producer recipes.
 
 ## Pages
@@ -52,7 +52,7 @@ by the value (`shared/lib/wire-words.ts`), never a key assembled at runtime: the
 extractor refuses one, since it has no English to extract.
 
 `npm run i18n:check` is two gates. `evinvest-i18n-check` fails when the committed
-English catalogue no longer matches the code, or on drift. The cabinet's own
+English catalogue no longer matches the code, or on drift. The wallet host's own
 `scripts/i18n-check.mts` then holds every locale at 100 % coverage and refuses a
 translation identical to its English. The second checker
 runs under `tsx` rather than node's `--experimental-strip-types` (which the unit
@@ -63,7 +63,7 @@ does not resolve.
 **The locale is a cookie here, not a URL segment.** That asymmetry with the
 conductor is deliberate. The public site prefixes every non-default locale
 (`/ru/team`) because it must serve `hreflang` alternates to a crawler and must not
-move already-indexed URLs. The cabinet is entirely behind auth: no crawler, no
+move already-indexed URLs. The wallet host is entirely behind auth: no crawler, no
 indexed URL, and prefixing would mean restructuring every route around a
 `[locale]` segment to buy nothing.
 
@@ -128,7 +128,7 @@ See [`.env.example`](./.env.example) for the full env surface.
 ## Dev
 
 ```
-nix run .#cabinet           # this app (proxies /api/* → the cabinet backend)
+nix run .#cabinet           # this app (proxies /api/* → the wallet BFF)
 nix run .#cabinet-backend   # the BFF (needs piggybank; ports: flake.nix `ports`)
 nix run .#dev               # full stack: postgres + tigerbeetle + redis + signer + piggybank + cabinet-backend + cabinet
 ```
@@ -151,7 +151,7 @@ which reads as loading a *different* account. Nothing was wrong with any one of
 those reads; the problem was that none of them was shared.
 
 Why not Next's `fetch` extension: `next: { revalidate, tags }` is a **server**
-extension, applied to fetches Next issues while rendering. This cabinet reads
+extension, applied to fetches Next issues while rendering. This wallet host reads
 nothing on the server — `/api/*` is a rewrite straight to the Rust BFF
 (`next.config.ts`), there are no route handlers, and every read is a browser call
 carrying the user's session cookie. So the cache is client-side, but keeps Next's
@@ -183,7 +183,7 @@ Rules:
 
 ## Motion
 
-Everything animated in the cabinet comes from `shared/ui/motion`. Import the
+Everything animated in the wallet host comes from `shared/ui/motion`. Import the
 primitives from the slice root; do **not** import `motion/react` in a view. The
 point of the slice is that curves, durations and travel distances are decided
 once — in `shared/ui/motion/tokens.ts` — rather than per screen, exactly as
@@ -202,14 +202,14 @@ Rules:
 
 - **This is a money surface.** Motion exists to say *what changed* — never to
   decorate, and never in a way that delays a figure landing on screen. The
-  cabinet's `DUR.base` is deliberately about half the landing's.
+  wallet host's `DUR.base` is deliberately about half the landing's.
 - **`opacity` and `transform` only**, always once, always collapsing to a plain
   fade under `prefers-reduced-motion` (every primitive handles this; hand-written
   motion must call `useReducedMotion()` itself).
 - **A screen arrives as its sections, and the sections animate in place.** Put
   `Stagger` on the container the screen already has — the grid, the flex column
   — and give each section `as` so `StaggerItem` renders the element that was
-  already there. Never wrap a section in a new `div`: the cabinet's sections are
+  already there. Never wrap a section in a new `div`: the wallet host's sections are
   grid and flex items carrying their own placement (`xl:col-start-1`,
   `lg:order-3`, `flex-1`), and a wrapper takes that placement for itself and
   changes the layout. `SECTION_STAGGER` is the step for cards, `STAGGER` for

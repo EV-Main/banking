@@ -4,7 +4,7 @@
 //
 // On the first authenticated render this tab sees, the PostHog person is identified by the
 // canonical user id (never the email or a name), and `session_created` is recorded once
-// per tab per account — the funnel's "reached the cabinet signed in" step, which the
+// per tab per account — the funnel's "reached the wallet host signed in" step, which the
 // landing's own steps lead into. Identification goes first so the landing session and
 // everything after it merge into one person; the event follows whether or not the SDK
 // came up in time, since the step happened either way.

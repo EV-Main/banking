@@ -1,5 +1,5 @@
 // Display helpers for wallet addresses and per-rail chrome. Amounts are formatted by the
-// cabinet's one money module (`@/shared/lib/money`), which also owns the exact bigint
+// wallet host's one money module (`@/shared/lib/money`), which also owns the exact bigint
 // math the withdraw preview runs on.
 
 export { formatUsdt, fromBaseUnits, shortAddress, subUsdt, toBaseUnits, USDT_DECIMALS } from "@/shared/lib/money";

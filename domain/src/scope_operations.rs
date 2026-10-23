@@ -621,7 +621,7 @@ pub const BANK_TOPICS: &[TopicSpec] = &[
 		description: "Payments out of your account that wait for your confirmation, and what became of them.",
 		// A payment awaiting the owner of the money is the one notice that must not depend on the
 		// user having found a settings page; they can still switch it off, and the payment stays
-		// answerable in the cabinet either way.
+		// answerable in the wallet host either way.
 		default_subscribed: true,
 	},
 	TopicSpec {

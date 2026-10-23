@@ -15,7 +15,7 @@ pub enum ApiError {
 	/// CSRF double-submit check failed (403).
 	Csrf,
 	/// The session is valid but its last interactive sign-in is too old for this act (401).
-	/// The body is the fixed code `step_up_required` the cabinet frontend keys on.
+	/// The body is the fixed code `step_up_required` the wallet frontend keys on.
 	StepUpRequired,
 	/// A money route got a body that is not declared `application/json` (415).
 	UnsupportedMediaType,

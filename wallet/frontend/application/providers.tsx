@@ -26,7 +26,7 @@ import { mayObserve } from "@/shared/config/public-routes";
 // `$current_url` onto every event including its mount pageview, and Sentry puts the same
 // URL on `request.url` and on every fetch breadcrumb — so simply rendering an approval page
 // under these providers sends a live token to two third parties before the reader has
-// touched anything. This is the one place in the cabinet where the URL is a secret, so it
+// touched anything. This is the one place in the wallet host where the URL is a secret, so it
 // is the one place that opts out. See `mayObserve` in `shared/config/public-routes.ts` for
 // why the redaction that would otherwise fix this has nowhere to live.
 //

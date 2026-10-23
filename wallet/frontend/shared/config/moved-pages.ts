@@ -1,9 +1,9 @@
 import { isLocale, type Locale } from "@evinvest/i18n";
 
-import { BASE_PATH, cabinetPath } from "./base-path.ts";
+import { BASE_PATH, zonePagePath } from "./base-path.ts";
 import { type AccountSection, platformAccountHref } from "./platform.ts";
 
-// The investor pages this cabinet no longer has (banking#584) are still linked from outside:
+// The investor pages this wallet host no longer has (banking#584) are still linked from outside:
 // the SA panel's "Manage account" points at `/cabinet/settings`, fee-policy mails already sent
 // point at `/cabinet/invest/<service>`, and readers have bookmarks. Without a redirect those
 // paths fall into the MFE catch-all and its `notFound()`.
@@ -24,7 +24,7 @@ const SECTIONS: readonly AccountSection[] = ["profile", "security", "notificatio
 const SLUG = /^[A-Za-z0-9_-]{1,64}$/;
 
 
-/** The investor page path after the zone prefix, when `pathname` is a cabinet page path. */
+/** The investor page path after the zone prefix, when `pathname` is a zone page path. */
 function zoneTail(pathname: string): { locale: Locale | null; tail: string[] } | null {
   const zone = BASE_PATH.slice(1);
   const [, first, ...rest] = pathname.split("/");
@@ -50,7 +50,7 @@ export function movedPageTarget(pathname: string, search: string, origins: Moved
   const at = zoneTail(pathname);
   if (!at) return null;
   const tail = at.tail.filter(Boolean);
-  const sameSite = (path: `/${string}`) => (at.locale ? cabinetPath(at.locale, path) : `${BASE_PATH}${path}`);
+  const sameSite = (path: `/${string}`) => (at.locale ? zonePagePath(at.locale, path) : `${BASE_PATH}${path}`);
 
   if (tail[0] === "invest") return investTarget(origins.investCabinet, tail.slice(1));
   if (tail.length === 1) {

@@ -7,7 +7,7 @@ import { currentLocale } from "@/shared/config/locale";
 // The payout approval an owner opens from their email.
 //
 // The token is read here and handed down, but it is never used server-side: the summary is
-// fetched from the browser, exactly like every other read in this cabinet (there are no
+// fetched from the browser, exactly like every other read in this wallet host (there are no
 // route handlers and no server-side reads — see `shared/lib/resource.ts`). That also keeps
 // the token out of the server's logs and out of the RSC payload's fetch cache.
 //

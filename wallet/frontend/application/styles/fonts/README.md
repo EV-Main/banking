@@ -11,5 +11,5 @@ Greek, Cyrillic, punctuation, currency, arrows, math, shapes, dingbats) and the
 reasoning live in that folder's README. Copy the file over after regenerating it
 there; do not subset it separately here, or the two apps drift apart.
 
-No italic face: nothing in the cabinet or in `@evinvest/uikit` sets
+No italic face: nothing in the wallet host or in `@evinvest/uikit` sets
 `font-style: italic`, and next/font would preload it on every page regardless.

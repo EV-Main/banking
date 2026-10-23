@@ -6,7 +6,7 @@ import { defineResource } from "@/shared/lib/resource";
 
 // The chip's own read of the profile, for its name only.
 //
-// Not `profileResource`: that one polls while `kyc_level` is 0 so the cabinet notices a
+// Not `profileResource`: that one polls while `kyc_level` is 0 so the wallet host notices a
 // verdict, and the chip — a separate bundle with its own registry — would run that loop a
 // second time on every page it sits on, the public site included, to render a label that
 // a verdict does not change. A name edit reaches the chip through the identity cache

@@ -184,7 +184,7 @@ pub(crate) async fn require_settled_roster(consilia: &dyn ConsiliumRepository, k
 
 /// The refusal [`require_settled_roster`] raises, `remaining_secs` before the window lifts.
 ///
-/// The "cooling-off" fragment and the "lifts in {h}h {m}m" clock are what the cabinet's
+/// The "cooling-off" fragment and the "lifts in {h}h {m}m" clock are what the wallet frontend's
 /// `consilium-refusal.ts` classifies and parses; only the noun varies between kinds.
 fn cooling_off_refusal(kind: ConsiliumKind, remaining_secs: i64) -> DomainError {
 	let hours = remaining_secs.div_euclid(3600);
@@ -687,7 +687,7 @@ mod tests {
 		}
 	}
 
-	/// One wording is pinned byte for byte — the fragments the cabinet's classifier reads —
+	/// One wording is pinned byte for byte — the fragments the wallet frontend's classifier reads —
 	/// and the other kinds differ from it in the noun alone.
 	#[test]
 	fn cooling_off_refusal_names_the_kind_and_keeps_the_classified_fragments() {

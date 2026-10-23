@@ -281,7 +281,7 @@ async fn consent_credential(ports: &PaymentPorts<'_>, subject: UserId) -> Result
 	})
 }
 
-/// The investor's in-cabinet seat, pinned to their standing as the projection holds it now.
+/// The investor's seat in the wallet host, pinned to their standing as the projection holds it now.
 ///
 /// The subject must be active: a disabled account is not a principal that may authorize its
 /// money leaving. The pins are `consent_credential`'s, read the same way — the folded revoke
@@ -367,13 +367,13 @@ pub async fn submit_consent(ports: &PaymentPorts<'_>, token: &str, code: &str, d
 	Ok(outcome)
 }
 
-/// The orders waiting for the investor's own answer in the cabinet.
+/// The orders waiting for the investor's own answer in the wallet host.
 pub async fn awaiting_confirmation(payments: &dyn PaymentRepository, subject: UserId) -> Result<Vec<PaymentView>, DomainError> {
 	payments.awaiting_session_consent(subject).await
 }
 
 /// One order as the investor it spends may see it. Anyone else's, and one that is not
-/// answered in the cabinet, are the same NOT_FOUND as one that does not exist.
+/// answered in the wallet host, are the same NOT_FOUND as one that does not exist.
 pub async fn find_for_subject(payments: &dyn PaymentRepository, id: PaymentId, subject: UserId) -> Result<PaymentView, DomainError> {
 	payments.find_for_session_subject(id, subject).await?.ok_or_else(consent_not_found)
 }

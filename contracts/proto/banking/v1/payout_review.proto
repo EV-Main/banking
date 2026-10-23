@@ -11,7 +11,7 @@ package banking.v1;
 // rows the approval's `lines_digest` was taken over and the executor pays from — never
 // anything a caller sends.
 //
-// Read-only: it moves no money and writes nothing. Who may read is decided at the cabinet's
+// Read-only: it moves no money and writes nothing. Who may read is decided at the wallet host's
 // BFF, which has the caller's concierge session: only a voter on the approval's frozen roster
 // gets a page. This service refuses what it can check itself — an unknown operation, one that
 // is not a payout, one whose approval is not opened, and a caller-supplied `approval_id` that

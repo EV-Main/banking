@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use crate::wallet_intents::{IntentKind, production_host_rule, trusted_host};
 
 ev::settings! {
-	/// Runtime configuration for the cabinet BFF, read from the environment only
+	/// Runtime configuration for the wallet BFF, read from the environment only
 	/// (`dotenvy` loads `.env` first in dev; prod values ride the container env —
 	/// the image's baked topology contract plus gitops' k8s Secret `envFrom`).
 	/// Every missing/invalid variable is reported in one aggregate error before
@@ -39,15 +39,16 @@ ev::settings! {
 		auth_cookie_secure: Option<bool>,
 		/// Cross-origin MFE bundle origins allowed beyond same-origin (relative) URLs.
 		/// Mirrors the frontend CSP allow-list (`MFE_ALLOWED_ORIGINS`); in production it may
-		/// name only the cabinet's own origin (see [`Self::check_script_origins`]).
+		/// name only the wallet host's own origin (see [`Self::check_script_origins`]).
 		mfe_allowed_origins: Vec<String> = "",
-		/// The browser origin of the cabinet's own pages (scheme://host[:port]): the only
+		/// The browser origin of the wallet host's own pages (scheme://host[:port]): the only
 		/// `Origin` the first-party gate of the mutating wallet routes admits
 		/// (`routes::first_party_origin`). The gate fails CLOSED when it is unset, so a dev box
 		/// that wants to move money sets it to its browser origin; production refuses to boot
 		/// without it.
 		#[required_in("production")]
-		cabinet_ws_origin: Option<String>,
+		#[env("CABINET_WS_ORIGIN")]
+		wallet_ws_origin: Option<String>,
 		/// The scope hosts (`https://invest.evinvest.ltd`, …) that may READ the wallet
 		/// cross-origin with the user's cookies — `GET /api/wallet`, `/api/wallet/compartments`,
 		/// `/api/operations` and nothing else (`routes::cors`). Empty ⇒ no CORS at all. Not
@@ -116,29 +117,29 @@ impl AppConfig {
 		self.auth_cookie_secure.unwrap_or(self.app_env == "production")
 	}
 
-	/// In production, no script from another origin may run in the cabinet's page. The
+	/// In production, no script from another origin may run in the wallet host's page. The
 	/// wallet's consent routes (GrantMandate above all) trust a request from the first-party
 	/// origin with the user's cookies, and a microfrontend mounts in that page's light DOM,
 	/// so a scope's bundle could grant itself a mandate with no one clicking. Until concierge
 	/// stamps a login time the BFF can demand a fresh sign-in by, the only safe list is one
-	/// naming nothing but the cabinet's own origin.
+	/// naming nothing but the wallet host's own origin.
 	pub fn check_script_origins(&self) -> Result<(), String> {
 		if self.app_env != "production" {
 			return Ok(());
 		}
-		let own = self.cabinet_ws_origin.as_deref().unwrap_or_default();
+		let own = self.wallet_ws_origin.as_deref().unwrap_or_default();
 		let foreign: Vec<&str> = self.mfe_allowed_origins.iter().map(String::as_str).filter(|origin| *origin != own).collect();
 		if foreign.is_empty() {
 			return Ok(());
 		}
 		Err(format!(
-			"MFE_ALLOWED_ORIGINS names origins other than the cabinet's own ({own}): {}. Their scripts would run with the user's session on the wallet's consent routes",
+			"MFE_ALLOWED_ORIGINS names origins other than the wallet host's own ({own}): {}. Their scripts would run with the user's session on the wallet's consent routes",
 			foreign.join(", ")
 		))
 	}
 
 	/// The boot check of the wallet-intent surface; nothing to check while it is off. Every
-	/// listed origin must be a matrix entry and must not be the cabinet's own; production
+	/// listed origin must be a matrix entry and must not be the wallet host's own; production
 	/// also holds each to [`production_host_rule`] and needs `REDIS_URL`. The key is needed
 	/// everywhere: without it there is nothing to sign a CSRF token or an intent with.
 	pub fn check_wallet_actions(&self) -> Result<(), String> {
@@ -154,8 +155,8 @@ impl AppConfig {
 			if production && let Err(why) = production_host_rule(origin) {
 				problems.push(format!("{origin} {why}"));
 			}
-			if self.cabinet_ws_origin.as_deref() == Some(origin) {
-				problems.push(format!("{origin} is the cabinet's own origin; its wallet routes are the first-party ones"));
+			if self.wallet_ws_origin.as_deref() == Some(origin) {
+				problems.push(format!("{origin} is the wallet host's own origin; its wallet routes are the first-party ones"));
 			}
 		}
 		match &self.wallet_intent_key {
@@ -421,7 +422,7 @@ mod tests {
 	}
 
 	#[test]
-	fn production_refuses_scripts_from_any_origin_but_the_cabinets() {
+	fn production_refuses_scripts_from_any_origin_but_the_wallet_hosts() {
 		let mut env = minimal_env();
 		env.insert("APP_ENV".to_string(), "production".to_string());
 		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
@@ -521,7 +522,7 @@ mod tests {
 		first_party.insert("CABINET_WS_ORIGIN".into(), "https://invest.evinvest.ltd".into());
 		assert!(
 			with_wallet(first_party, &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).is_err(),
-			"the cabinet's own origin"
+			"the wallet host's own origin"
 		);
 	}
 

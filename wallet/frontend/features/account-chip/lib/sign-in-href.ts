@@ -1,4 +1,4 @@
-// The signed-out chip's destination: the cabinet's login page, carrying whatever the host
+// The signed-out chip's destination: the wallet host's login page, carrying whatever the host
 // page said about WHY the visitor is coming (`intent`) and WHERE they were headed
 // (`returnTo`). Both arrive as data attributes on the custom element — the only channel a
 // light-DOM remote has from a host that does not share its React tree — and both are
@@ -14,7 +14,7 @@
 import type { Locale } from "@evinvest/i18n";
 
 // Relative on purpose: `node --test` runs this file and cannot resolve the `@/` alias.
-import { cabinetPath } from "../../../shared/config/base-path.ts";
+import { zonePagePath } from "../../../shared/config/base-path.ts";
 import { safeReturnTo } from "../../auth/lib/return-to.ts";
 
 /** What the host says the visitor came to do; anything else is dropped, not forwarded. */
@@ -36,5 +36,5 @@ export function signInHref(
   // present one is forwarded only in its same-origin form.
   if (returnTo) params.set("returnTo", safeReturnTo(returnTo));
   const query = params.toString();
-  return cabinetPath(locale, "/login") + (query ? `?${query}` : "");
+  return zonePagePath(locale, "/login") + (query ? `?${query}` : "");
 }

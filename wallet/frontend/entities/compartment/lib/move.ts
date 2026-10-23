@@ -1,5 +1,5 @@
 // Pure rules of the move page, kept out of the component so they run under `node --test`.
-// Import-light on purpose: only the cabinet's money module.
+// Import-light on purpose: only the wallet host's money module.
 
 import { isPositiveWireDecimal, toBaseUnits } from "../../../shared/lib/money.ts";
 

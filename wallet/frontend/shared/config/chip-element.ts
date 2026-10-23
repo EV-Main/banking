@@ -1,5 +1,5 @@
 // The account chip element's names, shared by both sides of it: the chip itself
-// (features/account-chip) and the cabinet as one of its hosts (application/chip-navigation).
+// (features/account-chip) and the wallet host as one of its hosts (application/chip-navigation).
 // Down here rather than in the chip's slice because the slice's index is also the chip
 // bundle's entry, and a host reaching for two strings must not pull the chip UI into its own
 // client bundle with them.

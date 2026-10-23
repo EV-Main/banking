@@ -9,7 +9,7 @@
 //
 // Two sources, in a fixed order of trust. `/kyc/status` is authoritative and fresh — it is
 // the only thing that knows a case is running. The profile is the fallback, and stays the
-// answer when the plane cannot be read at all: a cabinet deployed ahead of the concierge
+// answer when the plane cannot be read at all: a wallet host deployed ahead of the concierge
 // release that adds the route must behave exactly as it does today, offering a start on tier
 // 0, rather than going blank or refusing one.
 

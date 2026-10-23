@@ -1,6 +1,6 @@
 // The post-login redirect target, from the query string to the shell.
 //
-// Inside the cabinet `returnTo` is ZONE-RELATIVE — `/`, `/wallet`, `/invest/x?y=1` —
+// Inside the wallet host `returnTo` is ZONE-RELATIVE — `/`, `/wallet`, `/invest/x?y=1` —
 // the same shape the nav and the gate reason in. Both writers (the proxy's signed-out
 // bounce and `SessionKeeper`) produce that shape, and this module is the one reader:
 // the shell's `/api/auth/login` redirects to `returnTo` as a site-root path, so the
@@ -8,13 +8,13 @@
 // writer AND the reader, which sent every deep link to `/cabinet/{locale}/cabinet/…`
 // (#390) — the same class of bug as #147 and #153.
 //
-// Pure and browser-safe. The cabinet backend re-validates the target server-side; the
+// Pure and browser-safe. The wallet host backend re-validates the target server-side; the
 // same-origin check here is the UX/defense-in-depth copy.
 
 import type { Locale } from "@evinvest/i18n";
 
 // Relative on purpose: `node --test` runs this file and cannot resolve the `@/` alias.
-import { cabinetPath, zonePathname } from "../../../shared/config/base-path.ts";
+import { zonePagePath, zonePathname } from "../../../shared/config/base-path.ts";
 
 /** A same-origin path, or `/` when `raw` could escape to another origin. */
 export function safeReturnTo(raw: string | null): string {
@@ -42,12 +42,12 @@ export function loginReturnTo(locale: Locale, raw: string | null | undefined): s
   const cut = dest.search(/[?#]/);
   const pathname = cut === -1 ? dest : dest.slice(0, cut);
   const tail = cut === -1 ? "" : dest.slice(cut);
-  return cabinetPath(locale, zonePathname(pathname)) + tail;
+  return zonePagePath(locale, zonePathname(pathname)) + tail;
 }
 
 /**
  * The `href` of the sign-in button: a full navigation to the SHELL-owned login
- * (site-root `/api/auth`, not the zone's BFF — the cabinet runs no OAuth).
+ * (site-root `/api/auth`, not the zone's BFF — the wallet host runs no OAuth).
  */
 export function loginHref(locale: Locale, returnTo: string | null | undefined, provider: "google" | "github"): string {
   return `/api/auth/login?provider=${provider}&returnTo=${encodeURIComponent(loginReturnTo(locale, returnTo))}`;

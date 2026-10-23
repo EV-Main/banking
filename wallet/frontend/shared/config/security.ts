@@ -1,6 +1,6 @@
-// Security response headers for the cabinet host document.
+// Security response headers for the wallet host host document.
 //
-// The cabinet renders authenticated, money-moving surfaces and runs third-party
+// The wallet host renders authenticated, money-moving surfaces and runs third-party
 // MFE code, so the host document ships a baseline of hardening headers. The CSP
 // is the load-bearing one: MFE bundles are loaded as runtime ESM <script> by
 // arbitrary registry-provided scriptUrls (shared/mfe/RemoteElement.tsx), so
@@ -81,7 +81,7 @@ function splitList(value: string | undefined): string[] {
  * the consilium quietly falls back to polling forever on the browsers that got it wrong.
  * Naming the origin explicitly costs one token and removes the question.
  *
- * The host comes from the request rather than an env var because the cabinet is a zone
+ * The host comes from the request rather than an env var because the wallet host is a zone
  * mounted under the conductor's domain: the public origin is whatever the conductor was
  * asked for, and only the request knows it. `x-forwarded-*` win over `host` for the same
  * reason — behind the conductor, `host` is the internal upstream name, and a CSP naming
@@ -136,7 +136,7 @@ export function contentSecurityPolicy(nonce: string, socketOrigin?: string | nul
     `img-src 'self' data: blob:`,
     `font-src 'self'`,
     // Sentry Replay (mounted through `@evinvest/error-monitoring`'s provider on every
-    // cabinet page) compresses its recording in a worker it builds from a `blob:` URL —
+    // zone page) compresses its recording in a worker it builds from a `blob:` URL —
     // and it starts recording in buffer mode whenever the error sample rate is above
     // zero, DSN or not, so this is a production fact and not a dev-overlay one. Stated
     // here rather than loosened in `script-src`: without a `worker-src` the browser

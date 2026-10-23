@@ -91,7 +91,7 @@ fn requests(state: AppState) -> Router {
 /// The money plane holds a `token_version` floor that "log out of all devices" raises,
 /// and refuses a banking token minted below it with `UNAUTHENTICATED`. [`BankingTokens`]
 /// caches that token for its whole TTL, so without this the frontend's one heal-replay
-/// would present the very same token, be refused again, and the cabinet would read
+/// would present the very same token, be refused again, and the wallet host would read
 /// "could not confirm your session" for up to fifteen minutes after a re-login. Evicting
 /// on the 401 itself is what makes the replay re-mint against the current floor.
 ///
@@ -206,7 +206,7 @@ pub fn require_fresh_login(claims: &Claims, now: u64) -> Result<(), ApiError> {
 /// changes a box run with `APP_ENV` unset or wrong — and there, a gate that opens because a
 /// variable is missing is the one way a cross-site page gets to move money.
 pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
-	state.config.cabinet_ws_origin.as_deref().is_some_and(|expected| ws::origin_is(headers, expected))
+	state.config.wallet_ws_origin.as_deref().is_some_and(|expected| ws::origin_is(headers, expected))
 }
 
 /// The audit block the hub records beside a money act. Every field is the BFF's own reading of

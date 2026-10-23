@@ -152,7 +152,7 @@ pub struct AppState {
 	/// concierge is wired (a test): a fund payment is then refused rather than opened unproposable.
 	pub payment_proposer: Option<Arc<application::payment_approvals::PaymentProposer>>,
 	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
-	/// page it points at is served by the cabinet, not here; the hub only has to mint a
+	/// page it points at is served by the wallet host, not here; the hub only has to mint a
 	/// link an owner's mail client will render.
 	pub consilium_approval_url_base: String,
 	/// Base URL the emailed payment CONSENT link is built on (`<base>/<token>`) — the

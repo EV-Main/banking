@@ -6,7 +6,7 @@ import { createSentrySink } from "@evinvest/error-monitoring";
 import { useLocale, useT } from "@evinvest/i18n/react";
 import { StatusScreen, statusCtaClass } from "@evinvest/uikit";
 
-import { cabinetPath } from "@/shared/config/base-path";
+import { zonePagePath } from "@/shared/config/base-path";
 
 // Route-segment error boundary (500) for the whole `/{locale}/cabinet` tree.
 //
@@ -60,7 +60,7 @@ export default function Error({
       links={[
         {
           label: t("status.backHome", "Back to home"),
-          href: cabinetPath(locale, "/"),
+          href: zonePagePath(locale, "/"),
           variant: "outline",
           leadingArrow: true,
         },
