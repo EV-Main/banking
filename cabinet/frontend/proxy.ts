@@ -253,7 +253,7 @@ function withCsp(res: NextResponse, csp: string): NextResponse {
 
 export const config = {
   // "/" is listed explicitly: the negative lookahead alone never matches the bare
-  // index, so an unauthenticated visitor reached the (app) shell at the zone root
+  // index, so an unauthenticated visitor reached the page at the zone root
   // while every sub-route correctly bounced to /login. Gate the index too.
   // `mfe/` is excluded like `_next/static`: the public/mfe/* element-remote bundles
   // are static assets the conductor injects even for anonymous visitors (the chip

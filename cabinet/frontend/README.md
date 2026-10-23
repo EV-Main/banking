@@ -34,7 +34,6 @@ wallet element reach:
 | `(public)` | `/cabinet/approve/*`, `/cabinet/consent/*`, `/cabinet/owner-removal/*` | Token links in mails already sent |
 | `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
 | `(auth)` | `/cabinet/loggedout` | The sign-out landing |
-| `(app)` | `/cabinet/consilium`, `/cabinet/approvals/payout/*` | Transitional, with the rail: the consilium screens go after invest#37 |
 
 `(host)` and `(wallet-action)` share one session pattern: the route gate gives a
 guest the sign-in wall, and `SessionKeeper` renews the access cookie.
@@ -179,10 +178,8 @@ Rules:
 - **`persist: true` is for non-personal data only** — the fund catalog and NAVs.
   A balance, a position, a profile or an operation stays in memory, which dies
   with the page. Sign-out clears both halves.
-- **Warm ahead of the click.** `application/prefetch.ts` maps each route to the
-  reads it makes; the rail and the tab bar warm the target on pointer or keyboard
-  intent, and the shell warms the shared reads at idle. That is what makes the
-  *first* visit to a screen skeleton-free too.
+- **Warm at idle.** `CacheWarmer` in the `(host)` layout warms the balance at
+  idle, so the wallet pages usually paint their figures on the first frame.
 
 ## Motion
 
@@ -225,9 +222,9 @@ Rules:
   the card is settling and the card stutters. Sections publish this through
   `shared/ui/motion/entrance`; `Settled`, `Reveal` and `StaggerItem` all read
   it, so it is automatic and there is nothing to pass down.
-- **Chrome does not animate on navigation.** The rail, the tab bar and the
-  system banner stay put; the entrance belongs to page content. The mobile app
-  bar is the exception, and only because it *is* the page's title.
+- **Chrome does not animate on navigation.** The entrance belongs to page
+  content. The mobile app bar is the exception, and only because it *is* the
+  page's title.
 - **A figure lands without an animation frame.** `AnimatedNumber` counts on
   `requestAnimationFrame`, which a hidden tab never gets — so the count alone
   would leave a page opened in the background reading `$0.00` until it was
@@ -254,16 +251,12 @@ Rules:
   rather than emptying the column and refilling it. See `views/wallet/withdraw`.
 - **A marker that moves is one node per surface, mounted once and translated** —
   never a per-item background that blinks between rows, and never a `layoutId`
-  pill that mounts inside whichever item is active. The mobile tab bar's rule is
-  positioned by arithmetic, because its tabs are uniform; the rail's active
-  marker is positioned by measurement in a layout effect, because its sections
-  differ in row count and every label is a translation, and its move is a CSS
-  transition on `transform` (`globals.css`). `layoutId` is not used for either,
-  for two reasons found the hard way: the slide it produces is a layout
-  projection driven from the main thread, which drops frames while the page just
-  navigated to is rendering; and its measurement adds `window.scroll` to every
-  box unless the element itself is `position: fixed`, so a marker inside the
-  rail's fixed wrapper took its origin from the previous page's scroll offset and
-  flew in from below its row.
+  pill that mounts inside whichever item is active. Position it by arithmetic or
+  by measurement, and move it with a CSS transition on `transform`. `layoutId`
+  is not used, for two reasons found the hard way: the slide it produces is a
+  layout projection driven from the main thread, which drops frames while the
+  page just navigated to is rendering; and its measurement adds `window.scroll`
+  to every box unless the element itself is `position: fixed`, so a marker
+  inside a fixed wrapper takes its origin from the previous page's scroll offset.
 - Note the eslint guard on arbitrary Tailwind values applies here too — motion
   values live in props and tokens, not in class strings.

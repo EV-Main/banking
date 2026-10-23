@@ -424,6 +424,10 @@ once, here, and each plane's tests assert against this table:
 
 ### The live consilium page
 
+The banking cabinet no longer renders this page (banking#565; the owners' room moves to
+invest, invest#37). The BFF socket stays until banking#566, and these rules bind any client
+of it.
+
 23. **The socket is not the source of truth.** It carries a version number, never a
     tally. The client re-fetches the authoritative snapshot when the version moves, so
     a stale or spoofed frame can never render a wrong count.

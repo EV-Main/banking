@@ -9,11 +9,10 @@ import { LocalisedStatus } from "@/views/status";
 // The flag matters — without it next-app-loader never resolves this file and the
 // page is silently ignored, which is how it sat here doing nothing until now.
 //
-// The admin console's own gate is client-side (the principal is read from the
-// shell's `/api/auth/session` in the browser), so it renders the 403 surface
-// directly instead of calling this — see `(app)/admin/layout.tsx`. This file backs
-// the server half: anything that learns "signed in, but not allowed" while
-// rendering on the server.
+// The route gate is client-side (the principal is read from the shell's
+// `/api/auth/session` in the browser), so it renders the 403 surface directly
+// instead of calling this. This file backs the server half: anything that learns
+// "signed in, but not allowed" while rendering on the server.
 export default async function ForbiddenPage() {
   return <LocalisedStatus kind="forbidden" locale={await currentLocale()} />;
 }

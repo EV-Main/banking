@@ -8,11 +8,8 @@ import type { ReactNode } from "react";
 // these pages are about a token, and the reader may have no account on this device at all.
 // So nothing session-dependent mounts here: no `SessionKeeper` (it exists to rotate an
 // access cookie that does not exist, and its answer to "signed out" is a redirect to
-// /login — which would throw the reader off a page they were mailed a link to), no
-// `CacheWarmer` (it warms authenticated reads), no `SystemBanner`, no rail, no bottom nav.
-//
-// `LocaleSync` is absent for the same reason: it reconciles the URL against the language
-// stored on the account, and there is no account. The URL's locale is the whole answer here.
+// /login — which would throw the reader off a page they were mailed a link to), and no
+// `CacheWarmer` (it warms authenticated reads). The URL's locale is the whole answer here.
 //
 // What is kept is `--ev-shell-offset` — the one contract with the conductor's header, which
 // is injected around this zone whether or not anyone is signed in.

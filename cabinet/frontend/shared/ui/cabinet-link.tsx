@@ -29,9 +29,8 @@ import { useCabinetHref } from "@/shared/lib/cabinet-route";
  * so a prefetch has nothing to carry: Next answers the viewport prefetch with the route
  * tree alone and then goes back for the page's `<head>` in a second request — two
  * documents per link, and neither one shortens the click, which still has to make the
- * full dynamic request for the page. On the admin console that was 40 RSC requests per
- * page load for the rail. The data the click does need is warmed by
- * `application/prefetch.ts` on intent, which is where the head start actually comes from.
+ * full dynamic request for the page. On the old admin console that was 40 RSC requests
+ * per page load for the rail.
  *
  * `shared/ui/cabinet-link.test.ts` pins the premise: the day a route gains a loading
  * boundary, a prefetch starts carrying a real skeleton and this default is due for

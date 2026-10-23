@@ -11,9 +11,8 @@
 //
 //   · A vote is a decision, not a number. The public GET carries `attempts_remaining` and a
 //     settled `decision`, never a running tally the client could add to.
-//   · A socket frame carries a REVISION and nothing else (see the store in
-//     `entities/governance/model/consilium-socket.ts`). There is no tally on the wire, so
-//     there is no type here that could accidentally be rendered as one.
+//   · A socket frame carries a REVISION and nothing else. There is no tally on the wire,
+//     so there is no type here that could accidentally be rendered as one.
 //
 // Lifecycle states travel as plain strings on purpose. The state machine lives in the money
 // plane and gains members there (`ExecutionFailed` arrived after `Approved`); a closed union
