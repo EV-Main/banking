@@ -2,8 +2,7 @@
 //! close codes a client keys on, the keepalive cadence and the token-expiry clock.
 //!
 //! A bridge is a thin pump from one upstream server-stream to one browser socket, and
-//! three rules make it safe to keep open (see [`super::governance_ws`] for the first one,
-//! [`super::book_ws`] for the second):
+//! three rules make it safe to keep open (see [`super::governance_ws`]):
 //!
 //! - **It is authorized at the handshake and only until the token says so.** `ev_access`
 //!   is verified exactly as on the REST routes, and the socket closes itself when that

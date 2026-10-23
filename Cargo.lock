@@ -544,7 +544,6 @@ dependencies = [
  "axum-extra",
  "color-eyre",
  "domain 0.1.0",
- "domain 0.1.0 (git+https://github.com/EV-Main/concierge.git?rev=1fb4de7fcadc2e1a3b3fa4f0bd66881c704db5c3)",
  "dotenvy",
  "ev_lib",
  "evbanking_contracts",

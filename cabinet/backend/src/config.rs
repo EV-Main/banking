@@ -17,7 +17,7 @@ ev::settings! {
 		/// unambiguous next to the other services' binds.
 		#[env("CABINET_BACKEND_BIND")]
 		bind: SocketAddr = "127.0.0.1:4000",
-		/// The piggybank money plane (wallet/funds/health), e.g. `http://127.0.0.1:50051`.
+		/// The piggybank money plane (wallet/consilium/health), e.g. `http://127.0.0.1:50051`.
 		piggybank_grpc_addr: String,
 		/// The banking auth service (token issuance), e.g. `http://127.0.0.1:50052`. The BFF
 		/// calls `IssueUserToken`/`Refresh` here to obtain the money-plane token pair.

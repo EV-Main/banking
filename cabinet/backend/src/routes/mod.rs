@@ -1,6 +1,4 @@
 pub mod approval;
-pub mod book;
-pub mod book_ws;
 pub mod consilium;
 pub mod cors;
 pub mod governance_ws;
@@ -54,15 +52,12 @@ const REQUEST_DEADLINE: Duration = Duration::from_secs(15);
 /// The websockets are merged in AFTER [`REQUEST_DEADLINE`] is applied, so the layer
 /// wraps every request-shaped route and none of the long-lived ones. A deadline is
 /// exactly right for a request that must finish and exactly wrong for a socket that must
-/// not: inside it, the live consilium page and the live book would be dropped every 15
+/// not: inside it, the live consilium page would be dropped every 15
 /// seconds. (The upstream gRPC channel's own per-RPC timeout does not bound a
 /// server-stream either — it covers the response future, which resolves when the headers
 /// arrive, not the body.)
 pub fn router(state: AppState) -> Router {
-	let websockets = Router::new()
-		.route("/api/owners/consilium/ws", get(governance_ws::upgrade))
-		.route("/api/book/ws", get(book_ws::upgrade))
-		.with_state(state.clone());
+	let websockets = Router::new().route("/api/owners/consilium/ws", get(governance_ws::upgrade)).with_state(state.clone());
 
 	requests(state)
 		.merge(websockets)
@@ -104,28 +99,7 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/payments", get(money::list_payment_confirmations))
 		.route("/api/wallet/payments/{id}", get(money::get_payment_confirmation))
 		.route("/api/wallet/payments/{id}/answer", post(money::answer_payment_confirmation))
-		.route("/api/allocations", get(money::list_allocations))
-		.route("/api/allocations/detail", get(money::get_allocation))
 		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
-		.route("/api/funds/nav", get(money::fund_nav))
-		.route("/api/funds/nav/history", get(money::fund_nav_history))
-		.route("/api/funds/positions", get(money::list_positions))
-		.route("/api/funds/fee-policy", get(money::fee_policy))
-		.route("/api/funds/accrued-fees", get(money::accrued_fees))
-		.route("/api/funds/redemptions", get(money::list_redemptions))
-		.route("/api/funds/redemptions/cancel", post(money::cancel_redemption))
-		.route("/api/funds/subscribe", post(money::subscribe))
-		.route("/api/funds/redeem", post(money::redeem))
-		// The book — holders trading an allocation's units with each other. Money plane;
-		// the live feed is `/api/book/ws`, mounted with the other socket below.
-		.route("/api/book", get(book::get_book))
-		.route("/api/book/trades", get(book::list_trades))
-		.route("/api/book/candles", get(book::list_candles))
-		.route("/api/book/policy", get(book::get_policy))
-		.route("/api/book/orders", get(book::list_open_orders).post(book::place_order))
-		.route("/api/book/orders/cancel", post(book::cancel_order))
-		.route("/api/book/orders/history", get(book::list_order_history))
-		.route("/api/book/fills", get(book::list_fills))
 		// Consilium — the platform's own money moving or changing hands, gated on a quorum
 		// of owners. Money plane: the tally is computed and verified where the money is.
 		.route("/api/consilium", get(consilium::list))

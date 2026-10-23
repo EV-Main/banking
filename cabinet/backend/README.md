@@ -6,8 +6,7 @@ requests to two gRPC planes:
 
 - **concierge** (identity) — `UserDirectory` `GetMe`/`UpdateProfile`, the platform config,
   notifications, and the ownership plane (owners, removals, the live feed).
-- **piggybank** (money) — `WalletService`, `FundsService`, `FeesService`, `AllocationsService`,
-  `BookService`, `BalanceService`, `ConsiliumService`, `HealthService`.
+- **piggybank** (money) — `WalletService`, `BalanceService`, `ConsiliumService`, `HealthService`.
 
 ## Auth is shell-owned
 
@@ -40,7 +39,7 @@ in production.
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
-| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `book`, `notifications`, `platform`, `system`, `consilium`, `approval`; the two socket bridges `governance_ws` and `book_ws` over the shared `ws` (origin guard, close codes, keepalive, expiry) |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `notifications`, `platform`, `system`, `consilium`, `approval`; the socket bridge `governance_ws` over the shared `ws` (origin guard, close codes, keepalive, expiry) |
 
 ## The governance surface
 
@@ -107,43 +106,7 @@ make that hold at the BFF:
   the verified subject (in-process, per replica; the hub's limits and idempotency are the
   real bound). Locally, set `CABINET_WS_ORIGIN` to the browser origin to move money.
 
-## The book surface
-
-The secondary market in an allocation's units — holders trading with each other on the
-hub's central limit order book (`BookService`; the policy and the ledger model are in
-`piggybank/core/PATTERNS.md` § The book). Every route is a money-plane route: it forwards
-the banking token, and an order is an escrow inside the ledger. Reads answer a fixed
-generic message on failure; mutations relay the hub's client-safe wording under the mapped
-status (`FAILED_PRECONDITION` → 412 for a closed book or an access below `invest`,
-`INVALID_ARGUMENT` → 400, `ALREADY_EXISTS` → 409 for a reused `client_order_id`,
-`NOT_FOUND` → 404 for a hidden allocation). The string vocabularies — `side`, `kind`,
-`tif`, `resolution` — are pinned in `evbanking_contracts::book` and checked here, so a
-client bug is refused with the words that would have worked before the hub is called.
-Every amount, size, price, timestamp and revision crosses as a string.
-
-| Route | Query / body | Answer | Gates |
-| ----- | ------------ | ------ | ----- |
-| `GET /api/book` | `service`, `depth?` | `BookSnapshot` | session |
-| `GET /api/book/trades` | `service`, `limit?` | `{ trades: Trade[] }` — the public tape, no parties | session |
-| `GET /api/book/candles` | `service`, `resolution`, `from?`, `to?` (unix s; `to` absent = now) | `{ service, resolution, candles: Candle[] }` | session |
-| `GET /api/book/policy` | `service` | `BookPolicy` | session |
-| `GET /api/book/orders` | `service?` (absent = every allocation) | `{ orders: Order[] }` — resting, oldest first | session |
-| `GET /api/book/orders/history` | `service?`, `limit?` | `{ orders: Order[] }` — every state, newest first | session |
-| `GET /api/book/fills` | `service?`, `limit?` | `{ trades: Trade[] }` — own fills with side, order and fee | session |
-| `POST /api/book/orders` | `{ service, side, kind, tif?, price?, size, client_order_id }` | `Order` | session + CSRF |
-| `POST /api/book/orders/cancel` | `{ order_id }` | `Order` | session + CSRF |
-| `GET /api/book/ws` | `service`, `depth?` | websocket, see below | session + `Origin` |
-
-**The book websocket** bridges `BookService.WatchBook` exactly as the governance one does
-(same handshake, origin guard, keepalive, expiry and close codes — the shared `routes/ws`),
-but its frame IS the book: `{ "type": "book", snapshot: BookSnapshot, trades: Trade[],
-orders_revision }` — the same snapshot `GET /api/book` answers, the latest public trades,
-and the revision at which the caller's own orders last changed, so the client refetches
-`/api/book/orders` only when `orders_revision` moves. Every 25 s a `{ "type":
-"heartbeat", at }` keeps the socket alive and carries no book. No other user's orders and
-no balances ride on it. Close codes: `1000` the feed ended (reconnect; the first frame of
-the new subscription is a full snapshot), `4401` the access token expired (sign in again),
-`4503` the hub could not serve the feed (poll instead).
+## The approval surface
 
 **`/api/approval/{payout,removal}/{token}`** is the surface an emailed owner reaches. It
 carries no session and requires none — the emailed token is the credential — so it is the
