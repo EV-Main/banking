@@ -1,9 +1,9 @@
 {
-  "name": "@evbanking/cabinet",
+  "name": "@evbanking/wallet-host",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Host shell for the EV banking cabinet. Composes microfrontends (React and Rust/WASM) as custom elements; same-origin /api/* is proxied to the cabinet backend (the Rust BFF in cabinet/backend).",
+  "description": "Host shell for the EV banking cabinet. Composes microfrontends (React and Rust/WASM) as custom elements; same-origin /api/* is proxied to the cabinet backend (the Rust BFF in wallet/backend).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

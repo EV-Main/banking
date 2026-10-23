@@ -5887,7 +5887,7 @@ export type BankingV1UserProfile = {
      * Carried here only for wire parity, like `role_is_break_glass` above: the money plane
      * learns of a freeze through the one-way lifecycle bridge's SUSPENDED/REINSTATED
      * events, never by reading this, and never sets it. Absent them the parity round trip
-     * in `cabinet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is
+     * in `wallet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is
      * exactly the drift that test exists to catch.
      */
     suspended_by?: string;

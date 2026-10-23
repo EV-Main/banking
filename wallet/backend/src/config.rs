@@ -53,7 +53,7 @@ ev::settings! {
 		/// `/api/operations` and nothing else (`routes::cors`). Empty ⇒ no CORS at all. Not
 		/// required in production: an empty list only means the scope hosts cannot show a
 		/// balance, never that anyone can move money. Mirrors the origins in
-		/// `cabinet/frontend/shared/config/wallet-scopes.ts`.
+		/// `wallet/frontend/shared/config/wallet-scopes.ts`.
 		wallet_cors_origins: Vec<CorsOrigin> = "",
 		/// Paying an invoice above this amount (decimal USDT) needs a sign-in no older than
 		/// `STEP_UP_MAX_AGE_SECS`; at or below it a session is enough. Optional on purpose: the

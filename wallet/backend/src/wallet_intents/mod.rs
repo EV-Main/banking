@@ -49,7 +49,7 @@ pub struct TrustedHost {
 	pub kinds: &'static [IntentKind],
 }
 
-/// The matrix. Mirrors `cabinet/frontend/shared/config/wallet-scopes.ts`. The SA panel has no
+/// The matrix. Mirrors `wallet/frontend/shared/config/wallet-scopes.ts`. The SA panel has no
 /// withdrawal: the spec ships it there only once the panel's strict CSP is live, and that is
 /// a reviewed change of this line, not an env flip that would also reach invest.
 pub const TRUSTED_HOSTS: &[TrustedHost] = &[

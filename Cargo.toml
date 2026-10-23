@@ -4,10 +4,10 @@ cargo-features = ["codegen-backend"]
 # `piggybank/` is the central backend: `core` (the hub server + composition root),
 # `auth` (the auth service + shared verification lib), and `signer` (the separate-
 # process key vault that holds chain private keys at rest) are sibling crates.
-# `cabinet/backend` is the cabinet's BFF — a standalone HTTP service that
+# `wallet/backend` is the cabinet's BFF — a standalone HTTP service that
 # orchestrates the money plane (this repo) and the concierge identity plane.
 members = [
-    "cabinet/backend",
+    "wallet/backend",
     "contracts",
     "domain",
     "piggybank/auth",
@@ -110,6 +110,9 @@ zeroize = "1"
 
 [workspace.lints.rust]
 unused_features = "allow"
+
+[workspace.lints.cargo]
+non_kebab_case_bins = "allow"
 
 # smaller target/: trim debuginfo (deps need none), keep line tables for backtraces
 [profile.dev]

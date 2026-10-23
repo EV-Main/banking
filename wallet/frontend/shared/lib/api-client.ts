@@ -199,7 +199,7 @@ const FRIENDLY: Record<string, { code: ErrorCode; en: string }> = {
     en: "Verification is unavailable right now. Please contact support.",
   },
   // The BFF's own refusal, not a plane's: an operator may not set their own KYC tier
-  // (`cabinet/backend/src/routes/admin.rs::set_kyc`). It is keyed rather than sent as
+  // (`wallet/backend/src/routes/admin.rs::set_kyc`). It is keyed rather than sent as
   // prose — which is what the neighbouring role gates do — because this one is read by
   // an operator who is mid-task and needs to know WHO can do it instead, and a sentence
   // fixed in English at the BFF would say that in English to all five locales.

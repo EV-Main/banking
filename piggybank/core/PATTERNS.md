@@ -1203,7 +1203,7 @@ unless banking has a POSTED, `approved`-reason payout to them in the same scope 
 automatic (redemption/book/fee_rebate) and the operation's own payouts do not count. Every refusal is one `NOT_FOUND`.
 This service cannot see the roster itself (a service reads concierge's approvals without
 addresses), so it checks only revocation and the id binding: the roster gate is the BFF's
-(`cabinet/backend/src/routes/payout_review.rs`). Do not expose it to a caller that skips the BFF.
+(`wallet/backend/src/routes/payout_review.rs`). Do not expose it to a caller that skips the BFF.
 
 **Reconciliation** (8) gauges scope transfers and payouts recorded and unposted for over 15
 min (`telemetry::note_stale_scope_postings`), outside `clean()`.

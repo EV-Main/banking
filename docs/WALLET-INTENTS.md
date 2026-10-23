@@ -8,8 +8,8 @@ of the BFF side (controls (a), (b), (d) and (h) of
 [`WALLET-INPAGE-SPEC.md`](./WALLET-INPAGE-SPEC.md)). The proof itself is concierge's
 `docs/STEPUP-PROOF.md`.
 
-The code: `cabinet/backend/src/routes/intents/` (routes, CORS, the confirm order) and
-`cabinet/backend/src/wallet_intents/` (the host matrix, the risk classes, the key, the proof
+The code: `wallet/backend/src/routes/intents/` (routes, CORS, the confirm order) and
+`wallet/backend/src/wallet_intents/` (the host matrix, the risk classes, the key, the proof
 verifier, the store).
 
 ## Off by default

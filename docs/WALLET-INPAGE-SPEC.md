@@ -19,7 +19,7 @@ Source of truth for the analysis: the security review of 2026-10-19 (threat mode
 - Popup fallback stays, off by default behind a flag.
 
 ## Controls (must all exist before a trusted host is enabled)
-(a) Bank backend (banking cabinet/backend): keep `first_party_origin` for old routes; ADD `trusted_wallet_origin` with an in-code matrix
+(a) Bank backend (banking wallet/backend): keep `first_party_origin` for old routes; ADD `trusted_wallet_origin` with an in-code matrix
     origin -> (scope, allowed kinds, limits) (reviewable in code, like the frontend `wallet-scopes.ts`); env `WALLET_ACTION_ORIGINS`
     (empty = off, fail-closed; prod startup refuses non-https, `*`, paths, origins outside *.evinvest.ltd) and `WALLET_ACTION_KINDS`
     (default only `move`). New cross-origin API only on `/api/wallet/intents*` and `/api/wallet/csrf`. Checks: exact Origin match,

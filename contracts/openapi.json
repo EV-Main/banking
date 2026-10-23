@@ -14806,7 +14806,7 @@
           "suspended_by": {
             "type": "string",
             "title": "suspended_by",
-            "description": "WHY the account is disabled, and therefore who may undo it — concierge splits the\n old blocking verb into a lapsing `admin_hold` and a ratified `governance` verdict,\n and an empty string is a THIRD case: an account suspended before the field existed,\n which keeps the one-act, never-lapsing semantics it was actually suspended under.\n\n Carried here only for wire parity, like `role_is_break_glass` above: the money plane\n learns of a freeze through the one-way lifecycle bridge's SUSPENDED/REINSTATED\n events, never by reading this, and never sets it. Absent them the parity round trip\n in `cabinet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is\n exactly the drift that test exists to catch."
+            "description": "WHY the account is disabled, and therefore who may undo it — concierge splits the\n old blocking verb into a lapsing `admin_hold` and a ratified `governance` verdict,\n and an empty string is a THIRD case: an account suspended before the field existed,\n which keeps the one-act, never-lapsing semantics it was actually suspended under.\n\n Carried here only for wire parity, like `role_is_break_glass` above: the money plane\n learns of a freeze through the one-way lifecycle bridge's SUSPENDED/REINSTATED\n events, never by reading this, and never sets it. Absent them the parity round trip\n in `wallet/backend/tests/concierge_parity.rs` re-encodes short and fails, which is\n exactly the drift that test exists to catch."
           },
           "hold_expires_at": {
             "type": [

@@ -1,7 +1,7 @@
 // The money plane's refusals as they reach the browser: the hub's sentence with the
 // `DomainError` Display prefix still on it — "validation failed: incorrect code — 4
 // attempts remaining", "conflict: the owner roster changed…" (domain/src/error.rs). The BFF
-// relays a client-safe status's message verbatim (cabinet/backend/src/error.rs), so the
+// relays a client-safe status's message verbatim (wallet/backend/src/error.rs), so the
 // prefix is not something a screen can ask it to drop.
 //
 // Two readers of that prose: the facts are read out of the sentence and rendered in the reader's language, and anything unrecognised

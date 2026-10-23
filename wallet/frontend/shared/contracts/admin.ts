@@ -1,5 +1,5 @@
 // Admin-console response types — the shapes the BFF's `/api/admin/*` handlers emit
-// (see `cabinet/backend/src/dto.rs`). These are hand-written to match the BFF DTOs
+// (see `wallet/backend/src/dto.rs`). These are hand-written to match the BFF DTOs
 // rather than re-exported from `./gen`, because the admin DTOs diverge from the raw
 // proto (64-bit ints rendered as strings, the derived `isAdmin` flag, and the combined
 // cabinet-config response). Import these from `@/shared/contracts/admin`.
@@ -22,7 +22,7 @@ export interface SessionUser {
    * difference is not a typo. This shape is NOT one of the BFF's: `/api/auth/session` is
    * the site-root auth surface, and ingress sends `/api/auth/*` straight to concierge,
    * whose `SessionUser` carries `#[serde(rename_all = "camelCase")]`. The admin DTOs come
-   * from the cabinet's own BFF (`cabinet/backend/src/dto.rs`), which renames nothing.
+   * from the cabinet's own BFF (`wallet/backend/src/dto.rs`), which renames nothing.
    *
    * True only while the fund has no persisted owner — the window closes on the first
    * genesis seeding and cannot reopen. Render it as a warning, never as ownership: it is

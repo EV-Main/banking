@@ -1,4 +1,4 @@
-// A mandate as the BFF serves it (`cabinet/backend/src/dto.rs` `Mandate`). Hand-written, not
+// A mandate as the BFF serves it (`wallet/backend/src/dto.rs` `Mandate`). Hand-written, not
 // the generated type: the BFF lowercases the operation names and renders every i64 as a
 // string of unix seconds, with "0" meaning none.
 

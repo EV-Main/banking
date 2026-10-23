@@ -2,8 +2,8 @@
 /domain/src/authz.rs                            @f33na
 /piggybank/core/src/infrastructure/bridge.rs    @f33na
 /piggybank/core/migrations/                     @f33na
-/cabinet/backend/src/routes/grants.rs           @f33na
-/cabinet/backend/src/routes/admin.rs            @f33na
-/cabinet/backend/src/routes/mod.rs              @f33na
-/cabinet/frontend/features/panel-access/        @f33na
+/wallet/backend/src/routes/grants.rs           @f33na
+/wallet/backend/src/routes/admin.rs            @f33na
+/wallet/backend/src/routes/mod.rs              @f33na
+/wallet/frontend/features/panel-access/        @f33na
 /.github/CODEOWNERS                             @f33na
