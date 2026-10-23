@@ -450,12 +450,12 @@
               AUTH_ISSUER = "https://auth.concierge.ev";
               AUTH_CLIENT_AUDIENCE = "concierge";
               MFE_REGISTRY_PATH = "/mfe-registry.json";
-              # The PUBLIC origin the browser sends as `Origin` on the consilium websocket
-              # handshake — not an internal service name. A ws handshake is exempt from CORS
-              # and still carries cookies, so this is what stops a cross-site page opening the
-              # live feed as the signed-in owner. It is `required_in("production")`, so a pod
-              # without it refuses to boot rather than failing open: public topology, no
-              # secret, which is why it belongs here and not in the cluster Secret.
+              # The PUBLIC origin the browser sends as `Origin` on a first-party money
+              # mutation — not an internal service name. It is the only origin the first-party
+              # wallet routes admit (the intents routes use WALLET_ACTION_ORIGINS below).
+              # It is `required_in("production")`, so a pod without it
+              # refuses to boot: public topology, no secret, which is why it belongs here and
+              # not in the cluster Secret.
               CABINET_WS_ORIGIN = "https://evinvest.ltd";
               # The scope hosts that may READ the wallet cross-origin with cookies (three GET
               # routes, nothing else). Public topology like the line above; mirrors

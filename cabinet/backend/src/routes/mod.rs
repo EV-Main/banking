@@ -1,12 +1,10 @@
 pub mod approval;
 pub mod consilium;
 pub mod cors;
-pub mod governance_ws;
 pub mod identity;
 pub mod intents;
 pub mod money;
 pub mod notifications;
-pub mod payout_review;
 pub mod platform;
 pub mod system;
 #[cfg(test)]
@@ -48,20 +46,8 @@ const REQUEST_DEADLINE: Duration = Duration::from_secs(15);
 
 /// Mount every BFF endpoint. Paths and methods mirror the old Next.js route handlers
 /// 1:1 so the frontend's same-origin `/api/*` calls are unchanged.
-///
-/// The websockets are merged in AFTER [`REQUEST_DEADLINE`] is applied, so the layer
-/// wraps every request-shaped route and none of the long-lived ones. A deadline is
-/// exactly right for a request that must finish and exactly wrong for a socket that must
-/// not: inside it, the live consilium page would be dropped every 15
-/// seconds. (The upstream gRPC channel's own per-RPC timeout does not bound a
-/// server-stream either — it covers the response future, which resolves when the headers
-/// arrive, not the body.)
 pub fn router(state: AppState) -> Router {
-	let websockets = Router::new().route("/api/owners/consilium/ws", get(governance_ws::upgrade)).with_state(state.clone());
-
-	requests(state)
-		.merge(websockets)
-		.layer(TraceLayer::new_for_http().on_failure(DefaultOnFailure::new().level(tracing::Level::WARN))) // recurring ones escalate in devops alerting
+	requests(state).layer(TraceLayer::new_for_http().on_failure(DefaultOnFailure::new().level(tracing::Level::WARN))) // recurring ones escalate in devops alerting
 }
 
 /// Every request-shaped endpoint: served under the outer deadline.
@@ -106,29 +92,6 @@ fn requests(state: AppState) -> Router {
 		.route("/api/consilium/holder-grant", post(consilium::open_holder_grant))
 		.route("/api/consilium/{id}", get(consilium::get))
 		.route("/api/consilium/{id}/cancel", post(consilium::cancel))
-		// Ownership — seats, and the two consilia that move them. Concierge plane:
-		// `Role::Owner` is its fact. Admission is the only way a seat is GRANTED.
-		.route("/api/owners", get(consilium::owners))
-		.route("/api/owners/resign", post(consilium::resign))
-		.route("/api/owners/removals", get(consilium::list_removals).post(consilium::open_removal))
-		.route("/api/owners/removals/{id}/vote", post(consilium::vote_removal))
-		.route("/api/owners/removals/{id}/cancel", post(consilium::cancel_removal))
-		.route("/api/owners/admissions", get(consilium::list_admissions).post(consilium::open_admission))
-		// User proposals — the owners' verdict over one PERSON's standing: the permanent
-		// half of the split blocking verb, its undo, and the admin seat. Listed, voted and
-		// withdrawn together, because a hold lapses in 24h and a family you can open but
-		// not ratify is a dead end.
-		.route("/api/owners/proposals", get(consilium::list_proposals))
-		.route("/api/owners/proposals/suspension", post(consilium::open_suspension))
-		.route("/api/owners/proposals/reinstatement", post(consilium::open_reinstatement))
-		.route("/api/owners/proposals/admin-admission", post(consilium::open_admin_admission))
-		.route("/api/owners/proposals/{id}/vote", post(consilium::vote_proposal))
-		.route("/api/owners/proposals/{id}/cancel", post(consilium::cancel_proposal))
-		.route("/api/owners/admissions/{id}/vote", post(consilium::vote_admission))
-		.route("/api/owners/admissions/{id}/cancel", post(consilium::cancel_admission))
-		// A pending scope payout's lines, for the approvers on its roster. Session-gated, and
-		// the roster check happens against concierge in the handler — see `payout_review`.
-		.route("/api/approvals/payouts/{operation_id}/lines", get(payout_review::lines))
 		// The public approval surface. NO session, NO CSRF, and no session cookie is even
 		// read: the emailed token in the path is the whole credential. See `approval`.
 		.route("/api/approval/payout/{token}", get(approval::payout_invitation).post(approval::payout_decision))
@@ -255,14 +218,12 @@ pub fn require_fresh_login(claims: &Claims, now: u64) -> Result<(), ApiError> {
 /// The first-party gate of a mutating wallet route (`wallet.proto`, FIRST-PARTY ONLY): the
 /// request must come from a page on evinvest.ltd itself, so a scope's own host — which may
 /// read the wallet cross-origin — can only send the user there, never move their money. The
-/// origin is the one the websockets admit (`CABINET_WS_ORIGIN`, `https://evinvest.ltd` in
-/// production and required there). A request without `Origin` is refused: every browser
-/// sends it on a POST.
+/// origin is `CABINET_WS_ORIGIN` (`https://evinvest.ltd` in production and required there).
+/// A request without `Origin` is refused: every browser sends it on a POST.
 ///
-/// Unlike the socket's [`ws::origin_allowed`], an unset origin refuses everything. Production
-/// cannot boot without it, so this only changes a box run with `APP_ENV` unset or wrong —
-/// and there, a gate that opens because a variable is missing is the one way a cross-site
-/// page gets to move money. The socket stays open in that case because it only reads.
+/// An unset origin refuses everything. Production cannot boot without it, so this only
+/// changes a box run with `APP_ENV` unset or wrong — and there, a gate that opens because a
+/// variable is missing is the one way a cross-site page gets to move money.
 pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
 	state.config.cabinet_ws_origin.as_deref().is_some_and(|expected| ws::origin_is(headers, expected))
 }

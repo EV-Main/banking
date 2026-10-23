@@ -14,8 +14,7 @@ path = "src/main.rs"
 [dependencies]
 # The wallet store's trait object (`wallet_intents::store`).
 async-trait.workspace = true
-# `ws` for the governance socket only — the rest of the surface is plain JSON.
-axum = { workspace = true, features = ["ws"] }
+axum.workspace = true
 axum-extra = { workspace = true, features = ["cookie"] }
 color-eyre.workspace = true
 # The hub's own money types (`Usdt`, `Network`, `WalletAddress`), so an intent's amounts and

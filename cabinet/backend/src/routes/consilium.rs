@@ -1,16 +1,10 @@
-//! The signed-in governance surface: `/api/consilium/**` (money) and `/api/owners/**`
-//! (ownership).
+//! The signed-in consilium surface: `/api/consilium/**`, on the money plane.
 //!
-//! Two planes, two tokens, and the split is the point. Moving or sharing the platform's
-//! own money — a payment out of an allocation's claim, a holder seated in `fee` or `fund`,
-//! a seed of `fund` — is authorized in the MONEY plane, against the owner roster it already
-//! mirrors, because `docs/ARCHITECTURE.md` refuses to let a concierge-signed artifact move
-//! money — and a consilium verdict is exactly such an artifact. Moving a seat — granting
-//! one or taking one away — is authorized in the OWNERSHIP plane, because `Role::Owner`
-//! is a concierge-owned fact and the bridge between the planes is one-way. So the money
-//! handlers forward the banking token and never the concierge one; the ownership handlers
-//! forward the concierge token and never the banking one. Neither plane trusts the other's
-//! verdict.
+//! Moving or sharing the platform's own money — a payment out of an allocation's claim, a
+//! holder seated in `fee` or `fund`, a seed of `fund` — is authorized in the MONEY plane,
+//! against the owner roster it already mirrors, because `docs/ARCHITECTURE.md` refuses to
+//! let a concierge-signed artifact move money — and a consilium verdict is exactly such an
+//! artifact. So these handlers forward the banking token and never the concierge one.
 
 use axum::{
 	Json,
@@ -20,27 +14,18 @@ use axum::{
 };
 use axum_extra::extract::cookie::CookieJar;
 use evbanking_contracts::banking::v1 as bk;
-use evconcierge_contracts::concierge::v1 as cc;
 use serde::Deserialize;
 
 use crate::{
 	dto,
 	error::ApiError,
-	governance::{AdmissionVote, ProposalKind, ProposalVote, RemovalVote},
-	routes::{parse_body, require_money_token, require_token, required, verify_csrf},
+	routes::{parse_body, require_money_token, required, verify_csrf},
 	state::AppState,
 };
 
 #[derive(Deserialize)]
 pub struct LimitQuery {
 	limit: Option<u32>,
-}
-
-#[derive(Deserialize)]
-pub struct ProposalQuery {
-	limit: Option<u32>,
-	/// `suspension` / `reinstatement` / `admin_admission`; absent lists every kind.
-	kind: Option<String>,
 }
 
 // ── money plane: the owners' consilium ───────────────────────────────────────
@@ -87,230 +72,6 @@ pub async fn cancel(State(st): State<AppState>, jar: CookieJar, Path(id): Path<S
 	}
 	let token = require_money_token(&st, &jar).await?;
 	Ok(Json(st.grpc.cancel_consilium(&token, &id).await?.into()))
-}
-
-// ── ownership plane: the roster, its removals and its admissions ─────────────
-
-/// `GET /api/owners` — the current roster, with the below-three-owners warning that says
-/// the fund can no longer authorize a payout.
-pub async fn owners(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::OwnerList>, ApiError> {
-	let token = require_token(&st, &jar).await?;
-	let owners = st.grpc.list_owners(&token).await.map_err(|s| ApiError::read(s, "owners unavailable"))?;
-	Ok(Json(owners.into()))
-}
-
-/// `POST /api/owners/resign` — CSRF-checked: give up your own seat. No consilium, but the
-/// floor still applies, and `confirm_email` must be the caller's own address — resigning
-/// cannot be a stray click.
-pub async fn resign(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::OwnerList>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let Some(confirm_email) = required(&parse_body(&body), "confirm_email") else {
-		return Err(ApiError::BadRequest("confirm_email is required".into()));
-	};
-	Ok(Json(st.grpc.resign_ownership(&token, &confirm_email).await?.into()))
-}
-
-/// `GET /api/owners/removals` — every proposal, open and closed. Nothing is deleted: a
-/// rejected, expired or void removal stays readable.
-pub async fn list_removals(State(st): State<AppState>, jar: CookieJar, Query(q): Query<LimitQuery>) -> Result<Json<dto::OwnerRemovalList>, ApiError> {
-	let token = require_token(&st, &jar).await?;
-	let list = st
-		.grpc
-		.list_owner_removals(&token, q.limit.unwrap_or(0))
-		.await
-		.map_err(|s| ApiError::read(s, "removals unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `POST /api/owners/removals` — CSRF-checked: propose removing an owner. The reason is
-/// required here as well as upstream: it is shown to the target and to every peer, and a
-/// seat taken away without a stated reason is not a record anyone can audit later.
-pub async fn open_removal(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::OwnerRemoval>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let v = parse_body(&body);
-	let (Some(target_user_id), Some(reason)) = (required(&v, "target_user_id"), required(&v, "reason")) else {
-		return Err(ApiError::BadRequest("target_user_id and reason are required".into()));
-	};
-	Ok(Json(st.grpc.open_owner_removal(&token, &target_user_id, &reason).await?.into()))
-}
-
-/// `POST /api/owners/removals/{id}/vote` — CSRF-checked: a peer's live vote, cast in the
-/// cabinet rather than from a mailbox. The plane refuses the target and the initiator.
-pub async fn vote_removal(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::OwnerRemoval>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let Some(vote) = required(&parse_body(&body), "vote").as_deref().and_then(RemovalVote::parse) else {
-		return Err(ApiError::BadRequest("vote must be \"remove\" or \"keep\"".into()));
-	};
-	Ok(Json(st.grpc.submit_peer_vote(&token, &id, vote.wire()).await?.into()))
-}
-
-/// `POST /api/owners/removals/{id}/cancel` — CSRF-checked: withdraw a proposal the caller
-/// opened, while it is still open.
-pub async fn cancel_removal(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::OwnerRemoval>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	Ok(Json(st.grpc.cancel_owner_removal(&token, &id).await?.into()))
-}
-
-/// `GET /api/owners/admissions` — every admission, open and closed.
-pub async fn list_admissions(State(st): State<AppState>, jar: CookieJar, Query(q): Query<LimitQuery>) -> Result<Json<dto::OwnerAdmissionList>, ApiError> {
-	let token = require_token(&st, &jar).await?;
-	let list = st
-		.grpc
-		.list_owner_admissions(&token, q.limit.unwrap_or(0))
-		.await
-		.map_err(|s| ApiError::read(s, "admissions unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `POST /api/owners/admissions` — CSRF-checked: propose granting a seat. This is the ONLY
-/// way `Role::Owner` is granted — the directory's `SetRole` refuses it outside an executed
-/// admission — and it passes only on unanimity of every other owner, so a minority can
-/// never grow itself into the majority a payout needs.
-pub async fn open_admission(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::OwnerAdmission>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let v = parse_body(&body);
-	let (Some(candidate_user_id), Some(reason)) = (required(&v, "candidate_user_id"), required(&v, "reason")) else {
-		return Err(ApiError::BadRequest("candidate_user_id and reason are required".into()));
-	};
-	Ok(Json(st.grpc.open_owner_admission(&token, &candidate_user_id, &reason).await?.into()))
-}
-
-/// `POST /api/owners/admissions/{id}/vote` — CSRF-checked: a peer's vote on an admission.
-/// Its own vocabulary, not the removal one: "admit"/"reject" is a different question from
-/// "remove"/"keep", and a page that submitted the wrong verb here would seat someone.
-pub async fn vote_admission(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::OwnerAdmission>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let Some(vote) = required(&parse_body(&body), "vote").as_deref().and_then(AdmissionVote::parse) else {
-		return Err(ApiError::BadRequest("vote must be \"admit\" or \"reject\"".into()));
-	};
-	Ok(Json(st.grpc.submit_admission_vote(&token, &id, vote.wire()).await?.into()))
-}
-
-/// `POST /api/owners/admissions/{id}/cancel` — CSRF-checked: withdraw an admission the
-/// caller opened, while it is still open.
-pub async fn cancel_admission(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::OwnerAdmission>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	Ok(Json(st.grpc.cancel_owner_admission(&token, &id).await?.into()))
-}
-
-// ── ownership plane: the owners' verdict over one PERSON's standing ──────────
-//
-// The other half of the split blocking verb, plus the admin seat. `UserDirectory.HoldUser`
-// freezes an account NOW and lapses in 24h; these are what make it stay, lift it again
-// when the owners themselves imposed it, and grant `Role::Admin` — all three refused to
-// one actor acting alone. Three kinds share one route family because they share one
-// message: the kind is a field, not a path.
-//
-// Without the vote route below the whole family is a dead end — a hold would lapse after
-// 24 hours with nobody able to ratify it — so the listing, the vote and the withdrawal
-// ship together.
-
-/// `GET /api/owners/proposals` — every user proposal, open and closed. `kind` narrows the
-/// listing; an absent one lists all three.
-pub async fn list_proposals(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ProposalQuery>) -> Result<Json<dto::UserProposalList>, ApiError> {
-	let token = require_token(&st, &jar).await?;
-	// An unrecognised word is refused rather than widened to "every kind": a filter that
-	// silently stops filtering shows the reader rows they did not ask for.
-	let kind = match q.kind.as_deref() {
-		None => cc::UserProposalKind::Unspecified,
-		Some(raw) => match ProposalKind::parse(raw) {
-			Some(kind) => kind.wire(),
-			None => return Err(ApiError::BadRequest("kind must be \"suspension\", \"reinstatement\" or \"admin_admission\"".into())),
-		},
-	};
-	let list = st
-		.grpc
-		.list_user_proposals(&token, q.limit.unwrap_or(0), kind)
-		.await
-		.map_err(|s| ApiError::read(s, "proposals unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `POST /api/owners/proposals/suspension` — CSRF-checked: propose PERMANENTLY suspending
-/// a user. The reason is required here as well as upstream: it is what the other owners
-/// are voting on, and a decision to freeze somebody's account with no stated cause cannot
-/// be reviewed afterwards.
-pub async fn open_suspension(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::UserProposal>, ApiError> {
-	let (token, user_id, reason) = proposal_open(&st, &jar, &headers, &body).await?;
-	Ok(Json(st.grpc.open_user_suspension(&token, &user_id, &reason).await?.into()))
-}
-
-/// `POST /api/owners/proposals/reinstatement` — CSRF-checked: propose lifting a suspension
-/// THE OWNERS imposed. A hold needs nothing from here — one admin lifts it in a
-/// single act, and the console decides which to offer from `suspended_by`.
-pub async fn open_reinstatement(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::UserProposal>, ApiError> {
-	let (token, user_id, reason) = proposal_open(&st, &jar, &headers, &body).await?;
-	Ok(Json(st.grpc.open_user_reinstatement(&token, &user_id, &reason).await?.into()))
-}
-
-/// `POST /api/owners/proposals/admin-admission` — CSRF-checked: propose granting
-/// `Role::Admin`. `SetRole` refuses that role in the GRANTING direction and names this.
-/// Taking the role away is NOT here and stays one act on purpose — containing a rogue
-/// operator must never be the slower path.
-pub async fn open_admin_admission(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::UserProposal>, ApiError> {
-	let (token, user_id, reason) = proposal_open(&st, &jar, &headers, &body).await?;
-	Ok(Json(st.grpc.open_admin_admission(&token, &user_id, &reason).await?.into()))
-}
-
-/// `POST /api/owners/proposals/{id}/vote` — CSRF-checked: an owner's vote. Its own neutral
-/// vocabulary, not either consilium's: three kinds share this vote, so the wire word says
-/// which way the voter pushed and the surface renders the kind's verb.
-pub async fn vote_proposal(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap, body: Bytes) -> Result<Json<dto::UserProposal>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	let Some(vote) = required(&parse_body(&body), "vote").as_deref().and_then(ProposalVote::parse) else {
-		return Err(ApiError::BadRequest("vote must be \"for\" or \"against\"".into()));
-	};
-	Ok(Json(st.grpc.submit_user_proposal_vote(&token, &id, vote.wire()).await?.into()))
-}
-
-/// `POST /api/owners/proposals/{id}/cancel` — CSRF-checked: withdraw a proposal the caller
-/// opened, while it is still open.
-pub async fn cancel_proposal(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<dto::UserProposal>, ApiError> {
-	if !verify_csrf(&st, &jar, &headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(&st, &jar).await?;
-	Ok(Json(st.grpc.cancel_user_proposal(&token, &id).await?.into()))
-}
-
-/// The gate every proposal-opening route shares: CSRF, a session, and the two required
-/// fields. Factored out because the three differ ONLY in which RPC they then call — and
-/// because a reason that is required on one of them and forgotten on another is precisely
-/// the divergence that makes an audit trail useless.
-async fn proposal_open(st: &AppState, jar: &CookieJar, headers: &HeaderMap, body: &Bytes) -> Result<(String, String, String), ApiError> {
-	if !verify_csrf(st, jar, headers) {
-		return Err(ApiError::Csrf);
-	}
-	let token = require_token(st, jar).await?;
-	let v = parse_body(body);
-	let (Some(user_id), Some(reason)) = (required(&v, "user_id"), required(&v, "reason")) else {
-		return Err(ApiError::BadRequest("user_id and reason are required".into()));
-	};
-	Ok((token, user_id, reason))
 }
 
 #[cfg(test)]
@@ -386,18 +147,11 @@ mod route_tests {
 		(response.status(), headers)
 	}
 
-	/// The governance surface is owner-only, so an anonymous caller is refused before any
+	/// The consilium surface is owner-only, so an anonymous caller is refused before any
 	/// plane is touched — and in particular before a money-plane token could be minted.
 	#[tokio::test]
 	async fn the_signed_in_surface_refuses_an_anonymous_caller() {
-		let reads = [
-			("GET", "/api/consilium"),
-			("GET", "/api/consilium/c-1"),
-			("GET", "/api/owners"),
-			("GET", "/api/owners/removals"),
-			("GET", "/api/owners/admissions"),
-			("GET", "/api/owners/proposals"),
-		];
+		let reads = [("GET", "/api/consilium"), ("GET", "/api/consilium/c-1")];
 		for (method, uri) in reads {
 			let (status, _) = send(method, uri, None).await;
 			assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {uri}");
@@ -412,18 +166,6 @@ mod route_tests {
 		let mutations = [
 			("/api/consilium/holder-grant", r#"{"allocation":"fee","user_id":"u-1","units":"100"}"#),
 			("/api/consilium/c-1/cancel", "{}"),
-			("/api/owners/removals", r#"{"target_user_id":"u-2","reason":"inactive"}"#),
-			("/api/owners/removals/r-1/vote", r#"{"vote":"remove"}"#),
-			("/api/owners/removals/r-1/cancel", "{}"),
-			("/api/owners/admissions", r#"{"candidate_user_id":"u-3","reason":"co-founder"}"#),
-			("/api/owners/admissions/a-1/vote", r#"{"vote":"admit"}"#),
-			("/api/owners/admissions/a-1/cancel", "{}"),
-			("/api/owners/proposals/suspension", r#"{"user_id":"u-4","reason":"chargeback ring"}"#),
-			("/api/owners/proposals/reinstatement", r#"{"user_id":"u-4","reason":"cleared"}"#),
-			("/api/owners/proposals/admin-admission", r#"{"user_id":"u-5","reason":"ops lead"}"#),
-			("/api/owners/proposals/p-1/vote", r#"{"vote":"for"}"#),
-			("/api/owners/proposals/p-1/cancel", "{}"),
-			("/api/owners/resign", r#"{"confirm_email":"ada@example.com"}"#),
 		];
 		for (uri, body) in mutations {
 			let (status, _) = send("POST", uri, Some(body)).await;

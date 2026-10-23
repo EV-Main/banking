@@ -44,15 +44,11 @@ ev::settings! {
 		/// validated against it before being served, so a poisoned entry never reaches the
 		/// browser. Same-origin (relative) `scriptUrl`s need no entry.
 		mfe_allowed_origins: Vec<String> = "",
-		/// The browser origin allowed to open the governance websocket (scheme://host[:port]).
-		/// A websocket handshake is exempt from CORS and carries cookies, so without this a
-		/// cross-site page could open the live consilium feed as the signed-in user; the
-		/// handshake rejects any other `Origin`. Unset ⇒ not enforced, which is right for
-		/// local dev (the frontend runs on some `http://localhost:PORT`) and never right in
-		/// production — where a missing value fails the boot rather than failing open. The
-		/// same origin is the first-party gate of the mutating wallet routes
-		/// (`routes::first_party_origin`), which, unlike the socket, fails CLOSED when it is
-		/// unset: a dev box that wants to move money sets it to its browser origin.
+		/// The browser origin of the cabinet's own pages (scheme://host[:port]): the only
+		/// `Origin` the first-party gate of the mutating wallet routes admits
+		/// (`routes::first_party_origin`). The gate fails CLOSED when it is unset, so a dev box
+		/// that wants to move money sets it to its browser origin; production refuses to boot
+		/// without it.
 		#[required_in("production")]
 		cabinet_ws_origin: Option<String>,
 		/// The scope hosts (`https://invest.evinvest.ltd`, …) that may READ the wallet
@@ -429,10 +425,6 @@ mod tests {
 		}
 	}
 
-	/// The governance socket's cross-site guard must never be able to fail OPEN in
-	/// production: a websocket handshake is exempt from CORS but still carries the
-	/// `ev_access` cookie, so an unset origin there would let any page read the live
-	/// consilium feed as the signed-in owner. Unset is a boot failure, not a default.
 	#[test]
 	fn production_refuses_scripts_from_any_origin_but_the_cabinets() {
 		let mut env = minimal_env();
@@ -555,8 +547,10 @@ mod tests {
 		assert!(!refused.contains("hunter2"), "{refused}");
 	}
 
+	/// The first-party origin must never be configured away by omission in production:
+	/// unset is a boot failure, not a default.
 	#[test]
-	fn the_websocket_origin_guard_is_mandatory_in_production() {
+	fn the_first_party_origin_is_mandatory_in_production() {
 		let mut env = minimal_env();
 		env.insert("APP_ENV".to_string(), "production".to_string());
 		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());

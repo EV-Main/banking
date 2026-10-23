@@ -409,7 +409,6 @@ mod wallet_gate_tests {
 			approval::AttemptLimiter,
 			first_party_origin, router,
 			test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token, access_token_at},
-			ws,
 		},
 		session::BankingTokens,
 		state::{AppState, Grpc},
@@ -985,15 +984,13 @@ mod wallet_gate_tests {
 	}
 
 	/// With no first-party origin configured the money gate refuses everything, even the
-	/// origin production would accept; the websocket guard, which only reads, stays open
-	/// for local development.
+	/// origin production would accept.
 	#[tokio::test]
-	async fn an_unset_first_party_origin_closes_the_money_gate_but_not_the_socket() {
+	async fn an_unset_first_party_origin_closes_the_money_gate() {
 		let st = state(Env { ws_origin: None, ..Env::default() });
 		let mut headers = HeaderMap::new();
 		headers.insert(header::ORIGIN, FIRST_PARTY.parse().expect("a header value"));
 		assert!(!first_party_origin(&st, &headers));
-		assert!(ws::origin_allowed(&st, &headers));
 
 		let app = router(st);
 		for (uri, body) in MONEY_MUTATIONS {

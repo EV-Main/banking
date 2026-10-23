@@ -5,7 +5,7 @@ is the cabinet's egress boundary. It proxies the browser's same-origin `/api/*` 
 requests to two gRPC planes:
 
 - **concierge** (identity) — `UserDirectory` `GetMe`/`UpdateProfile`, the platform config,
-  notifications, and the ownership plane (owners, removals, the live feed).
+  notifications, and the ownership plane's emailed removal answer.
 - **piggybank** (money) — `WalletService`, `BalanceService`, `ConsiliumService`, `HealthService`.
 
 ## Auth is shell-owned
@@ -35,11 +35,11 @@ in production.
 | `state.rs` | `AppState` + `Grpc` (lazy channels + typed client calls to both planes) |
 | `session.rs` | the per-user banking money-token cache + single-flight refresh |
 | `cookies.rs` | the cookie names the BFF reads (must match the shell's) |
-| `governance.rs` | the concierge ownership-plane seam — see the pin note below |
+| `governance.rs` | the ownership plane's removal vote, as the emailed approval surface casts it |
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
-| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `notifications`, `platform`, `system`, `consilium`, `approval`; the socket bridge `governance_ws` over the shared `ws` (origin guard, close codes, keepalive, expiry) |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `notifications`, `platform`, `system`, `consilium`, `approval`; `ws` holds the `Origin` check of the first-party gate |
 
 ## The governance surface
 
@@ -57,35 +57,12 @@ allocation (#245): what it earns is the `fee` allocation's, held by people throu
 | ----- | ----- | ----- |
 | `GET /api/consilium`, `GET /api/consilium/{id}` | money | banking |
 | `POST /api/consilium/holder-grant` (`{ allocation, user_id, units }`), `POST /api/consilium/{id}/cancel` | money | banking |
-| `GET /api/owners`, `POST /api/owners/resign` | ownership | concierge |
-| `GET`/`POST /api/owners/removals`, `POST /api/owners/removals/{id}/vote`, `…/cancel` | ownership | concierge |
-| `GET`/`POST /api/owners/admissions`, `POST /api/owners/admissions/{id}/vote`, `…/cancel` | ownership | concierge |
-| `GET /api/owners/consilium/ws` | ownership | concierge |
 | `GET`/`POST /api/approval/{payout,removal,consent}/{token}` | money / ownership / money | none — the emailed token |
 
 The split is architectural: the money plane must be able to audit its own authorization, so
 its tally is computed against the owner roster it already mirrors; ownership is a
 concierge-owned fact, so only that plane may mutate it. Each handler forwards its own
 plane's token and never the other's.
-
-**Admission is governed too**, and it is why the rest holds: granting a seat needs
-unanimity of every other owner, and it is the ONLY way `Role::Owner` is granted — the
-directory's `SetRole` refuses it outside an executed admission. Without that, a bad actor
-would mint sock puppets *before* opening an invoice and then reach quorum legitimately,
-which snapshotting the roster cannot prevent because the stuffing already happened.
-Admission and removal share one governance revision, so the socket follows both. Note the
-two votes have deliberately different vocabularies — `admit`/`reject` against
-`remove`/`keep` — because a page that rendered the wrong verb would still submit.
-
-**The websocket** bridges `GovernanceService.WatchGovernance` to the browser — one revision covers removals and
-admissions together, so a single subscription follows the whole ownership surface. A frame
-carries a revision and a timestamp — never a tally, never a secret — and the client
-refetches the authoritative snapshot when the revision moves. It verifies `ev_access` at
-the handshake exactly as the REST routes do, checks the handshake `Origin` against
-`CABINET_WS_ORIGIN` (a websocket handshake is exempt from CORS but still carries cookies),
-and closes itself when the token expires. It is mounted **outside** the router's
-request-deadline layer, which exists to kill a wedged request and would otherwise kill this
-every 15 seconds.
 
 ## The wallet surface and the scope hosts
 
@@ -101,8 +78,8 @@ make that hold at the BFF:
   so a new mutating route cannot inherit it.
 - **Money mutations are first-party, CSRF-checked and rate-limited per user.** Move,
   withdraw, pay an invoice, grant or revoke a mandate pass `routes::money_mutation`:
-  `Origin` must equal `CABINET_WS_ORIGIN` — and, unlike the websocket guard, an unset value
-  refuses everything — then the CSRF pair, then a per-user window of 20 per minute keyed by
+  `Origin` must equal `CABINET_WS_ORIGIN` — and an unset value refuses everything — then
+  the CSRF pair, then a per-user window of 20 per minute keyed by
   the verified subject (in-process, per replica; the hub's limits and idempotency are the
   real bound). Locally, set `CABINET_WS_ORIGIN` to the browser origin to move money.
 
@@ -150,4 +127,4 @@ to `.env`).
 provide. The gitops preflight runs it against the built image and diffs it with the cluster
 Secret's keys, so a missing variable is caught before the rollout rather than as a
 `CrashLoopBackOff` after it. Production additionally requires `SENTRY_DSN` (errors must
-reach someone) and `CABINET_WS_ORIGIN` (the socket's cross-site guard must not fail open).
+reach someone) and `CABINET_WS_ORIGIN` (the first-party money gate admits only that origin).

@@ -123,18 +123,6 @@ impl Grpc {
 		cc::notification_service_client::NotificationServiceClient::new(self.concierge.clone())
 	}
 
-	fn governance(&self) -> cc::governance_service_client::GovernanceServiceClient<Channel> {
-		cc::governance_service_client::GovernanceServiceClient::new(self.concierge.clone())
-	}
-
-	fn payout_review(&self) -> bk::payout_review_service_client::PayoutReviewServiceClient<Channel> {
-		bk::payout_review_service_client::PayoutReviewServiceClient::new(self.piggybank.clone())
-	}
-
-	fn approvals(&self) -> cc::approval_service_client::ApprovalServiceClient<Channel> {
-		cc::approval_service_client::ApprovalServiceClient::new(self.concierge.clone())
-	}
-
 	fn removal_approval(&self) -> cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient<Channel> {
 		cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient::new(self.concierge.clone())
 	}
@@ -149,15 +137,6 @@ impl Grpc {
 
 	pub async fn update_profile(&self, token: &str, req: cc::UpdateProfileRequest) -> Result<cc::UserProfile, Status> {
 		Ok(self.directory().update_profile(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// One concierge approval under the caller's own visibility (`ApprovalService.GetApproval`):
-	/// an approval they may not see is the same `NOT_FOUND` as an unknown one.
-	pub async fn get_approval(&self, token: &str, approval_id: &str) -> Result<cc::Approval, Status> {
-		let req = cc::GetApprovalRequest {
-			approval_id: approval_id.to_string(),
-		};
-		Ok(self.approvals().get_approval(bearer(token, req)?).await?.into_inner())
 	}
 
 	// ── banking auth plane (money-plane token issuance) ─────────────────────────
@@ -282,17 +261,6 @@ impl Grpc {
 		Ok(self.operations().list_operations(bearer(token, req)?).await?.into_inner())
 	}
 
-	pub async fn get_payout_approval(&self, token: &str, operation_id: &str) -> Result<bk::PayoutApprovalRef, Status> {
-		let req = bk::GetPayoutApprovalRequest {
-			operation_id: operation_id.to_string(),
-		};
-		Ok(self.payout_review().get_payout_approval(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn list_payout_lines(&self, token: &str, req: bk::ListPayoutLinesRequest) -> Result<bk::PayoutLinesPage, Status> {
-		Ok(self.payout_review().list_payout_lines(bearer(token, req)?).await?.into_inner())
-	}
-
 	// ── concierge platform plane ───────────────────────────────────────────────
 
 	pub async fn platform_config(&self, token: &str) -> Result<cc::PlatformConfig, Status> {
@@ -331,148 +299,9 @@ impl Grpc {
 		Ok(self.notifications().set_topic_subscription(bearer(token, req)?).await?.into_inner())
 	}
 
-	// ── concierge ownership plane (governance) ─────────────────────────────────
-	// A seat is `users.role`, a concierge-owned fact, so only this plane may mutate it
-	// and only this plane may authorize the mutation. Every call here forwards the
-	// CONCIERGE token — the banking money token has a different issuer and audience, and
-	// the separation is what stops one plane's credential authorizing the other's
-	// decisions. The money plane runs its own consilium over its own mirrored roster.
-
-	pub async fn list_owners(&self, token: &str) -> Result<cc::OwnerList, Status> {
-		Ok(self.governance().list_owners(bearer(token, cc::ListOwnersRequest {})?).await?.into_inner())
-	}
-
-	pub async fn resign_ownership(&self, token: &str, confirm_email: &str) -> Result<cc::OwnerList, Status> {
-		let req = cc::ResignOwnershipRequest {
-			confirm_email: confirm_email.to_string(),
-		};
-		Ok(self.governance().resign_ownership(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn list_owner_removals(&self, token: &str, limit: u32) -> Result<cc::OwnerRemovalList, Status> {
-		let req = cc::ListOwnerRemovalsRequest { limit };
-		Ok(self.governance().list_owner_removals(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn open_owner_removal(&self, token: &str, target_user_id: &str, reason: &str) -> Result<cc::OwnerRemoval, Status> {
-		let req = cc::OpenOwnerRemovalRequest {
-			target_user_id: target_user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.governance().open_owner_removal(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn submit_peer_vote(&self, token: &str, removal_id: &str, vote: cc::RemovalVote) -> Result<cc::OwnerRemoval, Status> {
-		let req = cc::SubmitPeerVoteRequest {
-			removal_id: removal_id.to_string(),
-			vote: vote as i32,
-		};
-		Ok(self.governance().submit_peer_vote(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn cancel_owner_removal(&self, token: &str, removal_id: &str) -> Result<cc::OwnerRemoval, Status> {
-		let req = cc::CancelOwnerRemovalRequest { removal_id: removal_id.to_string() };
-		Ok(self.governance().cancel_owner_removal(bearer(token, req)?).await?.into_inner())
-	}
-
-	// Admission is the ONLY way `Role::Owner` is granted — `SetRole` refuses it outside an
-	// executed admission — and it passes only on unanimity of every other owner, so a
-	// minority can never grow itself into a majority ahead of opening a payout.
-
-	pub async fn list_owner_admissions(&self, token: &str, limit: u32) -> Result<cc::OwnerAdmissionList, Status> {
-		let req = cc::ListOwnerAdmissionsRequest { limit };
-		Ok(self.governance().list_owner_admissions(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn open_owner_admission(&self, token: &str, candidate_user_id: &str, reason: &str) -> Result<cc::OwnerAdmission, Status> {
-		let req = cc::OpenOwnerAdmissionRequest {
-			candidate_user_id: candidate_user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.governance().open_owner_admission(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn submit_admission_vote(&self, token: &str, admission_id: &str, vote: cc::AdmissionVote) -> Result<cc::OwnerAdmission, Status> {
-		let req = cc::SubmitAdmissionVoteRequest {
-			admission_id: admission_id.to_string(),
-			vote: vote as i32,
-		};
-		Ok(self.governance().submit_admission_vote(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn cancel_owner_admission(&self, token: &str, admission_id: &str) -> Result<cc::OwnerAdmission, Status> {
-		let req = cc::CancelOwnerAdmissionRequest {
-			admission_id: admission_id.to_string(),
-		};
-		Ok(self.governance().cancel_owner_admission(bearer(token, req)?).await?.into_inner())
-	}
-
-	// The owners' verdict over one PERSON's standing — the other half of the split
-	// blocking verb, plus the admin seat. Three kinds share one message because all three
-	// ask the same question, and they pass on a MAJORITY of the snapshotted voters rather
-	// than the unanimity the OWNER consilia demand: a hold lapses in 24h, so ratifying one
-	// races a clock, and under unanimity one unreachable owner would not delay the verdict
-	// — they would decide it by releasing a compromised account at the deadline.
-
-	pub async fn list_user_proposals(&self, token: &str, limit: u32, kind: cc::UserProposalKind) -> Result<cc::UserProposalList, Status> {
-		let req = cc::ListUserProposalsRequest { limit, kind: kind as i32 };
-		Ok(self.governance().list_user_proposals(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Make a hold permanent. The reason is required upstream and here: it is what the
-	/// other owners are voting on.
-	pub async fn open_user_suspension(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::UserProposal, Status> {
-		let req = cc::OpenUserSuspensionRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.governance().open_user_suspension(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Lift a suspension THE OWNERS imposed. A hold needs nothing from here — one admin
-	/// lifts it in a single act.
-	pub async fn open_user_reinstatement(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::UserProposal, Status> {
-		let req = cc::OpenUserReinstatementRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.governance().open_user_reinstatement(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Grant `Role::Admin`. `SetRole` refuses that role in the GRANTING direction only:
-	/// an operator who can appoint operators can appoint accomplices. Taking it away stays
-	/// one act — containing a rogue operator must never be the slower path.
-	pub async fn open_admin_admission(&self, token: &str, user_id: &str, reason: &str) -> Result<cc::UserProposal, Status> {
-		let req = cc::OpenAdminAdmissionRequest {
-			user_id: user_id.to_string(),
-			reason: reason.to_string(),
-		};
-		Ok(self.governance().open_admin_admission(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn submit_user_proposal_vote(&self, token: &str, proposal_id: &str, vote: cc::ProposalVote) -> Result<cc::UserProposal, Status> {
-		let req = cc::SubmitUserProposalVoteRequest {
-			proposal_id: proposal_id.to_string(),
-			vote: vote as i32,
-		};
-		Ok(self.governance().submit_user_proposal_vote(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn cancel_user_proposal(&self, token: &str, proposal_id: &str) -> Result<cc::UserProposal, Status> {
-		let req = cc::CancelUserProposalRequest {
-			proposal_id: proposal_id.to_string(),
-		};
-		Ok(self.governance().cancel_user_proposal(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// The live ownership feed. ONE revision covers removals, admissions AND user
-	/// proposals together, so a single subscription follows the whole governance surface.
-	pub async fn watch_governance(&self, token: &str) -> Result<tonic::Streaming<cc::GovernanceTick>, Status> {
-		Ok(self.governance().watch_governance(bearer(token, cc::WatchGovernanceRequest {})?).await?.into_inner())
-	}
-
-	// The two below carry NO bearer: the emailed token IS the credential and the target
-	// clicking it may not be signed in.
+	// ── concierge ownership plane: an owner's removal, answered from the mailbox ──
+	// These carry NO bearer: the emailed token IS the credential and the target clicking
+	// it may not be signed in.
 
 	pub async fn removal_invitation(&self, token: &str) -> Result<cc::OwnerRemovalInvitation, Status> {
 		let req = cc::GetRemovalInvitationRequest { token: token.to_string() };
