@@ -7,6 +7,7 @@ import { experiments } from "@/application/experiments";
 import { config as appConfig } from "@/config";
 import { cabinetPath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
 import { COOKIES } from "@/shared/config/cookies";
+import { movedPageTarget } from "@/shared/config/moved-pages";
 import { isTokenApprovalPath } from "@/shared/config/public-routes";
 import { contentSecurityPolicy, websocketOrigin } from "@/shared/config/security";
 import { isSessionId, needsRenewal, renewAccess, type Renewal } from "@/shared/lib/access-renewal";
@@ -64,6 +65,15 @@ export async function proxy(req: NextRequest) {
     ),
   );
   req.headers.set(CSP_HEADER, csp);
+
+  // Before the locale repair, so an unprefixed old link takes one hop to an off-site
+  // target, and before the routes, where the MFE catch-all would answer 404. 307, not 308:
+  // a browser keeps a 308 for good, and the account pages may move again.
+  const moved = movedPageTarget(pathname, search, {
+    platform: appConfig.public.platformUrl,
+    investCabinet: appConfig.public.investCabinetUrl,
+  });
+  if (moved) return withCsp(NextResponse.redirect(new URL(moved, req.nextUrl), 307), csp);
 
   // A scope host's money action (`https://evinvest.ltd/wallet/withdraw?opener=…&state=…`)
   // lands on its cabinet page in the reader's language, query intact — the page reads its

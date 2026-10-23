@@ -8,7 +8,7 @@
 // accepts traffic. The client/server split is automatic: only NEXT_PUBLIC_*
 // keys reach the browser bundle; accessing a server key there is a no-op.
 
-import { createSettings, bool, optional as opt, requiredIn, str, url } from "@evinvest/settings";
+import { createSettings, bool, optional as opt, requiredIn, str, url, withDefault } from "@evinvest/settings";
 
 // ── Lazy settings — re-created on every access ─────────────────────────
 // No caching: tests mutate `process.env` between calls, and the overhead of
@@ -57,6 +57,10 @@ function getSettings() {
       // stay path-only, which only resolves on the platform's own origin. Public; a
       // build-time literal in flake.nix.
       NEXT_PUBLIC_PLATFORM_URL: opt(url()),
+      // The invest cabinet, zone prefix included: the investor pages moved there, and the
+      // proxy sends their old addresses in this cabinet to it. Public; a build-time literal in
+      // flake.nix, with the prod value as the default so no build loses the redirect.
+      NEXT_PUBLIC_INVEST_CABINET_URL: withDefault(url(), "https://invest.evinvest.ltd/cabinet"),
       // Cloudflare Turnstile site key for the sign-in dialog; locally Cloudflare's
       // always-pass test key `1x00000000000000000000AA`. Unset, the dialog's credential
       // forms stay disabled — the identity plane refuses them without a token anyway.
@@ -86,6 +90,7 @@ function getSettings() {
       NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
       NEXT_PUBLIC_SA_PANEL_URL: process.env.NEXT_PUBLIC_SA_PANEL_URL,
       NEXT_PUBLIC_PLATFORM_URL: process.env.NEXT_PUBLIC_PLATFORM_URL,
+      NEXT_PUBLIC_INVEST_CABINET_URL: process.env.NEXT_PUBLIC_INVEST_CABINET_URL,
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     },
   });
@@ -131,6 +136,7 @@ export const config = ((): Readonly<{
     sentryDsn: string | undefined;
     saPanelUrl: string | undefined;
     platformUrl: string | undefined;
+    investCabinetUrl: string;
     turnstileSiteKey: string | undefined;
   }>;
 }> => {
@@ -175,6 +181,9 @@ export const config = ((): Readonly<{
       get platformUrl(): string | undefined {
         return getSettings().NEXT_PUBLIC_PLATFORM_URL;
       },
+      get investCabinetUrl(): string {
+        return getSettings().NEXT_PUBLIC_INVEST_CABINET_URL;
+      },
       get turnstileSiteKey(): string | undefined {
         return getSettings().NEXT_PUBLIC_TURNSTILE_SITE_KEY;
       },
@@ -206,6 +215,7 @@ export function assertConfig(): void {
   void config.public.sentryDsn;
   void config.public.saPanelUrl;
   void config.public.platformUrl;
+  void config.public.investCabinetUrl;
   void config.public.turnstileSiteKey;
 }
 
