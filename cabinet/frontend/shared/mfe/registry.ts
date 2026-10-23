@@ -1,8 +1,8 @@
 // Server-side reader for the microfrontend registry.
 //
-// The registry maps logical names to {tag, scriptUrl, kind}. Independent deploys
-// land by editing this file (or, in production, a per-env config the BFF fetches)
-// — never by rebuilding cabinet. Served to the browser via /api/mfe-registry.
+// The registry maps logical names to {tag, scriptUrl, kind}. The cabinet server reads
+// `mfe-registry.json` from its working directory, so an independent deploy lands by
+// editing that file — never by rebuilding cabinet.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";

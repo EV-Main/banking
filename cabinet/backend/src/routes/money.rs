@@ -462,7 +462,6 @@ mod wallet_gate_tests {
 			("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
 			("AUTH_ISSUER", ISSUER.into()),
 			("AUTH_CLIENT_AUDIENCE", AUDIENCE.into()),
-			("MFE_REGISTRY_PATH", "/mfe-registry.json".into()),
 			("WALLET_CORS_ORIGINS", env.cors.into()),
 			("APP_ENV", "development".into()),
 		]);

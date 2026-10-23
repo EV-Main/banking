@@ -37,9 +37,6 @@ ev::settings! {
 		/// Explicit override for cookie hardening; unset ⇒ infer from `app_env`
 		/// (`__Host-`/Secure needs HTTPS, which dev lacks). See [`Self::cookie_secure`].
 		auth_cookie_secure: Option<bool>,
-		/// Path to the microfrontend registry. No route reads it; it is still required at boot
-		/// because it is part of the deploy contract (`env_surface_matches_the_deploy_contract`).
-		mfe_registry_path: String,
 		/// Cross-origin MFE bundle origins allowed beyond same-origin (relative) URLs.
 		/// Mirrors the frontend CSP allow-list (`MFE_ALLOWED_ORIGINS`); in production it may
 		/// name only the cabinet's own origin (see [`Self::check_script_origins`]).
@@ -299,7 +296,6 @@ mod tests {
 			("CONCIERGE_GRPC_ADDR", "http://127.0.0.1:50061"),
 			("AUTH_ISSUER", "https://auth.concierge.ev"),
 			("AUTH_CLIENT_AUDIENCE", "concierge"),
-			("MFE_REGISTRY_PATH", "/mfe-registry.json"),
 			("APP_ENV", "development"),
 		]
 		.into_iter()
@@ -328,7 +324,6 @@ mod tests {
 				"AUTH_ISSUER",
 				"AUTH_CLIENT_AUDIENCE",
 				"AUTH_COOKIE_SECURE",
-				"MFE_REGISTRY_PATH",
 				"MFE_ALLOWED_ORIGINS",
 				"CABINET_WS_ORIGIN",
 				"WALLET_CORS_ORIGINS",
