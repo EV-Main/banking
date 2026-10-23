@@ -111,42 +111,6 @@
     "en": "The deadline has passed",
     "t": "Die Frist ist abgelaufen"
   },
-  "approval.feePolicy.approve": {
-    "en": "Approve this change",
-    "t": "Diese Änderung genehmigen"
-  },
-  "approval.feePolicy.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and the product's terms are unchanged. Ask whoever opened the request to send a new one.",
-    "t": "Der Code wurde zu oft falsch eingegeben, daher wurde der Link geschlossen und alle Eigentümer wurden informiert. Nichts wurde genehmigt und die Bedingungen des Produkts sind unverändert. Bitten Sie denjenigen, der die Anfrage geöffnet hat, eine neue zu senden."
-  },
-  "approval.feePolicy.decided.approvedTitle": {
-    "en": "You approved this change",
-    "t": "Sie haben diese Änderung genehmigt"
-  },
-  "approval.feePolicy.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the change is scheduled once enough owners have agreed, and binds 24 hours after that while anyone holds units.",
-    "t": "Ihre Antwort wurde gespeichert. Hier ist nichts weiter zu tun — die Änderung wird geplant, sobald genügend Eigentümer zugestimmt haben, und gilt 24 Stunden danach, solange jemand Anteile hält."
-  },
-  "approval.feePolicy.decided.rejectedTitle": {
-    "en": "You rejected this change",
-    "t": "Sie haben diese Änderung abgelehnt"
-  },
-  "approval.feePolicy.lead": {
-    "en": "{initiator} has asked to change what a product charges its investors, as set out below. Tightening the terms beyond what the prospectus promised is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} hat beantragt, zu ändern, was ein Produkt seinen Anlegern berechnet, wie unten dargelegt. Konditionen über das im Prospekt Versprochene hinaus zu verschärfen ist nie die Entscheidung einer einzelnen Person, daher müssen die Eigentümer zustimmen."
-  },
-  "approval.feePolicy.payloadHashHint": {
-    "en": "The fingerprint is taken over the product, the terms now and proposed, the reason and the requested moment above. It is checked again before the change is scheduled, so a request cannot be edited after you have agreed to it.",
-    "t": "Der Fingerabdruck wird über das Produkt, die aktuellen und vorgeschlagenen Konditionen, den Grund und den beantragten Zeitpunkt oben gebildet. Er wird vor der Planung der Änderung erneut geprüft, sodass ein Antrag nach Ihrer Zustimmung nicht mehr geändert werden kann."
-  },
-  "approval.feePolicy.tallyHint": {
-    "en": "More than half of the owners must approve before the terms change. You are one of them.",
-    "t": "Mehr als die Hälfte der Eigentümer muss zustimmen, bevor sich die Bedingungen ändern. Sie sind einer davon."
-  },
-  "approval.feePolicy.title": {
-    "en": "Approve a change of fee terms",
-    "t": "Änderung der Gebührenkonditionen genehmigen"
-  },
   "approval.footnote": {
     "en": "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.",
     "t": "Dieser Link wurde nur für Sie erstellt. Er funktioniert einmal, läuft 72 Stunden nach dem Versand ab und sollte nicht weitergeleitet werden."
@@ -159,54 +123,6 @@
     "en": "This link can no longer be used",
     "t": "Dieser Link kann nicht mehr verwendet werden"
   },
-  "approval.holderGrant.allocation.fee": {
-    "en": "of the fee allocation",
-    "t": "der Gebühren-Allokation"
-  },
-  "approval.holderGrant.allocation.fund": {
-    "en": "of the fund allocation",
-    "t": "der Kapital-Allokation"
-  },
-  "approval.holderGrant.approve": {
-    "en": "Approve this grant",
-    "t": "Diese Zuteilung genehmigen"
-  },
-  "approval.holderGrant.decided.approvedTitle": {
-    "en": "You approved this grant",
-    "t": "Sie haben diese Zuteilung genehmigt"
-  },
-  "approval.holderGrant.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the units are minted once enough owners have agreed.",
-    "t": "Ihre Antwort wurde aufgezeichnet. Hier gibt es nichts weiter zu tun — die Anteile werden geprägt, sobald genügend Eigentümer zugestimmt haben."
-  },
-  "approval.holderGrant.decided.rejectedTitle": {
-    "en": "You rejected this grant",
-    "t": "Sie haben diese Zuteilung abgelehnt"
-  },
-  "approval.holderGrant.executes": {
-    "en": "If it passes, the units are minted to this person in kind, and they hold that share of the allocation from then on.",
-    "t": "Wird es angenommen, werden die Anteile dieser Person in Sachwerten geprägt, und sie hält diesen Anteil der Allokation von da an."
-  },
-  "approval.holderGrant.holder": {
-    "en": "Holder",
-    "t": "Halter"
-  },
-  "approval.holderGrant.lead": {
-    "en": "{initiator} has asked to seat a person on one of the platform's own allocations, as set out below. Who holds the platform's money is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} hat darum gebeten, eine Person in eine der eigenen Allokationen der Plattform einzusetzen, wie unten dargelegt. Wer das Geld der Plattform hält, entscheidet nie eine Person allein, deshalb müssen die Eigentümer zustimmen."
-  },
-  "approval.holderGrant.payloadHashHint": {
-    "en": "The fingerprint is taken over the allocation, the person and the units above. It is checked again before anything is minted, so a request cannot be edited after you have agreed to it.",
-    "t": "Der Fingerabdruck wird über die Allokation, die Person und die Anteile oben gebildet. Er wird vor dem Prägen erneut geprüft, sodass eine Anfrage nach Ihrer Zustimmung nicht mehr geändert werden kann."
-  },
-  "approval.holderGrant.title": {
-    "en": "Approve a holder grant",
-    "t": "Halter-Zuteilung genehmigen"
-  },
-  "approval.holderGrant.units": {
-    "en": "Units to mint",
-    "t": "Zu prägende Anteile"
-  },
   "approval.loadFailed": {
     "en": "We couldn't load this request",
     "t": "Wir konnten diesen Antrag nicht laden"
@@ -214,10 +130,6 @@
   "approval.loadFailedHint": {
     "en": "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.",
     "t": "Der Link selbst ist womöglich völlig in Ordnung — das sieht nach einem Problem beim Erreichen unseres Servers aus. Versuchen Sie es gleich noch einmal."
-  },
-  "approval.network": {
-    "en": "Network",
-    "t": "Netzwerk"
   },
   "approval.openedAt": {
     "en": "Opened",
@@ -355,49 +267,13 @@
     "en": "A request to end your ownership",
     "t": "Ein Antrag, Ihr Eigentum zu beenden"
   },
-  "approval.seedCapital.amount": {
-    "en": "Amount",
-    "t": "Betrag"
+  "approval.retired.body": {
+    "en": "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.",
+    "t": "Diese Art von Anfrage wird auf dieser Seite nicht mehr bearbeitet, daher gibt es hier nichts zu genehmigen oder abzulehnen. Wenn Sie eine Entscheidung erwartet haben, fragen Sie die Person, die die Anfrage geöffnet hat."
   },
-  "approval.seedCapital.approve": {
-    "en": "Approve this seed",
-    "t": "Dieses Startkapital genehmigen"
-  },
-  "approval.seedCapital.decided.approvedTitle": {
-    "en": "You approved this seed",
-    "t": "Sie haben dieses Startkapital genehmigt"
-  },
-  "approval.seedCapital.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the deposit is booked once enough owners have agreed.",
-    "t": "Ihre Antwort wurde aufgezeichnet. Hier gibt es nichts weiter zu tun — die Einzahlung wird gebucht, sobald genügend Eigentümer zugestimmt haben."
-  },
-  "approval.seedCapital.decided.rejectedTitle": {
-    "en": "You rejected this seed",
-    "t": "Sie haben dieses Startkapital abgelehnt"
-  },
-  "approval.seedCapital.depositor": {
-    "en": "Depositor",
-    "t": "Einzahler"
-  },
-  "approval.seedCapital.executes": {
-    "en": "If it passes, the transfer is verified on chain and booked as this person's deposit and subscription into the fund allocation — in one step, or not at all.",
-    "t": "Wird es angenommen, wird die Überweisung auf der Chain geprüft und als Einzahlung dieser Person und Zeichnung in die Kapital-Allokation gebucht — in einem Schritt oder gar nicht."
-  },
-  "approval.seedCapital.lead": {
-    "en": "{initiator} has asked to attribute a transfer to the treasury as a person's seed of the platform's capital, as set out below. Whose capital it is is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} hat darum gebeten, eine Überweisung an die Treasury als Startkapital der Plattform einer Person zuzuordnen, wie unten dargelegt. Wessen Kapital es ist, entscheidet nie eine Person allein, deshalb müssen die Eigentümer zustimmen."
-  },
-  "approval.seedCapital.payloadHashHint": {
-    "en": "The fingerprint is taken over the reference, the rail, the amount and the depositor above. It is checked again before anything is booked, so a request cannot be edited after you have agreed to it.",
-    "t": "Der Fingerabdruck wird über die Referenz, das Netzwerk, den Betrag und den Einzahler oben gebildet. Er wird vor der Buchung erneut geprüft, sodass eine Anfrage nach Ihrer Zustimmung nicht mehr geändert werden kann."
-  },
-  "approval.seedCapital.reference": {
-    "en": "On-chain reference",
-    "t": "On-Chain-Referenz"
-  },
-  "approval.seedCapital.title": {
-    "en": "Approve seed capital",
-    "t": "Startkapital genehmigen"
+  "approval.retired.title": {
+    "en": "This request is no longer available",
+    "t": "Diese Anfrage ist nicht mehr verfügbar"
   },
   "approval.tally": {
     "en": "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far",
@@ -418,54 +294,6 @@
   "approval.unavailableTitle": {
     "en": "We can't show this request",
     "t": "Wir können diesen Antrag nicht anzeigen"
-  },
-  "approval.valuation.approve": {
-    "en": "Approve this mark",
-    "t": "Diese Bewertung freigeben"
-  },
-  "approval.valuation.aum": {
-    "en": "Proposed AUM",
-    "t": "Vorgeschlagenes AUM"
-  },
-  "approval.valuation.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and the fund's NAV mark is unchanged. Ask whoever opened the request to send a new one.",
-    "t": "Der Code wurde zu oft falsch eingegeben, daher wurde der Link geschlossen und alle Eigentümer wurden informiert. Nichts wurde genehmigt und die NAV-Bewertung des Fonds ist unverändert. Bitten Sie denjenigen, der die Anfrage geöffnet hat, eine neue zu senden."
-  },
-  "approval.valuation.decided.approvedTitle": {
-    "en": "You approved this mark",
-    "t": "Sie haben diese Bewertung freigegeben"
-  },
-  "approval.valuation.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the fund is marked once enough owners have agreed.",
-    "t": "Ihre Antwort wurde festgehalten. Hier gibt es nichts weiter zu tun — der Fonds wird bewertet, sobald genügend Eigentümer zugestimmt haben."
-  },
-  "approval.valuation.decided.rejectedTitle": {
-    "en": "You rejected this mark",
-    "t": "Sie haben diese Bewertung abgelehnt"
-  },
-  "approval.valuation.executes": {
-    "en": "If it passes, the fund is marked at this AUM whatever the NAV-move guard would have said, and its queued redemptions settle at the NAV that follows.",
-    "t": "Geht es durch, wird der Fonds mit diesem AUM bewertet, was auch immer der NAV-Bewegungsschutz gesagt hätte, und seine wartenden Rückgaben werden zum daraus folgenden NAV abgerechnet."
-  },
-  "approval.valuation.lead": {
-    "en": "{initiator} has asked to mark a fund at a value the NAV-move guard refuses. A mark past the guard is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} bittet darum, einen Fonds mit einem Wert zu bewerten, den der NAV-Bewegungsschutz ablehnt. Eine Bewertung über den Schutz hinaus ist nie die Entscheidung einer einzelnen Person, deshalb müssen die Eigentümer zustimmen."
-  },
-  "approval.valuation.payloadHashHint": {
-    "en": "The fingerprint is taken over the product and the AUM above. It is checked again before the mark is recorded, so a request cannot be edited after you have agreed to it.",
-    "t": "Der Fingerabdruck wird über das Produkt und das obige AUM gebildet. Er wird vor dem Festhalten der Bewertung erneut geprüft, sodass eine Anfrage nach Ihrer Zustimmung nicht mehr geändert werden kann."
-  },
-  "approval.valuation.product": {
-    "en": "Product",
-    "t": "Produkt"
-  },
-  "approval.valuation.tallyHint": {
-    "en": "More than half of the owners must approve before the fund is marked. You are one of them.",
-    "t": "Mehr als die Hälfte der Eigentümer muss zustimmen, bevor der Fonds bewertet wird. Sie sind einer davon."
-  },
-  "approval.valuation.title": {
-    "en": "Approve a NAV mark",
-    "t": "Eine NAV-Bewertung freigeben"
   },
   "approval.votingAs": {
     "en": "You are answering as {email}.",
@@ -579,22 +407,6 @@
     "en": "Whose money",
     "t": "Wessen Geld"
   },
-  "consilium.feePolicy.asSoonAsAllowed": {
-    "en": "As soon as allowed — 24 hours after the owners carry it, while anyone holds units",
-    "t": "Sobald zulässig — 24 Stunden nach dem Beschluss der Eigentümer, solange jemand Anteile hält"
-  },
-  "consilium.feePolicy.effectiveFromLabel": {
-    "en": "Takes effect",
-    "t": "Tritt in Kraft"
-  },
-  "consilium.feePolicy.fund": {
-    "en": "Product",
-    "t": "Produkt"
-  },
-  "consilium.feePolicy.holdersLabel": {
-    "en": "Holders to notify",
-    "t": "Zu benachrichtigende Anteilsinhaber"
-  },
   "consilium.feePolicy.nothingCharged": {
     "en": "Nothing charged",
     "t": "Nichts berechnet"
@@ -606,10 +418,6 @@
   "consilium.feePolicy.proposed": {
     "en": "Proposed",
     "t": "Vorgeschlagen"
-  },
-  "consilium.feePolicy.reason": {
-    "en": "Reason given",
-    "t": "Angegebener Grund"
   },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",

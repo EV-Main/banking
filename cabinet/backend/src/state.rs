@@ -95,10 +95,6 @@ impl Grpc {
 		bk::health_service_client::HealthServiceClient::new(self.piggybank.clone())
 	}
 
-	fn consilium(&self) -> bk::consilium_service_client::ConsiliumServiceClient<Channel> {
-		bk::consilium_service_client::ConsiliumServiceClient::new(self.piggybank.clone())
-	}
-
 	fn consilium_approval(&self) -> bk::consilium_approval_service_client::ConsiliumApprovalServiceClient<Channel> {
 		bk::consilium_approval_service_client::ConsiliumApprovalServiceClient::new(self.piggybank.clone())
 	}
@@ -258,39 +254,7 @@ impl Grpc {
 		Ok(self.removal_approval().submit_self_decision(req).await?.into_inner())
 	}
 
-	// ── consilium: multi-owner authorization over the platform's own money ──────
-	// The tally lives in the MONEY plane, against the owner roster this plane already
-	// mirrors: `docs/ARCHITECTURE.md` rejects letting a concierge-signed artifact
-	// authorize money movement, and a consilium verdict is exactly such an artifact.
-	// So these carry the banking money token, never the concierge one.
-
-	pub async fn list_consilia(&self, token: &str, limit: u32) -> Result<bk::ConsiliumList, Status> {
-		let req = bk::ListConsiliaRequest { limit };
-		Ok(self.consilium().list_consilia(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn get_consilium(&self, token: &str, consilium_id: &str) -> Result<bk::Consilium, Status> {
-		let req = bk::GetConsiliumRequest {
-			consilium_id: consilium_id.to_string(),
-		};
-		Ok(self.consilium().get_consilium(bearer(token, req)?).await?.into_inner())
-	}
-
-	/// Seat a new holder of a reserved allocation (#245): `units` of `fee` or `fund` for a
-	/// person, minted once the owners' quorum carries. Same plane and same token as the
-	/// other opens: the units are a share of the owners' money.
-	pub async fn open_holder_grant(&self, token: &str, terms: bk::HolderGrantTerms) -> Result<bk::Consilium, Status> {
-		let req = bk::OpenHolderGrantRequest { terms: Some(terms) };
-		Ok(self.consilium().open_holder_grant(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn cancel_consilium(&self, token: &str, consilium_id: &str) -> Result<bk::Consilium, Status> {
-		let req = bk::CancelConsiliumRequest {
-			consilium_id: consilium_id.to_string(),
-		};
-		Ok(self.consilium().cancel_consilium(bearer(token, req)?).await?.into_inner())
-	}
-
+	// ── consilium: an owner's vote on a payout, answered from the mailbox ────────
 	// The two below carry NO bearer, deliberately: the emailed token IS the credential and
 	// the owner clicking it may not be signed in. Attaching a user token here would invent
 	// an authorization the flow does not have.

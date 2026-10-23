@@ -1,5 +1,4 @@
 pub mod approval;
-pub mod consilium;
 pub mod cors;
 pub mod identity;
 pub mod intents;
@@ -74,12 +73,6 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/payments/{id}", get(money::get_payment_confirmation))
 		.route("/api/wallet/payments/{id}/answer", post(money::answer_payment_confirmation))
 		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
-		// Consilium — the platform's own money moving or changing hands, gated on a quorum
-		// of owners. Money plane: the tally is computed and verified where the money is.
-		.route("/api/consilium", get(consilium::list))
-		.route("/api/consilium/holder-grant", post(consilium::open_holder_grant))
-		.route("/api/consilium/{id}", get(consilium::get))
-		.route("/api/consilium/{id}/cancel", post(consilium::cancel))
 		// The public approval surface. NO session, NO CSRF, and no session cookie is even
 		// read: the emailed token in the path is the whole credential. See `approval`.
 		.route("/api/approval/payout/{token}", get(approval::payout_invitation).post(approval::payout_decision))

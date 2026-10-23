@@ -453,3 +453,113 @@ mod tests {
 		assert_eq!(Decision::Reject.vote(), bk::VoteDecision::Reject);
 	}
 }
+
+/// The surface as the mounted router serves it, not handler by handler: what these pin is
+/// that no session or CSRF layer sits in front of these routes.
+#[cfg(test)]
+mod route_tests {
+	use std::{collections::HashMap, sync::Arc};
+
+	use axum::{
+		Router,
+		body::Body,
+		http::{Request, StatusCode, header},
+	};
+	use evconcierge_auth::{TokenType, Verifier, VerifierConfig};
+	use tower::ServiceExt;
+
+	use super::AttemptLimiter;
+	use crate::{
+		config::AppConfig,
+		cookies::CookieNames,
+		routes::router,
+		session::BankingTokens,
+		state::{AppState, Grpc},
+	};
+
+	/// A port nothing listens on: every one of these tests asserts on a decision the BFF
+	/// makes BEFORE it reaches a plane, so the plane only has to be unreachable — and an
+	/// unreachable one is exactly what proves a request got past the gates.
+	const BLACK_HOLE: &str = "http://127.0.0.1:1";
+
+	fn app() -> Router {
+		let env = HashMap::from([
+			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE),
+			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE),
+			("CONCIERGE_GRPC_ADDR", BLACK_HOLE),
+			("BANKING_ISSUANCE_TOKEN", "test-issuance"),
+			("AUTH_ISSUER", "https://auth.test"),
+			("AUTH_CLIENT_AUDIENCE", "concierge"),
+			("MFE_REGISTRY_PATH", "/mfe-registry.json"),
+			("APP_ENV", "development"),
+		]);
+		let config = AppConfig::from_source(|var| env.get(var).map(|value| (*value).to_string())).expect("the test env loads");
+		let verifier = Verifier::try_new(VerifierConfig {
+			issuer: config.auth_issuer.clone(),
+			audiences: vec![config.auth_client_audience.clone()],
+			allowed_types: vec![TokenType::Access],
+			jwks_grpc_endpoint: BLACK_HOLE.into(),
+		})
+		.expect("build the verifier");
+
+		router(AppState {
+			cookies: Arc::new(CookieNames::new(config.cookie_secure())),
+			banking: Arc::new(BankingTokens::new()),
+			approvals: Arc::new(AttemptLimiter::default()),
+			money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
+			wallet_actions: None,
+			verifier,
+			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, BLACK_HOLE, Some("test-issuance".into())).expect("build the lazy channels"),
+			config: Arc::new(config),
+		})
+	}
+
+	async fn send(method: &str, uri: &str, body: Option<&str>) -> (StatusCode, HashMap<String, String>) {
+		let request = Request::builder().method(method).uri(uri);
+		let request = match body {
+			Some(json) => request.header(header::CONTENT_TYPE, "application/json").body(Body::from(json.to_owned())),
+			None => request.body(Body::empty()),
+		}
+		.expect("build the request");
+		let response = app().oneshot(request).await.expect("the router responds");
+		let headers = response
+			.headers()
+			.iter()
+			.map(|(name, value)| (name.as_str().to_string(), value.to_str().unwrap_or_default().to_string()))
+			.collect();
+		(response.status(), headers)
+	}
+
+	/// No session, no CSRF, and the request must still reach the plane. With the plane
+	/// unreachable that shows up as a transport failure — which only a request that passed
+	/// every gate could possibly have produced.
+	#[tokio::test]
+	async fn the_emailed_surface_needs_no_session_and_no_csrf() {
+		let calls = [
+			("GET", "/api/approval/payout/tok-1", None),
+			("POST", "/api/approval/payout/tok-1", Some(r#"{"code":"ABCDE12345","decision":"approve"}"#)),
+			("GET", "/api/approval/removal/tok-1", None),
+			("POST", "/api/approval/removal/tok-1", Some(r#"{"code":"ABCDE12345","decision":"approve"}"#)),
+			("GET", "/api/approval/consent/tok-1", None),
+			("POST", "/api/approval/consent/tok-1", Some(r#"{"code":"ABCDE12345","decision":"approve"}"#)),
+		];
+		for (method, uri, body) in calls {
+			let (status, headers) = send(method, uri, body).await;
+			assert_ne!(status, StatusCode::UNAUTHORIZED, "{method} {uri} must not ask for a session");
+			assert_ne!(status, StatusCode::FORBIDDEN, "{method} {uri} must not ask for a CSRF token");
+			assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{method} {uri} reached the plane and found it down");
+			assert_eq!(headers.get("referrer-policy").map(String::as_str), Some("no-referrer"));
+			assert_eq!(headers.get("cache-control").map(String::as_str), Some("no-store"));
+		}
+	}
+
+	/// A vote with no code cannot be spent as one: the malformed body is refused here,
+	/// before it can burn one of the token's five attempts upstream.
+	#[tokio::test]
+	async fn a_vote_without_a_code_never_reaches_the_plane() {
+		for uri in ["/api/approval/payout/tok-1", "/api/approval/removal/tok-1", "/api/approval/consent/tok-1"] {
+			let (status, _) = send("POST", uri, Some(r#"{"decision":"approve"}"#)).await;
+			assert_eq!(status, StatusCode::BAD_REQUEST, "POST {uri}");
+		}
+	}
+}
