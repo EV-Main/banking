@@ -47,7 +47,7 @@ pub async fn get(State(st): State<AppState>, jar: CookieJar, Path(id): Path<Stri
 
 /// `POST /api/consilium/holder-grant` — CSRF-checked: put a new holder of a reserved
 /// allocation to the owners (#245). Body `{allocation, user_id, units}`: `allocation` is
-/// `fee` or `fund`, `user_id` the id the console carries (resolved hub-side like every
+/// `fee` or `fund`, `user_id` the person's id (resolved hub-side like every
 /// admin target), `units` a positive decimal. The plane refuses a roster too small to
 /// reach quorum, a person who is not an active user, and a proposer who holds no owner
 /// seat; the terms are immutable once open, so a correction means cancel and reopen.

@@ -95,10 +95,6 @@ impl Grpc {
 		bk::health_service_client::HealthServiceClient::new(self.piggybank.clone())
 	}
 
-	fn balance(&self) -> bk::balance_service_client::BalanceServiceClient<Channel> {
-		bk::balance_service_client::BalanceServiceClient::new(self.piggybank.clone())
-	}
-
 	fn consilium(&self) -> bk::consilium_service_client::ConsiliumServiceClient<Channel> {
 		bk::consilium_service_client::ConsiliumServiceClient::new(self.piggybank.clone())
 	}
@@ -115,14 +111,6 @@ impl Grpc {
 		bk::payment_consent_service_client::PaymentConsentServiceClient::new(self.piggybank.clone())
 	}
 
-	fn platform(&self) -> cc::platform_service_client::PlatformServiceClient<Channel> {
-		cc::platform_service_client::PlatformServiceClient::new(self.concierge.clone())
-	}
-
-	fn notifications(&self) -> cc::notification_service_client::NotificationServiceClient<Channel> {
-		cc::notification_service_client::NotificationServiceClient::new(self.concierge.clone())
-	}
-
 	fn removal_approval(&self) -> cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient<Channel> {
 		cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient::new(self.concierge.clone())
 	}
@@ -133,10 +121,6 @@ impl Grpc {
 	// verified user token to the directory.
 	pub async fn get_me(&self, token: &str) -> Result<cc::UserProfile, Status> {
 		Ok(self.directory().get_me(bearer(token, cc::GetMeRequest {})?).await?.into_inner())
-	}
-
-	pub async fn update_profile(&self, token: &str, req: cc::UpdateProfileRequest) -> Result<cc::UserProfile, Status> {
-		Ok(self.directory().update_profile(bearer(token, req)?).await?.into_inner())
 	}
 
 	// ── banking auth plane (money-plane token issuance) ─────────────────────────
@@ -261,44 +245,6 @@ impl Grpc {
 		Ok(self.operations().list_operations(bearer(token, req)?).await?.into_inner())
 	}
 
-	// ── concierge platform plane ───────────────────────────────────────────────
-
-	pub async fn platform_config(&self, token: &str) -> Result<cc::PlatformConfig, Status> {
-		Ok(self.platform().get_platform_config(bearer(token, cc::GetPlatformConfigRequest {})?).await?.into_inner())
-	}
-
-	// ── concierge notification plane ───────────────────────────────────────────
-	// All self-service: concierge resolves the subscriber from the forwarded user
-	// token, so the BFF never names a subscriber and cannot read another user's inbox.
-
-	pub async fn list_notifications(&self, token: &str, req: cc::ListNotificationsRequest) -> Result<cc::ListNotificationsResponse, Status> {
-		Ok(self.notifications().list_notifications(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn unread_notifications(&self, token: &str) -> Result<cc::GetUnreadCountResponse, Status> {
-		Ok(self.notifications().get_unread_count(bearer(token, cc::GetUnreadCountRequest {})?).await?.into_inner())
-	}
-
-	pub async fn mark_notifications_read(&self, token: &str, req: cc::MarkReadRequest) -> Result<cc::MarkReadResponse, Status> {
-		Ok(self.notifications().mark_read(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn notification_settings(&self, token: &str) -> Result<cc::NotificationSettings, Status> {
-		Ok(self
-			.notifications()
-			.get_notification_settings(bearer(token, cc::GetNotificationSettingsRequest {})?)
-			.await?
-			.into_inner())
-	}
-
-	pub async fn set_notification_channel(&self, token: &str, req: cc::SetChannelEnabledRequest) -> Result<cc::NotificationSettings, Status> {
-		Ok(self.notifications().set_channel_enabled(bearer(token, req)?).await?.into_inner())
-	}
-
-	pub async fn set_notification_topic(&self, token: &str, req: cc::SetTopicSubscriptionRequest) -> Result<cc::NotificationSettings, Status> {
-		Ok(self.notifications().set_topic_subscription(bearer(token, req)?).await?.into_inner())
-	}
-
 	// ── concierge ownership plane: an owner's removal, answered from the mailbox ──
 	// These carry NO bearer: the emailed token IS the credential and the target clicking
 	// it may not be signed in.
@@ -376,10 +322,6 @@ impl Grpc {
 	/// only; the plane never treats them as authorization.
 	pub async fn submit_payment_consent(&self, req: bk::SubmitConsentRequest) -> Result<bk::SubmitConsentResponse, Status> {
 		Ok(self.payment_consent().submit_consent(req).await?.into_inner())
-	}
-
-	pub async fn operations_mode(&self, token: &str) -> Result<bk::OperationsMode, Status> {
-		Ok(self.balance().get_operations_mode(bearer(token, bk::GetOperationsModeRequest {})?).await?.into_inner())
 	}
 }
 

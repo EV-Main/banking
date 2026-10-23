@@ -4,8 +4,8 @@ The cabinet's **BFF** (backend-for-frontend): a standalone, **stateless** HTTP s
 is the cabinet's egress boundary. It proxies the browser's same-origin `/api/*` JSON
 requests to two gRPC planes:
 
-- **concierge** (identity) — `UserDirectory` `GetMe`/`UpdateProfile`, the platform config,
-  notifications, and the ownership plane's emailed removal answer.
+- **concierge** (identity) — `UserDirectory` `GetMe`, and the ownership plane's emailed
+  removal answer.
 - **piggybank** (money) — `WalletService`, `BalanceService`, `ConsiliumService`, `HealthService`.
 
 ## Auth is shell-owned
@@ -39,7 +39,7 @@ in production.
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
-| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `notifications`, `platform`, `system`, `consilium`, `approval`; `ws` holds the `Origin` check of the first-party gate |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`, `consilium`, `approval`; `ws` holds the `Origin` check of the first-party gate |
 
 ## The governance surface
 

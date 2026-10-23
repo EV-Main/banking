@@ -37,12 +37,12 @@ ev::settings! {
 		/// Explicit override for cookie hardening; unset ⇒ infer from `app_env`
 		/// (`__Host-`/Secure needs HTTPS, which dev lacks). See [`Self::cookie_secure`].
 		auth_cookie_secure: Option<bool>,
-		/// Path to the microfrontend registry served at `/api/mfe-registry`.
+		/// Path to the microfrontend registry. No route reads it; it is still required at boot
+		/// because it is part of the deploy contract (`env_surface_matches_the_deploy_contract`).
 		mfe_registry_path: String,
 		/// Cross-origin MFE bundle origins allowed beyond same-origin (relative) URLs.
-		/// Mirrors the frontend CSP allow-list (`MFE_ALLOWED_ORIGINS`); the registry is
-		/// validated against it before being served, so a poisoned entry never reaches the
-		/// browser. Same-origin (relative) `scriptUrl`s need no entry.
+		/// Mirrors the frontend CSP allow-list (`MFE_ALLOWED_ORIGINS`); in production it may
+		/// name only the cabinet's own origin (see [`Self::check_script_origins`]).
 		mfe_allowed_origins: Vec<String> = "",
 		/// The browser origin of the cabinet's own pages (scheme://host[:port]): the only
 		/// `Origin` the first-party gate of the mutating wallet routes admits

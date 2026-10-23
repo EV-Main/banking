@@ -10,9 +10,8 @@ use serde::Serialize;
 /// Declares one of the list DTOs: a `Vec` of an already-converted element type, the scalar
 /// fields the wire shape carries alongside it, and the `From` that builds it from the proto
 /// message. Every name is spelled out at the call site rather than derived from the DTO's,
-/// because none of them line up reliably — the field is not always the plural of the element
-/// type (`ConsiliumList.items`), and the source message is not always `<Dto>`
-/// (`NotificationList` comes from `cc::ListNotificationsResponse`).
+/// because they need not line up — the field is not always the plural of the element type
+/// (`ConsiliumList.items`), and the source message need not be named `<Dto>`.
 ///
 /// The second form names the source binding so extra fields can be given as expressions over
 /// it, which is what a field needing more than a move requires (`total: r.total.to_string()`).
@@ -71,10 +70,10 @@ pub struct UserProfile {
 	pub kyc_level: u32,
 	pub role: String,
 	/// True when `role` came from the OWNER_SUBJECTS emergency allowlist rather than
-	/// the persisted `users.role`. The console must say so: an "owner" the consilium
+	/// the persisted `users.role`. A client must say so: an "owner" the consilium
 	/// has never heard of is exactly the divergence this whole change removes.
 	pub role_is_break_glass: bool,
-	/// WHY the account is disabled — and therefore which control the console may offer.
+	/// WHY the account is disabled — and therefore which control a client may offer.
 	/// `"admin_hold"` lapses and one admin lifts it; `"governance"` never lapses and only
 	/// the owners lift it; EMPTY on an active user and also on one suspended before the
 	/// field existed, which carries the old one-act, never-lapsing semantics. Three cases,
@@ -530,117 +529,6 @@ list_dto! {
 		operations: Vec<Operation>,
 		/// True when the history is longer than the page returned.
 		truncated: bool = l.truncated,
-	}
-}
-
-// ── concierge: notifications ──────────────────────────────────────────────────
-
-/// One inbox entry. Unix-second timestamps are rendered as strings for the same
-/// reason every other i64 here is: the old proto-loader emitted `longs: String`, and
-/// the frontend's generated types still expect that shape.
-#[derive(serde::Serialize)]
-pub struct Notification {
-	pub id: String,
-	pub topic: String,
-	pub kind: String,
-	pub title: String,
-	pub body: String,
-	pub link: String,
-	pub occurred_at: String,
-	pub created_at: String,
-	/// "0" while unread.
-	pub read_at: String,
-}
-
-list_dto! {
-	NotificationList from cc::ListNotificationsResponse as r {
-		notifications: Vec<Notification>,
-		next_cursor: String = r.next_cursor,
-		unread_count: u32 = r.unread_count,
-	}
-}
-
-#[derive(serde::Serialize)]
-pub struct UnreadCount {
-	pub unread_count: u32,
-}
-
-#[derive(serde::Serialize)]
-pub struct MarkReadResult {
-	pub marked: u32,
-	pub unread_count: u32,
-}
-
-#[derive(serde::Serialize)]
-pub struct TopicSubscription {
-	pub topic: String,
-	pub label: String,
-	pub description: String,
-	pub subscribed: bool,
-	pub email_enabled: bool,
-}
-
-/// The whole delivery surface. Both master switches may be false at once — that is a
-/// supported state, so the frontend must not treat it as a broken record.
-#[derive(serde::Serialize)]
-pub struct NotificationSettings {
-	pub in_app_enabled: bool,
-	pub email_enabled: bool,
-	pub email: String,
-	pub email_verified: bool,
-	pub topics: Vec<TopicSubscription>,
-}
-
-impl From<cc::Notification> for Notification {
-	fn from(n: cc::Notification) -> Self {
-		Self {
-			id: n.id,
-			topic: n.topic,
-			kind: n.kind,
-			title: n.title,
-			body: n.body,
-			link: n.link,
-			occurred_at: n.occurred_at.to_string(),
-			created_at: n.created_at.to_string(),
-			read_at: n.read_at.to_string(),
-		}
-	}
-}
-
-impl From<cc::GetUnreadCountResponse> for UnreadCount {
-	fn from(r: cc::GetUnreadCountResponse) -> Self {
-		Self { unread_count: r.unread_count }
-	}
-}
-
-impl From<cc::MarkReadResponse> for MarkReadResult {
-	fn from(r: cc::MarkReadResponse) -> Self {
-		Self {
-			marked: r.marked,
-			unread_count: r.unread_count,
-		}
-	}
-}
-
-impl From<cc::NotificationSettings> for NotificationSettings {
-	fn from(s: cc::NotificationSettings) -> Self {
-		Self {
-			in_app_enabled: s.in_app_enabled,
-			email_enabled: s.email_enabled,
-			email: s.email,
-			email_verified: s.email_verified,
-			topics: s
-				.topics
-				.into_iter()
-				.map(|t| TopicSubscription {
-					topic: t.topic,
-					label: t.label,
-					description: t.description,
-					subscribed: t.subscribed,
-					email_enabled: t.email_enabled,
-				})
-				.collect(),
-		}
 	}
 }
 

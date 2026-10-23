@@ -4,8 +4,6 @@ pub mod cors;
 pub mod identity;
 pub mod intents;
 pub mod money;
-pub mod notifications;
-pub mod platform;
 pub mod system;
 #[cfg(test)]
 mod test_support;
@@ -57,17 +55,7 @@ fn requests(state: AppState) -> Router {
 		// The kubelet's probe target: no session, no CSRF, no upstream. `/api/health` is
 		// the deep check and must NOT be a probe — see `system::live`.
 		.route("/api/health/live", get(system::live))
-		.route("/api/mfe-registry", get(system::mfe_registry))
-		.route("/api/platform", get(platform::status))
-		.route("/api/users", get(identity::get_me).patch(identity::update_profile))
-		// Notifications — self-service only: concierge resolves the subscriber from the
-		// forwarded user token, so no route here names one.
-		.route("/api/notifications", get(notifications::list))
-		.route("/api/notifications/unread-count", get(notifications::unread_count))
-		.route("/api/notifications/read", post(notifications::mark_read))
-		.route("/api/notifications/settings", get(notifications::settings))
-		.route("/api/notifications/settings/channel", post(notifications::set_channel))
-		.route("/api/notifications/settings/topic", post(notifications::set_topic))
+		.route("/api/users", get(identity::get_me))
 		// The reads a scope host shows; see `cors` for why nothing else is listed.
 		.route("/api/wallet", cors::scope_readable(&state, get(money::get_wallet)))
 		.route("/api/wallet/compartments", cors::scope_readable(&state, get(money::list_compartments)))
@@ -333,10 +321,6 @@ pub fn parse_json_body(headers: &HeaderMap, body: &Bytes) -> Result<Value, ApiEr
 /// A required string field: `None` when missing OR empty (matches the TS `!body?.field`).
 pub fn required(v: &Value, key: &str) -> Option<String> {
 	v.get(key).and_then(|x| x.as_str()).map(str::to_string).filter(|s| !s.is_empty())
-}
-/// An editable string field: missing ⇒ `""` (full-replace semantics; empty clears).
-pub fn editable(v: &Value, key: &str) -> String {
-	v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 /// Constant-time string equality (after a length check, which only reveals length) as
 /// defense-in-depth, matching the constant-time discipline used for secret comparisons.
