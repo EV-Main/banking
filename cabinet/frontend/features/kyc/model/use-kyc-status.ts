@@ -3,10 +3,9 @@
 // One answer to "what may this screen offer?", so no screen has to compose a tier and a case
 // for itself.
 //
-// Its callers: the home card's start row and status chip, and the money screens' gate
-// (`./use-kyc-gate`, #215). The money screens are where offering a doomed start costs a
-// paid vendor session, which is why every one of them reads this and not the profile's
-// mirrored tier alone.
+// Its callers: the home card's start row and status chip, and the money screens'
+// `VerificationRequired` block (#215). Offering a doomed start there costs a paid vendor
+// session, which is why each reads this and not the profile's mirrored tier alone.
 //
 // Two sources, in a fixed order of trust. `/kyc/status` is authoritative and fresh — it is
 // the only thing that knows a case is running. The profile is the fallback, and stays the

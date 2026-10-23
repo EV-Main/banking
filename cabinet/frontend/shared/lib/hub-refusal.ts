@@ -4,8 +4,7 @@
 // relays a client-safe status's message verbatim (cabinet/backend/src/error.rs), so the
 // prefix is not something a screen can ask it to drop.
 //
-// Two readers of that prose, in the spirit of `./consilium-refusal.ts`: the facts are read
-// out of the sentence and rendered in the reader's language, and anything unrecognised
+// Two readers of that prose: the facts are read out of the sentence and rendered in the reader's language, and anything unrecognised
 // falls through to the caller's existing handling. Matching is anchored on the invariant
 // fragment that names the condition, never on the whole string.
 

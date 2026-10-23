@@ -1065,7 +1065,7 @@ pub async fn fail_withdrawal(State(st): State<AppState>, jar: CookieJar, headers
 /// treasury's shape (cash, supply, price, holders). Admin/Owner at the plane
 /// (`ConsiliumManage`); an Operator who may read the treasury is refused here. Nothing
 /// pays it out from this surface (#245): a holder redeems, or the owners approve a
-/// payment out of `service:fee` through `/api/admin/payments`.
+/// payment out of `service:fee` that the central admin opens.
 pub async fn fund_revenue(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::AllocationTreasury>, ApiError> {
 	require_permission(&st, &jar, bank::Treasury::Read).await?;
 	let token = require_money_token(&st, &jar).await?;

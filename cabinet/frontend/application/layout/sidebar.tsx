@@ -3,7 +3,7 @@
 import type { Translate } from "@evinvest/i18n";
 import { useT } from "@evinvest/i18n/react";
 
-import { ArrowLeftRight, ArrowUpFromLine, Boxes, Coins, Gavel, Home, Inbox, Landmark, LifeBuoy, PanelsTopLeft, Percent, PiggyBank, Receipt, UsersRound, Wallet, type LucideIcon } from "lucide-react";
+import { Gavel, Home, LifeBuoy, Wallet, type LucideIcon } from "lucide-react";
 import { Link } from "@/shared/ui/cabinet-link";
 import { type MouseEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
@@ -12,7 +12,6 @@ import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
 import { useCabinetPathname } from "@/shared/lib/cabinet-route";
 import { cn } from "@/shared/lib/cn";
 import { SUPPORT_EMAIL } from "@/shared/config/support";
-import { visibleFor } from "@/shared/lib/roles";
 import { useSession } from "@/shared/lib/use-session";
 
 interface NavItem {
@@ -21,12 +20,6 @@ interface NavItem {
   text: (t: Translate) => string;
   icon: LucideIcon;
   active: (path: string) => boolean;
-  /**
-   * Session roles the row is shown to; absent means every role that sees the group. Set it
-   * where the BFF answers a narrower set of roles than the group's — otherwise the row
-   * leads to a screen made of 403s.
-   */
-  roles?: readonly string[];
 }
 
 // FUND group — the two thin hosts that remain after banking#565 (investor screens moved to
@@ -36,42 +29,13 @@ const FUND: NavItem[] = [
   { href: "/wallet", text: (t) => t("nav.wallet", "Wallet"), icon: Wallet, active: (p) => p.startsWith("/wallet") },
 ];
 
-// ADMINISTER group — the operator console. Rendered only for a non-investor session
-// role (the BFF's `/api/auth/session` `isAdmin`); every screen is also authorized
-// server-side, so hiding the nav is cosmetic, not the security boundary.
-//
-// No dashboard row: fleet health and the relay KPIs are read in Grafana, not here. Users
-// opens the group because it is the first thing an operator is asked to act on.
+// ADMINISTER group — what is left of the operator console here until invest#37: the
+// consilium. Rendered only for a non-investor session role (the BFF's `/api/auth/session`
+// `isAdmin`); the screen is also authorized server-side, so hiding the row is cosmetic,
+// not the security boundary. Only owners have a room to be in, and the BFF answers 403 to
+// anyone else (the page renders that as its own state, not as an error).
 const ADMIN: NavItem[] = [
-  { href: "/admin/users", text: (t) => t("nav.users", "Users"), icon: UsersRound, active: (p) => p.startsWith("/admin/users") },
-  { href: "/admin/cabinet", text: (t) => t("nav.cabinet", "Cabinet"), icon: PanelsTopLeft, active: (p) => p.startsWith("/admin/cabinet") },
-  { href: "/admin/treasury", text: (t) => t("nav.treasury", "Treasury"), icon: Landmark, active: (p) => p.startsWith("/admin/treasury") },
-  { href: "/admin/coins", text: (t) => t("nav.coins", "Coins"), icon: Coins, active: (p) => p.startsWith("/admin/coins") },
-  { href: "/admin/withdrawals", text: (t) => t("nav.withdrawals", "Withdrawals"), icon: ArrowUpFromLine, active: (p) => p.startsWith("/admin/withdrawals") },
-  // Payments is where money is moved between the platform's claims and out to a chain —
-  // every tier, authorised by whoever the money belongs to. Beside Withdrawals because
-  // an external order becomes one.
-  { href: "/admin/payments", text: (t) => t("nav.payments", "Payments"), icon: ArrowLeftRight, active: (p) => p.startsWith("/admin/payments") },
-  // The third queue, after the two money queues: outbox rows the relay parked on a
-  // terminal error, waiting for an operator to fix the cause and unpark them. The only
-  // piece of the old dashboard that could not move to Grafana — unparking is an action.
-  { href: "/admin/outbox", text: (t) => t("nav.outbox", "Outbox"), icon: Inbox, active: (p) => p.startsWith("/admin/outbox") },
-  // Sits next to Treasury, not to Withdrawals: the question it answers is "what did the
-  // fund earn", which belongs with the chart of accounts rather than with the user queue.
-  // Statistics only since Payments took over the proposal; it links there and to Treasury.
-  { href: "/admin/revenue", text: (t) => t("nav.revenue", "Revenue stats"), icon: PiggyBank, active: (p) => p.startsWith("/admin/revenue") },
-  // Directly under Revenue stats, because the consilium is what authorizes money leaving
-  // the fund — the page and the balance it governs read as one thought. Shown to every operator
-  // session like its neighbours; only owners have a room to be in, and the BFF answers 403
-  // to anyone else (the page renders that as its own state, not as an error).
   { href: "/consilium", text: (t) => t("nav.consilium", "Consilium"), icon: Gavel, active: (p) => p.startsWith("/consilium") },
-  { href: "/admin/allocations", text: (t) => t("nav.allocations", "Allocations"), icon: Boxes, active: (p) => p.startsWith("/admin/allocations") },
-  { href: "/admin/valuation", text: (t) => t("nav.valuation", "Valuation & redemptions"), icon: Receipt, active: (p) => p.startsWith("/admin/valuation") },
-  // After Allocations, because a fee is a property OF a product: you register the fund
-  // first and then price it. Distinct from Fund revenue, which is where the money ends up
-  // once these terms have been charged and settled. Pricing a product is not an operator's
-  // call: the BFF admits only admins and owners to `/api/admin/fees/*` (banking#269).
-  { href: "/admin/fees", text: (t) => t("nav.fees", "Fees"), icon: Percent, active: (p) => p.startsWith("/admin/fees"), roles: ["admin", "owner"] },
 ];
 
 // Every rail row is a hand-written Link, so keyboard focus rides on this string. It runs
@@ -85,8 +49,7 @@ const NAV_FOCUS = "outline-none focus-visible:ring-2 focus-visible:ring-ring foc
 // `(app)` route group; auth is enforced upstream in `proxy.ts`. Positioned by a
 // `lg:fixed` wrapper in the `(app)` layout — below 1024px the sidebar is hidden,
 // replaced by the fixed BottomNavbar. `overflow-y-auto` is a safety valve only: the
-// rail scrolls internally solely when it can't fit (e.g. the admin nav on a short
-// viewport), so nothing gets clipped.
+// rail scrolls internally solely when it can't fit (a short viewport), so nothing gets clipped.
 export function Sidebar() {
   // Zone-relative, so the `active` predicates below can stay written in the paths
   // the app reasons in rather than the ones the browser shows.
@@ -96,8 +59,6 @@ export function Sidebar() {
   const isAdmin = session?.user?.isAdmin ?? false;
   const guest = session !== null && !session.authenticated;
   const dialog = useSignInDialog();
-  const role = session?.user?.role;
-  const admin = ADMIN.filter((item) => visibleFor(item.roles, role));
   // The row answers the click, not the RSC round-trip. Every cabinet route is dynamic
   // and none has a `loading.tsx`, so the pathname only changes once the new page's
   // payload has arrived — 150–300ms after the click, which is exactly the window in
@@ -109,7 +70,7 @@ export function Sidebar() {
   // render rather than in an effect — an effect would paint one frame with the URL's row
   // marked and the stale one not — and cleared rather than merely ignored: an entry left
   // behind would come back to life on a return to the page it was made on, marking
-  // Users again on the way back from it to Treasury. A click that never navigates
+  // Home again on the way back from it to Wallet. A click that never navigates
   // (cancelled, failed) is forgotten by the next one.
   const [pending, setPending] = useState<{ href: `/${string}`; from: string } | null>(null);
   if (pending && pending.from !== pathname) setPending(null);
@@ -125,8 +86,8 @@ export function Sidebar() {
           ))}
         </Section>
         {isAdmin && (
-          <Section label={t("admin.eyebrow.administer", "Administer")} at={admin.some((i) => i.active(marked)) ? marked : null}>
-            {admin.map((item) => (
+          <Section label={t("admin.eyebrow.administer", "Administer")} at={ADMIN.some((i) => i.active(marked)) ? marked : null}>
+            {ADMIN.map((item) => (
               <NavLink key={item.href} item={item} active={item.active(marked)} onClick={onRailClick(item.href, mark)} />
             ))}
           </Section>
@@ -180,7 +141,7 @@ function onRailClick(href: `/${string}`, mark: (href: `/${string}`) => void) {
 // main thread is doing, and the origin is wherever the marker already is.
 //
 // One per section rather than one per rail for the same reason as before: a marker
-// travelling from Wallet to Users would cross two headings that have nothing to do with
+// travelling from Wallet to Consilium would cross two headings that have nothing to do with
 // either row, and the distance would imply a relationship that does not exist. Crossing
 // a section unmounts one marker and mounts another, which is a fade.
 //
@@ -229,7 +190,7 @@ function Section({ label, at, children }: { label?: string; at: string | null; c
       }
     };
     place();
-    // Rows come and go (the catalog loads, a role hides Fees) and labels change width
+    // Rows come and go (the session decides the admin group) and labels change width
     // with the locale or a font swap; any of it moves the marked row without changing
     // which row is marked.
     const observer = new ResizeObserver(place);
@@ -273,9 +234,8 @@ function NavLink({
       <Icon className="size-4.5 shrink-0" />
       {/* `min-w-0` for the same reason as the mobile tab bar: without it the
           label refuses to shrink below its own text, and the rail widens to fit
-          the longest translation instead of the label truncating inside it —
-          German "Benachrichtigungen" and "Bewertung & Rücknahmen" are both wider
-          than the rail. `title` keeps the full label reachable. */}
+          the longest translation instead of the label truncating inside it.
+          `title` keeps the full label reachable. */}
       <span className="min-w-0 flex-1 truncate" title={item.text(t)}>
         {item.text(t)}
       </span>

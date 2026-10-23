@@ -436,8 +436,8 @@ export interface Allocation {
    * Optional on READ, and deliberately so rather than as a hedge: `allocationsResource`
    * carries `persist: true`, so a returning user's first frame is rehydrated from a
    * sessionStorage object serialised before this field existed. Optionality alone is not
-   * the fix — render it through `ProductIcon` (`@/shared/ui/icons/products`), which lands
-   * both a missing value and one newer than this build on `fund`.
+   * the fix — a renderer must land both a missing value and one newer than this build on
+   * `fund`.
    *
    * Required on WRITE by this client's own choice, not by the hub — see
    * `AllocationWrite`. On the wire the field carries presence, so an update that omits
@@ -467,8 +467,7 @@ export interface Allocation {
    * backing
    *
    * Optional on READ for the same reason `access` is — a persisted catalog object may
-   * predate the field. Absent reads as `cash`, the hub's own default for an unset product:
-   * `backingOf` in `views/admin/allocations/lib/backing.ts` is the one place that folds it.
+   * predate the field. Absent reads as `cash`, the hub's own default for an unset product.
    */
   backing?: AllocationBacking;
 }
@@ -558,7 +557,7 @@ export interface UnitIssuance {
  *  either way. `cost_basis` follows the mint's rule (absent = `units × NAV`, an empty
  *  string is malformed). `force` is the operator's explicit override to burn out of a
  *  live (draft or open) product — omitted, not `false`, when the product is closed and
- *  needs none. `views/admin/allocations/lib/retire.ts` is the one place that builds it. */
+ *  needs none. */
 export interface RetireUnitsBody {
   service: string;
   /** Whose units are burnt — the id the console carries. */

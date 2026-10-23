@@ -13,7 +13,7 @@
  *
  * `null` when nothing could be read: `useKycStatus` answers `loading: false, level: 0` once
  * BOTH reads have failed, and a chip that took that for tier 0 would call a verified reader
- * "Not verified" over a network blip — the same rule `../lib/money-gate` applies.
+ * "Not verified" over a network blip.
  *
  * Pure, so `node --test` can run it: the cabinet has no component tests.
  */

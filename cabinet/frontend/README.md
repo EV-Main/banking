@@ -34,7 +34,7 @@ wallet element reach:
 | `(public)` | `/cabinet/approve/*`, `/cabinet/consent/*`, `/cabinet/owner-removal/*` | Token links in mails already sent |
 | `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
 | `(auth)` | `/cabinet/loggedout` | The sign-out landing |
-| `(app)` | `/cabinet/admin/*`, `/cabinet/consilium`, `/cabinet/approvals/payout/*` | Transitional, with the rail: the admin screens go after the central admin release, the consilium screens after invest#37 |
+| `(app)` | `/cabinet/consilium`, `/cabinet/approvals/payout/*` | Transitional, with the rail: the consilium screens go after invest#37 |
 
 `(host)` and `(wallet-action)` share one session pattern: the route gate gives a
 guest the sign-in wall, and `SessionKeeper` renews the access cookie.
@@ -248,8 +248,7 @@ Rules:
   that flash is worse than the cut it replaced.
 - **A panel that swaps records is two motions, not one.** Key `Panel` on whether
   the panel is open — never on which record it shows, or every row click plays a
-  full exit and enter — and put `PanelSwap` inside for the record change. The
-  admin users drawer (`views/admin/users`) is the reference.
+  full exit and enter — and put `PanelSwap` inside for the record change.
 - **Alerts and result cards that replace one another share one
   `PanelPresence`.** A submit that fails should swap review → error in place
   rather than emptying the column and refilling it. See `views/wallet/withdraw`.

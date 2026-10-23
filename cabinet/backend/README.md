@@ -65,7 +65,7 @@ is that allocation in the treasury's shape; the old revenue payout is history on
 | `GET`/`POST /api/owners/removals`, `POST /api/owners/removals/{id}/vote`, `…/cancel` | ownership | concierge |
 | `GET`/`POST /api/owners/admissions`, `POST /api/owners/admissions/{id}/vote`, `…/cancel` | ownership | concierge |
 | `GET /api/owners/consilium/ws` | ownership | concierge |
-| `GET`/`POST /api/admin/payments`, `GET /api/admin/payments/{id}`, `…/cancel` | money | banking (Admin\|Owner) |
+| `GET /api/admin/payments`, `GET /api/admin/payments/{id}`, `…/cancel` (opening an order lives in the central admin) | money | banking (Admin\|Owner) |
 | `GET`/`POST /api/approval/{payout,removal,consent}/{token}` | money / ownership / money | none — the emailed token |
 
 The split is architectural: the money plane must be able to audit its own authorization, so

@@ -19,8 +19,7 @@ import { Pill } from "@/shared/ui/list-card";
 // after both have failed. `useKycStatus` answers `level: 0` in both, and a chip that took
 // that for tier 0 would paint "Not verified" at every verified reader for a beat on every
 // cold load, and for the length of any outage — the flash this whole surface must not have.
-// "Settled" is the wallet gate's rule (`../model/use-kyc-gate`): the plane answered, or the
-// profile did.
+// "Settled" means the plane answered, or the profile did.
 
 function useKycChip() {
   const { level, runningCase, known, loading } = useKycStatus();
