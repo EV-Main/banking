@@ -71,7 +71,6 @@ mod probe_tests {
 			("BANKING_ISSUANCE_TOKEN", "test-issuance"),
 			("AUTH_ISSUER", "https://auth.test"),
 			("AUTH_CLIENT_AUDIENCE", "concierge"),
-			("MFE_REGISTRY_PATH", "/mfe-registry.json"),
 			("APP_ENV", "development"),
 		]);
 		let config = AppConfig::from_source(|var| env.get(var).map(|value| (*value).to_string())).expect("the test env loads");

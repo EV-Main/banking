@@ -5,8 +5,8 @@ The Next.js host shell for the bank's cabinet. Two jobs:
 1. **Microfrontend composition.** Every microfrontend (React or Rust/WASM, inline
    widget or whole page) is a self-registering **custom element**. The host mounts
    them with [`<RemoteElement>`](./shared/mfe/RemoteElement.tsx), resolving each by
-   logical name from the [registry](./mfe-registry.json) (read here server-side for
-   page routes, and served to the browser at `/api/mfe-registry` by the backend).
+   logical name from the [registry](./mfe-registry.json), read here server-side for
+   page routes.
    Remotes deploy independently — change the registry, not the host. Light DOM only
    (Tailwind v4 tokens break in shadow DOM).
    - Inline widget: render `<RemoteElement>` anywhere in a page.

@@ -249,8 +249,8 @@ the same. **Light DOM only** — Tailwind v4 `@property` tokens break inside sha
 roots, and global tokens/uikit must cascade in.
 
 - **Registry.** `cabinet` resolves a logical name → `{tag, scriptUrl, kind}` from a
-  per-env registry (`cabinet/frontend/mfe-registry.json`, served at
-  `/api/mfe-registry` by the cabinet backend). Independent deploys land by editing the
+  per-env registry (`cabinet/frontend/mfe-registry.json`, which the cabinet frontend
+  reads server-side). Independent deploys land by editing the
   registry, not rebuilding the cabinet. Tags are globally unique and versioned (the custom-element
   registry is global).
 - **Page-level** = the same element mounted at a route

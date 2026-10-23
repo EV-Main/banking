@@ -465,7 +465,6 @@ fn state(origins: &str, kinds: &str, concierge: &str, hub: &str, store: Arc<Memo
 		("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
 		("AUTH_ISSUER", ISSUER.into()),
 		("AUTH_CLIENT_AUDIENCE", AUDIENCE.into()),
-		("MFE_REGISTRY_PATH", "/mfe-registry.json".into()),
 		("CABINET_WS_ORIGIN", "https://evinvest.ltd".into()),
 		("WALLET_ACTION_ORIGINS", origins.to_owned()),
 		("WALLET_ACTION_KINDS", kinds.to_owned()),

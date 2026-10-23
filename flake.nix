@@ -314,12 +314,6 @@
           dontNpmInstall = true;
         };
 
-        # The BFF serves /api/mfe-registry from this file; env points at the image path.
-        mfeRegistryRoot = pkgs.runCommand "mfe-registry" { } ''
-          mkdir -p $out
-          cp ${./cabinet/frontend/mfe-registry.json} $out/mfe-registry.json
-        '';
-
         tbProd = import ./deploy/tigerbeetle.nix;
         # Secret env (signing key, JWKS, issuance/bridge tokens, WALLET_KEK) arrives
         # via the k8s Secrets gitops/k3s own — never baked into contracts or images.
@@ -436,7 +430,7 @@
             healthPath = "/api/health/live";
             criticality = "normal";
             entrypoint = [ "/bin/cabinet-backend" ];
-            contents = [ bankingBins mfeRegistryRoot ];
+            contents = [ bankingBins ];
             env = {
               RUST_LOG = "info";
               # The canonical prod topology (secret-free, committable): the binary
@@ -449,7 +443,6 @@
               # Mirror the concierge plane's (assert_plane-checked) identity values.
               AUTH_ISSUER = "https://auth.concierge.ev";
               AUTH_CLIENT_AUDIENCE = "concierge";
-              MFE_REGISTRY_PATH = "/mfe-registry.json";
               # The PUBLIC origin the browser sends as `Origin` on a first-party money
               # mutation — not an internal service name. It is the only origin the first-party
               # wallet routes admit (the intents routes use WALLET_ACTION_ORIGINS below).
@@ -671,7 +664,6 @@
             export CONCIERGE_GRPC_ADDR="''${CONCIERGE_GRPC_ADDR:-http://127.0.0.1:$CONCIERGE_PORT}"
             export AUTH_ISSUER="''${AUTH_ISSUER:-https://auth.concierge.ev}"
             export AUTH_CLIENT_AUDIENCE="''${AUTH_CLIENT_AUDIENCE:-concierge}"
-            export MFE_REGISTRY_PATH="''${MFE_REGISTRY_PATH:-cabinet/frontend/mfe-registry.json}"
             export APP_ENV="''${APP_ENV:-development}"
             export RUST_LOG="''${RUST_LOG:-info,cabinet_backend=debug}"
             exec cargo run -p cabinet-backend

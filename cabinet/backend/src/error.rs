@@ -28,7 +28,7 @@ pub enum ApiError {
 	/// A read failed upstream — map the code, but surface a fixed generic message
 	/// (GET reads never leak hub detail, e.g. "wallet unavailable").
 	ReadFailed { code: Code, message: String },
-	/// An internal failure (e.g. registry file unreadable) (502).
+	/// An internal failure on the BFF's side, e.g. a sealed wallet intent that does not parse (502).
 	Internal(String),
 	/// A refusal the BFF decides itself, with a fixed code the page keys on — the wallet
 	/// intent routes' `scope_mismatch`, `intent_expired`, `proof_required` and the like.
