@@ -419,7 +419,8 @@ impl bk::wallet_service_server::WalletService for Hub {
 	}
 }
 
-/// A listener handed straight to the server, never re-bound (see `admin.rs` for the race).
+/// A listener handed straight to the server, never re-bound: a re-bind lets a sibling test,
+/// running in parallel, take the port and talk to the wrong stub.
 async fn listener() -> (TcpListener, SocketAddr) {
 	let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
 	let addr = listener.local_addr().expect("the listener has an address");

@@ -40,19 +40,6 @@ pub struct LimitQuery {
 	limit: Option<u32>,
 }
 
-#[derive(Deserialize)]
-pub struct ServiceQuery {
-	service: Option<String>,
-}
-
-/// `?allocation=&from=&to=` — a history window over one allocation, unix seconds.
-#[derive(Deserialize)]
-pub struct HistoryQuery {
-	allocation: Option<String>,
-	from: Option<i64>,
-	to: Option<i64>,
-}
-
 // ── wallet ───────────────────────────────────────────────────────────────────
 
 /// `GET /api/wallet` — the unified lifecycle balance, deposit rails, and per-rail withdraw options.
@@ -347,135 +334,6 @@ pub async fn answer_payment_confirmation(
 	Ok(Json(st.grpc.answer_payment_confirmation(&token, req).await?.into()))
 }
 
-// ── allocations (the catalog of investable products) ─────────────────────────
-
-/// `GET /api/allocations` — the investor-facing catalog: the `open` allocations the caller
-/// may at least view. Each row carries `access` (the product's default) and `caller_access`
-/// (what THIS investor holds) — the subscribe control keys off the latter. The unlisted
-/// half (draft/closed/hidden) is admin-only and lives on the admin surface.
-pub async fn list_allocations(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::AllocationList>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let list = st.grpc.list_allocations(&token, false).await.map_err(|s| ApiError::read(s, "allocations unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `GET /api/allocations/detail?service=` — one allocation, in any state. An investor
-/// holding units of a closed product still has to render it. A product hidden from this
-/// investor is a 404, exactly as an unknown service is.
-pub async fn get_allocation(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ServiceQuery>) -> Result<Json<dto::Allocation>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let allocation = st
-		.grpc
-		.get_allocation(&token, &q.service.unwrap_or_default())
-		.await
-		.map_err(|s| ApiError::read(s, "allocation unavailable"))?;
-	Ok(Json(allocation.into()))
-}
-
-// ── funds (the service currency) ─────────────────────────────────────────────
-
-/// `GET /api/funds/nav?service=` — the current NAV (price per share) of a fund.
-pub async fn fund_nav(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ServiceQuery>) -> Result<Json<dto::FundNav>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let nav = st
-		.grpc
-		.fund_nav(&token, &q.service.unwrap_or_default())
-		.await
-		.map_err(|s| ApiError::read(s, "fund nav unavailable"))?;
-	Ok(Json(nav.into()))
-}
-
-/// `GET /api/funds/nav/history?allocation=&from=&to=` — the valuation log of one
-/// allocation over `[from, to]` (unix seconds; absent = all-time / now) plus the caller's
-/// own participation through it: the two series of the dashboard's performance chart.
-/// Keyed by the allocation, not the service, so a hidden allocation can serve its holders
-/// the same way later. A seed-only fund answers empty `marks`, not an error.
-pub async fn fund_nav_history(State(st): State<AppState>, jar: CookieJar, Query(q): Query<HistoryQuery>) -> Result<Json<dto::FundNavHistory>, ApiError> {
-	let allocation = q.allocation.filter(|a| !a.is_empty()).ok_or_else(|| ApiError::BadRequest("allocation is required".into()))?;
-	let token = require_money_token(&st, &jar).await?;
-	let req = bk::ListFundNavHistoryRequest {
-		allocation,
-		from: q.from.unwrap_or(0),
-		to: q.to.unwrap_or(0),
-	};
-	let history = st.grpc.fund_nav_history(&token, req).await.map_err(|s| ApiError::read(s, "fund history unavailable"))?;
-	Ok(Json(history.into()))
-}
-
-/// `GET /api/funds/fee-policy?service=` — what this fund charges. Not gated on holding a
-/// position: the terms are part of deciding whether to buy in at all.
-pub async fn fee_policy(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ServiceQuery>) -> Result<Json<dto::FeePolicy>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let policy = st
-		.grpc
-		.fee_policy(&token, &q.service.unwrap_or_default())
-		.await
-		.map_err(|s| ApiError::read(s, "fee policy unavailable"))?;
-	Ok(Json(policy.into()))
-}
-
-/// `GET /api/funds/accrued-fees?service=` — what the caller's holding owes right now,
-/// uncharged. The disclosure behind showing a position's value net of fees.
-pub async fn accrued_fees(State(st): State<AppState>, jar: CookieJar, Query(q): Query<ServiceQuery>) -> Result<Json<dto::AccruedFees>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let accrued = st
-		.grpc
-		.accrued_fees(&token, &q.service.unwrap_or_default())
-		.await
-		.map_err(|s| ApiError::read(s, "accrued fees unavailable"))?;
-	Ok(Json(accrued.into()))
-}
-
-/// `GET /api/funds/positions` — the caller's fund positions.
-pub async fn list_positions(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::PositionList>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let list = st.grpc.list_positions(&token).await.map_err(|s| ApiError::read(s, "positions unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `GET /api/funds/redemptions` — the caller's redemptions, newest first.
-pub async fn list_redemptions(State(st): State<AppState>, jar: CookieJar) -> Result<Json<dto::RedemptionList>, ApiError> {
-	let token = require_money_token(&st, &jar).await?;
-	let list = st.grpc.list_redemptions(&token).await.map_err(|s| ApiError::read(s, "redemptions unavailable"))?;
-	Ok(Json(list.into()))
-}
-
-/// `POST /api/funds/subscribe` — first-party, CSRF-checked and rate-limited: subscribe free balance into a fund (mint units).
-pub async fn subscribe(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Subscription>, ApiError> {
-	let claims = money_gate(&st, &jar, &headers).await?;
-	let v = parse_json_body(&headers, &body)?;
-	let token = money_token_for(&st, &claims).await?;
-	let (Some(service), Some(amount)) = (required(&v, "service"), required(&v, "amount")) else {
-		return Err(ApiError::BadRequest("service and amount are required".into()));
-	};
-	let req = bk::SubscribeRequest { service, amount };
-	Ok(Json(st.grpc.subscribe(&token, req).await?.into()))
-}
-
-/// `POST /api/funds/redeem` — first-party, CSRF-checked and rate-limited: redeem units back to cash (accept-and-queue).
-pub async fn redeem(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Redemption>, ApiError> {
-	let claims = money_gate(&st, &jar, &headers).await?;
-	let v = parse_json_body(&headers, &body)?;
-	let token = money_token_for(&st, &claims).await?;
-	let (Some(service), Some(units)) = (required(&v, "service"), required(&v, "units")) else {
-		return Err(ApiError::BadRequest("service and units are required".into()));
-	};
-	let req = bk::RedeemRequest { service, units };
-	Ok(Json(st.grpc.redeem(&token, req).await?.into()))
-}
-
-/// `POST /api/funds/redemptions/cancel` — first-party and CSRF-checked: cancel a still-queued redemption.
-pub async fn cancel_redemption(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<dto::Redemption>, ApiError> {
-	// Cancelling only returns money to the caller, so it is gated like the other first-party
-	// mutations but, like `cancel_withdrawal`, kept out of the per-user budget.
-	first_party_request(&st, &jar, &headers)?;
-	let token = require_money_token(&st, &jar).await?;
-	let Some(redemption_id) = required(&parse_json_body(&headers, &body)?, "redemption_id") else {
-		return Err(ApiError::BadRequest("redemption_id is required".into()));
-	};
-	Ok(Json(st.grpc.cancel_redemption(&token, &redemption_id).await?.into()))
-}
-
 #[cfg(test)]
 mod tests {
 	use axum::{body::to_bytes, http::StatusCode, response::IntoResponse};
@@ -522,7 +380,14 @@ mod tests {
 /// JWKS: each assertion is on a decision the BFF makes before it reaches the money plane.
 #[cfg(test)]
 mod wallet_gate_tests {
-	use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+	use std::{
+		collections::HashMap,
+		net::SocketAddr,
+		sync::{
+			Arc,
+			atomic::{AtomicUsize, Ordering},
+		},
+	};
 
 	use axum::{
 		body::{Body, to_bytes},
@@ -533,7 +398,7 @@ mod wallet_gate_tests {
 	use evconcierge_contracts::concierge::v1::auth_service_server::AuthServiceServer;
 	use tokio::net::TcpListener;
 	use tokio_stream::wrappers::TcpListenerStream;
-	use tonic::transport::Server;
+	use tonic::{Code, transport::Server};
 	use tower::ServiceExt;
 
 	use super::exceeds;
@@ -544,7 +409,6 @@ mod wallet_gate_tests {
 			approval::AttemptLimiter,
 			first_party_origin, router,
 			test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token, access_token_at},
-			ws,
 		},
 		session::BankingTokens,
 		state::{AppState, Grpc},
@@ -627,11 +491,14 @@ mod wallet_gate_tests {
 
 	/// The money plane as the BFF reaches it, for the routes whose verdict depends on what the
 	/// hub says or on what reaches it: the banking token exchange, an invoice with a chosen
-	/// amount, and a withdrawal that is only recorded. Everything else is unimplemented, so a
-	/// route that strays past its gate onto another RPC fails loudly.
+	/// amount, a withdrawal that is only recorded, and a wallet read refused with a chosen
+	/// code. Everything else is unimplemented, so a route that strays past its gate onto
+	/// another RPC fails loudly.
 	#[derive(Clone)]
 	struct StubHub {
 		invoice_amount: &'static str,
+		wallet_refusal: Code,
+		mints: Arc<AtomicUsize>,
 		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
 		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
 	}
@@ -645,6 +512,7 @@ mod wallet_gate_tests {
 	#[tonic::async_trait]
 	impl bk::auth_service_server::AuthService for StubHub {
 		async fn issue_user_token(&self, _: tonic::Request<bk::IssueUserTokenRequest>) -> Result<tonic::Response<bk::TokenResponse>, tonic::Status> {
+			self.mints.fetch_add(1, Ordering::SeqCst);
 			let now = now_secs();
 			Ok(tonic::Response::new(bk::TokenResponse {
 				access_token: "stub-money-token".into(),
@@ -703,7 +571,7 @@ mod wallet_gate_tests {
 	#[tonic::async_trait]
 	impl bk::wallet_service_server::WalletService for StubHub {
 		async fn get_wallet(&self, _: tonic::Request<bk::GetWalletRequest>) -> Result<tonic::Response<bk::Wallet>, tonic::Status> {
-			unimplemented_rpc()
+			Err(tonic::Status::new(self.wallet_refusal, "the stub refuses the wallet"))
 		}
 
 		async fn get_deposit_address(&self, _: tonic::Request<bk::GetDepositAddressRequest>) -> Result<tonic::Response<bk::DepositAddress>, tonic::Status> {
@@ -739,19 +607,22 @@ mod wallet_gate_tests {
 
 	struct Hub {
 		addr: SocketAddr,
+		mints: Arc<AtomicUsize>,
 		withdrawals: Arc<std::sync::Mutex<Vec<bk::RequestWithdrawalRequest>>>,
 		payments: Arc<std::sync::Mutex<Vec<bk::PayInvoiceRequest>>>,
 	}
 
-	async fn stub_hub(invoice_amount: &'static str) -> Hub {
+	async fn stub_hub(invoice_amount: &'static str, wallet_refusal: Code) -> Hub {
 		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
 		let addr = listener.local_addr().expect("the listener has an address");
 		let hub = StubHub {
 			invoice_amount,
+			wallet_refusal,
+			mints: Arc::default(),
 			withdrawals: Arc::default(),
 			payments: Arc::default(),
 		};
-		let (withdrawals, payments) = (hub.withdrawals.clone(), hub.payments.clone());
+		let (mints, withdrawals, payments) = (hub.mints.clone(), hub.withdrawals.clone(), hub.payments.clone());
 		tokio::spawn(async move {
 			Server::builder()
 				.add_service(bk::auth_service_server::AuthServiceServer::new(hub.clone()))
@@ -761,13 +632,17 @@ mod wallet_gate_tests {
 				.await
 				.expect("the stub hub serves");
 		});
-		Hub { addr, withdrawals, payments }
+		Hub { addr, mints, withdrawals, payments }
 	}
 
 	/// An app wired to a stub concierge (for the session) and a stub hub (for the money plane).
 	async fn app_with_hub(invoice_amount: &'static str) -> (axum::Router, Hub) {
+		app_with_stub(invoice_amount, Code::Unimplemented).await
+	}
+
+	async fn app_with_stub(invoice_amount: &'static str, wallet_refusal: Code) -> (axum::Router, Hub) {
 		let concierge = jwks().await;
-		let hub = stub_hub(invoice_amount).await;
+		let hub = stub_hub(invoice_amount, wallet_refusal).await;
 		let app = router(state(Env {
 			concierge: format!("http://{concierge}"),
 			hub: format!("http://{}", hub.addr),
@@ -781,8 +656,9 @@ mod wallet_gate_tests {
 	}
 
 	/// A stub concierge on an ephemeral port that answers only `Jwks`, so a signed
-	/// `ev_access` cookie verifies. The listener is handed over, never re-bound — see the
-	/// same helper in `admin.rs` for the race that rules out.
+	/// `ev_access` cookie verifies. The listener is handed over, never re-bound: binding to
+	/// claim a port and letting `serve` bind it again opens a window in which a sibling test,
+	/// running in parallel in this process, is handed the port and talks to the wrong stub.
 	async fn jwks() -> SocketAddr {
 		let listener = TcpListener::bind("127.0.0.1:0").await.expect("claim an ephemeral port");
 		let addr = listener.local_addr().expect("the listener has an address");
@@ -1070,63 +946,30 @@ mod wallet_gate_tests {
 		assert!(hub.withdrawals.lock().expect("the stub's lock").is_empty());
 	}
 
-	/// Every first-party mutation with a body, once: the six money routes, the withdrawal and
-	/// redemption cancels, subscribe, redeem and the book's two.
+	/// Every first-party mutation with a body, once: the six money routes and the withdrawal
+	/// cancel.
 	fn first_party_mutations() -> Vec<(&'static str, &'static str)> {
 		MONEY_MUTATIONS
 			.iter()
 			.copied()
-			.chain([
-				("/api/wallet/withdrawals/cancel", r#"{"withdrawal_id":"w-1"}"#),
-				("/api/funds/subscribe", r#"{"service":"s","amount":"1"}"#),
-				("/api/funds/redeem", r#"{"service":"s","units":"1"}"#),
-				("/api/funds/redemptions/cancel", r#"{"redemption_id":"r-1"}"#),
-				("/api/book/orders", r#"{"service":"s","side":"buy","kind":"limit","size":"1","client_order_id":"c-1"}"#),
-				("/api/book/orders/cancel", r#"{"order_id":"o-1"}"#),
-			])
+			.chain([("/api/wallet/withdrawals/cancel", r#"{"withdrawal_id":"w-1"}"#)])
 			.collect()
 	}
 
-	/// Subscribing, redeeming and trading the book move money exactly as a withdrawal or a move
-	/// does, so they are first-party too: a scope's host, a stranger, a look-alike and a request
-	/// with no `Origin` are all 403 `csrf`, and only evinvest.ltd gets as far as the session.
+	/// Withdrawing draws on the per-user money budget; cancelling a withdrawal does not, so a
+	/// script that burned the budget cannot also keep the user from taking their money back.
 	#[tokio::test]
-	async fn funds_and_the_book_are_first_party_only() {
-		let lookalikes = ["https://evinvest.ltd.evil.example", "https://evinvest.ltd:8443", "https://evinvest.ltd/", "null", ""];
-		for (uri, body) in first_party_mutations()
-			.into_iter()
-			.filter(|(uri, _)| uri.starts_with("/api/funds") || uri.starts_with("/api/book"))
-		{
-			for origin in [Some(SCOPE_HOST), Some("https://evil.example"), None].into_iter().chain(lookalikes.iter().map(|o| Some(*o))) {
-				let (status, response) = post_from(uri, body, origin).await;
-				assert_eq!(status, StatusCode::FORBIDDEN, "{uri} from {origin:?}: {response}");
-				assert!(response.contains("csrf"), "{uri} from {origin:?}: {response}");
-			}
-			let (status, _) = post_from(uri, body, Some(FIRST_PARTY)).await;
-			assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}: past the gate the next refusal is the missing session");
-		}
-	}
-
-	/// Placing, subscribing and redeeming draw on the same per-user budget as every other
-	/// money mutation; cancelling an order or a redemption does not, so a script that burned the
-	/// budget cannot also keep the user from taking their own orders off the book.
-	#[tokio::test]
-	async fn placing_orders_spends_the_money_budget_but_cancelling_does_not() {
+	async fn withdrawing_spends_the_money_budget_but_cancelling_does_not() {
 		let (app, _hub) = app_with_hub("1").await;
-		let place = ("/api/book/orders", r#"{"service":"s","side":"buy","kind":"limit","size":"1","client_order_id":"c-1"}"#);
 		for attempt in 0..crate::routes::MONEY_MUTATIONS_PER_WINDOW {
-			let (status, _, response) = send(&app, request("POST", place.0, place.1, Some(FIRST_PARTY), true)).await;
+			let (status, _, response) = send(&app, request("POST", "/api/wallet/withdrawals", WITHDRAW, Some(FIRST_PARTY), true)).await;
 			assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "attempt {attempt}: {response}");
 		}
-		let (status, _, response) = send(&app, request("POST", place.0, place.1, Some(FIRST_PARTY), true)).await;
+		let (status, _, response) = send(&app, request("POST", "/api/wallet/withdrawals", WITHDRAW, Some(FIRST_PARTY), true)).await;
 		assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{response}");
-		for (uri, body) in [
-			("/api/book/orders/cancel", r#"{"order_id":"o-1"}"#),
-			("/api/funds/redemptions/cancel", r#"{"redemption_id":"r-1"}"#),
-		] {
-			let (status, _, response) = send(&app, request("POST", uri, body, Some(FIRST_PARTY), true)).await;
-			assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "{uri}: {response}");
-		}
+		let cancel = request("POST", "/api/wallet/withdrawals/cancel", r#"{"withdrawal_id":"w-1"}"#, Some(FIRST_PARTY), true);
+		let (status, _, response) = send(&app, cancel).await;
+		assert_ne!(status, StatusCode::TOO_MANY_REQUESTS, "{response}");
 	}
 
 	/// Reading a service's request for a mandate is a read, like an invoice: no CSRF token, no
@@ -1141,15 +984,13 @@ mod wallet_gate_tests {
 	}
 
 	/// With no first-party origin configured the money gate refuses everything, even the
-	/// origin production would accept; the websocket guard, which only reads, stays open
-	/// for local development.
+	/// origin production would accept.
 	#[tokio::test]
-	async fn an_unset_first_party_origin_closes_the_money_gate_but_not_the_socket() {
+	async fn an_unset_first_party_origin_closes_the_money_gate() {
 		let st = state(Env { ws_origin: None, ..Env::default() });
 		let mut headers = HeaderMap::new();
 		headers.insert(header::ORIGIN, FIRST_PARTY.parse().expect("a header value"));
 		assert!(!first_party_origin(&st, &headers));
-		assert!(ws::origin_allowed(&st, &headers));
 
 		let app = router(st);
 		for (uri, body) in MONEY_MUTATIONS {
@@ -1249,5 +1090,33 @@ mod wallet_gate_tests {
 			let (_, headers, _) = send(&app, request("GET", uri, "", Some(SCOPE_HOST), false)).await;
 			assert_eq!(cors_of(&headers), (None, None), "{uri}");
 		}
+	}
+
+	/// An `UNAUTHENTICATED` from the money plane — a banking token below the plane's
+	/// revoke floor — must drop the cached pair, so the frontend's single heal-replay
+	/// mints afresh instead of presenting the same refused token. Pinned by counting
+	/// mints: the same two reads against a plane refusing for any OTHER reason share
+	/// one mint, which is the cache doing its job.
+	#[tokio::test]
+	async fn an_unauthenticated_money_rpc_drops_the_cached_pair_so_the_replay_re_mints() {
+		async fn mints_over_two_reads(refusal: Code, expected: StatusCode) -> usize {
+			let (app, hub) = app_with_stub("1", refusal).await;
+			for _ in 0..2 {
+				let (status, _, body) = send(&app, request("GET", "/api/wallet", "", None, true)).await;
+				assert_eq!(status, expected, "{body}");
+			}
+			hub.mints.load(Ordering::SeqCst)
+		}
+
+		assert_eq!(
+			mints_over_two_reads(Code::Unauthenticated, StatusCode::UNAUTHORIZED).await,
+			2,
+			"the replay after a 401 must mint a new banking token"
+		);
+		assert_eq!(
+			mints_over_two_reads(Code::PermissionDenied, StatusCode::FORBIDDEN).await,
+			1,
+			"any other refusal leaves the cached pair in place"
+		);
 	}
 }

@@ -2,7 +2,7 @@
 //!
 //! It is the cabinet's egress boundary: it proxies the browser's same-origin `/api/*`
 //! JSON requests to two gRPC planes — **concierge** (identity: profile/directory) and
-//! **piggybank** (money: wallet, funds, health). Auth is SHELL-owned: the concierge
+//! **piggybank** (money: wallet, consilium, health). Auth is SHELL-owned: the concierge
 //! auth web surface (reached via the conductor's `/api/auth/*` on the shared origin)
 //! signs users in and sets the zone-shared `ev_access` JWT cookie; the BFF verifies
 //! that cookie locally against the concierge JWKS and, for money routes, mints the
