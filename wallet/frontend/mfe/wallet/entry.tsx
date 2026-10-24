@@ -55,6 +55,15 @@ interface OpenAction {
   action: WalletAction;
   invoice: string | null;
   scope: string | null;
+  /** What had focus when the form opened, so closing it puts the reader back there. */
+  trigger: HTMLElement | null;
+}
+
+/** The focused element, through any open shadow roots the host wraps the element in. */
+function focusedElement(): HTMLElement | null {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  return active instanceof HTMLElement ? active : null;
 }
 
 function inPageForm(open: OpenAction, close: () => void, offer: () => void) {
@@ -128,7 +137,7 @@ abstract class WalletElementBase extends HTMLElement {
   protected act(action: WalletAction, invoice: string | null = null) {
     const scope = this.scope();
     if (inPageMode(this.#kinds, action, scope) === "in_page") {
-      this.#open = { action, invoice, scope };
+      this.#open = { action, invoice, scope, trigger: focusedElement() };
       this.#render();
       return;
     }
@@ -147,8 +156,10 @@ abstract class WalletElementBase extends HTMLElement {
   }
 
   #close() {
+    const trigger = this.#open?.trigger;
     this.#open = null;
     this.#render();
+    if (trigger?.isConnected) trigger.focus();
   }
 
   #offerOpen() {

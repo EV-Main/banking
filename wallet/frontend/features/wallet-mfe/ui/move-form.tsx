@@ -43,7 +43,6 @@ export function MoveForm({ scope, draft, busy, error, onSubmit, onCancel }: Acti
         <Input
           inputMode="decimal"
           autoComplete="off"
-          autoFocus
           placeholder="0.00"
           value={amount}
           disabled={busy}

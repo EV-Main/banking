@@ -39,6 +39,15 @@ export function ActionRoot({ sheetHref, children }: { sheetHref: string; childre
     if (node) setShadow(shadowOf(node));
   }, []);
 
+  // `autoFocus` fires while the container is still `hidden`, and a browser ignores focus on
+  // what it does not render; so the form takes focus once it shows. Its first field, else
+  // the region itself, when a form has no field yet (the withdrawal still reading its rails).
+  useEffect(() => {
+    if (!styled || !container) return;
+    const target = container.querySelector<HTMLElement>("input:not([disabled])") ?? container.querySelector<HTMLElement>('[role="region"]');
+    target?.focus();
+  }, [styled, container]);
+
   useEffect(() => {
     if (!shadow) return;
     let live = true;

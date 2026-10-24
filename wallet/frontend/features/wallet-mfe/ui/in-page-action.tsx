@@ -69,7 +69,7 @@ export function InPageAction(props: InPageActionProps) {
   };
   return (
     <ActionRoot sheetHref={props.sheetHref}>
-      <Card role="region" aria-labelledby={titleId}>
+      <Card role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none">
         <CardHeader>
           <CardTitle id={titleId}>{titles[props.action]}</CardTitle>
         </CardHeader>

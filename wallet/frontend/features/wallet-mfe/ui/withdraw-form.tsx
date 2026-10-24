@@ -61,7 +61,7 @@ export function WithdrawForm({ origin, draft, busy, error, onSubmit, onCancel }:
       />
       <Field className="flex flex-col gap-2">
         <FieldLabel>{t("walletMfe.address", "Address")}</FieldLabel>
-        <Input autoComplete="off" spellCheck={false} autoFocus value={address} disabled={busy} onChange={(event) => setAddress(event.target.value)} />
+        <Input autoComplete="off" spellCheck={false} value={address} disabled={busy} onChange={(event) => setAddress(event.target.value)} />
       </Field>
       <Field className="flex flex-col gap-2">
         <FieldLabel>{t("walletAction.moveAmount", "Amount, USDT")}</FieldLabel>
