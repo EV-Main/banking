@@ -139,9 +139,9 @@ test("assertionErrorOf maps every other failure to authenticator_failed", () => 
   }
 });
 
-test("needsFreshIntent is true only for the final step-up codes", () => {
-  const final = ["expired", "throttled", "no_passkey", "attempts_exceeded"];
-  const retryable = ["passkey_rejected", "invalid_code", "captcha", "cancelled", "authenticator_failed", "signed_out", "unavailable", "network", "malformed"];
+test("needsFreshIntent is true only for expired and attempts_exceeded", () => {
+  const final = ["expired", "attempts_exceeded"];
+  const retryable = ["throttled", "no_passkey", "passkey_rejected", "invalid_code", "captcha", "cancelled", "authenticator_failed", "signed_out", "unavailable", "network", "malformed"];
   for (const code of final) assert.equal(needsFreshIntent({ code } as StepupError), true, code);
   for (const code of retryable) assert.equal(needsFreshIntent({ code } as StepupError), false, code);
 });

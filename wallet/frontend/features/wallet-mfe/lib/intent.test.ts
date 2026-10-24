@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { INTENT_TTL_MS, intentDeadlineMs, mandateCapRows, parseCsrf, parseIntent, secondsLeft, summaryRows, type IntentSummary, type MandateCaps } from "./intent.ts";
+import { INTENT_TTL_MS, intentDeadlineMs, isPastDeadline, mandateCapRows, nowMs, parseCsrf, parseIntent, secondsLeft, summaryRows, type IntentSummary, type MandateCaps } from "./intent.ts";
 
 const ID = "c".repeat(32);
 const HASH = "d".repeat(64);
@@ -148,4 +148,37 @@ test("parseCsrf still rejects a bad token or expires_at whatever kinds says", ()
   assert.equal(parseCsrf({ csrf: "tok1", expires_at: "soon", kinds }), null);
   assert.equal(parseCsrf({ kinds }), null);
   assert.equal(parseCsrf(null), null);
+});
+
+test("isPastDeadline is false 1 ms before the deadline", () => {
+  assert.equal(isPastDeadline(10_000, 9_999), false);
+});
+
+test("isPastDeadline is true at the deadline and after it", () => {
+  assert.equal(isPastDeadline(10_000, 10_000), true);
+  assert.equal(isPastDeadline(10_000, 10_001), true);
+  assert.equal(isPastDeadline(10_000, 99_000), true);
+});
+
+test("isPastDeadline agrees with a countdown that shows zero", () => {
+  const deadline = 1_000_000;
+  const offsets = [-120_001, -120_000, -119_999, -60_000, -1_001, -1_000, -999, -1, 0, 1, 999, 1_000, 1_001, 119_999, 120_000, 120_001];
+  for (const offset of offsets) {
+    const now = deadline + offset;
+    assert.equal(isPastDeadline(deadline, now), secondsLeft(deadline, now) === 0, `offset ${offset}`);
+  }
+});
+
+test("isPastDeadline flips exactly when the 120 s window ends", () => {
+  const start = 5_000;
+  const deadline = start + 120_000;
+  assert.equal(isPastDeadline(deadline, start), false);
+  assert.equal(isPastDeadline(deadline, deadline - 1), false);
+  assert.equal(isPastDeadline(deadline, deadline), true);
+});
+
+test("nowMs returns the current time in milliseconds", () => {
+  const before = Date.now();
+  const got = nowMs();
+  assert.ok(got >= before && got <= Date.now(), `got ${got}`);
 });
