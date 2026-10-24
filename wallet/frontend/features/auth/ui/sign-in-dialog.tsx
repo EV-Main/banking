@@ -8,7 +8,7 @@ import { type FormEvent, type ReactNode, useEffect, useState, useSyncExternalSto
 import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Input, InputOTP, InputOTPGroup, InputOTPSlot, Spinner } from "@evinvest/uikit";
 
 import { type AuthAnswer, type AuthError, PROVIDERS, type Provider, confirmVerification, passkeySignIn, passwordSignIn, passwordSignUp, requestCode, verifyCode } from "@/features/auth/api/auth-client";
-import { passkeysSupported } from "@/features/auth/lib/webauthn";
+import { passkeysSupported } from "@/shared/lib/webauthn";
 import { loginHref } from "@/features/auth/lib/return-to";
 import { useSignInDialog } from "@/features/auth/model/use-sign-in-dialog";
 import { GithubMark, GoogleMark } from "@/features/auth/ui/provider-marks";
