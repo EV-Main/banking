@@ -65,7 +65,8 @@ function ReviewStep({ kind, review, controls, stepup, onFallback }: StepProps & 
           {t("walletMfe.withdrawHold", "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.")}
         </p>
       )}
-      {!confirming && <Countdown deadlineMs={review.deadlineMs} onExpire={controls.expire} />}
+      {/* No countdown under an open passkey prompt: the intent must not renew beneath it. */}
+      {!confirming && !controls.stepping && <Countdown deadlineMs={review.deadlineMs} onExpire={controls.expire} />}
       {error && (
         <Alert variant="destructive" role="alert">
           <AlertDescription>{intentErrorText(error, t)}</AlertDescription>
@@ -83,7 +84,7 @@ function ReviewStep({ kind, review, controls, stepup, onFallback }: StepProps & 
             {t("walletMfe.confirm", "Confirm")}
           </Button>
         )}
-        <Button type="button" variant="outline" onClick={controls.edit} disabled={confirming}>
+        <Button type="button" variant="outline" onClick={controls.edit} disabled={confirming || controls.stepping}>
           {t("walletMfe.change", "Change")}
         </Button>
       </div>

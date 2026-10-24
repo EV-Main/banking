@@ -42,7 +42,7 @@ function Elsewhere({ methods, onFallback }: { methods: Review["intent"]["stepup"
 
 function PasskeyStep({ review, controls, client, onFallback }: { review: Review; controls: IntentFlowControls; client: StepupClient; onFallback: () => void }) {
   const t = useT();
-  const { state, run } = usePasskeyStepup(client, review.intent, controls.confirmWith);
+  const { state, run } = usePasskeyStepup(client, review.intent, controls.confirmWith, controls.setStepping);
   const busy = state.status === "working" || review.confirming;
   const failed = state.status === "failed" ? state.error : null;
   const step = failed ? nextStep(failed) : "try_again";

@@ -13,7 +13,12 @@ export type PasskeyStepup = { status: "idle" } | { status: "working" } | { statu
  * time, so a double click cannot mint two proofs. A prompt the person closed keeps its
  * ceremony (it is spent only by a verify), so "try again" asks the authenticator at once.
  */
-export function usePasskeyStepup(client: StepupClient, intent: Intent, onProof: (intentId: string, proof: string) => void) {
+export function usePasskeyStepup(
+  client: StepupClient,
+  intent: Intent,
+  onProof: (intentId: string, proof: string) => void,
+  onWorking: (working: boolean) => void,
+) {
   const [state, setState] = useState<PasskeyStepup>({ status: "idle" });
   const running = useRef(false);
   const held = useRef<{ intentId: string; ceremony: Extract<StepupCeremony, { method: "passkey" }> } | null>(null);
@@ -35,9 +40,11 @@ export function usePasskeyStepup(client: StepupClient, intent: Intent, onProof: 
   const run = useCallback(async () => {
     if (running.current) return;
     running.current = true;
+    onWorking(true);
     setState({ status: "working" });
     const settle = (next: PasskeyStepup) => {
       running.current = false;
+      onWorking(false);
       if (live.current) setState(next);
     };
 
@@ -49,6 +56,8 @@ export function usePasskeyStepup(client: StepupClient, intent: Intent, onProof: 
       ceremony = begun.value;
       held.current = { intentId: intent.id, ceremony };
     }
+    // Gone while the ceremony opened (the form closed, the element left the page): no prompt.
+    if (!live.current) return settle({ status: "idle" });
 
     const assertion = await assertPasskey(ceremony.options);
     if (!assertion.ok) {
@@ -59,9 +68,11 @@ export function usePasskeyStepup(client: StepupClient, intent: Intent, onProof: 
     held.current = null;
     const finished = await client.finish(ceremony.ceremonyId, { response: assertion.value });
     if (!finished.ok) return settle({ status: "failed", error: finished.error });
+    // A proof for a panel that is gone is dropped here, unused; it expires within 120 s.
+    if (!live.current) return settle({ status: "idle" });
     settle({ status: "idle" });
     deliver.current(intent.id, finished.value);
-  }, [client, intent]);
+  }, [client, intent, onWorking]);
 
   return { state, run };
 }

@@ -43,12 +43,31 @@ export function useIntentFlow(client: IntentClient) {
   const [draft, setDraft] = useState<IntentRequest | null>(null);
   const busy = useRef(false);
   const generation = useRef(0);
+  const mounted = useRef(true);
+  // A passkey prompt is open for the intent on screen: that intent must not be swapped (no
+  // edit, no renewal) until the run ends, or its proof would land on terms nobody sees.
+  const [stepping, setSteppingState] = useState(false);
+  const steppingNow = useRef(false);
+  // A proof arrives after awaits; it is judged against the flow as it is then, not as it was
+  // when the run began.
+  const latest = useRef(flow);
+
+  useEffect(() => {
+    latest.current = flow;
+  }, [flow]);
 
   useEffect(() => {
     const counter = generation;
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       counter.current++;
     };
+  }, []);
+
+  const setStepping = useCallback((on: boolean) => {
+    steppingNow.current = on;
+    if (mounted.current) setSteppingState(on);
   }, []);
 
   const create = useCallback(
@@ -79,7 +98,7 @@ export function useIntentFlow(client: IntentClient) {
     // `proof` lives in this call only: it reaches the client and is never put in state. A resend
     // of an unclear confirm goes without one; the BFF resends an executing act unasked.
     async (intent: Intent, review: Review | null, proof?: string) => {
-      if (busy.current) return;
+      if (!mounted.current || busy.current) return;
       if (review && intent.stepup.required !== (proof !== undefined)) return;
       busy.current = true;
       const mine = ++generation.current;
@@ -114,13 +133,14 @@ export function useIntentFlow(client: IntentClient) {
   /** Confirms with a step-up proof, only for the intent on screen that it was minted for. */
   const confirmWith = useCallback(
     (intentId: string, proof: string) => {
-      if (flow.phase === "review" && !flow.confirming && flow.intent.id === intentId) void send(flow.intent, flow, proof);
+      const now = latest.current;
+      if (now.phase === "review" && !now.confirming && now.intent.id === intentId) void send(now.intent, now, proof);
     },
-    [flow, send],
+    [send],
   );
 
   const expire = useCallback(() => {
-    if (flow.phase !== "review" || flow.confirming) return;
+    if (flow.phase !== "review" || flow.confirming || steppingNow.current) return;
     if (flow.autoRenewed) setFlow({ phase: "expired" });
     else void create("countdown");
   }, [flow, create]);
@@ -128,12 +148,13 @@ export function useIntentFlow(client: IntentClient) {
   const renew = useCallback(() => void create("person"), [create]);
 
   const edit = useCallback(() => {
+    if (steppingNow.current) return;
     generation.current++;
     busy.current = false;
     setFlow({ phase: "editing", error: null });
   }, []);
 
-  return { flow, draft, submit, confirm, confirmWith, expire, renew, edit };
+  return { flow, draft, stepping, setStepping, submit, confirm, confirmWith, expire, renew, edit };
 }
 
 export type IntentFlowControls = ReturnType<typeof useIntentFlow>;
