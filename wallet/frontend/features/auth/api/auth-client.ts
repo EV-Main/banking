@@ -3,7 +3,7 @@
 // credential. Every answer is `{"ok":true,…}` or `{"error":"<code>"}` from one closed
 // vocabulary; the dialog words the code.
 
-import { assertionJson, creationOptions, registrationJson, requestOptions } from "@/features/auth/lib/webauthn";
+import { assertionJson, creationOptions, registrationJson, requestOptions } from "@/shared/lib/webauthn";
 import { csrfHeader } from "@/shared/lib/csrf-client";
 
 export type AuthError =
