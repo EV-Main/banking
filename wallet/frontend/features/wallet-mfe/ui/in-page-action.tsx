@@ -5,6 +5,7 @@ import { useId, type KeyboardEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
 import { intentClientFor } from "../api/wallet-intents";
+import { escapeCloses } from "../lib/escape-closes";
 import type { WalletAction } from "../lib/wallet-action";
 import { useIntentFlow, type IntentFlowControls } from "../model/use-intent-flow";
 import { ActionRoot } from "./action-root";
@@ -32,10 +33,6 @@ export interface InPageActionProps {
   /** The same action as an `ev:wallet-action` offer, for what this page cannot finish yet. */
   onFallback: () => void;
 }
-
-// Escape is Cancel where the form offers Cancel or Close: never while a create or a confirm is
-// in flight, nor on the terms, where leaving would drop an intent the person is reading.
-const ESCAPE_CLOSES: ReadonlySet<IntentFlowControls["flow"]["phase"]> = new Set(["editing", "done"]);
 
 function ActionForm({ props, controls }: { props: InPageActionProps; controls: IntentFlowControls }) {
   const { flow } = controls;
@@ -66,7 +63,7 @@ export function InPageAction(props: InPageActionProps) {
   const controls = useIntentFlow(intentClientFor(props.origin));
   const editing = controls.flow.phase === "editing" || controls.flow.phase === "creating";
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !ESCAPE_CLOSES.has(controls.flow.phase)) return;
+    if (event.key !== "Escape" || !escapeCloses(controls.flow.phase)) return;
     // The page around the form has its own Escape handlers; this one is the form's alone.
     event.stopPropagation();
     event.preventDefault();
