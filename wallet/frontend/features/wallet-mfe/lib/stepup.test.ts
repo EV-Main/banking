@@ -235,3 +235,42 @@ test("stepupSummary strips U+061C ARABIC LETTER MARK", () => {
   const line = stepupSummary("pay", summary({ recipient: `a${chars(0x061c)}b` }));
   assert.ok(line.includes("to ab on"), `survived: ${JSON.stringify(line)}`);
 });
+
+const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const EMOJI = chars(0x1f600);
+const codePoints = (text: string) => Array.from(text).length;
+
+test("stepupSummary cuts an astral recipient by code points without a lone surrogate", () => {
+  const line = stepupSummary("pay", summary({ recipient: EMOJI.repeat(300) }));
+  assert.equal(codePoints(line), 240);
+  assert.ok(line.endsWith("…"));
+  assert.doesNotMatch(line, UNPAIRED_SURROGATE);
+});
+
+test("stepupSummary drops an astral 240th code point whole and keeps an astral 239th", () => {
+  const base = { amount: null, net: null, network: null, hostOrigin: "h" } as const;
+  // "Move to " is 8 code points, so 231 filler characters end the line at code point 239.
+  const dropped = stepupSummary("move", summary({ ...base, recipient: `${"a".repeat(231)}${EMOJI}tail` }));
+  assert.equal(dropped, `Move to ${"a".repeat(231)}…`);
+  const kept = stepupSummary("move", summary({ ...base, recipient: `${"a".repeat(230)}${EMOJI}${EMOJI}tail` }));
+  assert.equal(kept, `Move to ${"a".repeat(230)}${EMOJI}…`);
+  assert.doesNotMatch(dropped + kept, UNPAIRED_SURROGATE);
+});
+
+test("stepupSummary leaves an astral line of exactly 240 code points uncut", () => {
+  const filler = EMOJI.repeat(240 - "Move to  from h".length);
+  const line = stepupSummary("move", summary({ amount: null, net: null, network: null, hostOrigin: "h", recipient: filler }));
+  assert.equal(codePoints(line), 240);
+  assert.ok(!line.endsWith("…"));
+  assert.ok(line.length > 240, "astral characters take two UTF-16 units each");
+});
+
+test("stepupSummary cuts Cyrillic text to the first 239 characters and an ellipsis", () => {
+  const line = stepupSummary("move", summary({ amount: null, net: null, network: null, hostOrigin: "h", recipient: "Ж".repeat(400) }));
+  assert.equal(line, `Move to ${"Ж".repeat(231)}…`);
+});
+
+test("stepupSummary strips U+2065", () => {
+  const line = stepupSummary("pay", summary({ recipient: `a${chars(0x2065)}b` }));
+  assert.ok(line.includes("to ab on"), `survived: ${JSON.stringify(line)}`);
+});

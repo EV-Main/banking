@@ -237,3 +237,25 @@ test("a failing fetch whose error message holds a proof does not leak it", async
   assert.deepEqual(value, { ok: false, error: { code: "network" } });
   assert.deepEqual(logged, []);
 });
+
+test("a 401 passkey_rejected on verify is returned at once, with no renewal and one fetch", async () => {
+  const h = harness([{ status: 401, body: { error: "passkey_rejected" } }]);
+  assert.deepEqual(await h.client.finish("cer1", { response: { id: "cred" } }), { ok: false, error: { code: "passkey_rejected" } });
+  assert.equal(h.renewals(), 0);
+  assert.equal(h.calls.length, 1);
+});
+
+test("a 401 session failure on verify renews once and resends once", async () => {
+  const h = harness([{ status: 401, body: { error: "unauthorized" } }, { status: 200, body: { proof: PROOF } }]);
+  assert.deepEqual(await h.client.finish("cer1", { response: { id: "cred" } }), { ok: true, value: PROOF });
+  assert.equal(h.renewals(), 1);
+  assert.equal(h.calls.length, 2);
+  assert.deepEqual(h.calls[1].body, h.calls[0].body);
+});
+
+test("a resend answered by 401 passkey_rejected is returned at once, with no second renewal", async () => {
+  const h = harness([{ status: 401, body: { error: "unauthorized" } }, { status: 401, body: { error: "passkey_rejected" } }]);
+  assert.deepEqual(await h.client.finish("cer1", { response: { id: "cred" } }), { ok: false, error: { code: "passkey_rejected" } });
+  assert.equal(h.renewals(), 1);
+  assert.equal(h.calls.length, 2);
+});
