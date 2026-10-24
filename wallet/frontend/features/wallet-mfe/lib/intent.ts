@@ -287,8 +287,9 @@ export function confirmAgain(error: IntentError): boolean {
 }
 
 /**
- * Whether confirming this intent again cannot help: its proof was spent or refused, or a 24 h
- * line was reached (the BFF cancels the intent for those). The way on is a new intent.
+ * Whether the page starts over with a new intent instead of confirming this one again. The BFF
+ * cancels the intent for a spent proof and for a 24 h line reached; for `stepup_invalid` it
+ * leaves the intent `created`, but a proof that failed verification is not retried here.
  */
 export function intentCancelled(error: IntentError): boolean {
   return error.code === "proof_replayed" || error.code === "stepup_invalid" || error.code === "limit_reached" || error.code === "email_limit_reached";

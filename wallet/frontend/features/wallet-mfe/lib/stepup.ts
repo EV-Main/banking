@@ -144,5 +144,7 @@ export function stepupSummary(kind: IntentKind, summary: IntentSummary): string 
   if (summary.net !== null && summary.net !== summary.amount) parts.push(`(recipient gets ${summary.net} USDT)`);
   parts.push(`from ${summary.hostOrigin}`);
   const line = parts.join(" ").replace(UNPRINTABLE, "").replace(/\s+/g, " ").trim();
-  return line.length <= MAX_SUMMARY_CHARS ? line : `${line.slice(0, MAX_SUMMARY_CHARS - 1)}…`;
+  // Code points, as concierge counts them: a UTF-16 cut could split a surrogate pair.
+  const points = Array.from(line);
+  return points.length <= MAX_SUMMARY_CHARS ? line : `${points.slice(0, MAX_SUMMARY_CHARS - 1).join("")}…`;
 }
