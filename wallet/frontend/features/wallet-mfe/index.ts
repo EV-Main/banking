@@ -3,3 +3,6 @@ export type { WalletPanelProps } from "./ui/wallet-panel";
 export { PayInvoiceButton } from "./ui/pay-invoice-button";
 export { WALLET_ACTION_EVENT, actionId, offerWalletAction, readScope, walletActionHref } from "./lib/wallet-action";
 export type { WalletAction } from "./lib/wallet-action";
+export { InPageAction } from "./ui/in-page-action";
+export type { InPageActionProps } from "./ui/in-page-action";
+export { actionMode } from "./lib/action-mode";

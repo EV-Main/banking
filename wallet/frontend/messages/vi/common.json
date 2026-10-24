@@ -1834,5 +1834,177 @@
   "walletMfe.allActivity": {
     "en": "See all activity",
     "t": "Xem tất cả hoạt động"
+  },
+  "walletMfe.address": {
+    "en": "Address",
+    "t": "Địa chỉ"
+  },
+  "walletMfe.change": {
+    "en": "Change",
+    "t": "Thay đổi"
+  },
+  "walletMfe.checkAgain": {
+    "en": "Check again",
+    "t": "Kiểm tra lại"
+  },
+  "walletMfe.close": {
+    "en": "Close",
+    "t": "Đóng"
+  },
+  "walletMfe.confirm": {
+    "en": "Confirm",
+    "t": "Xác nhận"
+  },
+  "walletMfe.continueOnEv": {
+    "en": "Continue on EV Invest",
+    "t": "Tiếp tục trên EV Invest"
+  },
+  "walletMfe.err.accountNotActive": {
+    "en": "Your account cannot move money right now. Contact support.",
+    "t": "Tài khoản của bạn hiện không thể chuyển tiền. Hãy liên hệ bộ phận hỗ trợ."
+  },
+  "walletMfe.err.address": {
+    "en": "Check the address. It does not match this network.",
+    "t": "Hãy kiểm tra địa chỉ. Địa chỉ này không khớp với mạng đã chọn."
+  },
+  "walletMfe.err.amount": {
+    "en": "Enter an amount greater than zero.",
+    "t": "Nhập số tiền lớn hơn 0."
+  },
+  "walletMfe.err.belowFee": {
+    "en": "The amount does not cover the network fee.",
+    "t": "Số tiền không đủ để trả phí mạng."
+  },
+  "walletMfe.err.belowMinimum": {
+    "en": "The amount is below the minimum withdrawal for this network.",
+    "t": "Số tiền thấp hơn mức rút tối thiểu của mạng này."
+  },
+  "walletMfe.err.emailLimit": {
+    "en": "You have reached today's limit for confirming with an emailed code.",
+    "t": "Bạn đã đạt giới hạn hôm nay cho việc xác nhận bằng mã gửi qua email."
+  },
+  "walletMfe.err.expired": {
+    "en": "These terms are no longer valid. Review them again.",
+    "t": "Các điều khoản này không còn hiệu lực. Hãy xem lại."
+  },
+  "walletMfe.err.limit": {
+    "en": "You have reached the 24-hour limit for moves without an extra check.",
+    "t": "Bạn đã đạt giới hạn 24 giờ cho các lần chuyển không cần kiểm tra thêm."
+  },
+  "walletMfe.err.network": {
+    "en": "Choose a network.",
+    "t": "Hãy chọn mạng."
+  },
+  "walletMfe.err.networkUnavailable": {
+    "en": "Withdrawals on this network are paused right now.",
+    "t": "Rút tiền trên mạng này hiện đang tạm dừng."
+  },
+  "walletMfe.err.notEnabled": {
+    "en": "This action is not available on this page yet.",
+    "t": "Thao tác này chưa có trên trang này."
+  },
+  "walletMfe.err.notPending": {
+    "en": "This confirmation was already used. Check your recent activity before you try again.",
+    "t": "Lần xác nhận này đã được dùng. Hãy kiểm tra hoạt động gần đây trước khi thử lại."
+  },
+  "walletMfe.err.proofReplayed": {
+    "en": "That check was already used. Start again.",
+    "t": "Bước kiểm tra này đã được dùng. Hãy bắt đầu lại."
+  },
+  "walletMfe.err.scopeMismatch": {
+    "en": "This action does not belong to this service.",
+    "t": "Thao tác này không thuộc về dịch vụ này."
+  },
+  "walletMfe.expired": {
+    "en": "These terms ran out. Get new ones to continue.",
+    "t": "Các điều khoản này đã hết hạn. Hãy lấy điều khoản mới để tiếp tục."
+  },
+  "walletMfe.mandateIntro": {
+    "en": "A service asks to use your funds within set limits. Review the limits before you allow it.",
+    "t": "Một dịch vụ xin dùng tiền của bạn trong các giới hạn đã đặt. Hãy xem các giới hạn trước khi cho phép."
+  },
+  "walletMfe.mandateTitle": {
+    "en": "Allow a service to use your funds",
+    "t": "Cho phép một dịch vụ dùng tiền của bạn"
+  },
+  "walletMfe.renew": {
+    "en": "Get new terms",
+    "t": "Lấy điều khoản mới"
+  },
+  "walletMfe.review": {
+    "en": "Review",
+    "t": "Xem lại"
+  },
+  "walletMfe.reviewHint": {
+    "en": "You see the exact terms before anything moves.",
+    "t": "Bạn sẽ thấy điều khoản chính xác trước khi có bất kỳ khoản chuyển nào."
+  },
+  "walletMfe.stepupElsewhere": {
+    "en": "This page cannot ask for it yet, so finish on EV Invest.",
+    "t": "Trang này chưa thể yêu cầu bước đó, vì vậy hãy hoàn tất trên EV Invest."
+  },
+  "walletMfe.stepupEmail": {
+    "en": "Confirming this needs a code we email you.",
+    "t": "Để xác nhận, bạn cần mã chúng tôi gửi qua email."
+  },
+  "walletMfe.stepupPasskey": {
+    "en": "Confirming this needs your passkey.",
+    "t": "Để xác nhận, bạn cần passkey của mình."
+  },
+  "walletMfe.stepupPasskeyOrEmail": {
+    "en": "Confirming this needs your passkey or a code we email you.",
+    "t": "Để xác nhận, bạn cần passkey hoặc mã chúng tôi gửi qua email."
+  },
+  "walletMfe.stepupTitle": {
+    "en": "One more check is needed",
+    "t": "Cần thêm một bước kiểm tra"
+  },
+  "walletMfe.term.amount": {
+    "en": "Amount",
+    "t": "Số tiền"
+  },
+  "walletMfe.term.fee": {
+    "en": "Fee",
+    "t": "Phí"
+  },
+  "walletMfe.term.host": {
+    "en": "Requested by",
+    "t": "Yêu cầu từ"
+  },
+  "walletMfe.term.net": {
+    "en": "Recipient gets",
+    "t": "Người nhận nhận được"
+  },
+  "walletMfe.term.recipient": {
+    "en": "To",
+    "t": "Đến"
+  },
+  "walletMfe.term.scope": {
+    "en": "Account",
+    "t": "Tài khoản"
+  },
+  "walletMfe.term.service": {
+    "en": "Service",
+    "t": "Dịch vụ"
+  },
+  "walletMfe.termsChanged": {
+    "en": "The terms changed since you started. Check them again before you confirm.",
+    "t": "Điều khoản đã thay đổi kể từ khi bạn bắt đầu. Hãy kiểm tra lại trước khi xác nhận."
+  },
+  "walletMfe.unclear": {
+    "en": "Still processing. Nothing is lost — check again in a moment.",
+    "t": "Vẫn đang xử lý. Không có gì bị mất — hãy kiểm tra lại sau giây lát."
+  },
+  "walletMfe.unclearFinal": {
+    "en": "We could not get the result. Check your recent activity before you try again.",
+    "t": "Chúng tôi không lấy được kết quả. Hãy kiểm tra hoạt động gần đây trước khi thử lại."
+  },
+  "walletMfe.validFor": {
+    "en": "These terms are valid for {time}",
+    "t": "Các điều khoản này còn hiệu lực trong {time}"
+  },
+  "walletMfe.withdrawHold": {
+    "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
+    "t": "Lệnh rút đến một địa chỉ bạn chưa từng dùng sẽ bị giữ 6 giờ. Bạn có thể hủy lệnh từ email chúng tôi gửi."
   }
 }
