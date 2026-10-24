@@ -33,7 +33,8 @@ export function IntentSummaryView({ kind, summary }: { kind: IntentKind; summary
         {summaryRows(summary).map((row) => (
           <div key={row.term} className={ROW}>
             <dt className="shrink-0 text-ink-soft">{labels[row.term]}</dt>
-            <dd className="m-0 min-w-0 break-all text-right text-ink tabular-nums">
+            {/* Exact case and every character, whatever the page around it asks for. */}
+            <dd className="m-0 min-w-0 break-all text-right normal-case text-ink tabular-nums">
               {row.money ? `${formatExactUsdt(row.value, locale)} USDT` : row.term === "network" ? networkLabel(row.value) : row.value}
             </dd>
           </div>

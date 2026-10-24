@@ -3,13 +3,15 @@ import { createPortal } from "react-dom";
 
 import { PortalProvider } from "@evinvest/uikit";
 
-import { shadowSheet } from "../lib/shadow-styles";
+import { FORM_CONTAINER_ATTR } from "../lib/shadow-base";
+import { shadowBaseSheet, shadowSheet } from "../lib/shadow-styles";
 
 // Session replay (Sentry) and autocapture (PostHog) skip what carries these. Both the root's
 // host and the form container wear them: a recorder that cannot enter the closed root still
 // sees the host, and one that can still meets the container.
 const PRIVATE_CLASS = "ph-no-capture";
 const PRIVATE_ATTRS = { "data-ph-no-capture": "", "data-sentry-block": "" } as const;
+const CONTAINER_ATTRS = { ...PRIVATE_ATTRS, [FORM_CONTAINER_ATTR]: "" };
 
 // `attachShadow` runs once per element, and a closed root cannot be read back from it.
 const roots = new WeakMap<Element, ShadowRoot>();
@@ -44,11 +46,12 @@ export function ActionRoot({ sheetHref, children }: { sheetHref: string; childre
     void shadowSheet(sheetHref).then((sheet) => {
       if (!live) return;
       if (sheet) {
-        shadow.adoptedStyleSheets = [sheet];
+        shadow.adoptedStyleSheets = [shadowBaseSheet(), sheet];
         setStyled(true);
         return;
       }
       // Unreadable as text: the plain sheet still styles the parts, without the `:host` tokens.
+      shadow.adoptedStyleSheets = [shadowBaseSheet()];
       link = document.createElement("link");
       link.rel = "stylesheet";
       link.href = sheetHref;
@@ -66,7 +69,7 @@ export function ActionRoot({ sheetHref, children }: { sheetHref: string; childre
     <div ref={host} className={PRIVATE_CLASS} {...PRIVATE_ATTRS} aria-busy={!styled}>
       {shadow &&
         createPortal(
-          <div ref={setContainer} className={`${PRIVATE_CLASS} text-ink`} {...PRIVATE_ATTRS} hidden={!styled}>
+          <div ref={setContainer} className={`${PRIVATE_CLASS} text-ink`} {...CONTAINER_ATTRS} hidden={!styled}>
             {container && <PortalProvider container={container}>{children}</PortalProvider>}
           </div>,
           shadow,

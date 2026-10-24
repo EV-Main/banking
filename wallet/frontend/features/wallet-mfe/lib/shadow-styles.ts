@@ -4,6 +4,10 @@
 //   · `:root` matches nothing inside a shadow root, so the token and theme rules move to `:host`;
 //   · `@property` and `@font-face` apply only from a document sheet, so they move to one;
 //   · the root is closed, so the sheet is adopted rather than linked into the host's head.
+//
+// A base sheet (`./shadow-base.ts`) goes in front of it, so host styles stop at the root.
+
+import { SHADOW_BASE_CSS } from "./shadow-base";
 
 const ROOT = /:root\b/;
 
@@ -66,6 +70,17 @@ async function prepare(href: string): Promise<CSSStyleSheet | null> {
   rewrite(sheet, documentRules);
   hoist(documentRules);
   return sheet;
+}
+
+let base: CSSStyleSheet | null = null;
+
+/** The reset and the wall against host styles, adopted first so the wallet sheet's layers win. */
+export function shadowBaseSheet(): CSSStyleSheet {
+  if (base === null) {
+    base = new CSSStyleSheet();
+    base.replaceSync(SHADOW_BASE_CSS);
+  }
+  return base;
 }
 
 /** The shadow-root copy of `href`, shared by every form on the page; null when it cannot be read. */
