@@ -16,10 +16,14 @@ import { stepupErrorText, stepupMethodsText } from "./intent-words";
 // so an intent this page can only confirm by code goes to the popup.
 const EMAIL_CODE_IN_PAGE = false;
 
-/** What the person can do next after a failed step-up. */
-function nextStep(error: StepupError): "start_again" | "try_again" | "elsewhere" {
+/**
+ * What the person can do next after a failed step-up. `elsewhere_only`: no retry here helps
+ * now (no passkey to use, or asked too often), so only the popup is offered beside Change.
+ */
+function nextStep(error: StepupError): "start_again" | "try_again" | "try_or_elsewhere" | "elsewhere_only" {
+  if (error.code === "no_passkey" || error.code === "throttled") return "elsewhere_only";
   if (needsFreshIntent(error) || error.code === "captcha") return "start_again";
-  if (error.code === "unavailable" || error.code === "authenticator_failed" || error.code === "signed_out") return "elsewhere";
+  if (error.code === "unavailable" || error.code === "authenticator_failed" || error.code === "signed_out") return "try_or_elsewhere";
   return "try_again";
 }
 
@@ -58,17 +62,18 @@ function PasskeyStep({ review, controls, client, onFallback }: { review: Review;
         </Alert>
       )}
       <div className="flex flex-wrap gap-2">
-        {step === "start_again" ? (
+        {step === "start_again" && (
           <Button type="button" onClick={controls.renew}>
             {t("walletMfe.startAgain", "Start again")}
           </Button>
-        ) : (
+        )}
+        {(step === "try_again" || step === "try_or_elsewhere") && (
           <Button type="button" onClick={() => void run()} disabled={busy} aria-busy={busy}>
             {busy ? <Spinner aria-hidden /> : null}
             {failed ? t("walletMfe.tryAgain", "Try again") : t("walletMfe.confirmPasskey", "Confirm with passkey")}
           </Button>
         )}
-        {(step === "elsewhere" || failed?.code === "no_passkey") && (
+        {(step === "try_or_elsewhere" || step === "elsewhere_only") && (
           <Button type="button" variant="outline" onClick={onFallback}>
             {t("walletMfe.continueOnEv", "Continue on EV Invest")}
           </Button>

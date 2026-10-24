@@ -97,9 +97,13 @@ export function assertionErrorOf(name: string): StepupError {
   return name === "NotAllowedError" || name === "AbortError" ? { code: "cancelled" } : { code: "authenticator_failed" };
 }
 
-/** Whether a step-up error is final for this intent: the way on is a new one. */
+/**
+ * Whether a step-up error is final for this intent and a new one can get past it. Not
+ * `no_passkey` (a new intent asks the same account) nor `throttled` (it asks too soon): those
+ * offer the popup instead of a restart.
+ */
 export function needsFreshIntent(error: StepupError): boolean {
-  return error.code === "expired" || error.code === "throttled" || error.code === "no_passkey" || error.code === "attempts_exceeded";
+  return error.code === "expired" || error.code === "attempts_exceeded";
 }
 
 // The doc's rule: a withdrawal or a mandate grant takes a passkey only, whatever is offered.
