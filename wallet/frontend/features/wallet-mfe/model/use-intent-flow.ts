@@ -76,12 +76,15 @@ export function useIntentFlow(client: IntentClient) {
   );
 
   const send = useCallback(
-    async (intent: Intent, review: Review | null) => {
-      if (busy.current || intent.stepup.required) return;
+    // `proof` lives in this call only: it reaches the client and is never put in state. A resend
+    // of an unclear confirm goes without one; the BFF resends an executing act unasked.
+    async (intent: Intent, review: Review | null, proof?: string) => {
+      if (busy.current) return;
+      if (review && intent.stepup.required !== (proof !== undefined)) return;
       busy.current = true;
       const mine = ++generation.current;
       if (review) setFlow({ ...review, confirming: true, error: null });
-      const result = await client.confirm(intent.id);
+      const result = await client.confirm(intent.id, proof);
       busy.current = false;
       if (mine !== generation.current) return;
       if (result.ok) return setFlow({ phase: "done", confirmed: result.value });
@@ -108,6 +111,14 @@ export function useIntentFlow(client: IntentClient) {
     else if (flow.phase === "unclear" && flow.askAgain) void send(flow.intent, null);
   }, [flow, send]);
 
+  /** Confirms with a step-up proof, only for the intent on screen that it was minted for. */
+  const confirmWith = useCallback(
+    (intentId: string, proof: string) => {
+      if (flow.phase === "review" && !flow.confirming && flow.intent.id === intentId) void send(flow.intent, flow, proof);
+    },
+    [flow, send],
+  );
+
   const expire = useCallback(() => {
     if (flow.phase !== "review" || flow.confirming) return;
     if (flow.autoRenewed) setFlow({ phase: "expired" });
@@ -122,7 +133,7 @@ export function useIntentFlow(client: IntentClient) {
     setFlow({ phase: "editing", error: null });
   }, []);
 
-  return { flow, draft, submit, confirm, expire, renew, edit };
+  return { flow, draft, submit, confirm, confirmWith, expire, renew, edit };
 }
 
 export type IntentFlowControls = ReturnType<typeof useIntentFlow>;

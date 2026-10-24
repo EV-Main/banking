@@ -286,6 +286,14 @@ export function confirmAgain(error: IntentError): boolean {
   return error.code === "intent_executing" || error.code === "network";
 }
 
+/**
+ * Whether confirming this intent again cannot help: its proof was spent or refused, or a 24 h
+ * line was reached (the BFF cancels the intent for those). The way on is a new intent.
+ */
+export function intentCancelled(error: IntentError): boolean {
+  return error.code === "proof_replayed" || error.code === "stepup_invalid" || error.code === "limit_reached" || error.code === "email_limit_reached";
+}
+
 /** Whether the person has to start from a new intent, with the same inputs. */
 export function needsNewIntent(error: IntentError): boolean {
   return error.code === "intent_expired" || error.code === "terms_changed" || error.code === "intent_not_found" || error.code === "session_changed";

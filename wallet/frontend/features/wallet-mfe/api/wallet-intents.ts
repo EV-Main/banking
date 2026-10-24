@@ -7,6 +7,7 @@ import { renewSession } from "./wallet-remote";
 
 // One client per wallet origin, so every form on the page shares one CSRF token.
 const clients = new Map<string, IntentClient>();
+const stepupClients = new Map<string, StepupClient>();
 
 export function intentClientFor(origin: string): IntentClient {
   const known = clients.get(origin);
@@ -30,9 +31,13 @@ export function enabledKinds(origin: string): Promise<IntentKind[]> {
  * `/cabinet` prefix, like the session read in `./wallet-remote.ts`.
  */
 export function stepupClientFor(origin: string): StepupClient {
-  return createStepupClient({
+  const known = stepupClients.get(origin);
+  if (known) return known;
+  const client = createStepupClient({
     apiBase: new URL("/api/auth/stepup", origin).href,
     fetch: (input, init) => fetch(input, init),
     renewSession: () => renewSession(origin),
   });
+  stepupClients.set(origin, client);
+  return client;
 }
