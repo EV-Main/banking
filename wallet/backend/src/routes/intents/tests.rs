@@ -873,6 +873,33 @@ async fn the_csrf_token_is_this_accounts_on_this_page() {
 	assert_eq!(h.acts(), 0);
 }
 
+/// The CSRF answer tells the page which forms it may open in place: the calling host's matrix
+/// kinds that the env leaves on, always in matrix order whatever the env's order.
+#[tokio::test]
+async fn the_csrf_answer_lists_the_kinds_on_for_the_calling_host() {
+	let kinds_for = |answer: &Answer| {
+		answer.body["kinds"]
+			.as_array()
+			.expect("a kinds list")
+			.iter()
+			.map(|kind| kind.as_str().expect("a kind name").to_owned())
+			.collect::<Vec<_>>()
+	};
+	for (env, invest, sa) in [
+		("withdraw,mandate,pay,move", &["move", "pay", "mandate", "withdraw"][..], &["move", "pay", "mandate"][..]),
+		("move", &["move"][..], &["move"][..]),
+		("withdraw", &["withdraw"][..], &[][..]),
+		("mandate,move", &["move", "mandate"][..], &["move", "mandate"][..]),
+	] {
+		let h = harness(BOTH, env).await;
+		for (origin, expected) in [(INVEST, invest), (SA, sa)] {
+			let answer = h.send(Call::get("/api/wallet/csrf").from(Some(origin))).await;
+			assert_eq!(answer.status, StatusCode::OK, "{env} from {origin}: {}", answer.body);
+			assert_eq!(kinds_for(&answer), expected, "{env} from {origin}");
+		}
+	}
+}
+
 /// A body declared anything but `application/json` is 415, before it is read.
 #[tokio::test]
 async fn only_declared_json_is_read() {
