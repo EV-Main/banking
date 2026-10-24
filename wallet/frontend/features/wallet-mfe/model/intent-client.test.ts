@@ -13,7 +13,7 @@ const REQUEST = { kind: "mandate", params: { request_id: "req1" } } as const;
 
 type Reply = { status: number; body?: unknown } | "throw" | "not_json";
 
-const csrfReply = (token = "tok1"): Reply => ({ status: 200, body: { csrf: token, expires_at: 9_999_999_999 } });
+const csrfReply = (token = "tok1", kinds: unknown = ["mandate"]): Reply => ({ status: 200, body: { csrf: token, expires_at: 9_999_999_999, kinds } });
 const intentBody = {
   intent_id: ID,
   intent_hash: HASH,
@@ -264,4 +264,43 @@ test("the proof is sent in the body only, never in the url or headers", async ()
   await h.client.confirm(ID, PROOF);
   const post = h.calls[1];
   assert.ok(post && !post.url.includes(PROOF) && post.csrf !== PROOF);
+});
+
+test("kinds returns the kinds the csrf answer lists", async () => {
+  const h = harness([csrfReply("t", ["move", "bogus", "withdraw"])]);
+  assert.deepEqual(await h.client.kinds(), ["move", "withdraw"]);
+});
+
+test("kinds is empty when the routes are off (404)", async () => {
+  assert.deepEqual(await harness([{ status: 404, body: { error: "not_found" } }]).client.kinds(), []);
+});
+
+test("kinds is empty when fetch throws", async () => {
+  assert.deepEqual(await harness(["throw"]).client.kinds(), []);
+});
+
+test("kinds is empty when signed out: a 401 whose renewal says no", async () => {
+  const h = harness([{ status: 401 }], { renew: false });
+  assert.deepEqual(await h.client.kinds(), []);
+  assert.equal(h.renewals(), 1);
+});
+
+test("kinds is empty for a malformed body", async () => {
+  assert.deepEqual(await harness([{ status: 200, body: { csrf: "t" } }]).client.kinds(), []);
+  assert.deepEqual(await harness(["not_json"]).client.kinds(), []);
+});
+
+test("concurrent kinds calls share one csrf request", async () => {
+  const h = harness([csrfReply("t", ["pay"])]);
+  const [a, b] = await Promise.all([h.client.kinds(), h.client.kinds()]);
+  assert.deepEqual([a, b], [["pay"], ["pay"]]);
+  assert.deepEqual(h.calls.map((c) => [c.method, c.url]), [["GET", "/csrf"]]);
+});
+
+test("a create after kinds reuses the cached token with no second GET", async () => {
+  const h = harness([csrfReply("tokK", ["mandate"]), { status: 200, body: intentBody }]);
+  await h.client.kinds();
+  const made = await h.client.create(REQUEST);
+  assert.equal(made.ok, true);
+  assert.deepEqual(h.calls.map((c) => [c.method, c.url, c.csrf]), [["GET", "/csrf", null], ["POST", "/intents", "tokK"]]);
 });

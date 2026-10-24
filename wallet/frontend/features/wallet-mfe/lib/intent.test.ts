@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { INTENT_TTL_MS, intentDeadlineMs, mandateCapRows, parseIntent, secondsLeft, summaryRows, type IntentSummary, type MandateCaps } from "./intent.ts";
+import { INTENT_TTL_MS, intentDeadlineMs, mandateCapRows, parseCsrf, parseIntent, secondsLeft, summaryRows, type IntentSummary, type MandateCaps } from "./intent.ts";
 
 const ID = "c".repeat(32);
 const HASH = "d".repeat(64);
@@ -126,4 +126,26 @@ test("secondsLeft rounds up and never goes below zero", () => {
   assert.equal(secondsLeft(12_000, 10_000), 2);
   assert.equal(secondsLeft(10_000, 10_000), 0);
   assert.equal(secondsLeft(5_000, 10_000), 0);
+});
+
+const CSRF_BODY = { csrf: "tok1", expires_at: 9_999_999_999 };
+
+test("parseCsrf keeps known kinds in order, drops unknown names and duplicates", () => {
+  const body = { ...CSRF_BODY, kinds: ["pay", "teleport", "pay", 7, null, "withdraw", "withdraw"] };
+  assert.deepEqual(parseCsrf(body)?.kinds, ["pay", "withdraw"]);
+});
+
+test("parseCsrf gives no kinds when kinds is missing or not an array", () => {
+  assert.deepEqual(parseCsrf(CSRF_BODY)?.kinds, []);
+  assert.deepEqual(parseCsrf({ ...CSRF_BODY, kinds: "move" })?.kinds, []);
+  assert.deepEqual(parseCsrf({ ...CSRF_BODY, kinds: { 0: "move" } })?.kinds, []);
+});
+
+test("parseCsrf still rejects a bad token or expires_at whatever kinds says", () => {
+  const kinds = ["move"];
+  assert.equal(parseCsrf({ csrf: 5, expires_at: 9_999_999_999, kinds }), null);
+  assert.equal(parseCsrf({ csrf: "", expires_at: 9_999_999_999, kinds }), null);
+  assert.equal(parseCsrf({ csrf: "tok1", expires_at: "soon", kinds }), null);
+  assert.equal(parseCsrf({ kinds }), null);
+  assert.equal(parseCsrf(null), null);
 });

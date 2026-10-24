@@ -18,11 +18,3 @@ export function inPageMode(enabled: readonly IntentKind[] | null, action: Intent
   if (enabled === null || !enabled.includes(action)) return "offer";
   return NEEDS_SCOPE[action] && scope === null ? "offer" : "in_page";
 }
-
-/**
- * The build-time switch `inPageMode` replaced; nothing calls it. It stays only until its test
- * (`action-mode.test.ts`, the test zone's) is rewritten for `inPageMode`, then it goes.
- */
-export function actionMode(inPageEnabled: boolean, scope: string | null): ActionMode {
-  return inPageEnabled && scope !== null ? "in_page" : "offer";
-}
