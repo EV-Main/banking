@@ -49,14 +49,17 @@ export function createStepupClient(deps: StepupClientDeps): StepupClient {
     }
   }
 
-  // A 401 is the session gate, refused before any ceremony opens or closes, so one resend
-  // after renewing the cookie cannot spend anything twice.
+  // Concierge answers 401 for two things. `passkey_rejected` is the verdict on an assertion,
+  // given after the ceremony was taken, so it is final and never resent. Any other 401 is the
+  // session gate, refused before a ceremony opens or closes: one resend after renewing the
+  // cookie spends nothing twice.
   async function post<T>(path: string, payload: object, parse: (body: unknown) => T | null): Promise<StepupResult<T>> {
+    const sessionRefused = (a: Answer) => a?.status === 401 && stepupErrorOf(401, a.body).code !== "passkey_rejected";
     let answer = await send(path, payload);
-    if (answer?.status === 401) {
+    if (sessionRefused(answer)) {
       if (!(await deps.renewSession())) return fail({ code: "signed_out" });
       answer = await send(path, payload);
-      if (answer?.status === 401) return fail({ code: "signed_out" });
+      if (sessionRefused(answer)) return fail({ code: "signed_out" });
     }
     if (answer === null) return fail({ code: "network" });
     if (answer.status < 200 || answer.status >= 300) return fail(stepupErrorOf(answer.status, answer.body));
