@@ -2,11 +2,12 @@
 // against the page it runs on, and on a scope host (sa.evinvest.ltd, invest.evinvest.ltd)
 // the page is someone else's app. Here every call goes to the wallet's own origin — the one
 // the bundle was served from — with the evinvest.ltd cookies (`credentials: "include"`).
-// Reads only: on a scope host nothing in this bundle may move money.
+// Reads only. Money moves through the intent routes alone (`./wallet-intents.ts`), whose
+// terms the BFF computes and the person confirms.
 
 import { apiPath } from "@/shared/config/base-path";
 
-import { parseSignedIn, parseWalletBalance, parseWalletHistory, type WalletBalance, type WalletHistory } from "../lib/parse";
+import { parseSignedIn, parseWalletBalance, parseWalletHistory, parseWithdrawNetworks, type WalletBalance, type WalletHistory } from "../lib/parse";
 
 export type RemoteResult<T> = { ok: true; value: T } | { ok: false; reason: "signed_out" | "unavailable" };
 
@@ -24,16 +25,23 @@ async function getJson(url: string): Promise<{ status: number; body: unknown } |
 }
 
 /**
+ * Asks the shell's session endpoint, which rotates the access cookie when the session is
+ * alive. False only for an explicit "not signed in"; an unreachable shell is not a sign-out.
+ */
+export async function renewSession(origin: string): Promise<boolean> {
+  const session = await getJson(new URL("/api/auth/session", origin).href);
+  return !(session && session.status === 200 && !parseSignedIn(session.body));
+}
+
+/**
  * The access cookie lapses on a short TTL and nothing on a scope host renews it, so a 401
- * asks the shell's session endpoint (which rotates the cookie when the session is alive) and
- * replays once. Only an explicit "not signed in" from the shell is `signed_out`.
+ * renews the session and replays once. Only an explicit "not signed in" is `signed_out`.
  */
 async function read<T>(origin: string, path: `/${string}`, parse: (body: unknown) => T): Promise<RemoteResult<T>> {
   const url = new URL(apiPath(path), origin).href;
   let res = await getJson(url);
   if (res?.status === 401) {
-    const session = await getJson(new URL("/api/auth/session", origin).href);
-    if (session && session.status === 200 && !parseSignedIn(session.body)) return { ok: false, reason: "signed_out" };
+    if (!(await renewSession(origin))) return { ok: false, reason: "signed_out" };
     res = await getJson(url);
     if (res?.status === 401) return { ok: false, reason: "signed_out" };
   }
@@ -47,4 +55,8 @@ export function fetchBalance(origin: string): Promise<RemoteResult<WalletBalance
 
 export function fetchHistory(origin: string): Promise<RemoteResult<WalletHistory>> {
   return read(origin, `/api/operations?limit=${HISTORY_LIMIT}`, parseWalletHistory);
+}
+
+export function fetchWithdrawNetworks(origin: string): Promise<RemoteResult<string[]>> {
+  return read(origin, "/api/wallet", parseWithdrawNetworks);
 }

@@ -91,6 +91,17 @@ export function parseWalletHistory(body: unknown): WalletHistory {
   return { operations, truncated: field(body, "truncated") === true };
 }
 
+const NETWORK = /^[a-z0-9_-]{1,32}$/;
+
+/** `GET /api/wallet` → the rails a withdrawal can leave on, by network id, in the hub's order. */
+export function parseWithdrawNetworks(body: unknown): string[] {
+  const raw = field(body, "withdrawable");
+  const networks = (Array.isArray(raw) ? raw : [])
+    .map((rail) => field(rail, "network"))
+    .filter((network): network is string => typeof network === "string" && NETWORK.test(network));
+  return [...new Set(networks)];
+}
+
 /** `GET /api/auth/session` → whether the shell still knows a signed-in user. */
 export function parseSignedIn(body: unknown): boolean {
   return field(body, "authenticated") === true;
