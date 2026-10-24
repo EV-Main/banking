@@ -123,8 +123,11 @@ export function pageMethods(kind: IntentKind, offered: readonly StepupMethod[], 
 
 const MAX_SUMMARY_CHARS = 240;
 // Concierge refuses a summary with a control or a bidi character; a payee's display name is
-// the hub's, so it is cleaned here rather than trusted to be plain.
-const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F​-‏‪-‮⁠-⁩﻿]/g;
+// the hub's, so it is cleaned here rather than trusted to be plain. C0 and C1 controls, the
+// bidi marks and embeddings (U+061C, U+200E-200F, U+202A-202E, U+2066-2069) and the
+// zero-width characters (U+200B-200D, U+2060-2065, U+FEFF). Escapes, not literals: the
+// literals are invisible in review.
+const UNPRINTABLE = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
 
 const VERBS: Readonly<Record<IntentKind, string>> = { move: "Move", withdraw: "Withdraw", pay: "Pay", mandate: "Allow" };
 
