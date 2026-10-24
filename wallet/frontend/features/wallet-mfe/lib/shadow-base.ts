@@ -4,6 +4,8 @@
 // and a host rule on the element's light DOM beats any `:host` rule, so the wall stands on the
 // container inside the root, where no host selector reaches. The terms the person confirms
 // are a security control: the host must not be able to change how they read.
+// Not walled: the root font size. Every utility is in rem, so a host `html { font-size }`
+// scales the form; it scales the whole page the same way, so it cannot single the terms out.
 //
 // The reset a page's preflight gives everything outside the root. A shadow root gets none:
 // a `w-full` field was content-box and poked out of its card, and controls drew in the
