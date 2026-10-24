@@ -57,7 +57,7 @@ test("pageMethods keeps the BFF order", () => {
 });
 
 // Defect: any non-passkey method is treated as email_code, so a method outside the union passes.
-test("pageMethods ignores a password method a hostile BFF slipped in", { todo: "pageMethods lets an unknown method through" }, () => {
+test("pageMethods ignores a password method a hostile BFF slipped in", () => {
   const offered = ["password", "passkey"] as unknown as StepupMethod[];
   const result = pageMethods("move", offered, { passkey: true, emailCode: true });
   assert.ok(!(result as string[]).includes("password"), `got ${JSON.stringify(result)}`);
@@ -231,8 +231,7 @@ test("stepupSummary strips each bidi control character on its own", () => {
   }
 });
 
-// U+061C ARABIC LETTER MARK is a bidi control, but the strip regex does not list it.
-test("stepupSummary strips U+061C ARABIC LETTER MARK", { todo: "UNPRINTABLE omits U+061C" }, () => {
+test("stepupSummary strips U+061C ARABIC LETTER MARK", () => {
   const line = stepupSummary("pay", summary({ recipient: `a${chars(0x061c)}b` }));
   assert.ok(line.includes("to ab on"), `survived: ${JSON.stringify(line)}`);
 });
