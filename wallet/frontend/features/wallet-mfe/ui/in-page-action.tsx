@@ -1,6 +1,6 @@
 import { useT } from "@evinvest/i18n/react";
 
-import { useId } from "react";
+import { useId, type KeyboardEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
@@ -33,6 +33,10 @@ export interface InPageActionProps {
   onFallback: () => void;
 }
 
+// Escape is Cancel where the form offers Cancel or Close: never while a create or a confirm is
+// in flight, nor on the terms, where leaving would drop an intent the person is reading.
+const ESCAPE_CLOSES: ReadonlySet<IntentFlowControls["flow"]["phase"]> = new Set(["editing", "done"]);
+
 function ActionForm({ props, controls }: { props: InPageActionProps; controls: IntentFlowControls }) {
   const { flow } = controls;
   const form: ActionFormProps = {
@@ -61,6 +65,13 @@ export function InPageAction(props: InPageActionProps) {
   const titleId = useId();
   const controls = useIntentFlow(intentClientFor(props.origin));
   const editing = controls.flow.phase === "editing" || controls.flow.phase === "creating";
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || !ESCAPE_CLOSES.has(controls.flow.phase)) return;
+    // The page around the form has its own Escape handlers; this one is the form's alone.
+    event.stopPropagation();
+    event.preventDefault();
+    props.onClose();
+  };
   const titles: Record<WalletAction, string> = {
     move: t("walletAction.moveTitle", "Move funds"),
     pay: t("walletMfe.payInvoice", "Pay invoice"),
@@ -69,7 +80,7 @@ export function InPageAction(props: InPageActionProps) {
   };
   return (
     <ActionRoot sheetHref={props.sheetHref}>
-      <Card role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none">
+      <Card role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none" onKeyDown={onKeyDown}>
         <CardHeader>
           <CardTitle id={titleId}>{titles[props.action]}</CardTitle>
         </CardHeader>
