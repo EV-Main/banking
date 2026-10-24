@@ -274,6 +274,19 @@ export function secondsLeft(deadlineMs: number, nowMs: number): number {
   return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
 }
 
+/** The page's clock for intent deadlines: the countdown and the confirm read the same one. */
+export function nowMs(): number {
+  return Date.now();
+}
+
+/**
+ * Whether the intent's time is up at `nowMs`: the moment the countdown shows 0:00. A proof
+ * that arrives then is not sent; the BFF would only answer `intent_expired`.
+ */
+export function isPastDeadline(deadlineMs: number, nowMs: number): boolean {
+  return secondsLeft(deadlineMs, nowMs) === 0;
+}
+
 /** `125` → `"2:05"`. */
 export function clockText(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);

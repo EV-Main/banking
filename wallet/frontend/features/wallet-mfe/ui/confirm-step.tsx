@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@evinvest/uikit";
 
-import { clockText, intentCancelled, secondsLeft, type IntentKind } from "../lib/intent";
+import { clockText, intentCancelled, isPastDeadline, nowMs, secondsLeft, type IntentKind } from "../lib/intent";
 import type { StepupClient } from "../model/stepup-client";
 import type { IntentFlowControls, Review } from "../model/use-intent-flow";
 import { IntentSummaryView } from "./intent-summary";
@@ -16,7 +16,7 @@ const TICK_MS = 1000;
 /** Seconds left on the intent; calls `onExpire` once when they run out. */
 function Countdown({ deadlineMs, onExpire }: { deadlineMs: number; onExpire: () => void }) {
   const t = useT();
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(nowMs);
   const expire = useRef(onExpire);
   useEffect(() => {
     expire.current = onExpire;
@@ -24,9 +24,9 @@ function Countdown({ deadlineMs, onExpire }: { deadlineMs: number; onExpire: () 
   useEffect(() => {
     let fired = false;
     const tick = () => {
-      const at = Date.now();
+      const at = nowMs();
       setNow(at);
-      if (!fired && secondsLeft(deadlineMs, at) === 0) {
+      if (!fired && isPastDeadline(deadlineMs, at)) {
         fired = true;
         expire.current();
       }

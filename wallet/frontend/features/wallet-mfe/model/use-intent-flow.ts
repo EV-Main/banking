@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { intentDeadlineMs, needsNewIntent, type ConfirmedIntent, type Intent, type IntentError, type IntentRequest } from "../lib/intent";
+import { intentDeadlineMs, isPastDeadline, needsNewIntent, nowMs, type ConfirmedIntent, type Intent, type IntentError, type IntentRequest } from "../lib/intent";
 import type { IntentClient } from "./intent-client";
 
 export interface Review {
@@ -84,7 +84,7 @@ export function useIntentFlow(client: IntentClient) {
       setFlow({
         phase: "review",
         intent: result.value,
-        deadlineMs: intentDeadlineMs(result.value.expiresAt, Date.now()),
+        deadlineMs: intentDeadlineMs(result.value.expiresAt, nowMs()),
         autoRenewed: cause === "countdown",
         termsChanged: cause === "terms_changed",
         confirming: false,
@@ -134,7 +134,11 @@ export function useIntentFlow(client: IntentClient) {
   const confirmWith = useCallback(
     (intentId: string, proof: string) => {
       const now = latest.current;
-      if (now.phase === "review" && !now.confirming && now.intent.id === intentId) void send(now.intent, now, proof);
+      if (now.phase !== "review" || now.confirming || now.intent.id !== intentId) return;
+      // Too late for this intent: the proof is dropped, and the countdown, back once the run
+      // ends, renews the intent as it does when time runs out.
+      if (isPastDeadline(now.deadlineMs, nowMs())) return;
+      void send(now.intent, now, proof);
     },
     [send],
   );
