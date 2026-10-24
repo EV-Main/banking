@@ -18,6 +18,20 @@ With `WALLET_ACTION_ORIGINS` empty, none of the three routes is mounted: each an
 router's `404`, a preflight included, and no response carries a CORS header. The first-party
 wallet routes do not change in any case.
 
+Before you turn a kind on, know what it switches on:
+
+- `WALLET_ACTION_KINDS` is one list for every enabled host, `invest` and `sa` alike. Adding
+  `pay`, `mandate` or `withdraw` also turns on their in-page passkey step-up on every enabled
+  host whose matrix entry has the kind.
+- The in-page form runs in the host page's JavaScript realm. A script in the host page can
+  show the person other terms than the ones the passkey signs. Spec control (g) is the
+  defence: a strict CSP, bundle pins or registry SRI, and Trusted Types.
+- Turn `withdraw` on only after control (g) is live on each enabled host, and after the hub
+  holds new withdrawal addresses (`release_at`, banking#559).
+- Each host must exclude `/api/auth/stepup/*` and `/cabinet/api/wallet/intents*` from the
+  network-payload capture of Sentry Replay and PostHog. Those bodies carry the step-up proof
+  and the CSRF token.
+
 ## The host matrix
 
 The matrix in `wallet_intents/mod.rs` (`TRUSTED_HOSTS`) is the ceiling. The env can switch
