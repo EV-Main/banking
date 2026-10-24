@@ -86,13 +86,7 @@ await build({
   ...shared,
   entryPoints: ["mfe/wallet/entry.tsx"],
   outfile: "public/mfe/wallet/wallet.js",
-  define: {
-    ...NODE_ENV,
-    __WALLET_MESSAGES__: JSON.stringify(await walletMessages()),
-    // In-page money actions (docs/WALLET-INPAGE-SPEC.md), off unless the build asks; off, the
-    // branch folds away and every action stays the `ev:wallet-action` offer.
-    __WALLET_IN_PAGE__: JSON.stringify(process.env.WALLET_IN_PAGE === "1"),
-  },
+  define: { ...NODE_ENV, __WALLET_MESSAGES__: JSON.stringify(await walletMessages()) },
 });
 
 // The registry `@evinvest/wallet` reads (`WALLET_REGISTRY_URL`). Both elements live in one

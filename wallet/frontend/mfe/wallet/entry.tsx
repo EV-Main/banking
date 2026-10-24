@@ -4,7 +4,19 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 
-import { InPageAction, PayInvoiceButton, WalletPanel, actionId, actionMode, offerWalletAction, readScope, walletActionHref, type WalletAction } from "@/features/wallet-mfe";
+import {
+  InPageAction,
+  PayInvoiceButton,
+  WalletPanel,
+  actionId,
+  enabledKinds,
+  inPageMode,
+  offerWalletAction,
+  readScope,
+  walletActionHref,
+  type IntentKind,
+  type WalletAction,
+} from "@/features/wallet-mfe";
 
 import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet";
 
@@ -20,16 +32,15 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 // By default neither moves money. Every money action is a page on the wallet origin, offered
 // to the host as a cancelable `ev:wallet-action` (`detail: { href }`); a host that takes it
 // opens a popup and hears the result by postMessage. Left alone, the element navigates there.
-// A build with `__WALLET_IN_PAGE__` runs the action on a scope host inside the element
-// instead, in a closed shadow root, through the BFF's intent routes (docs/WALLET-INPAGE-SPEC.md).
+// When the BFF lists a kind for the host page (`GET /api/wallet/csrf` → `kinds`), that action
+// runs inside the element instead, in a closed shadow root, through the intent routes
+// (docs/WALLET-INPAGE-SPEC.md). Turning a kind off is a server env change, not a release.
 // Light DOM, like the account chip: the host's tokens and fonts cascade in, and the
 // element's own utilities arrive as `@layer reamfe`, below every host layer.
 
 // esbuild `define` (mfe/build.mjs): the element's own keys cut from the wallet host catalogues,
 // already resolved per locale — not `messagesFor()`, which would ship all five catalogues.
 declare const __WALLET_MESSAGES__: Partial<Record<Locale, Messages>>;
-// esbuild `define` (mfe/build.mjs, `WALLET_IN_PAGE=1`); false unless the build turns it on.
-declare const __WALLET_IN_PAGE__: boolean;
 
 const API_VERSION = 2;
 const WALLET_TAG = "mfe-banking-wallet";
@@ -43,29 +54,27 @@ let roots = 0;
 interface OpenAction {
   action: WalletAction;
   invoice: string | null;
-  scope: string;
+  scope: string | null;
 }
 
-// Null without the flag, so esbuild drops the forms, the intent client and the shadow-root
-// styling from the bundle rather than shipping them unreachable.
-const inPageForm = __WALLET_IN_PAGE__
-  ? (open: OpenAction, close: () => void, offer: () => void) => (
-      <InPageAction
-        key={`${open.action}:${open.invoice ?? ""}`}
-        origin={ORIGIN}
-        sheetHref={SHEET}
-        scope={open.scope}
-        action={open.action}
-        invoice={open.invoice}
-        request={null}
-        onClose={close}
-        onFallback={() => {
-          offer();
-          close();
-        }}
-      />
-    )
-  : null;
+function inPageForm(open: OpenAction, close: () => void, offer: () => void) {
+  return (
+    <InPageAction
+      key={`${open.action}:${open.invoice ?? ""}`}
+      origin={ORIGIN}
+      sheetHref={SHEET}
+      scope={open.scope}
+      action={open.action}
+      invoice={open.invoice}
+      request={null}
+      onClose={close}
+      onFallback={() => {
+        offer();
+        close();
+      }}
+    />
+  );
+}
 
 abstract class WalletElementBase extends HTMLElement {
   static apiVersion = API_VERSION;
@@ -73,6 +82,9 @@ abstract class WalletElementBase extends HTMLElement {
   #root?: Root;
   #styled = false;
   #open: OpenAction | null = null;
+  // Null until the BFF answers. A click before that is an offer: `act` never waits, because a
+  // host opens its popup inside the click and a popup opened after an await is blocked.
+  #kinds: IntentKind[] | null = null;
 
   protected abstract view(): ReactNode;
 
@@ -80,6 +92,9 @@ abstract class WalletElementBase extends HTMLElement {
     // Unique per element: `useId` is unique per root only, and a page may hold several.
     const root = createRoot(this, { identifierPrefix: `evw${++roots}-` });
     this.#root = root;
+    void enabledKinds(ORIGIN).then((kinds) => {
+      if (this.#root === root) this.#kinds = kinds;
+    });
     this.style.setProperty("visibility", "hidden");
     void whenStylesheetReady(WALLET_TAG, SHEET).then(() => {
       if (this.#root !== root) return;
@@ -101,6 +116,7 @@ abstract class WalletElementBase extends HTMLElement {
     this.#root = undefined;
     this.#styled = false;
     this.#open = null;
+    this.#kinds = null;
     this.removeAttribute("data-ready");
     this.style.removeProperty("visibility");
   }
@@ -111,7 +127,7 @@ abstract class WalletElementBase extends HTMLElement {
 
   protected act(action: WalletAction, invoice: string | null = null) {
     const scope = this.scope();
-    if (inPageForm !== null && scope !== null && actionMode(__WALLET_IN_PAGE__, scope) === "in_page") {
+    if (inPageMode(this.#kinds, action, scope) === "in_page") {
       this.#open = { action, invoice, scope };
       this.#render();
       return;
@@ -145,7 +161,7 @@ abstract class WalletElementBase extends HTMLElement {
     this.#root?.render(
       <I18nProvider locale={locale} messages={__WALLET_MESSAGES__[locale] ?? {}}>
         {this.view()}
-        {this.#open && inPageForm?.(this.#open, () => this.#close(), () => this.#offerOpen())}
+        {this.#open && inPageForm(this.#open, () => this.#close(), () => this.#offerOpen())}
       </I18nProvider>,
     );
   }

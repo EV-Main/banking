@@ -5,4 +5,6 @@ export { WALLET_ACTION_EVENT, actionId, offerWalletAction, readScope, walletActi
 export type { WalletAction } from "./lib/wallet-action";
 export { InPageAction } from "./ui/in-page-action";
 export type { InPageActionProps } from "./ui/in-page-action";
-export { actionMode } from "./lib/action-mode";
+export { inPageMode } from "./lib/action-mode";
+export { enabledKinds } from "./api/wallet-intents";
+export type { IntentKind } from "./lib/intent";

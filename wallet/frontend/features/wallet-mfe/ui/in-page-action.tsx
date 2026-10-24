@@ -20,8 +20,11 @@ export interface InPageActionProps {
   origin: string;
   /** The wallet stylesheet next to the bundle, adopted into the closed root. */
   sheetHref: string;
-  /** The host's scope. The BFF takes the scope from the page's origin and checks it against this. */
-  scope: string;
+  /**
+   * The element's `scope`, which a move and a payment name in their params. The BFF takes the
+   * host's scope from the page's origin and refuses params that name another.
+   */
+  scope: string | null;
   action: WalletAction;
   invoice: string | null;
   request: string | null;
@@ -40,10 +43,11 @@ function ActionForm({ props, controls }: { props: InPageActionProps; controls: I
     onCancel: props.onClose,
   };
   switch (props.action) {
+    // `inPageMode` opens neither without a scope; the popup handles that case.
     case "move":
-      return <MoveForm {...form} scope={props.scope} />;
+      return props.scope === null ? null : <MoveForm {...form} scope={props.scope} />;
     case "pay":
-      return <PayForm {...form} scope={props.scope} invoice={props.invoice} />;
+      return props.scope === null ? null : <PayForm {...form} scope={props.scope} invoice={props.invoice} />;
     case "mandate":
       return <MandateForm {...form} request={props.request} />;
     case "withdraw":
