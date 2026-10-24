@@ -2006,5 +2006,65 @@
   "walletMfe.withdrawHold": {
     "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
     "t": "Eine Auszahlung an eine Adresse, die Sie noch nicht verwendet haben, wird 6 Stunden zurückgehalten. Sie können sie über die E-Mail stornieren, die wir Ihnen senden."
+  },
+  "walletMfe.confirmPasskey": {
+    "en": "Confirm with passkey",
+    "t": "Mit Passkey bestätigen"
+  },
+  "walletMfe.err.stepupInvalid": {
+    "en": "The check did not match this confirmation. Start again.",
+    "t": "Die Prüfung passt nicht zu dieser Bestätigung. Beginnen Sie von vorn."
+  },
+  "walletMfe.startAgain": {
+    "en": "Start again",
+    "t": "Von vorn beginnen"
+  },
+  "walletMfe.stepup.attempts": {
+    "en": "Too many wrong codes. Start again.",
+    "t": "Zu viele falsche Codes. Beginnen Sie von vorn."
+  },
+  "walletMfe.stepup.cancelled": {
+    "en": "The passkey prompt was closed. Try again when you are ready.",
+    "t": "Die Passkey-Abfrage wurde geschlossen. Versuchen Sie es erneut, wenn Sie bereit sind."
+  },
+  "walletMfe.stepup.captcha": {
+    "en": "We could not check that a person is asking. Start again.",
+    "t": "Wir konnten nicht prüfen, dass ein Mensch anfragt. Beginnen Sie von vorn."
+  },
+  "walletMfe.stepup.expired": {
+    "en": "The check ran out of time. Start again.",
+    "t": "Die Zeit für die Prüfung ist abgelaufen. Beginnen Sie von vorn."
+  },
+  "walletMfe.stepup.invalidCode": {
+    "en": "That code is not right. Check it and try again.",
+    "t": "Dieser Code stimmt nicht. Prüfen Sie ihn und versuchen Sie es erneut."
+  },
+  "walletMfe.stepup.noAuthenticator": {
+    "en": "This browser could not ask for your passkey. Continue on EV Invest.",
+    "t": "Dieser Browser konnte Ihren Passkey nicht abfragen. Fahren Sie bei EV Invest fort."
+  },
+  "walletMfe.stepup.noPasskey": {
+    "en": "This account has no passkey that can confirm this here. Continue on EV Invest.",
+    "t": "Dieses Konto hat keinen Passkey, der dies hier bestätigen kann. Fahren Sie bei EV Invest fort."
+  },
+  "walletMfe.stepup.rejected": {
+    "en": "Your passkey was not accepted. Try again.",
+    "t": "Ihr Passkey wurde nicht akzeptiert. Versuchen Sie es erneut."
+  },
+  "walletMfe.stepup.throttled": {
+    "en": "Too many checks in a short time. Wait a few minutes, then start again.",
+    "t": "Zu viele Prüfungen in kurzer Zeit. Warten Sie einige Minuten und beginnen Sie dann von vorn."
+  },
+  "walletMfe.stepup.unavailable": {
+    "en": "This check is not available on this page. Continue on EV Invest.",
+    "t": "Diese Prüfung ist auf dieser Seite nicht verfügbar. Fahren Sie bei EV Invest fort."
+  },
+  "walletMfe.stepupWithPasskey": {
+    "en": "Confirm it with your passkey.",
+    "t": "Bestätigen Sie es mit Ihrem Passkey."
+  },
+  "walletMfe.tryAgain": {
+    "en": "Try again",
+    "t": "Erneut versuchen"
   }
 }

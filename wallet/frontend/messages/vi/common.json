@@ -2006,5 +2006,65 @@
   "walletMfe.withdrawHold": {
     "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
     "t": "Lệnh rút đến một địa chỉ bạn chưa từng dùng sẽ bị giữ 6 giờ. Bạn có thể hủy lệnh từ email chúng tôi gửi."
+  },
+  "walletMfe.confirmPasskey": {
+    "en": "Confirm with passkey",
+    "t": "Xác nhận bằng passkey"
+  },
+  "walletMfe.err.stepupInvalid": {
+    "en": "The check did not match this confirmation. Start again.",
+    "t": "Bước kiểm tra không khớp với lần xác nhận này. Hãy bắt đầu lại."
+  },
+  "walletMfe.startAgain": {
+    "en": "Start again",
+    "t": "Bắt đầu lại"
+  },
+  "walletMfe.stepup.attempts": {
+    "en": "Too many wrong codes. Start again.",
+    "t": "Bạn đã nhập sai mã quá nhiều lần. Hãy bắt đầu lại."
+  },
+  "walletMfe.stepup.cancelled": {
+    "en": "The passkey prompt was closed. Try again when you are ready.",
+    "t": "Hộp thoại passkey đã bị đóng. Hãy thử lại khi bạn sẵn sàng."
+  },
+  "walletMfe.stepup.captcha": {
+    "en": "We could not check that a person is asking. Start again.",
+    "t": "Chúng tôi không xác minh được rằng yêu cầu đến từ một người. Hãy bắt đầu lại."
+  },
+  "walletMfe.stepup.expired": {
+    "en": "The check ran out of time. Start again.",
+    "t": "Bước kiểm tra đã hết thời gian. Hãy bắt đầu lại."
+  },
+  "walletMfe.stepup.invalidCode": {
+    "en": "That code is not right. Check it and try again.",
+    "t": "Mã không đúng. Hãy kiểm tra và thử lại."
+  },
+  "walletMfe.stepup.noAuthenticator": {
+    "en": "This browser could not ask for your passkey. Continue on EV Invest.",
+    "t": "Trình duyệt này không thể yêu cầu passkey của bạn. Hãy tiếp tục trên EV Invest."
+  },
+  "walletMfe.stepup.noPasskey": {
+    "en": "This account has no passkey that can confirm this here. Continue on EV Invest.",
+    "t": "Tài khoản này không có passkey nào để xác nhận tại đây. Hãy tiếp tục trên EV Invest."
+  },
+  "walletMfe.stepup.rejected": {
+    "en": "Your passkey was not accepted. Try again.",
+    "t": "Passkey của bạn không được chấp nhận. Hãy thử lại."
+  },
+  "walletMfe.stepup.throttled": {
+    "en": "Too many checks in a short time. Wait a few minutes, then start again.",
+    "t": "Quá nhiều lần kiểm tra trong thời gian ngắn. Hãy đợi vài phút rồi bắt đầu lại."
+  },
+  "walletMfe.stepup.unavailable": {
+    "en": "This check is not available on this page. Continue on EV Invest.",
+    "t": "Bước kiểm tra này không có trên trang này. Hãy tiếp tục trên EV Invest."
+  },
+  "walletMfe.stepupWithPasskey": {
+    "en": "Confirm it with your passkey.",
+    "t": "Hãy xác nhận bằng passkey của bạn."
+  },
+  "walletMfe.tryAgain": {
+    "en": "Try again",
+    "t": "Thử lại"
   }
 }

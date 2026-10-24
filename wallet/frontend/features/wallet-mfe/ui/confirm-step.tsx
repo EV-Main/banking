@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle, Button, Spinner } from "@evinvest/uikit";
 
-import { clockText, secondsLeft, type IntentKind } from "../lib/intent";
+import { clockText, intentCancelled, secondsLeft, type IntentKind } from "../lib/intent";
+import type { StepupClient } from "../model/stepup-client";
 import type { IntentFlowControls, Review } from "../model/use-intent-flow";
 import { IntentSummaryView } from "./intent-summary";
-import { intentErrorText, stepupMethodsText } from "./intent-words";
+import { intentErrorText } from "./intent-words";
+import { StepupPanel } from "./stepup-panel";
 
 const TICK_MS = 1000;
 
@@ -39,9 +41,17 @@ function Countdown({ deadlineMs, onExpire }: { deadlineMs: number; onExpire: () 
   );
 }
 
-function ReviewStep({ kind, review, controls, onFallback }: { kind: IntentKind; review: Review; controls: IntentFlowControls; onFallback: () => void }) {
+interface StepProps {
+  kind: IntentKind;
+  controls: IntentFlowControls;
+  stepup: StepupClient;
+  onFallback: () => void;
+}
+
+function ReviewStep({ kind, review, controls, stepup, onFallback }: StepProps & { review: Review }) {
   const t = useT();
   const { intent, confirming, error } = review;
+  const cancelled = error !== null && intentCancelled(error);
   return (
     <div className="flex flex-col gap-4">
       {review.termsChanged && (
@@ -61,20 +71,13 @@ function ReviewStep({ kind, review, controls, onFallback }: { kind: IntentKind; 
           <AlertDescription>{intentErrorText(error, t)}</AlertDescription>
         </Alert>
       )}
-      {intent.stepup.required ? (
-        <Alert variant="info">
-          <AlertTitle>{t("walletMfe.stepupTitle", "One more check is needed")}</AlertTitle>
-          <AlertDescription>
-            {stepupMethodsText(intent.stepup.methods, t)} {t("walletMfe.stepupElsewhere", "This page cannot ask for it yet, so finish on EV Invest.")}
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      {intent.stepup.required && !cancelled && <StepupPanel kind={kind} review={review} controls={controls} client={stepup} onFallback={onFallback} />}
       <div className="flex flex-wrap gap-2">
-        {intent.stepup.required ? (
-          <Button type="button" onClick={onFallback}>
-            {t("walletMfe.continueOnEv", "Continue on EV Invest")}
+        {cancelled ? (
+          <Button type="button" onClick={controls.renew}>
+            {t("walletMfe.startAgain", "Start again")}
           </Button>
-        ) : (
+        ) : intent.stepup.required ? null : (
           <Button type="button" onClick={controls.confirm} disabled={confirming} aria-busy={confirming}>
             {confirming ? <Spinner aria-hidden /> : null}
             {t("walletMfe.confirm", "Confirm")}
@@ -89,10 +92,10 @@ function ReviewStep({ kind, review, controls, onFallback }: { kind: IntentKind; 
 }
 
 /** Everything after the form: the BFF's terms, the confirm, and what came of it. */
-export function ConfirmStep({ kind, controls, onClose, onFallback }: { kind: IntentKind; controls: IntentFlowControls; onClose: () => void; onFallback: () => void }) {
+export function ConfirmStep({ kind, controls, stepup, onClose, onFallback }: StepProps & { onClose: () => void }) {
   const t = useT();
   const { flow } = controls;
-  if (flow.phase === "review") return <ReviewStep kind={kind} review={flow} controls={controls} onFallback={onFallback} />;
+  if (flow.phase === "review") return <ReviewStep kind={kind} review={flow} controls={controls} stepup={stepup} onFallback={onFallback} />;
   if (flow.phase === "expired") {
     return (
       <div className="flex flex-col items-start gap-4">

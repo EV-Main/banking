@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
-import { intentClientFor } from "../api/wallet-intents";
+import { intentClientFor, stepupClientFor } from "../api/wallet-intents";
 import { escapeCloses } from "../lib/escape-closes";
 import type { WalletAction } from "../lib/wallet-action";
 import { useIntentFlow, type IntentFlowControls } from "../model/use-intent-flow";
@@ -107,7 +107,7 @@ export function InPageAction(props: InPageActionProps) {
           {editing ? (
             <ActionForm props={props} controls={controls} />
           ) : (
-            <ConfirmStep kind={props.action} controls={controls} onClose={props.onClose} onFallback={props.onFallback} />
+            <ConfirmStep kind={props.action} controls={controls} stepup={stepupClientFor(props.origin)} onClose={props.onClose} onFallback={props.onFallback} />
           )}
         </CardContent>
       </Card>

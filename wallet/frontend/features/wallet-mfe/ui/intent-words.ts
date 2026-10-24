@@ -1,6 +1,7 @@
 import type { Translate } from "@evinvest/i18n";
 
 import type { IntentError, StepupMethod } from "../lib/intent";
+import type { StepupError } from "../lib/stepup";
 
 /** Every intent error in the reader's words. Exhaustive: a new code is a type error here. */
 export function intentErrorText(error: IntentError, t: Translate): string {
@@ -54,8 +55,9 @@ export function intentErrorText(error: IntentError, t: Translate): string {
     case "intent_not_pending":
       return t("walletMfe.err.notPending", "This confirmation was already used. Check your recent activity before you try again.");
     case "proof_required":
-    case "stepup_invalid":
       return t("walletMfe.stepupTitle", "One more check is needed");
+    case "stepup_invalid":
+      return t("walletMfe.err.stepupInvalid", "The check did not match this confirmation. Start again.");
     case "proof_replayed":
       return t("walletMfe.err.proofReplayed", "That check was already used. Start again.");
     case "email_limit_reached":
@@ -74,4 +76,36 @@ export function stepupMethodsText(methods: readonly StepupMethod[], t: Translate
   if (passkey && email) return t("walletMfe.stepupPasskeyOrEmail", "Confirming this needs your passkey or a code we email you.");
   if (email) return t("walletMfe.stepupEmail", "Confirming this needs a code we email you.");
   return t("walletMfe.stepupPasskey", "Confirming this needs your passkey.");
+}
+
+/** Every step-up error in the reader's words. Exhaustive: a new code is a type error here. */
+export function stepupErrorText(error: StepupError, t: Translate): string {
+  switch (error.code) {
+    case "no_passkey":
+      return t("walletMfe.stepup.noPasskey", "This account has no passkey that can confirm this here. Continue on EV Invest.");
+    case "throttled":
+      return t("walletMfe.stepup.throttled", "Too many checks in a short time. Wait a few minutes, then start again.");
+    case "expired":
+      return t("walletMfe.stepup.expired", "The check ran out of time. Start again.");
+    case "passkey_rejected":
+      return t("walletMfe.stepup.rejected", "Your passkey was not accepted. Try again.");
+    case "cancelled":
+      return t("walletMfe.stepup.cancelled", "The passkey prompt was closed. Try again when you are ready.");
+    case "authenticator_failed":
+      return t("walletMfe.stepup.noAuthenticator", "This browser could not ask for your passkey. Continue on EV Invest.");
+    case "invalid_code":
+      return t("walletMfe.stepup.invalidCode", "That code is not right. Check it and try again.");
+    case "attempts_exceeded":
+      return t("walletMfe.stepup.attempts", "Too many wrong codes. Start again.");
+    case "captcha":
+      return t("walletMfe.stepup.captcha", "We could not check that a person is asking. Start again.");
+    case "unavailable":
+      return t("walletMfe.stepup.unavailable", "This check is not available on this page. Continue on EV Invest.");
+    case "signed_out":
+      return t("err.sessionExpired", "Your session has ended. Sign in again to continue.");
+    case "network":
+      return t("err.network", "Can't reach the server. Check your connection and try again.");
+    case "malformed":
+      return t("err.serverUnavailable", "The service is temporarily unavailable. Please try again.");
+  }
 }
