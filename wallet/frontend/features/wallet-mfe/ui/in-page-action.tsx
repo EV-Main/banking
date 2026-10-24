@@ -1,6 +1,6 @@
 import { useT } from "@evinvest/i18n/react";
 
-import { useId, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
@@ -56,11 +56,33 @@ function ActionForm({ props, controls }: { props: InPageActionProps; controls: I
   }
 }
 
+/**
+ * After a phase change, focus back on the form when the element that held it went away (the
+ * Review or Confirm button is replaced by the next step) and nothing else took it: left on the
+ * body, Escape and Tab would start from the top of the host page. Focus the person moved into
+ * the host page, or that is still on an element inside the form, stays where it is.
+ */
+function useFocusAcrossPhases(phase: string) {
+  const region = useRef<HTMLDivElement>(null);
+  const shown = useRef(phase);
+  useEffect(() => {
+    if (shown.current === phase) return;
+    shown.current = phase;
+    const card = region.current;
+    const root = card?.getRootNode();
+    if (!card || !(root instanceof ShadowRoot) || root.activeElement !== null) return;
+    const outside = document.activeElement;
+    if (outside === null || outside === document.body) card.focus();
+  }, [phase]);
+  return region;
+}
+
 /** One money action inside the host page: the form, the BFF's terms, the confirm. */
 export function InPageAction(props: InPageActionProps) {
   const t = useT();
   const titleId = useId();
   const controls = useIntentFlow(intentClientFor(props.origin));
+  const region = useFocusAcrossPhases(controls.flow.phase);
   const editing = controls.flow.phase === "editing" || controls.flow.phase === "creating";
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !escapeCloses(controls.flow.phase)) return;
@@ -77,7 +99,7 @@ export function InPageAction(props: InPageActionProps) {
   };
   return (
     <ActionRoot sheetHref={props.sheetHref}>
-      <Card role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none" onKeyDown={onKeyDown}>
+      <Card ref={region} role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none" onKeyDown={onKeyDown}>
         <CardHeader>
           <CardTitle id={titleId}>{titles[props.action]}</CardTitle>
         </CardHeader>
