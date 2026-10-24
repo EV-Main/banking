@@ -118,7 +118,8 @@ export interface PageAbilities {
  * passkey only. Empty means the popup on EV Invest. There is no password method to pick.
  */
 export function pageMethods(kind: IntentKind, offered: readonly StepupMethod[], can: PageAbilities): StepupMethod[] {
-  return offered.filter((method) => (method === "passkey" ? can.passkey : can.emailCode && EMAIL_KINDS.includes(kind)));
+  // Each method is named, so a word the BFF should never send (a password) matches neither.
+  return offered.filter((method) => (method === "passkey" && can.passkey) || (method === "email_code" && can.emailCode && EMAIL_KINDS.includes(kind)));
 }
 
 const MAX_SUMMARY_CHARS = 240;
