@@ -4,7 +4,19 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 
-import { PayInvoiceButton, WalletPanel, actionId, offerWalletAction, readScope, walletActionHref, type WalletAction } from "@/features/wallet-mfe";
+import {
+  InPageAction,
+  PayInvoiceButton,
+  WalletPanel,
+  actionId,
+  enabledKinds,
+  inPageMode,
+  offerWalletAction,
+  readScope,
+  walletActionHref,
+  type IntentKind,
+  type WalletAction,
+} from "@/features/wallet-mfe";
 
 import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet";
 
@@ -17,9 +29,12 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 //     host) it shows main and the compartments; without, the full split.
 //   • <mfe-banking-pay-invoice invoice scope?> — the pay button for one invoice.
 //
-// Neither moves money. Every money action is a page on the wallet origin, offered to the
-// host as a cancelable `ev:wallet-action` (`detail: { href }`); a host that takes it opens a
-// popup and hears the result by postMessage. Left alone, the element navigates there.
+// By default neither moves money. Every money action is a page on the wallet origin, offered
+// to the host as a cancelable `ev:wallet-action` (`detail: { href }`); a host that takes it
+// opens a popup and hears the result by postMessage. Left alone, the element navigates there.
+// When the BFF lists a kind for the host page (`GET /api/wallet/csrf` → `kinds`), that action
+// runs inside the element instead, in a closed shadow root, through the intent routes
+// (docs/WALLET-INPAGE-SPEC.md). Turning a kind off is a server env change, not a release.
 // Light DOM, like the account chip: the host's tokens and fonts cascade in, and the
 // element's own utilities arrive as `@layer reamfe`, below every host layer.
 
@@ -36,11 +51,49 @@ const SHEET = stylesheetHref("wallet.css");
 
 let roots = 0;
 
+interface OpenAction {
+  action: WalletAction;
+  invoice: string | null;
+  scope: string | null;
+  /** What had focus when the form opened, so closing it puts the reader back there. */
+  trigger: HTMLElement | null;
+}
+
+/** The focused element, through any open shadow roots the host wraps the element in. */
+function focusedElement(): HTMLElement | null {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  return active instanceof HTMLElement ? active : null;
+}
+
+function inPageForm(open: OpenAction, close: () => void, offer: () => void) {
+  return (
+    <InPageAction
+      key={`${open.action}:${open.invoice ?? ""}`}
+      origin={ORIGIN}
+      sheetHref={SHEET}
+      scope={open.scope}
+      action={open.action}
+      invoice={open.invoice}
+      request={null}
+      onClose={close}
+      onFallback={() => {
+        offer();
+        close();
+      }}
+    />
+  );
+}
+
 abstract class WalletElementBase extends HTMLElement {
   static apiVersion = API_VERSION;
   static observedAttributes = ["scope", "invoice"];
   #root?: Root;
   #styled = false;
+  #open: OpenAction | null = null;
+  // Null until the BFF answers. A click before that is an offer: `act` never waits, because a
+  // host opens its popup inside the click and a popup opened after an await is blocked.
+  #kinds: IntentKind[] | null = null;
 
   protected abstract view(): ReactNode;
 
@@ -48,6 +101,9 @@ abstract class WalletElementBase extends HTMLElement {
     // Unique per element: `useId` is unique per root only, and a page may hold several.
     const root = createRoot(this, { identifierPrefix: `evw${++roots}-` });
     this.#root = root;
+    void enabledKinds(ORIGIN).then((kinds) => {
+      if (this.#root === root) this.#kinds = kinds;
+    });
     this.style.setProperty("visibility", "hidden");
     void whenStylesheetReady(WALLET_TAG, SHEET).then(() => {
       if (this.#root !== root) return;
@@ -59,6 +115,8 @@ abstract class WalletElementBase extends HTMLElement {
   }
 
   attributeChangedCallback() {
+    // An open form holds the scope and invoice it opened with; new attributes start over.
+    this.#open = null;
     if (this.#styled) this.#render();
   }
 
@@ -66,6 +124,8 @@ abstract class WalletElementBase extends HTMLElement {
     this.#root?.unmount();
     this.#root = undefined;
     this.#styled = false;
+    this.#open = null;
+    this.#kinds = null;
     this.removeAttribute("data-ready");
     this.style.removeProperty("visibility");
   }
@@ -75,6 +135,16 @@ abstract class WalletElementBase extends HTMLElement {
   }
 
   protected act(action: WalletAction, invoice: string | null = null) {
+    const scope = this.scope();
+    if (inPageMode(this.#kinds, action, scope) === "in_page") {
+      this.#open = { action, invoice, scope, trigger: focusedElement() };
+      this.#render();
+      return;
+    }
+    this.#offer(action, invoice);
+  }
+
+  #offer(action: WalletAction, invoice: string | null) {
     const href = walletActionHref(ORIGIN, action, { scope: this.scope(), invoice });
     if (offerWalletAction(this, href)) return;
     // Nobody took it: on evinvest.ltd itself that is the design (actions run in place);
@@ -85,11 +155,24 @@ abstract class WalletElementBase extends HTMLElement {
     window.location.assign(url.href);
   }
 
+  #close() {
+    const trigger = this.#open?.trigger;
+    this.#open = null;
+    this.#render();
+    if (trigger?.isConnected) trigger.focus();
+  }
+
+  #offerOpen() {
+    const open = this.#open;
+    if (open) this.#offer(open.action, open.invoice);
+  }
+
   #render() {
     const locale = localeOfElement(this);
     this.#root?.render(
       <I18nProvider locale={locale} messages={__WALLET_MESSAGES__[locale] ?? {}}>
         {this.view()}
+        {this.#open && inPageForm(this.#open, () => this.#close(), () => this.#offerOpen())}
       </I18nProvider>,
     );
   }

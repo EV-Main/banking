@@ -47,12 +47,17 @@ The boot refuses (exit 78):
 
 | Route | Body | Answer |
 | --- | --- | --- |
-| `GET /api/wallet/csrf` | — | `{ csrf, expires_at }` |
+| `GET /api/wallet/csrf` | — | `{ csrf, expires_at, kinds }` |
 | `POST /api/wallet/intents` | `{ kind, params }` | the intent, below |
 | `POST /api/wallet/intents/{id}/confirm` | `{ proof? }` | `{ intent_id, status: "executed", stepup_method, result }` |
 
 `result` is the hub's answer in the shape of the matching first-party route: a compartment
 move, a withdrawal, a payable invoice or a mandate. Times are unix seconds, as JSON numbers.
+
+`kinds` lists the kinds that the calling host may create now: its matrix kinds that
+`WALLET_ACTION_KINDS` leaves on, in the order `move`, `pay`, `mandate`, `withdraw`. The page
+opens an in-page form only for a kind in this list. An empty list, or a `404` because no host
+is on, means the popup. So a rollback is an env change, not a release.
 
 ### Checks on every request
 

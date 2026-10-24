@@ -1834,5 +1834,177 @@
   "walletMfe.allActivity": {
     "en": "See all activity",
     "t": "Voir toute l’activité"
+  },
+  "walletMfe.address": {
+    "en": "Address",
+    "t": "Adresse"
+  },
+  "walletMfe.change": {
+    "en": "Change",
+    "t": "Modifier"
+  },
+  "walletMfe.checkAgain": {
+    "en": "Check again",
+    "t": "Vérifier à nouveau"
+  },
+  "walletMfe.close": {
+    "en": "Close",
+    "t": "Fermer"
+  },
+  "walletMfe.confirm": {
+    "en": "Confirm",
+    "t": "Confirmer"
+  },
+  "walletMfe.continueOnEv": {
+    "en": "Continue on EV Invest",
+    "t": "Continuer sur EV Invest"
+  },
+  "walletMfe.err.accountNotActive": {
+    "en": "Your account cannot move money right now. Contact support.",
+    "t": "Votre compte ne peut pas déplacer d’argent pour le moment. Contactez le support."
+  },
+  "walletMfe.err.address": {
+    "en": "Check the address. It does not match this network.",
+    "t": "Vérifiez l’adresse. Elle ne correspond pas à ce réseau."
+  },
+  "walletMfe.err.amount": {
+    "en": "Enter an amount greater than zero.",
+    "t": "Saisissez un montant supérieur à zéro."
+  },
+  "walletMfe.err.belowFee": {
+    "en": "The amount does not cover the network fee.",
+    "t": "Le montant ne couvre pas les frais de réseau."
+  },
+  "walletMfe.err.belowMinimum": {
+    "en": "The amount is below the minimum withdrawal for this network.",
+    "t": "Le montant est inférieur au retrait minimum de ce réseau."
+  },
+  "walletMfe.err.emailLimit": {
+    "en": "You have reached today's limit for confirming with an emailed code.",
+    "t": "Vous avez atteint la limite du jour pour les confirmations par code envoyé par e-mail."
+  },
+  "walletMfe.err.expired": {
+    "en": "These terms are no longer valid. Review them again.",
+    "t": "Ces conditions ne sont plus valables. Vérifiez-les à nouveau."
+  },
+  "walletMfe.err.limit": {
+    "en": "You have reached the 24-hour limit for moves without an extra check.",
+    "t": "Vous avez atteint la limite sur 24 heures des transferts sans vérification supplémentaire."
+  },
+  "walletMfe.err.network": {
+    "en": "Choose a network.",
+    "t": "Choisissez un réseau."
+  },
+  "walletMfe.err.networkUnavailable": {
+    "en": "Withdrawals on this network are paused right now.",
+    "t": "Les retraits sur ce réseau sont suspendus pour le moment."
+  },
+  "walletMfe.err.notEnabled": {
+    "en": "This action is not available on this page yet.",
+    "t": "Cette action n’est pas encore disponible sur cette page."
+  },
+  "walletMfe.err.notPending": {
+    "en": "This confirmation was already used. Check your recent activity before you try again.",
+    "t": "Cette confirmation a déjà été utilisée. Consultez votre activité récente avant de réessayer."
+  },
+  "walletMfe.err.proofReplayed": {
+    "en": "That check was already used. Start again.",
+    "t": "Cette vérification a déjà été utilisée. Recommencez."
+  },
+  "walletMfe.err.scopeMismatch": {
+    "en": "This action does not belong to this service.",
+    "t": "Cette action ne relève pas de ce service."
+  },
+  "walletMfe.expired": {
+    "en": "These terms ran out. Get new ones to continue.",
+    "t": "Ces conditions ont expiré. Obtenez-en de nouvelles pour continuer."
+  },
+  "walletMfe.mandateIntro": {
+    "en": "A service asks to use your funds within set limits. Review the limits before you allow it.",
+    "t": "Un service demande à utiliser vos fonds dans des limites fixées. Vérifiez les limites avant d’autoriser."
+  },
+  "walletMfe.mandateTitle": {
+    "en": "Allow a service to use your funds",
+    "t": "Autoriser un service à utiliser vos fonds"
+  },
+  "walletMfe.renew": {
+    "en": "Get new terms",
+    "t": "Obtenir de nouvelles conditions"
+  },
+  "walletMfe.review": {
+    "en": "Review",
+    "t": "Vérifier"
+  },
+  "walletMfe.reviewHint": {
+    "en": "You see the exact terms before anything moves.",
+    "t": "Vous voyez les conditions exactes avant tout mouvement."
+  },
+  "walletMfe.stepupElsewhere": {
+    "en": "This page cannot ask for it yet, so finish on EV Invest.",
+    "t": "Cette page ne peut pas encore la demander : terminez sur EV Invest."
+  },
+  "walletMfe.stepupEmail": {
+    "en": "Confirming this needs a code we email you.",
+    "t": "Pour confirmer, il faut un code que nous vous envoyons par e-mail."
+  },
+  "walletMfe.stepupPasskey": {
+    "en": "Confirming this needs your passkey.",
+    "t": "Pour confirmer, il faut votre clé d’accès."
+  },
+  "walletMfe.stepupPasskeyOrEmail": {
+    "en": "Confirming this needs your passkey or a code we email you.",
+    "t": "Pour confirmer, il faut votre clé d’accès ou un code que nous vous envoyons par e-mail."
+  },
+  "walletMfe.stepupTitle": {
+    "en": "One more check is needed",
+    "t": "Une vérification supplémentaire est nécessaire"
+  },
+  "walletMfe.term.amount": {
+    "en": "Amount",
+    "t": "Montant"
+  },
+  "walletMfe.term.fee": {
+    "en": "Fee",
+    "t": "Frais"
+  },
+  "walletMfe.term.host": {
+    "en": "Requested by",
+    "t": "Demandé par"
+  },
+  "walletMfe.term.net": {
+    "en": "Recipient gets",
+    "t": "Le destinataire reçoit"
+  },
+  "walletMfe.term.recipient": {
+    "en": "To",
+    "t": "À"
+  },
+  "walletMfe.term.scope": {
+    "en": "Account",
+    "t": "Compte"
+  },
+  "walletMfe.term.service": {
+    "en": "Service",
+    "t": "Le service"
+  },
+  "walletMfe.termsChanged": {
+    "en": "The terms changed since you started. Check them again before you confirm.",
+    "t": "Les conditions ont changé depuis le début. Vérifiez-les à nouveau avant de confirmer."
+  },
+  "walletMfe.unclear": {
+    "en": "Still processing. Nothing is lost — check again in a moment.",
+    "t": "Traitement en cours. Rien n’est perdu — vérifiez à nouveau dans un instant."
+  },
+  "walletMfe.unclearFinal": {
+    "en": "We could not get the result. Check your recent activity before you try again.",
+    "t": "Nous n’avons pas pu obtenir le résultat. Consultez votre activité récente avant de réessayer."
+  },
+  "walletMfe.validFor": {
+    "en": "These terms are valid for {time}",
+    "t": "Ces conditions sont valables encore {time}"
+  },
+  "walletMfe.withdrawHold": {
+    "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
+    "t": "Un retrait vers une adresse que vous n’avez jamais utilisée est retenu 6 heures. Vous pouvez l’annuler depuis l’e-mail que nous vous envoyons."
   }
 }

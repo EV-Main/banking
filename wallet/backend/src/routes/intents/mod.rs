@@ -41,7 +41,7 @@ use crate::{
 	state::AppState,
 	util::now_secs,
 	wallet_intents::{
-		EnabledHost, WalletActions,
+		EnabledHost, IntentKind, WalletActions,
 		intent::{self, Action, IntentRecord, MandateTerms, SessionBinding, Stepup, Summary, Used24h},
 		keys,
 		store::{self, IntentStatus, StoreError},
@@ -255,6 +255,10 @@ pub struct CsrfToken {
 	csrf: String,
 	/// Unix seconds after which the token is refused.
 	expires_at: u64,
+	/// The kinds this host may create now, in matrix order. The page asks here rather than at
+	/// build time, so narrowing `WALLET_ACTION_KINDS` turns its in-page forms off without a
+	/// release; an empty list means the popup.
+	kinds: Vec<IntentKind>,
 }
 
 /// The CSRF token for the signed-in account on this host page: the page sends it back in
@@ -263,7 +267,11 @@ pub async fn csrf(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap
 	let actions = actions(&st)?;
 	let caller = host_caller(&st, actions, &jar, &headers).await?;
 	let (csrf, expires_at) = actions.keys.csrf_token(&caller.claims.sub, caller.host.origin, unix_now());
-	Ok(Json(CsrfToken { csrf, expires_at }))
+	Ok(Json(CsrfToken {
+		csrf,
+		expires_at,
+		kinds: caller.host.kinds,
+	}))
 }
 
 // ── POST /api/wallet/intents ────────────────────────────────────────────────

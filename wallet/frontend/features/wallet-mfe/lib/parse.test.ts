@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseWalletBalance, parseWalletHistory } from "./parse.ts";
+import { parseWalletBalance, parseWalletHistory, parseWithdrawNetworks } from "./parse.ts";
 
 test("balance fields that are not wire decimals read as zero", () => {
   const balance = parseWalletBalance({
@@ -70,4 +70,16 @@ test("truncated is true only for a literal true", () => {
   assert.equal(parseWalletHistory({ operations: [], truncated: true }).truncated, true);
   assert.equal(parseWalletHistory({ operations: [], truncated: "true" }).truncated, false);
   assert.equal(parseWalletHistory({}).truncated, false);
+});
+
+test("withdraw networks are deduplicated and bad ids dropped, in the hub's order", () => {
+  const networks = parseWithdrawNetworks({
+    withdrawable: [{ network: "tron" }, { network: "eth" }, { network: "tron" }, { network: "Bad Id" }, { network: 7 }, {}, null, { network: "" }],
+  });
+  assert.deepEqual(networks, ["tron", "eth"]);
+});
+
+test("a body without a withdrawable list has no withdraw networks", () => {
+  assert.deepEqual(parseWithdrawNetworks({ withdrawable: "tron" }), []);
+  assert.deepEqual(parseWithdrawNetworks(null), []);
 });
