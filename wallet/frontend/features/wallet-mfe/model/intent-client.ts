@@ -12,7 +12,9 @@ import {
   parseCsrf,
   parseIntent,
   type ConfirmedIntent,
+  type CsrfToken,
   type Intent,
+  type IntentKind,
   type IntentError,
   type IntentRequest,
   type IntentResult,
@@ -31,6 +33,11 @@ export interface IntentClient {
   create(request: IntentRequest): Promise<IntentResult<Intent>>;
   /** Sends the confirm again while the act's outcome is unclear; the intent id keeps it one act. */
   confirm(intentId: string, proof?: string): Promise<IntentResult<ConfirmedIntent>>;
+  /**
+   * The kinds this host may run in the page, from the same CSRF answer the posts use. Any
+   * failure (routes off, signed out, offline) is no kinds: every action stays the popup.
+   */
+  kinds(): Promise<IntentKind[]>;
 }
 
 // The BFF accepts a token for 10 to 20 minutes. Reusing it for 5, by the local clock, stays
@@ -44,7 +51,9 @@ const fail = (error: IntentError): { ok: false; error: IntentError } => ({ ok: f
 
 export function createIntentClient(deps: IntentClientDeps): IntentClient {
   const now = deps.now ?? Date.now;
-  let csrf: { token: string; until: number } | null = null;
+  let csrf: { answer: CsrfToken; until: number } | null = null;
+  // One request for every element and form on the page that asks at the same moment.
+  let inFlight: Promise<IntentResult<CsrfToken>> | null = null;
 
   async function send(url: string, init: RequestInit): Promise<Answer> {
     try {
@@ -56,8 +65,15 @@ export function createIntentClient(deps: IntentClientDeps): IntentClient {
     }
   }
 
-  async function token(): Promise<IntentResult<string>> {
-    if (csrf !== null && csrf.until > now()) return { ok: true, value: csrf.token };
+  function token(): Promise<IntentResult<CsrfToken>> {
+    if (csrf !== null && csrf.until > now()) return Promise.resolve({ ok: true, value: csrf.answer });
+    inFlight ??= fetchToken().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  }
+
+  async function fetchToken(): Promise<IntentResult<CsrfToken>> {
     const get = () => send(`${deps.apiBase}/csrf`, { method: "GET", headers: { accept: "application/json" } });
     let answer = await get();
     if (answer?.status === 401) {
@@ -68,8 +84,8 @@ export function createIntentClient(deps: IntentClientDeps): IntentClient {
     if (answer.status < 200 || answer.status >= 300) return fail(intentErrorOf(answer.status, answer.body));
     const parsed = parseCsrf(answer.body);
     if (parsed === null) return fail({ code: "malformed" });
-    csrf = { token: parsed.token, until: now() + CSRF_REUSE_MS };
-    return { ok: true, value: parsed.token };
+    csrf = { answer: parsed, until: now() + CSRF_REUSE_MS };
+    return { ok: true, value: parsed };
   }
 
   // A 401 and a stale CSRF token are both refused by the gate before anything runs, so each
@@ -82,7 +98,7 @@ export function createIntentClient(deps: IntentClientDeps): IntentClient {
       if (!csrfToken.ok) return csrfToken;
       const answer = await send(`${deps.apiBase}${path}`, {
         method: "POST",
-        headers: { accept: "application/json", "content-type": "application/json", "x-ev-csrf": csrfToken.value },
+        headers: { accept: "application/json", "content-type": "application/json", "x-ev-csrf": csrfToken.value.token },
         body: JSON.stringify(payload),
       });
       if (answer === null) return fail({ code: "network" });
@@ -105,6 +121,10 @@ export function createIntentClient(deps: IntentClientDeps): IntentClient {
 
   return {
     create: (request) => post("/intents", request, parseIntent),
+    kinds: async () => {
+      const answer = await token();
+      return answer.ok ? answer.value.kinds : [];
+    },
     async confirm(intentId, proof) {
       const path = `/intents/${encodeURIComponent(intentId)}/confirm`;
       const payload = proof === undefined ? {} : { proof };

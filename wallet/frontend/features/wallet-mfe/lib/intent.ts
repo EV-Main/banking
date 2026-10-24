@@ -54,6 +54,8 @@ export interface Intent {
 export interface CsrfToken {
   token: string;
   expiresAt: number;
+  /** The kinds this host may create now; the in-page form opens only for these. */
+  kinds: IntentKind[];
 }
 
 export interface ConfirmedIntent {
@@ -151,6 +153,12 @@ function isRefusal(raw: unknown): raw is IntentRefusal {
   return typeof raw === "string" && INTENT_REFUSALS.some((code) => code === raw);
 }
 
+const KINDS: readonly string[] = ["move", "withdraw", "pay", "mandate"] satisfies IntentKind[];
+
+function isKind(raw: unknown): raw is IntentKind {
+  return typeof raw === "string" && KINDS.includes(raw);
+}
+
 function isMethod(raw: unknown): raw is StepupMethod {
   return raw === "passkey" || raw === "email_code";
 }
@@ -213,11 +221,17 @@ export function parseIntent(body: unknown): Intent | null {
   return { id, hash, summary, expiresAt, stepup: { required, methods: methods.filter(isMethod) } };
 }
 
-/** `GET /api/wallet/csrf` → the token for `x-ev-csrf`, or null. */
+/**
+ * `GET /api/wallet/csrf` → the token for `x-ev-csrf` and the host's enabled kinds, or null.
+ * A kind this bundle does not know is dropped, so a kind the matrix adds later leaves an older
+ * bundle on the popup instead of failing it. A BFF that predates `kinds` enables none.
+ */
 export function parseCsrf(body: unknown): CsrfToken | null {
   const token = field(body, "csrf");
   const expiresAt = seconds(field(body, "expires_at"));
-  return typeof token === "string" && CSRF.test(token) && expiresAt !== null ? { token, expiresAt } : null;
+  const kinds = field(body, "kinds");
+  if (typeof token !== "string" || !CSRF.test(token) || expiresAt === null) return null;
+  return { token, expiresAt, kinds: Array.isArray(kinds) ? [...new Set(kinds.filter(isKind))] : [] };
 }
 
 /** `POST /api/wallet/intents/{id}/confirm` → what ran, or null unless it says `executed`. */

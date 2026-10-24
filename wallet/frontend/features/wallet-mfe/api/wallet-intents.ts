@@ -1,5 +1,6 @@
 import { apiPath } from "@/shared/config/base-path";
 
+import type { IntentKind } from "../lib/intent";
 import { createIntentClient, type IntentClient } from "../model/intent-client";
 import { renewSession } from "./wallet-remote";
 
@@ -16,4 +17,9 @@ export function intentClientFor(origin: string): IntentClient {
   });
   clients.set(origin, client);
   return client;
+}
+
+/** The kinds the wallet origin's BFF runs in this page; none on any failure. */
+export function enabledKinds(origin: string): Promise<IntentKind[]> {
+  return intentClientFor(origin).kinds();
 }
