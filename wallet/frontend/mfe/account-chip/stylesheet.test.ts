@@ -21,12 +21,20 @@ const CSS = ".chip{color:red}";
 class FakeElement extends EventTarget {
   dataset: Record<string, string> = {};
   textContent: string | null = null;
+  /** Set by the head on append; `remove()` detaches through it. */
+  detach: (() => void) | null = null;
+  remove(): void {
+    this.detach?.();
+  }
 }
 class FakeLink extends FakeElement {
   rel = "";
   href = "";
 }
-class FakeStyle extends FakeElement {}
+class FakeStyle extends FakeElement {
+  /** A browser gives an attached `<style>` a sheet, or null when the host CSP blocked it. */
+  sheet: object | null = null;
+}
 class FakeImportRule {}
 class FakeLayerStatementRule {}
 
@@ -36,6 +44,8 @@ class FakeDocument extends EventTarget {
   baseURI = "https://host.example/";
   styleSheets: { href: string | null; cssRules: unknown[] }[] = [];
   appended: Appended[] = [];
+  /** True for a host whose CSP `style-src` lacks 'unsafe-inline': an appended `<style>` gets no sheet. */
+  blockInlineStyles = false;
   #head: FakeElement[] = [];
   head = {
     // The module only ever asks for "link, style", and the head holds nothing else.
@@ -43,6 +53,10 @@ class FakeDocument extends EventTarget {
     appendChild: (node: FakeElement) => {
       this.appended.push({ node, textAtAppend: node.textContent });
       this.#head.push(node);
+      node.detach = () => {
+        this.#head = this.#head.filter((other) => other !== node);
+      };
+      if (node instanceof FakeStyle) node.sheet = this.blockInlineStyles ? null : {};
       return node;
     },
   };
@@ -159,6 +173,7 @@ test("a fetched sheet is attached as one filled style in the reamfe layer", asyn
   assert.ok(only?.node instanceof FakeStyle, "expected a <style>, got a <link>");
   assert.equal(only.node.dataset.mfe, TAG);
   assert.equal(only.textAtAppend, `@layer reamfe{${CSS}}`, "the style must hold its CSS before it is attached");
+  assert.deepEqual(doc.head.querySelectorAll(), [only.node], "the applied style must stay, with no link beside it");
 });
 
 test("two calls on one page share one fetch and one style", async () => {
@@ -220,6 +235,28 @@ test("a network error falls back to a link, and its load error releases the chip
   const [only] = doc.appended;
   assert.ok(only?.node instanceof FakeLink, "expected a fallback <link>");
   doc.fire("error", only.node);
+  assert.equal(await state(ready), "resolved");
+});
+
+test("a style the host CSP blocks is replaced by a link that is waited on", async () => {
+  doc.blockInlineStyles = true;
+  stubFetch(() => Promise.resolve(new Response(CSS, { status: 200 })));
+  const { whenStylesheetReady } = await freshModule();
+
+  const ready = whenStylesheetReady(TAG, HREF);
+  assert.equal(await state(ready), "pending", "the fallback link has not loaded yet");
+
+  assert.equal(doc.appended.length, 2);
+  const [style, fallback] = doc.appended;
+  assert.ok(style?.node instanceof FakeStyle, "expected the inline <style> first");
+  assert.ok(fallback?.node instanceof FakeLink, "expected a fallback <link> after the blocked style");
+  assert.equal(fallback.node.href, HREF);
+  assert.equal(fallback.node.rel, "stylesheet");
+  assert.equal(fallback.node.dataset.mfe, TAG);
+  assert.deepEqual(doc.head.querySelectorAll(), [fallback.node], "the blocked style must leave the head");
+
+  doc.styleSheets.push({ href: HREF, cssRules: [{}] });
+  doc.fire("load", fallback.node);
   assert.equal(await state(ready), "resolved");
 });
 
