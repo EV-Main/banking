@@ -12,10 +12,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { WalletActionOutcome } from '../src/index';
-import { PayInvoiceButton, Wallet, type NavigateHandler } from '../src/react/index';
+import { MandateButton, PayInvoiceButton, Wallet, type NavigateHandler } from '../src/react/index';
 
 const WALLET = 'mfe-banking-wallet';
 const PAY = 'mfe-banking-pay-invoice';
+const MANDATE = 'mfe-banking-mandate';
 
 interface FakePopup {
   closed: boolean;
@@ -35,10 +36,13 @@ let popups: FakePopup[] = [];
 
 beforeAll(() => {
   customElements.define(WALLET, class extends HTMLElement {
-    static apiVersion = 2;
+    static apiVersion = 3;
   });
   customElements.define(PAY, class extends HTMLElement {
-    static apiVersion = 2;
+    static apiVersion = 3;
+  });
+  customElements.define(MANDATE, class extends HTMLElement {
+    static apiVersion = 3;
   });
 });
 
@@ -337,5 +341,170 @@ describe('PayInvoiceButton', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(open).not.toHaveBeenCalled();
     expect(onResult).toHaveBeenCalledWith({ status: 'invalid_url' });
+  });
+});
+
+function walletResult(target: Element | null, detail: unknown): CustomEvent {
+  const event = new CustomEvent('ev:wallet-result', { bubbles: true, composed: true, detail });
+  target?.dispatchEvent(event);
+  return event;
+}
+
+describe('Wallet: inline mode', () => {
+  it('should_set_the_actions_attribute_to_inline', async () => {
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" />);
+
+    expect(container.querySelector(WALLET)?.getAttribute('actions')).toBe('inline');
+  });
+
+  it('should_not_set_the_actions_attribute_in_popup_mode', async () => {
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" />);
+
+    expect(container.querySelector(WALLET)?.hasAttribute('actions')).toBe(false);
+  });
+
+  it('should_report_an_in_page_result_with_its_kind', async () => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" onResult={onResult} />);
+
+    walletResult(container.querySelector(WALLET), { kind: 'withdraw', outcome: 'done', reference: 'payout-7' });
+
+    expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { kind: 'withdraw', outcome: 'done', reference: 'payout-7' } });
+  });
+
+  it.each([
+    ['an unknown kind', { kind: 'transfer', outcome: 'done' }],
+    ['an unknown outcome', { kind: 'move', outcome: 'ok' }],
+    ['no detail', null],
+  ])('should_ignore_an_in_page_result_with_%s', async (_label, detail) => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" onResult={onResult} />);
+
+    walletResult(container.querySelector(WALLET), detail);
+
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('should_ignore_an_in_page_result_in_popup_mode', async () => {
+    // A popup host never opted into in-page actions, so the event is not its result.
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" onResult={onResult} />);
+
+    walletResult(container.querySelector(WALLET), { kind: 'withdraw', outcome: 'done' });
+
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('should_still_take_an_offered_action_into_a_popup_in_inline_mode', async () => {
+    // A kind the BFF does not allow for this host still comes as an offer.
+    const { open } = stubOpen();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" />);
+
+    const event = walletAction(container.querySelector(WALLET), 'https://evinvest.ltd/wallet/withdraw');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('should_switch_the_mounted_wallet_to_inline_when_the_mode_changes', async () => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" onResult={onResult} />);
+    const mounted = container.querySelector(WALLET);
+
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" onResult={onResult} />);
+    walletResult(container.querySelector(WALLET), { kind: 'move', outcome: 'cancelled' });
+
+    expect(container.querySelector(WALLET)).toBe(mounted);
+    expect(mounted?.getAttribute('actions')).toBe('inline');
+    expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { kind: 'move', outcome: 'cancelled', reference: null } });
+  });
+
+  it('should_remove_the_actions_attribute_and_stop_reporting_when_the_mode_returns_to_popup', async () => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="inline" onResult={onResult} />);
+
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" scope="sa" mode="popup" onResult={onResult} />);
+    walletResult(container.querySelector(WALLET), { kind: 'move', outcome: 'done' });
+
+    expect(container.querySelector(WALLET)?.hasAttribute('actions')).toBe(false);
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('should_report_an_in_page_result_and_leave_offered_actions_to_the_element_without_scope', async () => {
+    // Accepted behaviour: on evinvest.ltd itself an offered action runs in place, but
+    // the in-page result still reaches the host.
+    const { open } = stubOpen();
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<Wallet scriptUrl="/wallet/mfe/wallet.js" mode="inline" onResult={onResult} />);
+
+    const action = walletAction(container.querySelector(WALLET), 'https://evinvest.ltd/wallet/withdraw');
+    walletResult(container.querySelector(WALLET), { kind: 'withdraw', outcome: 'failed' });
+
+    expect(action.defaultPrevented).toBe(false);
+    expect(open).not.toHaveBeenCalled();
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { kind: 'withdraw', outcome: 'failed', reference: null } });
+  });
+});
+
+describe('PayInvoiceButton: inline mode', () => {
+  it('should_set_the_actions_attribute_and_report_an_in_page_payment', async () => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<PayInvoiceButton scriptUrl="/wallet/mfe/pay.js" invoice="inv-1" mode="inline" onResult={onResult} />);
+    const button = container.querySelector(PAY);
+
+    walletResult(button, { kind: 'pay', outcome: 'done', reference: 'payment-9' });
+
+    expect(button?.getAttribute('actions')).toBe('inline');
+    expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { kind: 'pay', outcome: 'done', reference: 'payment-9' } });
+  });
+});
+
+describe('MandateButton', () => {
+  it('should_set_the_request_and_scope_attributes_without_actions_by_default', async () => {
+    await render(<MandateButton scriptUrl="/wallet/mfe/mandate.js" request="req-1" scope="sa" onResult={() => {}} />);
+
+    const button = container.querySelector(MANDATE);
+    expect(button?.getAttribute('request')).toBe('req-1');
+    expect(button?.getAttribute('scope')).toBe('sa');
+    expect(button?.hasAttribute('actions')).toBe(false);
+  });
+
+  it('should_take_a_mandate_action_into_a_popup_and_report_its_result', async () => {
+    const { popup, open } = stubOpen();
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<MandateButton scriptUrl="/wallet/mfe/mandate.js" request="req-1" onResult={onResult} />);
+
+    const event = walletAction(container.querySelector(MANDATE), 'https://evinvest.ltd/wallet/mandate?request=req-1');
+    post(popup, 'https://evinvest.ltd', { type: 'ev:wallet-result', state: stateOf(open), outcome: 'done' });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(open).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { outcome: 'done', reference: null } });
+    });
+  });
+
+  it('should_cancel_an_action_and_report_invalid_url_when_its_href_is_not_a_wallet_action', async () => {
+    const { open } = stubOpen();
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<MandateButton scriptUrl="/wallet/mfe/mandate.js" request="req-1" onResult={onResult} />);
+
+    const event = walletAction(container.querySelector(MANDATE), 'https://evil.example/wallet/mandate?request=req-1');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(onResult).toHaveBeenCalledWith({ status: 'invalid_url' });
+  });
+
+  it('should_set_the_actions_attribute_and_report_an_in_page_grant_in_inline_mode', async () => {
+    const onResult = vi.fn<(outcome: WalletActionOutcome) => void>();
+    await render(<MandateButton scriptUrl="/wallet/mfe/mandate.js" request="req-1" mode="inline" onResult={onResult} />);
+    const button = container.querySelector(MANDATE);
+
+    walletResult(button, { kind: 'mandate', outcome: 'done', reference: 'mandate-3' });
+
+    expect(button?.getAttribute('actions')).toBe('inline');
+    expect(onResult).toHaveBeenCalledWith({ status: 'result', result: { kind: 'mandate', outcome: 'done', reference: 'mandate-3' } });
   });
 });
