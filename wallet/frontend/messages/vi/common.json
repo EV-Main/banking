@@ -1823,6 +1823,14 @@
     "en": "There is no invoice to pay here.",
     "t": "Không có hóa đơn nào cần thanh toán ở đây."
   },
+  "walletMfe.noMandateRequest": {
+    "en": "There is no access request to review here.",
+    "t": "Không có yêu cầu truy cập nào cần xem xét ở đây."
+  },
+  "walletMfe.reviewMandate": {
+    "en": "Review access request",
+    "t": "Xem xét yêu cầu truy cập"
+  },
   "walletMfe.balanceUnavailable": {
     "en": "Your balance could not be loaded.",
     "t": "Không thể tải số dư của bạn."

@@ -1823,6 +1823,14 @@
     "en": "There is no invoice to pay here.",
     "t": "Hier gibt es keine Rechnung zu bezahlen."
   },
+  "walletMfe.noMandateRequest": {
+    "en": "There is no access request to review here.",
+    "t": "Hier gibt es keine Zugriffsanfrage zu prüfen."
+  },
+  "walletMfe.reviewMandate": {
+    "en": "Review access request",
+    "t": "Zugriffsanfrage prüfen"
+  },
   "walletMfe.balanceUnavailable": {
     "en": "Your balance could not be loaded.",
     "t": "Ihr Guthaben konnte nicht geladen werden."

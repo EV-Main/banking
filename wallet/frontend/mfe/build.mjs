@@ -8,6 +8,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 
 import { build } from "esbuild";
 
+import { walletRegistryJson } from "./wallet-registry.mjs";
+
 const shared = {
   bundle: true,
   format: "esm",
@@ -89,18 +91,5 @@ await build({
   define: { ...NODE_ENV, __WALLET_MESSAGES__: JSON.stringify(await walletMessages()) },
 });
 
-// The registry `@evinvest/wallet` reads (`WALLET_REGISTRY_URL`). Both elements live in one
-// bundle; the host loads it once and either tag is defined. Names and tags are the SDK's.
-const WALLET_SCRIPT = "/wallet/mfe/wallet.js";
 await mkdir("public/mfe/wallet", { recursive: true });
-await writeFile(
-  "public/mfe/wallet/registry.json",
-  `${JSON.stringify(
-    [
-      { name: "banking.wallet", tag: "mfe-banking-wallet", kind: "component", scriptUrl: WALLET_SCRIPT },
-      { name: "banking.pay-invoice", tag: "mfe-banking-pay-invoice", kind: "component", scriptUrl: WALLET_SCRIPT },
-    ],
-    null,
-    2,
-  )}\n`,
-);
+await writeFile("public/mfe/wallet/registry.json", walletRegistryJson());
