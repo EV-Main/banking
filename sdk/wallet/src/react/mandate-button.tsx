@@ -1,8 +1,7 @@
-import { RemoteElement } from '@evinvest/mfe/react';
 import type { ReactNode } from 'react';
 
-import { INLINE_ACTIONS_ATTRIBUTE, MANDATE_TAG, WALLET_API_VERSION, type WalletActionMode, type WalletActionOutcome } from '../index';
-import { actionEvents, inlineActions } from './listeners';
+import { MANDATE_TAG, type WalletActionMode, type WalletActionOutcome } from '../index';
+import { ActionElement } from './action-element';
 
 export interface MandateButtonProps {
   /** Bundle URL from the wallet registry (`walletEntry(entries, 'mandate')`). */
@@ -27,26 +26,6 @@ export interface MandateButtonProps {
 }
 
 /** Grant the mandate a service asked for. Like `PayInvoiceButton`, the element renders the button. */
-export function MandateButton({
-  scriptUrl,
-  request,
-  scope,
-  mode = 'popup',
-  onResult,
-  origin,
-  minApiVersion = WALLET_API_VERSION,
-  className,
-  fallback = null,
-}: MandateButtonProps) {
-  return (
-    <RemoteElement
-      tag={MANDATE_TAG}
-      scriptUrl={scriptUrl}
-      minApiVersion={minApiVersion}
-      {...(className === undefined ? {} : { className })}
-      attributes={{ request, scope, [INLINE_ACTIONS_ATTRIBUTE]: inlineActions(mode) }}
-      events={actionEvents({ onResult, origin, mode })}
-      fallback={fallback}
-    />
-  );
+export function MandateButton({ request, ...props }: MandateButtonProps) {
+  return <ActionElement tag={MANDATE_TAG} target={{ request }} {...props} />;
 }

@@ -1,8 +1,7 @@
-import { RemoteElement } from '@evinvest/mfe/react';
 import type { ReactNode } from 'react';
 
-import { INLINE_ACTIONS_ATTRIBUTE, PAY_INVOICE_TAG, WALLET_API_VERSION, type WalletActionMode, type WalletActionOutcome } from '../index';
-import { actionEvents, inlineActions } from './listeners';
+import { PAY_INVOICE_TAG, type WalletActionMode, type WalletActionOutcome } from '../index';
+import { ActionElement } from './action-element';
 
 export interface PayInvoiceButtonProps {
   /** Bundle URL from the wallet registry (`walletEntry(entries, 'payInvoice')`). */
@@ -31,26 +30,6 @@ export interface PayInvoiceButtonProps {
  * evinvest.ltd in a popup, or in this page in inline mode, and its outcome comes back to
  * `onResult`.
  */
-export function PayInvoiceButton({
-  scriptUrl,
-  invoice,
-  scope,
-  mode = 'popup',
-  onResult,
-  origin,
-  minApiVersion = WALLET_API_VERSION,
-  className,
-  fallback = null,
-}: PayInvoiceButtonProps) {
-  return (
-    <RemoteElement
-      tag={PAY_INVOICE_TAG}
-      scriptUrl={scriptUrl}
-      minApiVersion={minApiVersion}
-      {...(className === undefined ? {} : { className })}
-      attributes={{ invoice, scope, [INLINE_ACTIONS_ATTRIBUTE]: inlineActions(mode) }}
-      events={actionEvents({ onResult, origin, mode })}
-      fallback={fallback}
-    />
-  );
+export function PayInvoiceButton({ invoice, ...props }: PayInvoiceButtonProps) {
+  return <ActionElement tag={PAY_INVOICE_TAG} target={{ invoice }} {...props} />;
 }
