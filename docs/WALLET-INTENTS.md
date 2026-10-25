@@ -57,6 +57,82 @@ The boot refuses (exit 78):
 - no `WALLET_INTENT_KEY`, or one shorter than 32 bytes;
 - in production: no `REDIS_URL`.
 
+## The element side (apiVersion 3)
+
+The host page does not call these routes itself. It mounts the wallet elements from
+`https://evinvest.ltd/wallet/mfe/wallet.js` through `@evinvest/wallet` (banking
+`sdk/wallet`), and the element calls the routes. The code is
+`wallet/frontend/mfe/wallet/entry.tsx` and `wallet/frontend/features/wallet-mfe/`. Each
+element class has `apiVersion = 3`. A host checks it with `>=`, because version 3 only adds
+to version 2.
+
+### The elements
+
+| Tag | Attributes | What it shows |
+| --- | --- | --- |
+| `mfe-banking-wallet` | `scope?`, `actions?` | balances, recent history, and the action buttons |
+| `mfe-banking-pay-invoice` | `invoice`, `scope?`, `actions?` | the pay button for one invoice |
+| `mfe-banking-mandate` | `request`, `scope?`, `actions?` | the button for one mandate request |
+
+The registry `https://evinvest.ltd/wallet/mfe/registry.json` names the three elements as
+`banking.wallet`, `banking.pay-invoice` and `banking.mandate`. All three come from the one
+`wallet.js`.
+
+`invoice` and `request` are ids of what banking stores: 1 to 128 characters of
+`A-Z a-z 0-9 _ -`. The element does not read amounts or caps from the host. When the id has
+another shape, the button is disabled and shows the reason under it. The SDK refuses the same
+ids. A mandate needs no scope: the BFF reads the request's scope from the hub and checks it
+against the host's scope.
+
+### When an action runs in the page
+
+An action runs inside the element only when **both** conditions hold:
+
+1. The host opted in: the element has `actions="inline"`. Only this exact value counts.
+2. The BFF lists the kind for the host page (`GET /api/wallet/csrf` → `kinds`). A move and a
+   payment also need the element's `scope`.
+
+In every other case the element offers the action to the host as the cancelable
+`ev:wallet-action` event (`detail: { href }`). The host opens the action page in a popup, and
+the popup reports the result by `postMessage`. This also happens when the kind list did not
+arrive yet: a host must open its popup inside the click, so the click does not wait.
+
+The opt-in exists for older hosts. An `@evinvest/wallet` 0.1.x host does not listen for
+`ev:wallet-result`. Without the opt-in, an action that ran in its page would end without a
+result, and the host would never refresh its state. So the element keeps the popup for such a
+host, even when the BFF lists the kind.
+
+### The result event
+
+When the in-page form closes, the element dispatches `ev:wallet-result` on itself. The event
+bubbles and is composed, so a host that wraps the element in its own shadow root still gets
+it. It is not cancelable.
+
+```json
+{ "kind": "pay", "outcome": "done", "reference": "inv_1" }
+```
+
+- `kind` is `move`, `withdraw`, `pay` or `mandate`.
+- `outcome` uses the same words as the popup's message (`WalletResult` in the SDK):
+  - `done`: the BFF executed the confirm, and the person closed the form.
+  - `failed`: the person closed the form on an error from the BFF, on terms that ran out, or
+    on a confirm whose result is unclear.
+  - `cancelled`: the person closed a form that showed no error.
+- `reference` is the hub's id of what it did, only with `done`. The element leaves it out
+  when there is none, or when it is longer than 128 characters. It never cuts a reference: a
+  cut reference names a different payment, or none.
+
+The detail holds nothing else: no amount, no proof, no summary. `done` is a hint for the UI,
+not proof that money moved. A host that unlocks something on payment reads the status from
+its own backend.
+
+The element fires one event for one form. It fires nothing in these cases:
+
+- The form falls back to the popup (`ev:wallet-action`). The popup reports that action
+  itself.
+- The host changes an attribute or removes the element while the form is open. The form did
+  not end; the host replaced it.
+
 ## Routes
 
 | Route | Body | Answer |

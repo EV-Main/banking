@@ -1,10 +1,13 @@
 export { WalletPanel } from "./ui/wallet-panel";
 export type { WalletPanelProps } from "./ui/wallet-panel";
 export { PayInvoiceButton } from "./ui/pay-invoice-button";
+export { MandateButton } from "./ui/mandate-button";
 export { WALLET_ACTION_EVENT, actionId, offerWalletAction, readScope, walletActionHref } from "./lib/wallet-action";
 export type { WalletAction } from "./lib/wallet-action";
+export { WALLET_RESULT_EVENT, dispatchWalletResult, walletResultDetail } from "./lib/wallet-result";
+export type { ClosedAction, WalletResultDetail } from "./lib/wallet-result";
 export { InPageAction } from "./ui/in-page-action";
 export type { InPageActionProps } from "./ui/in-page-action";
-export { inPageMode } from "./lib/action-mode";
+export { actionMode } from "./lib/action-mode";
 export { enabledKinds } from "./api/wallet-intents";
 export type { IntentKind } from "./lib/intent";

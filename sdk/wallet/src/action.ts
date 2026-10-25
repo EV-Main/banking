@@ -3,12 +3,16 @@
 // a payment out of their account happens on evinvest.ltd, in a popup (or, when the popup is blocked, a full navigation), and the result comes
 // back to the opener by `postMessage`. Banking's mutating routes accept only
 // `Origin: https://evinvest.ltd`, so nothing here can move money by itself.
+// A host that opts into inline mode (`./inline.ts`) lets the element run some
+// actions in its own page; every other action still comes here.
 //
 // Importing is server-safe; `openWalletAction` touches `window` when called.
 
 import { isSecureTransport } from '@evinvest/mfe';
 
 import { WALLET_ORIGIN } from './elements';
+// Type only, so the two modules do not load each other: `inline.ts` imports the checks below.
+import type { WalletInlineResult } from './inline';
 
 /**
  * Cancelable, from the wallet elements: the user picked a money action.
@@ -166,6 +170,19 @@ export interface WalletResult {
 
 const OUTCOMES: readonly WalletResult['outcome'][] = ['done', 'failed', 'cancelled'];
 
+/** `value` as one of the three outcomes, or undefined. Shared with the in-page result event. */
+export function walletOutcome(value: unknown): WalletResult['outcome'] | undefined {
+  return OUTCOMES.find(outcome => outcome === value);
+}
+
+/**
+ * `value` as a reference, or null when it cannot be used: not a string, empty, or over
+ * 128 characters. Never cut — a truncated payment reference names a different payment.
+ */
+export function walletReference(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' && value.length <= MAX_REFERENCE ? value : null;
+}
+
 /**
  * A {@link WALLET_RESULT_MESSAGE} payload for the action opened with `state`,
  * or null for anything else on the channel — a message without the echoed
@@ -179,12 +196,9 @@ export function parseWalletMessage(data: unknown, state: string): WalletResult |
   if (typeof data !== 'object' || data === null) return null;
   if (Reflect.get(data, 'type') !== WALLET_RESULT_MESSAGE) return null;
   if (state === '' || Reflect.get(data, 'state') !== state) return null;
-  const outcome: unknown = Reflect.get(data, 'outcome');
-  const reference: unknown = Reflect.get(data, 'reference');
-  const known = OUTCOMES.find(value => value === outcome);
-  if (known === undefined) return null;
-  const usable = typeof reference === 'string' && reference !== '' && reference.length <= MAX_REFERENCE;
-  return { outcome: known, reference: usable ? reference : null };
+  const outcome = walletOutcome(Reflect.get(data, 'outcome'));
+  if (outcome === undefined) return null;
+  return { outcome, reference: walletReference(Reflect.get(data, 'reference')) };
 }
 
 /**
@@ -194,7 +208,13 @@ export function parseWalletMessage(data: unknown, state: string): WalletResult |
  * from its backend; it does not offer to repeat the action.
  */
 export type WalletActionOutcome =
-  | { status: 'result'; result: WalletResult }
+  /**
+   * The action reported how it ended: from the popup ({@link WalletResult}), or — with the
+   * React wrappers in `mode="inline"` — from the form inside the element, whose result also
+   * names its `kind` ({@link WalletInlineResult}). One variant for both, so a 0.1 handler
+   * that refreshes on `result` keeps working; `'kind' in result` tells them apart.
+   */
+  | { status: 'result'; result: WalletResult | WalletInlineResult }
   /** The user closed the popup before the page reported anything; the action's fate is unknown. */
   | { status: 'closed' }
   /** `window.open` was refused (popup blocker); navigate with {@link walletNavigationHref} instead. */

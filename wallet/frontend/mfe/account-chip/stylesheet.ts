@@ -120,6 +120,13 @@ async function inlineOrLink(tag: string, href: string): Promise<void> {
   // Filled before it is attached — see the note at the top.
   style.textContent = `@layer reamfe{${css}}`;
   document.head.appendChild(style);
+  // A host whose CSP `style-src` lacks 'unsafe-inline' (as `walletCsp()` of @evinvest/wallet
+  // builds it) blocks the inline copy, and a blocked `<style>` gets no sheet. Without this the
+  // element renders unstyled; the `<link>` is allowed by the bundle directory source.
+  if (style.sheet === null) {
+    style.remove();
+    return appendLink(tag, href);
+  }
 }
 
 /**

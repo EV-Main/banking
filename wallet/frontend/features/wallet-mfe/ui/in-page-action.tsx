@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
 import { intentClientFor, stepupClientFor } from "../api/wallet-intents";
 import { escapeCloses } from "../lib/escape-closes";
+import { closedAction, type ClosedAction } from "../lib/wallet-result";
 import type { WalletAction } from "../lib/wallet-action";
 import { useIntentFlow, type IntentFlowControls } from "../model/use-intent-flow";
 import { ActionRoot } from "./action-root";
@@ -29,22 +30,23 @@ export interface InPageActionProps {
   action: WalletAction;
   invoice: string | null;
   request: string | null;
-  onClose: () => void;
+  /** How the action ended, read from the flow at the moment the form closes. */
+  onClose: (closed: ClosedAction) => void;
   /** The same action as an `ev:wallet-action` offer, for what this page cannot finish yet. */
   onFallback: () => void;
 }
 
-function ActionForm({ props, controls }: { props: InPageActionProps; controls: IntentFlowControls }) {
+function ActionForm({ props, controls, onCancel }: { props: InPageActionProps; controls: IntentFlowControls; onCancel: () => void }) {
   const { flow } = controls;
   const form: ActionFormProps = {
     draft: controls.draft,
     busy: flow.phase === "creating",
     error: flow.phase === "editing" ? flow.error : null,
     onSubmit: controls.submit,
-    onCancel: props.onClose,
+    onCancel,
   };
   switch (props.action) {
-    // `inPageMode` opens neither without a scope; the popup handles that case.
+    // `actionMode` opens neither without a scope; the popup handles that case.
     case "move":
       return props.scope === null ? null : <MoveForm {...form} scope={props.scope} />;
     case "pay":
@@ -84,12 +86,13 @@ export function InPageAction(props: InPageActionProps) {
   const controls = useIntentFlow(intentClientFor(props.origin));
   const region = useFocusAcrossPhases(controls.flow.phase);
   const editing = controls.flow.phase === "editing" || controls.flow.phase === "creating";
+  const close = () => props.onClose(closedAction(controls.flow));
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || !escapeCloses(controls.flow.phase)) return;
     // The page around the form has its own Escape handlers; this one is the form's alone.
     event.stopPropagation();
     event.preventDefault();
-    props.onClose();
+    close();
   };
   const titles: Record<WalletAction, string> = {
     move: t("walletAction.moveTitle", "Move funds"),
@@ -105,9 +108,9 @@ export function InPageAction(props: InPageActionProps) {
         </CardHeader>
         <CardContent>
           {editing ? (
-            <ActionForm props={props} controls={controls} />
+            <ActionForm props={props} controls={controls} onCancel={close} />
           ) : (
-            <ConfirmStep kind={props.action} controls={controls} stepup={stepupClientFor(props.origin)} onClose={props.onClose} onFallback={props.onFallback} />
+            <ConfirmStep kind={props.action} controls={controls} stepup={stepupClientFor(props.origin)} onClose={close} onFallback={props.onFallback} />
           )}
         </CardContent>
       </Card>

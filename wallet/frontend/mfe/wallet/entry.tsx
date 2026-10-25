@@ -6,14 +6,18 @@ import { createRoot, type Root } from "react-dom/client";
 
 import {
   InPageAction,
+  MandateButton,
   PayInvoiceButton,
   WalletPanel,
   actionId,
+  actionMode,
+  dispatchWalletResult,
   enabledKinds,
-  inPageMode,
   offerWalletAction,
   readScope,
   walletActionHref,
+  walletResultDetail,
+  type ClosedAction,
   type IntentKind,
   type WalletAction,
 } from "@/features/wallet-mfe";
@@ -23,18 +27,22 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 // Self-registering ESM entry for banking's wallet element remotes, served from
 // `https://evinvest.ltd/wallet/mfe/` and mounted by the invest cabinet, the SA panel and
 // admin through `@evinvest/wallet` (banking `sdk/wallet` — the host side of this contract;
-// tags, attributes and events must stay in step with it). Two elements, one bundle:
+// tags, attributes and events must stay in step with it). Three elements, one bundle:
 //
-//   • <mfe-banking-wallet scope?> — balances and recent history. With `scope` (a scope
-//     host) it shows main and the compartments; without, the full split.
-//   • <mfe-banking-pay-invoice invoice scope?> — the pay button for one invoice.
+//   • <mfe-banking-wallet scope? actions?> — balances and recent history. With `scope` (a
+//     scope host) it shows main and the compartments; without, the full split.
+//   • <mfe-banking-pay-invoice invoice scope? actions?> — the pay button for one invoice.
+//   • <mfe-banking-mandate request scope? actions?> — the button for one mandate request.
 //
-// By default neither moves money. Every money action is a page on the wallet origin, offered
+// By default none moves money. Every money action is a page on the wallet origin, offered
 // to the host as a cancelable `ev:wallet-action` (`detail: { href }`); a host that takes it
 // opens a popup and hears the result by postMessage. Left alone, the element navigates there.
-// When the BFF lists a kind for the host page (`GET /api/wallet/csrf` → `kinds`), that action
-// runs inside the element instead, in a closed shadow root, through the intent routes
-// (docs/WALLET-INPAGE-SPEC.md). Turning a kind off is a server env change, not a release.
+// An action runs inside the element instead, in a closed shadow root, through the intent
+// routes (docs/WALLET-INPAGE-SPEC.md), only when both hold: the host opted in with
+// `actions="inline"`, and the BFF lists the kind for the host page (`GET /api/wallet/csrf` →
+// `kinds`). Turning a kind off is a server env change, not a release. When the in-page form
+// closes, the element dispatches `ev:wallet-result` (`detail: { kind, outcome, reference? }`,
+// the popup's words); a fallback to the popup dispatches nothing, as the popup reports itself.
 // Light DOM, like the account chip: the host's tokens and fonts cascade in, and the
 // element's own utilities arrive as `@layer reamfe`, below every host layer.
 
@@ -42,18 +50,25 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 // already resolved per locale — not `messagesFor()`, which would ship all five catalogues.
 declare const __WALLET_MESSAGES__: Partial<Record<Locale, Messages>>;
 
-const API_VERSION = 2;
+// 3: the `actions` opt-in, `ev:wallet-result`, the mandate element. Hosts check `>=`.
+const API_VERSION = 3;
 const WALLET_TAG = "mfe-banking-wallet";
 const PAY_TAG = "mfe-banking-pay-invoice";
+const MANDATE_TAG = "mfe-banking-mandate";
 // The bundle's origin is the wallet's: its BFF and its action pages live beside it.
 const ORIGIN = new URL(import.meta.url).origin;
 const SHEET = stylesheetHref("wallet.css");
 
 let roots = 0;
 
-interface OpenAction {
-  action: WalletAction;
+/** The ids an action carries besides the scope, each already passed through `actionId`. */
+interface ActionParams {
   invoice: string | null;
+  request: string | null;
+}
+
+interface OpenAction extends ActionParams {
+  action: WalletAction;
   scope: string | null;
   /** What had focus when the form opened, so closing it puts the reader back there. */
   trigger: HTMLElement | null;
@@ -66,28 +81,25 @@ function focusedElement(): HTMLElement | null {
   return active instanceof HTMLElement ? active : null;
 }
 
-function inPageForm(open: OpenAction, close: () => void, offer: () => void) {
+function inPageForm(open: OpenAction, finish: (closed: ClosedAction) => void, fallback: () => void) {
   return (
     <InPageAction
-      key={`${open.action}:${open.invoice ?? ""}`}
+      key={`${open.action}:${open.invoice ?? ""}:${open.request ?? ""}`}
       origin={ORIGIN}
       sheetHref={SHEET}
       scope={open.scope}
       action={open.action}
       invoice={open.invoice}
-      request={null}
-      onClose={close}
-      onFallback={() => {
-        offer();
-        close();
-      }}
+      request={open.request}
+      onClose={finish}
+      onFallback={fallback}
     />
   );
 }
 
 abstract class WalletElementBase extends HTMLElement {
   static apiVersion = API_VERSION;
-  static observedAttributes = ["scope", "invoice"];
+  static observedAttributes = ["scope", "invoice", "request", "actions"];
   #root?: Root;
   #styled = false;
   #open: OpenAction | null = null;
@@ -115,7 +127,8 @@ abstract class WalletElementBase extends HTMLElement {
   }
 
   attributeChangedCallback() {
-    // An open form holds the scope and invoice it opened with; new attributes start over.
+    // An open form holds the scope and ids it opened with; new attributes start over, and the
+    // form they drop reports nothing: it did not end, the host replaced it.
     this.#open = null;
     if (this.#styled) this.#render();
   }
@@ -134,18 +147,19 @@ abstract class WalletElementBase extends HTMLElement {
     return readScope(this.getAttribute("scope"));
   }
 
-  protected act(action: WalletAction, invoice: string | null = null) {
+  protected act(action: WalletAction, ids: Partial<ActionParams> = {}) {
     const scope = this.scope();
-    if (inPageMode(this.#kinds, action, scope) === "in_page") {
-      this.#open = { action, invoice, scope, trigger: focusedElement() };
+    const params: ActionParams = { invoice: ids.invoice ?? null, request: ids.request ?? null };
+    if (actionMode(this.getAttribute("actions"), this.#kinds, action, scope) === "in_page") {
+      this.#open = { action, ...params, scope, trigger: focusedElement() };
       this.#render();
       return;
     }
-    this.#offer(action, invoice);
+    this.#offer(action, params);
   }
 
-  #offer(action: WalletAction, invoice: string | null) {
-    const href = walletActionHref(ORIGIN, action, { scope: this.scope(), invoice });
+  #offer(action: WalletAction, { invoice, request }: ActionParams) {
+    const href = walletActionHref(ORIGIN, action, { scope: this.scope(), invoice, request });
     if (offerWalletAction(this, href)) return;
     // Nobody took it: on evinvest.ltd itself that is the design (actions run in place);
     // on a host without the SDK it is still the safe way. Coming back is the page's call —
@@ -155,24 +169,34 @@ abstract class WalletElementBase extends HTMLElement {
     window.location.assign(url.href);
   }
 
-  #close() {
-    const trigger = this.#open?.trigger;
+  /** False when `open` is no longer the form on screen: a second click on Close, a late callback. */
+  #close(open: OpenAction): boolean {
+    if (this.#open !== open) return false;
     this.#open = null;
     this.#render();
-    if (trigger?.isConnected) trigger.focus();
+    if (open.trigger?.isConnected) open.trigger.focus();
+    return true;
   }
 
-  #offerOpen() {
-    const open = this.#open;
-    if (open) this.#offer(open.action, open.invoice);
+  // Once per form: the host hears one result for one action.
+  #finish(open: OpenAction, closed: ClosedAction) {
+    if (this.#close(open)) dispatchWalletResult(this, walletResultDetail(open.action, closed));
+  }
+
+  // The popup reports this action itself; a result from here too would be a second one.
+  #fallback(open: OpenAction) {
+    if (this.#open !== open) return;
+    this.#offer(open.action, open);
+    this.#close(open);
   }
 
   #render() {
     const locale = localeOfElement(this);
+    const open = this.#open;
     this.#root?.render(
       <I18nProvider locale={locale} messages={__WALLET_MESSAGES__[locale] ?? {}}>
         {this.view()}
-        {this.#open && inPageForm(this.#open, () => this.#close(), () => this.#offerOpen())}
+        {open && inPageForm(open, (closed) => this.#finish(open, closed), () => this.#fallback(open))}
       </I18nProvider>,
     );
   }
@@ -187,9 +211,17 @@ class WalletElement extends WalletElementBase {
 class PayInvoiceElement extends WalletElementBase {
   protected view() {
     const invoice = actionId(this.getAttribute("invoice"));
-    return <PayInvoiceButton invoice={invoice} onPay={() => this.act("pay", invoice)} />;
+    return <PayInvoiceButton invoice={invoice} onPay={() => this.act("pay", { invoice })} />;
+  }
+}
+
+class MandateElement extends WalletElementBase {
+  protected view() {
+    const request = actionId(this.getAttribute("request"));
+    return <MandateButton request={request} onReview={() => this.act("mandate", { request })} />;
   }
 }
 
 if (!customElements.get(WALLET_TAG)) customElements.define(WALLET_TAG, WalletElement);
 if (!customElements.get(PAY_TAG)) customElements.define(PAY_TAG, PayInvoiceElement);
+if (!customElements.get(MANDATE_TAG)) customElements.define(MANDATE_TAG, MandateElement);
