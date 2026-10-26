@@ -192,6 +192,7 @@ message ListPaymentsRequest {
   Party party = 3;
   // Only orders whose source is banking's treasury — the ones the owners gate.
   bool treasury_only = 4;
+  reserved "fund_owned_only";
 }
 
 message GetPaymentRequest {

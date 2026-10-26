@@ -5,7 +5,7 @@
 -- domain types (`tb_accounts` excepted: the code skips retired codes), so what only the
 -- removed path understands moves to schema `retired`, unchanged:
 --   * whole tables: allocations, allocation_access_grants, book_*, fee_*, fund_positions,
---     fund_valuations, redemptions, subscriptions, unit_issuances, window_closures;
+--     fund_valuations, fund_wallets, redemptions, subscriptions, unit_issuances, window_closures;
 --   * payments naming a `service` party on a live seat, with their concierge / session seats
 --     and notices (the ones an old seat decided leave in 0072, with the seat tables);
 --   * the seed's `deposits` (party_kind `piggybank`), which makes `deposits_party_is_a_user`
@@ -20,8 +20,16 @@
 -- checks too, so a deploy that would fail there fails before anything changes. Every
 -- `SELECT count(*)` below is safe to run read-only on production before deploying.
 --
--- REVERSIBILITY: after 0072's rollback, as `postgres`, statement for statement
--- (`tests/contract_migrations.rs` runs it):
+-- REVERSIBILITY: after 0072's rollback, as `postgres`, BEFORE the older image starts
+-- (`sqlx::migrate!()` refuses to boot a binary that does not know an applied version). Run it
+-- as one transaction, exactly as written (e.g. `psql -v ON_ERROR_STOP=1 -f`). The two UPDATEs
+-- give the settles v2.21 wrote the `payee` v2.20 requires, so a re-apply keeps them live.
+-- `tests/contract_migrations.rs` runs this text:
+--   BEGIN;
+--   UPDATE event_log SET payload = jsonb_set(payload, '{payee}', '{"kind":"scope_account","id":{"scope":"main","label":"treasury"}}')
+--    WHERE kind = 'withdrawals' AND payload->>'type' = 'settled' AND NOT payload ? 'payee';
+--   UPDATE outbox SET payload = jsonb_set(payload, '{payee}', '{"kind":"scope_account","id":{"scope":"main","label":"treasury"}}')
+--    WHERE kind = 'withdrawals' AND payload->>'type' = 'settled' AND NOT payload ? 'payee';
 --   ALTER TABLE deposits DROP CONSTRAINT deposits_party_is_a_user;
 --   INSERT INTO deposits SELECT * FROM retired.deposits;
 --   ALTER TABLE deposits ADD CONSTRAINT deposits_party_is_a_user CHECK (party_kind = 'user') NOT VALID;
@@ -36,12 +44,28 @@
 --   INSERT INTO scope_notification_outbox SELECT * FROM retired.scope_notification_outbox;
 --   INSERT INTO event_log SELECT * FROM retired.event_log;
 --   INSERT INTO outbox SELECT * FROM retired.outbox;
---   ALTER TABLE retired.<t> SET SCHEMA public;  -- for each of the 16 tables archived below
+--   ALTER TABLE retired.allocation_access_grants SET SCHEMA public;
+--   ALTER TABLE retired.allocations SET SCHEMA public;
+--   ALTER TABLE retired.book_orders SET SCHEMA public;
+--   ALTER TABLE retired.book_policies SET SCHEMA public;
+--   ALTER TABLE retired.book_revisions SET SCHEMA public;
+--   ALTER TABLE retired.book_trades SET SCHEMA public;
+--   ALTER TABLE retired.fee_assessments SET SCHEMA public;
+--   ALTER TABLE retired.fee_policies SET SCHEMA public;
+--   ALTER TABLE retired.fee_policy_changes SET SCHEMA public;
+--   ALTER TABLE retired.fee_settlements SET SCHEMA public;
+--   ALTER TABLE retired.fund_positions SET SCHEMA public;
+--   ALTER TABLE retired.fund_valuations SET SCHEMA public;
+--   ALTER TABLE retired.fund_wallets SET SCHEMA public;
+--   ALTER TABLE retired.redemptions SET SCHEMA public;
+--   ALTER TABLE retired.subscriptions SET SCHEMA public;
+--   ALTER TABLE retired.unit_issuances SET SCHEMA public;
+--   ALTER TABLE retired.window_closures SET SCHEMA public;
 --   DROP TABLE retired.payments, retired.payment_concierge_approval, retired.payment_session_consent,
 --              retired.scope_notification_outbox, retired.deposits, retired.event_log, retired.outbox;
 --   DROP SCHEMA retired;
--- then, BEFORE the older image starts: DELETE FROM _sqlx_migrations WHERE version = 71;
--- — `sqlx::migrate!()` refuses to boot a binary that does not know an applied version.
+--   DELETE FROM _sqlx_migrations WHERE version = 71;
+--   COMMIT;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
 
@@ -84,6 +108,31 @@ BEGIN
 	   AND NOT EXISTS (SELECT 1 FROM payment_consent WHERE payment_id = p.id);
 	IF n > 0 THEN RAISE EXCEPTION 'contract preflight: % governance mail(s) about a concierge- or session-seated payment; unexpected, inspect before deploying', n; END IF;
 
+	-- the payments sweeper's due_to_report / due_to_withdraw scans, over the seats archived below
+	SELECT count(*) INTO n FROM payment_concierge_approval s JOIN payments p ON p.id = s.payment_id
+	 WHERE (p.from_kind = 'service' OR p.to_kind = 'service')
+	   AND NOT EXISTS (SELECT 1 FROM payment_approval WHERE payment_id = p.id)
+	   AND NOT EXISTS (SELECT 1 FROM payment_consent WHERE payment_id = p.id)
+	   AND s.approval_id IS NOT NULL AND s.reported_at IS NULL
+	   AND (p.state IN ('executed', 'execution_failed') OR (p.state IN ('cancelled', 'expired') AND s.withdrawn_at IS NULL));
+	IF n > 0 THEN RAISE EXCEPTION 'contract preflight: % concierge approval(s) of a payment naming an allocation still owe concierge an outcome or a withdrawal; let the v2.20 payments sweeper report them before deploying v2.21', n; END IF;
+
+	SELECT count(*) INTO n FROM scope_notification_outbox s JOIN payments p ON p.id = s.payment_id
+	 WHERE (p.from_kind = 'service' OR p.to_kind = 'service')
+	   AND NOT EXISTS (SELECT 1 FROM payment_approval WHERE payment_id = p.id)
+	   AND NOT EXISTS (SELECT 1 FROM payment_consent WHERE payment_id = p.id)
+	   AND s.sent_at IS NULL AND s.withdrawn_at IS NULL AND s.attempts < 10; -- the notice worker's MAX_ATTEMPTS
+	IF n > 0 THEN RAISE EXCEPTION 'contract preflight: % notice(s) about a payment naming an allocation not yet sent; let the v2.20 notice worker send them, or set withdrawn_at on them, before deploying v2.21', n; END IF;
+
+	-- 0072's postcondition, over the payments both migrations leave live
+	SELECT count(*) INTO n FROM payments p
+	 WHERE p.from_kind <> 'service' AND p.to_kind <> 'service'
+	   AND NOT EXISTS (SELECT 1 FROM payment_approval WHERE payment_id = p.id)
+	   AND NOT EXISTS (SELECT 1 FROM payment_consent WHERE payment_id = p.id)
+	   AND (EXISTS (SELECT 1 FROM payment_concierge_approval WHERE payment_id = p.id))::int
+	     + (EXISTS (SELECT 1 FROM payment_session_consent WHERE payment_id = p.id))::int <> 1;
+	IF n > 0 THEN RAISE EXCEPTION 'contract preflight: % payment(s) staying live without exactly one concierge or session seat; v2.21 cannot load them, inspect before deploying', n; END IF;
+
 	-- 0072's checks, verbatim.
 	SELECT count(*) INTO n FROM consilium WHERE state IN ('open', 'approved');
 	IF n > 0 THEN RAISE EXCEPTION 'contract preflight: % open or executing consilium; let it decide, expire or be cancelled on v2.20 before deploying v2.21', n; END IF;
@@ -122,6 +171,7 @@ ALTER TABLE fee_policy_changes SET SCHEMA retired;
 ALTER TABLE fee_settlements SET SCHEMA retired;
 ALTER TABLE fund_positions SET SCHEMA retired;
 ALTER TABLE fund_valuations SET SCHEMA retired;
+ALTER TABLE fund_wallets SET SCHEMA retired;
 ALTER TABLE redemptions SET SCHEMA retired;
 ALTER TABLE subscriptions SET SCHEMA retired;
 ALTER TABLE unit_issuances SET SCHEMA retired;

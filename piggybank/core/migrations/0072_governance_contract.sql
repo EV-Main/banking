@@ -18,12 +18,16 @@
 --     names with it. The expression stays `from_kind <> 'user'`, equal to
 --     `from_kind = 'treasury'` under the narrowed CHECK.
 -- A postcondition refuses if any live event_log / outbox row is a kind or type v2.21 cannot
--- read: such history must be named in a retire predicate, never swept unread.
+-- read (such history must be named in a retire predicate, never swept unread), or if a live
+-- payment lacks exactly one concierge or session seat (the repository refuses to load it).
 --
 -- PREFLIGHT. Refuses while the old path still has live state (0071 runs the same checks).
 --
--- REVERSIBILITY: before 0071's, as `postgres`, statement for statement
--- (`tests/contract_migrations.rs` runs it):
+-- REVERSIBILITY: before 0071's, as `postgres`, BEFORE the older image starts (`sqlx::migrate!()`
+-- refuses to boot a binary that does not know an applied version). Run it as one transaction,
+-- exactly as written (e.g. `psql -v ON_ERROR_STOP=1 -f`): `restoring_payments` lives only until
+-- its COMMIT. `tests/contract_migrations.rs` runs this text:
+--   BEGIN;
 --   ALTER TABLE payment_concierge_approval RENAME CONSTRAINT payment_concierge_approval_payment_id_treasury_source_fkey TO payment_concierge_approval_payment_id_fund_owned_fkey;
 --   ALTER TABLE payment_concierge_approval RENAME CONSTRAINT payment_concierge_approval_treasury_source_check TO payment_concierge_approval_fund_owned_check;
 --   ALTER TABLE payment_concierge_approval RENAME COLUMN treasury_source TO fund_owned;
@@ -46,15 +50,20 @@
 --   DELETE FROM retired.event_log WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
 --   DELETE FROM retired.outbox WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
 --   DELETE FROM retired.payments WHERE id IN (SELECT id FROM restoring_payments);
---   ALTER TABLE retired.<t> SET SCHEMA public;  -- for each of the 6 tables archived below
+--   ALTER TABLE retired.consilium SET SCHEMA public;
+--   ALTER TABLE retired.consilium_voter SET SCHEMA public;
+--   ALTER TABLE retired.consilium_mail SET SCHEMA public;
+--   ALTER TABLE retired.payment_approval SET SCHEMA public;
+--   ALTER TABLE retired.payment_consent SET SCHEMA public;
+--   ALTER TABLE retired.governance_roster_change SET SCHEMA public;
 --   ALTER TABLE consilium ADD CONSTRAINT consilium_executed_payment_fk FOREIGN KEY (executed_payment_id) REFERENCES payments (id);
 --   ALTER TABLE consilium_mail ADD CONSTRAINT consilium_mail_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE;
 --   ALTER TABLE payment_approval ADD CONSTRAINT payment_approval_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE,
 --     ADD CONSTRAINT payment_approval_payment_id_fund_owned_fkey FOREIGN KEY (payment_id, fund_owned) REFERENCES payments (id, fund_owned) ON DELETE CASCADE;
 --   ALTER TABLE payment_consent ADD CONSTRAINT payment_consent_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE,
 --     ADD CONSTRAINT payment_consent_payment_id_subject_user_id_fkey FOREIGN KEY (payment_id, subject_user_id) REFERENCES payments (id, source_user_id) ON DELETE CASCADE;
--- then, BEFORE the older image starts: DELETE FROM _sqlx_migrations WHERE version = 72;
--- — `sqlx::migrate!()` refuses to boot a binary that does not know an applied version.
+--   DELETE FROM _sqlx_migrations WHERE version = 72;
+--   COMMIT;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
 
@@ -125,7 +134,13 @@ ALTER TABLE payment_concierge_approval RENAME CONSTRAINT payment_concierge_appro
 DO $postcondition$
 DECLARE
 	stray text;
+	n bigint;
 BEGIN
+	SELECT count(*) INTO n FROM payments p
+	 WHERE (EXISTS (SELECT 1 FROM payment_concierge_approval WHERE payment_id = p.id))::int
+	     + (EXISTS (SELECT 1 FROM payment_session_consent WHERE payment_id = p.id))::int <> 1;
+	IF n > 0 THEN RAISE EXCEPTION 'contract postcondition: % live payment(s) without exactly one concierge or session seat; v2.21 cannot load them', n; END IF;
+
 	SELECT string_agg(DISTINCT kind || '/' || coalesce(payload->>'type', '?'), ', ') INTO stray
 	  FROM (SELECT kind, payload FROM event_log UNION ALL SELECT kind, payload FROM outbox) e
 	 WHERE ((kind, payload->>'type') IN (VALUES

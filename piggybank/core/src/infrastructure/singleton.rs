@@ -49,3 +49,11 @@ pub async fn try_acquire(pool: &PgPool, key: i64) -> Result<Option<PoolConnectio
 pub async fn still_held(conn: &mut PoolConnection<Postgres>) -> bool {
 	sqlx::query("SELECT 1").execute(conn.as_mut()).await.is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	fn the_payments_sweeper_holds_the_v2_20_consilium_sweeper_key() {
+		assert_eq!(super::keys::PAYMENTS_SWEEPER.to_be_bytes(), *b"EVBKCSW_");
+	}
+}

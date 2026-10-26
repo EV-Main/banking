@@ -13,7 +13,7 @@
 //!    every `event_log` and `outbox` row deserializes as the event its kind names.
 //! 2. The narrowed CHECKs refuse the retired shapes.
 //! 3. The documented rollbacks restore the 0070 database exactly, and re-applying the files
-//!    lands on the same contract.
+//!    lands on the same contract; what v2.21 wrote in between survives both ways.
 //! 4. Each preflight condition — live state of a removed path — refuses the deploy before
 //!    anything changes.
 //!
@@ -36,10 +36,14 @@ use domain::{
 	withdrawals::{WithdrawalEvent, WithdrawalId, WithdrawalSource},
 };
 use piggybank_core::{
-	infrastructure::{deposits::PgDeposits, operation_feed::PgOperationFeed, outbox, payments::PgPayments, reconciliation::Reconciliation, users::PgUsers, withdrawals::PgWithdrawals},
+	infrastructure::{
+		deposits::PgDeposits, operation_feed::PgOperationFeed, outbox, payments::PgPayments, reconciliation::Reconciliation, scope_notifications::ScopeNotificationWorker, users::PgUsers,
+		withdrawals::PgWithdrawals,
+	},
 	ports::{
 		Deposits, OperationFeed, PaymentFeed, PaymentRepository, UserRepository, WithdrawalRepository,
-		payments::{ApprovalSeat, PaymentFilter, SessionSeat},
+		payments::{ApprovalSeat, PaymentApprovalStore, PaymentFilter, SessionSeat},
+		scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier},
 	},
 };
 use serde_json::{Value, json};
@@ -51,80 +55,22 @@ mod common;
 const BEFORE: i64 = 70;
 const HEAD: i64 = 72;
 
-/// The rollbacks the migration headers document, statement for statement, so the round trip
-/// exercises exactly what an operator would paste. 0072's first.
-const ROLLBACK_0072: &str = "
-ALTER TABLE payment_concierge_approval RENAME CONSTRAINT payment_concierge_approval_payment_id_treasury_source_fkey TO payment_concierge_approval_payment_id_fund_owned_fkey;
-ALTER TABLE payment_concierge_approval RENAME CONSTRAINT payment_concierge_approval_treasury_source_check TO payment_concierge_approval_fund_owned_check;
-ALTER TABLE payment_concierge_approval RENAME COLUMN treasury_source TO fund_owned;
-ALTER TABLE payments RENAME CONSTRAINT payments_id_treasury_source_key TO payments_id_fund_owned_key;
-ALTER TABLE payments RENAME COLUMN treasury_source TO fund_owned;
-UPDATE event_log SET payload = jsonb_set(payload, '{requirement,requirement}', '\"owner_consilium\"')
- WHERE kind = 'payments' AND payload->'requirement'->>'requirement' = 'owners_approval';
-ALTER TABLE payments DROP CONSTRAINT payments_from_kind_check, DROP CONSTRAINT payments_to_kind_check,
-  ADD CONSTRAINT payments_from_kind_check CHECK (from_kind IN ('user', 'service', 'treasury')),
-  ADD CONSTRAINT payments_to_kind_check CHECK (to_kind IN ('user', 'service'));
-CREATE TEMP TABLE restoring_payments ON COMMIT DROP AS
-  SELECT payment_id AS id FROM retired.payment_approval UNION SELECT payment_id FROM retired.payment_consent;
-INSERT INTO payments (id, state, from_kind, from_id, to_kind, to_id, to_network, to_address, amount, reason, payload_hash,
-                      initiator_user_id, created_at, expires_at, decided_at, executed_withdrawal_id, failure_reason, version)
-  SELECT id, state, from_kind, from_id, to_kind, to_id, to_network, to_address, amount, reason, payload_hash,
-         initiator_user_id, created_at, expires_at, decided_at, executed_withdrawal_id, failure_reason, version
-    FROM retired.payments WHERE id IN (SELECT id FROM restoring_payments);
-INSERT INTO event_log SELECT * FROM retired.event_log WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
-INSERT INTO outbox SELECT * FROM retired.outbox WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
-DELETE FROM retired.event_log WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
-DELETE FROM retired.outbox WHERE kind = 'consilium' OR (kind = 'payments' AND aggregate_id IN (SELECT id FROM restoring_payments));
-DELETE FROM retired.payments WHERE id IN (SELECT id FROM restoring_payments);
-ALTER TABLE retired.consilium SET SCHEMA public;
-ALTER TABLE retired.consilium_voter SET SCHEMA public;
-ALTER TABLE retired.consilium_mail SET SCHEMA public;
-ALTER TABLE retired.payment_approval SET SCHEMA public;
-ALTER TABLE retired.payment_consent SET SCHEMA public;
-ALTER TABLE retired.governance_roster_change SET SCHEMA public;
-ALTER TABLE consilium ADD CONSTRAINT consilium_executed_payment_fk FOREIGN KEY (executed_payment_id) REFERENCES payments (id);
-ALTER TABLE consilium_mail ADD CONSTRAINT consilium_mail_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE;
-ALTER TABLE payment_approval ADD CONSTRAINT payment_approval_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE,
-  ADD CONSTRAINT payment_approval_payment_id_fund_owned_fkey FOREIGN KEY (payment_id, fund_owned) REFERENCES payments (id, fund_owned) ON DELETE CASCADE;
-ALTER TABLE payment_consent ADD CONSTRAINT payment_consent_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES payments (id) ON DELETE CASCADE,
-  ADD CONSTRAINT payment_consent_payment_id_subject_user_id_fkey FOREIGN KEY (payment_id, subject_user_id) REFERENCES payments (id, source_user_id) ON DELETE CASCADE;
-";
+const UNITS_CONTRACT: &str = include_str!("../migrations/0071_units_contract.sql");
+const GOVERNANCE_CONTRACT: &str = include_str!("../migrations/0072_governance_contract.sql");
 
-const ROLLBACK_0071: &str = "
-ALTER TABLE deposits DROP CONSTRAINT deposits_party_is_a_user;
-INSERT INTO deposits SELECT * FROM retired.deposits;
-ALTER TABLE deposits ADD CONSTRAINT deposits_party_is_a_user CHECK (party_kind = 'user') NOT VALID;
-COMMENT ON COLUMN deposits.party_kind IS 'Always `user` for a new row. Rows written before #245 may read `piggybank` (the seed deposits onto the retired fund claim); the CHECK is NOT VALID so they stay as history.';
-INSERT INTO payments (id, state, from_kind, from_id, to_kind, to_id, to_network, to_address, amount, reason, payload_hash,
-                      initiator_user_id, created_at, expires_at, decided_at, executed_withdrawal_id, failure_reason, version)
-  SELECT id, state, from_kind, from_id, to_kind, to_id, to_network, to_address, amount, reason, payload_hash,
-         initiator_user_id, created_at, expires_at, decided_at, executed_withdrawal_id, failure_reason, version
-    FROM retired.payments;
-INSERT INTO payment_concierge_approval SELECT * FROM retired.payment_concierge_approval;
-INSERT INTO payment_session_consent SELECT * FROM retired.payment_session_consent;
-INSERT INTO scope_notification_outbox SELECT * FROM retired.scope_notification_outbox;
-INSERT INTO event_log SELECT * FROM retired.event_log;
-INSERT INTO outbox SELECT * FROM retired.outbox;
-ALTER TABLE retired.allocation_access_grants SET SCHEMA public;
-ALTER TABLE retired.allocations SET SCHEMA public;
-ALTER TABLE retired.book_orders SET SCHEMA public;
-ALTER TABLE retired.book_policies SET SCHEMA public;
-ALTER TABLE retired.book_revisions SET SCHEMA public;
-ALTER TABLE retired.book_trades SET SCHEMA public;
-ALTER TABLE retired.fee_assessments SET SCHEMA public;
-ALTER TABLE retired.fee_policies SET SCHEMA public;
-ALTER TABLE retired.fee_policy_changes SET SCHEMA public;
-ALTER TABLE retired.fee_settlements SET SCHEMA public;
-ALTER TABLE retired.fund_positions SET SCHEMA public;
-ALTER TABLE retired.fund_valuations SET SCHEMA public;
-ALTER TABLE retired.redemptions SET SCHEMA public;
-ALTER TABLE retired.subscriptions SET SCHEMA public;
-ALTER TABLE retired.unit_issuances SET SCHEMA public;
-ALTER TABLE retired.window_closures SET SCHEMA public;
-DROP TABLE retired.payments, retired.payment_concierge_approval, retired.payment_session_consent,
-           retired.scope_notification_outbox, retired.deposits, retired.event_log, retired.outbox;
-DROP SCHEMA retired;
-";
+/// The rollback a migration's `REVERSIBILITY:` header documents, read out of the file, so the
+/// round trip runs exactly what an operator would paste.
+fn rollback(migration: &str) -> String {
+	let sql: Vec<&str> = migration
+		.lines()
+		.skip_while(|line| !line.starts_with("-- REVERSIBILITY:"))
+		.skip_while(|line| *line != "--   BEGIN;")
+		.take_while(|line| line.starts_with("--   "))
+		.map(|line| &line["--   ".len()..])
+		.collect();
+	assert_eq!(sql.last(), Some(&"COMMIT;"), "the documented rollback is one transaction");
+	sql.join("\n")
+}
 
 /// Every table either migration moves or archives out of, by its live name.
 const TOUCHED: &[&str] = &[
@@ -140,6 +86,7 @@ const TOUCHED: &[&str] = &[
 	"fee_settlements",
 	"fund_positions",
 	"fund_valuations",
+	"fund_wallets",
 	"redemptions",
 	"subscriptions",
 	"unit_issuances",
@@ -173,6 +120,7 @@ const WHOLLY_RETIRED: &[&str] = &[
 	"fee_settlements",
 	"fund_positions",
 	"fund_valuations",
+	"fund_wallets",
 	"redemptions",
 	"subscriptions",
 	"unit_issuances",
@@ -334,6 +282,8 @@ struct History {
 	emailed_payment: Uuid,
 	/// Into an allocation, on a session seat: investor → `service:service_arb`.
 	service_payment: Uuid,
+	/// Out of an allocation, on a concierge seat that reported its outcome: `service:fund` → other.
+	concierge_service_payment: Uuid,
 	/// Stays: the treasury's, on its concierge seat.
 	treasury_payment: Uuid,
 	/// Stays: investor → other, on a session seat.
@@ -552,6 +502,21 @@ async fn seed_history(pool: &PgPool) -> History {
 	);
 	retired_events.push(event(pool, "payment", service_payment, "payments", &settled, Relayed::Dispatched).await);
 
+	// Out of an allocation, decided on concierge's seat and reported back.
+	let concierge_service_payment = Uuid::new_v4();
+	exec(
+		pool,
+		&format!(
+			"INSERT INTO payments (id, state, from_kind, from_id, to_kind, to_id, amount, reason, payload_hash, initiator_user_id, expires_at, decided_at) \
+			 VALUES ('{concierge_service_payment}', 'executed', 'service', 'fund', 'user', '{other}', '10000000000000000000', 'a payout', '\\x{}', '{admin}', now() + interval '7 days', now());
+			 INSERT INTO payment_concierge_approval (payment_id, destination, payload_hash, approval_id, reported_at) \
+			 VALUES ('{concierge_service_payment}', 'user:{other}', '{}', 'approval-1', now());",
+			"00".repeat(32),
+			"ab".repeat(32),
+		),
+	)
+	.await;
+
 	// The two orders that stay, written by the live adapter. v2.20 named the treasury's
 	// requirement `owner_consilium`; the migration renames it.
 	let payments = PgPayments::new(pool.clone());
@@ -612,7 +577,8 @@ async fn seed_history(pool: &PgPool) -> History {
 			   VALUES ('{}', 'service_arb', '{investor}', '{other}', '{buy}', '{sell}', 'buy', '1', '1', '1', '0');
 			 INSERT INTO window_closures (logical_key, service, kind, user_id, code, units, transfer_id)
 			   VALUES ('shares:service_arb:{investor}', 'service_arb', 'user_shares', '{investor}', 60, '1', '\\x{}');
-			 INSERT INTO governance_roster_change (user_id, from_role, to_role) VALUES ('{other}', 'investor', 'owner');",
+			 INSERT INTO governance_roster_change (user_id, from_role, to_role) VALUES ('{other}', 'investor', 'owner');
+			 INSERT INTO fund_wallets (network, token, address) VALUES ('bep20', 'usdt', '0xfund');",
 			Uuid::new_v4(),
 			Uuid::new_v4(),
 			Uuid::new_v4(),
@@ -726,6 +692,7 @@ async fn seed_history(pool: &PgPool) -> History {
 		consilium,
 		emailed_payment,
 		service_payment,
+		concierge_service_payment,
 		treasury_payment: treasury_order.id().raw(),
 		session_payment: session_order.id().raw(),
 		seed_deposit,
@@ -870,14 +837,18 @@ async fn the_contract_archives_v2_20_history_and_every_live_row_parses() {
 	assert_eq!((voters, mails), (3, 3), "the voters and every governance mail, outcome mail included");
 	assert_eq!(
 		sorted(ids_in(&pool, "SELECT id FROM retired.payments").await),
-		sorted(vec![history.consilium_payment, history.emailed_payment, history.service_payment])
+		sorted(vec![
+			history.consilium_payment,
+			history.emailed_payment,
+			history.service_payment,
+			history.concierge_service_payment
+		])
 	);
 	assert_eq!(ids_in(&pool, "SELECT payment_id FROM retired.payment_session_consent").await, vec![history.service_payment]);
 	assert_eq!(ids_in(&pool, "SELECT payment_id FROM retired.scope_notification_outbox").await, vec![history.service_payment]);
 	assert_eq!(
-		sorted(ids_in(&pool, "SELECT payment_id FROM retired.payment_concierge_approval").await),
-		Vec::<Uuid>::new(),
-		"no retired payment sat on the concierge seat"
+		ids_in(&pool, "SELECT payment_id FROM retired.payment_concierge_approval").await,
+		vec![history.concierge_service_payment]
 	);
 	let seed: Vec<String> = sqlx::query_scalar("SELECT tx_ref FROM retired.deposits").fetch_all(&pool).await.unwrap();
 	assert_eq!(seed, vec![history.seed_deposit.clone()]);
@@ -907,7 +878,7 @@ async fn the_contract_archives_v2_20_history_and_every_live_row_parses() {
 	let treasury = payments.find(PaymentId::from_raw(history.treasury_payment)).await.unwrap().expect("the treasury's order is live");
 	assert_eq!(treasury.order.requirement(), PaymentApproval::OwnersApproval);
 	payments.find(PaymentId::from_raw(history.session_payment)).await.unwrap().expect("the investor's order is live");
-	for gone in [history.consilium_payment, history.emailed_payment, history.service_payment] {
+	for gone in [history.consilium_payment, history.emailed_payment, history.service_payment, history.concierge_service_payment] {
 		assert!(payments.find(PaymentId::from_raw(gone)).await.unwrap().is_none(), "{gone} is archived, not live");
 	}
 	let withdrawals = PgWithdrawals::new(pool.clone());
@@ -916,13 +887,27 @@ async fn the_contract_archives_v2_20_history_and_every_live_row_parses() {
 	withdrawals.list_actionable().await.expect("the actionable list loads");
 	let deposits = PgDeposits::new(pool.clone());
 	assert_eq!(deposits.list_by_user(history.investor).await.unwrap().len(), 1, "the live deposit, not the seed");
-	assert!(deposits.is_recorded(&history.live_deposit).await.unwrap());
+	let live: Vec<String> = sqlx::query_scalar("SELECT tx_ref FROM deposits").fetch_all(&pool).await.unwrap();
+	assert_eq!(live, vec![history.live_deposit.as_str().to_owned()], "the gate keeps the live deposit");
 	let feed = PgOperationFeed::new(pool.clone()).list_by_user(history.investor, 50).await.expect("the operations feed loads");
 	assert_eq!(feed.operations.len(), 2, "one deposit and one withdrawal");
 	let users = PgUsers::new(pool.clone());
 	for user in [history.investor, history.other] {
 		users.find_by_id(user).await.unwrap().expect("the user loads");
 	}
+	assert!(payments.awaiting_execution().await.unwrap().is_empty());
+	assert!(payments.awaiting_session_consent(history.investor).await.unwrap().is_empty());
+	payments
+		.find_for_session_subject(PaymentId::from_raw(history.session_payment), history.investor)
+		.await
+		.unwrap()
+		.expect("the investor reads their order");
+	assert!(payments.unproposed(0, 100).await.unwrap().is_empty(), "the archived seats left the approval scans");
+	assert!(payments.due_to_check(100).await.unwrap().is_empty());
+	assert!(payments.due_to_report(100).await.unwrap().is_empty());
+	assert!(payments.due_to_withdraw(100).await.unwrap().is_empty());
+	let notices = ScopeNotificationWorker::new(pool.clone(), Arc::new(NoNoticeDue));
+	assert_eq!(notices.drain().await.expect("the notice outbox reads"), 0);
 	assert!(outbox::next_batch(&pool, 100).await.unwrap().is_empty(), "nothing left to drain");
 	assert!(outbox::parked_rows(&pool).await.unwrap().is_empty());
 	outbox::pipeline_depth(&pool).await.expect("the readiness probe reads the outbox");
@@ -975,18 +960,59 @@ async fn the_contract_archives_v2_20_history_and_every_live_row_parses() {
 	}
 
 	// (d) The documented rollbacks restore v2.20 exactly; the files re-apply over it.
-	sqlx::raw_sql(ROLLBACK_0072).execute(&pool).await.expect("0072's rollback applies");
-	sqlx::raw_sql(ROLLBACK_0071).execute(&pool).await.expect("0071's rollback applies");
+	roll_back(&pool).await;
 	assert_eq!(picture(&pool).await, before, "rolled back, the database is v2.20's again");
-	sqlx::raw_sql(include_str!("../migrations/0071_units_contract.sql"))
-		.execute(&pool)
-		.await
-		.expect("0071 re-applies after its rollback");
-	sqlx::raw_sql(include_str!("../migrations/0072_governance_contract.sql"))
-		.execute(&pool)
-		.await
-		.expect("0072 re-applies after its rollback");
+	sqlx::migrate!().run_to(HEAD, &pool).await.expect("the contract re-applies after its rollback");
 	assert_eq!(picture(&pool).await, after, "apply → roll back → apply lands on the same contract");
+
+	// (e) A settle v2.21 wrote, which names no payee, reads as v2.20's after a rollback and
+	// stays live through a re-apply.
+	let settled = to_value(&WithdrawalEvent::Settled {
+		withdrawal_id: history.withdrawal,
+		source: WithdrawalSource::User(history.investor),
+		network: Network::Bep20,
+		amount: usdt("5"),
+		fee: usdt("1"),
+		tx_ref: TxRef::parse(&format!("0xv221{}", Uuid::new_v4().simple())).unwrap(),
+	});
+	assert!(settled.get("payee").is_none(), "v2.21 writes no payee");
+	let v2_21_settle = event(&pool, "withdrawal", history.withdrawal.raw(), "withdrawals", &settled, Relayed::Dispatched).await;
+	roll_back(&pool).await;
+	let treasury = json!({ "kind": "scope_account", "id": { "scope": "main", "label": "treasury" } });
+	for table in ["event_log", "outbox"] {
+		let payee: Option<Value> = sqlx::query_scalar(AssertSqlSafe(format!("SELECT payload->'payee' FROM {table} WHERE event_id = $1")))
+			.bind(v2_21_settle)
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+		assert_eq!(payee, Some(treasury.clone()), "{table}: v2.20's Settled requires the payee it always wrote");
+	}
+	sqlx::migrate!().run_to(HEAD, &pool).await.expect("the contract re-applies over v2.21's settle");
+	for table in ["event_log", "outbox"] {
+		let live: bool = sqlx::query_scalar(AssertSqlSafe(format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE event_id = $1)")))
+			.bind(v2_21_settle)
+			.fetch_one(&pool)
+			.await
+			.unwrap();
+		assert!(live, "{table}: the settle paid the treasury, so it stays live");
+		every_event_parses(&pool, table).await;
+	}
+}
+
+async fn roll_back(pool: &PgPool) {
+	sqlx::raw_sql(AssertSqlSafe(rollback(GOVERNANCE_CONTRACT))).execute(pool).await.expect("0072's rollback applies");
+	sqlx::raw_sql(AssertSqlSafe(rollback(UNITS_CONTRACT))).execute(pool).await.expect("0071's rollback applies");
+	assert_eq!(applied_version(pool).await, BEFORE, "the rollbacks take their versions with them");
+}
+
+/// The notice outbox after the contract: nothing of an archived payment is still owed.
+struct NoNoticeDue;
+
+#[async_trait::async_trait]
+impl ScopeNotifier for NoNoticeDue {
+	async fn emit(&self, _: Uuid, notice: &ScopeNotice) -> Result<(), NoticeError> {
+		panic!("no notice is due after the contract, yet {notice:?} was handed over")
+	}
 }
 
 /// One piece of live state of a removed path, how to plant it, how to take it away again,
@@ -1038,6 +1064,16 @@ fn live_states(investor: UserId, admin: UserId) -> Vec<LiveState> {
 		"03".repeat(32),
 	);
 	let user = |u: UserId| u.to_string();
+	let concierge_seat = |withdrawn: &str| {
+		format!(
+			"INSERT INTO payment_concierge_approval (payment_id, destination, payload_hash, approval_id, withdrawn_at) VALUES ('{id}', 'user:{investor}', '{}', 'approval-1', {withdrawn});",
+			"ab".repeat(32)
+		)
+	};
+	let payment_event = format!(
+		"INSERT INTO outbox (event_id, aggregate, aggregate_id, kind, payload) VALUES ('{}', 'payment', '{id}', 'payments', '{{\"type\":\"settled\"}}');",
+		Uuid::new_v4()
+	);
 	let clear_events = "DELETE FROM outbox;".to_owned();
 	let clear_payment = format!("DELETE FROM payments WHERE id = '{id}';");
 	vec![
@@ -1105,6 +1141,49 @@ fn live_states(investor: UserId, admin: UserId) -> Vec<LiveState> {
 			refusal: "outbox row(s) of a removed unit path",
 		},
 		LiveState {
+			what: "an undispatched event of a payment into an allocation",
+			seed: format!("{}{payment_event}", payment("executed", ("user", user(investor)), ("service", "svc".into()))),
+			cleanup: format!("{clear_events}{clear_payment}"),
+			refusal: "outbox row(s) of a removed unit path",
+		},
+		LiveState {
+			what: "a governance mail about a session-seated payment into an allocation",
+			seed: format!(
+				"{}INSERT INTO consilium_mail (payment_id, user_id, kind, dedupe_key, payload, sent_at) VALUES ('{id}', '{investor}', 'payment_outcome', 'm0', '{{}}', now());",
+				payment("executed", ("user", user(investor)), ("service", "svc".into())),
+			),
+			cleanup: clear_payment.clone(),
+			refusal: "governance mail(s) about a concierge- or session-seated payment",
+		},
+		LiveState {
+			what: "a concierge seat of an executed allocation payout that owes its outcome",
+			seed: format!("{}{}", payment("executed", ("service", "fund".into()), ("user", user(investor))), concierge_seat("NULL")),
+			cleanup: clear_payment.clone(),
+			refusal: "still owe concierge an outcome or a withdrawal",
+		},
+		LiveState {
+			what: "a concierge seat of a cancelled allocation payout that owes its withdrawal",
+			seed: format!("{}{}", payment("cancelled", ("service", "fund".into()), ("user", user(investor))), concierge_seat("NULL")),
+			cleanup: clear_payment.clone(),
+			refusal: "still owe concierge an outcome or a withdrawal",
+		},
+		LiveState {
+			what: "an unsent notice about a payment into an allocation",
+			seed: format!(
+				"{}INSERT INTO scope_notification_outbox (user_id, topic, kind, title, body, link, dedupe_key, payment_id) \
+				 VALUES ('{investor}', 'bank:money-movement', 'payment_outcome', 'A payment', '', '/wallet', 'n1', '{id}');",
+				payment("executed", ("user", user(investor)), ("service", "svc".into())),
+			),
+			cleanup: clear_payment.clone(),
+			refusal: "notice(s) about a payment naming an allocation not yet sent",
+		},
+		LiveState {
+			what: "a payment that stays live with no seat",
+			seed: payment("rejected", ("user", user(investor)), ("user", user(admin))),
+			cleanup: clear_payment.clone(),
+			refusal: "without exactly one concierge or session seat",
+		},
+		LiveState {
 			what: "an executed treasury payment into an allocation",
 			seed: payment("executed", ("treasury", "main:treasury".into()), ("service", "svc".into())),
 			cleanup: clear_payment.clone(),
@@ -1150,7 +1229,20 @@ fn live_states(investor: UserId, admin: UserId) -> Vec<LiveState> {
 		LiveState {
 			what: "an undispatched consilium event",
 			seed: outbox_row("consilium", r#"{"type":"opened"}"#, ""),
-			cleanup: clear_events,
+			cleanup: clear_events.clone(),
+			refusal: "outbox row(s) of the old approval path",
+		},
+		LiveState {
+			what: "an undispatched event of a payment on an emailed consent",
+			seed: format!(
+				"{}INSERT INTO payment_consent (payment_id, subject_user_id, decision, decided_at, used_at, token_hash, code_hash, expires_at, subject_token_version_at_open, subject_email_hash_at_open) \
+				 VALUES ('{id}', '{investor}', 'reject', now(), now(), '\\x{}', '\\x{}', now() + interval '7 days', 0, '\\x{}');{payment_event}",
+				payment("rejected", ("user", user(investor)), ("user", user(admin))),
+				"01".repeat(32),
+				"02".repeat(32),
+				"03".repeat(32),
+			),
+			cleanup: format!("{clear_events}{clear_payment}"),
 			refusal: "outbox row(s) of the old approval path",
 		},
 		LiveState {
