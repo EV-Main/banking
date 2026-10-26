@@ -1,33 +1,32 @@
 env:
-  CARGO_INCREMENTAL: '0'
-  CARGO_NET_RETRY: '10'
-  RUSTC_WRAPPER: ''
-  RUSTUP_MAX_RETRIES: '10'
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUSTC_WRAPPER: ""
+  RUSTUP_MAX_RETRIES: "10"
   RUST_BACKTRACE: short
 jobs:
   code-duplication:
-    if: github.event_name != 'pull_request'
     name: Code Duplication
     needs: pre_ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: actions/checkout@v5
-      with:
-        path: my_gh_stuff
-        repository: valeratrades/v_flakes
-        sparse-checkout: github/workflows
-        sparse-checkout-cone-mode: false
-    - name: Setup nightly Rust
-      uses: dtolnay/rust-toolchain@nightly
-    - name: Install mold linker
-      run: sudo apt-get install -y mold
-    - name: Install qlty
-      uses: qltysh/qlty-action/install@main
-    - name: Initialize qlty
-      run: qlty init --no --no-upgrade-check
-    - name: Check for code duplication
-      run: cargo +nightly -Zscript -q my_gh_stuff/github/workflows/code-duplication.rs
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          path: my_gh_stuff
+          repository: valeratrades/v_flakes
+          sparse-checkout: github/workflows
+          sparse-checkout-cone-mode: false
+      - name: Setup nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Install mold linker
+        run: sudo apt-get install -y mold
+      - name: Install qlty
+        uses: qltysh/qlty-action/install@main
+      - name: Initialize qlty
+        run: qlty init --no --no-upgrade-check
+      - name: Check for code duplication
+        run: cargo +nightly -Zscript -q my_gh_stuff/github/workflows/code-duplication.rs
     timeout-minutes: 15
   pre_ci:
     uses: valeratrades/.github/.github/workflows/pre_ci.yml@main
@@ -35,26 +34,20 @@ jobs:
     name: Reasonable Amount of Comments
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v5
-    - name: Installation
-      uses: taiki-e/install-action@v2
-      with:
-        tool: tokei
-    - name: Generate Tokei output
-      run: tokei -o json > tokei_output.json
-    - name: Install jq
-      run: sudo apt-get install -y jq
-    - name: Check Rust comments
-      run: "\t\t\t\tcomments=$(jq '.Rust.comments' tokei_output.json)\n\t\t\t\tcode=$(jq\
-        \ '.Rust.code' tokei_output.json)\n\n\t\t\t\t# compare: comments > code *\
-        \ 0.15\n\t\t\t\tif [ $((comments * 100)) -ge $((code * 15)) ]; then\n\t\t\t\
-        \t\t\techo \"Number of comments should be less than 15% of code\"\n\t\t\t\t\
-        \t\texit 1\n\t\t\t\telse\n\t\t\t\t\t\techo \"Check passed: Number of comments\
-        \ is less than 15% of code\"\n\t\t\t\tfi\n        \t\t\t"
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Installation
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tokei
+      - name: Generate Tokei output
+        run: tokei -o json > tokei_output.json
+      - name: Install jq
+        run: sudo apt-get install -y jq
+      - name: Check Rust comments
+        run: "\t\t\t\tcomments=$(jq '.Rust.comments' tokei_output.json)\n\t\t\t\tcode=$(jq '.Rust.code' tokei_output.json)\n\n\t\t\t\t# compare: comments > code * 0.15\n\t\t\t\tif [ $((comments * 100)) -ge $((code * 15)) ]; then\n\t\t\t\t\t\techo \"Number of comments should be less than 15% of code\"\n\t\t\t\t\t\texit 1\n\t\t\t\telse\n\t\t\t\t\t\techo \"Check passed: Number of comments is less than 15% of code\"\n\t\t\t\tfi\n        \t\t\t"
 name: Warnings
-'on':
-  pull_request: {}
+on:
   push: {}
   workflow_dispatch: {}
 permissions:

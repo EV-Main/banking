@@ -1,74 +1,82 @@
 jobs:
   release:
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name,
-      'preview')
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ubuntu-24.04-arm
     steps:
-    - uses: actions/checkout@v5
-      with:
-        lfs: true
-        ref: ${{ github.event.pull_request.head.sha || github.sha }}
-    - if: github.ref_type == 'tag'
-      name: Validate tag (strict semver)
-      run: "TAG=\"${{ github.ref_name }}\"\nif [[ ! \"$TAG\" =~ ^v[0-9]+\\.[0-9]+\\\
-        .[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then\n  echo \"::error::tag '$TAG' is not a\
-        \ strict semver vX.Y.Z[-prerelease] — refusing to release\" >&2\n  exit 1\n\
-        fi\n"
-      shell: bash
-    - name: Install Nix
-      uses: DeterminateSystems/nix-installer-action@main
-      with:
-        extra-conf: lazy-trees = true
-    - name: Setup Cachix
-      uses: cachix/cachix-action@v17
-      with:
-        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-        name: ev-invest
-    - if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' ||
-        github.event_name == 'pull_request'
-      name: Log in to GHCR
-      uses: docker/login-action@v4
-      with:
-        password: ${{ secrets.GITHUB_TOKEN }}
-        registry: ghcr.io
-        username: ${{ github.actor }}
-    - name: Build + push containers
-      run: "set -euo pipefail\nsys=\"$(nix eval --impure --raw --expr builtins.currentSystem)\"\
-        \n# Extract to a var first: `for x in $(cmd)` swallows cmd's exit code, so\
-        \ a\n# failed eval (e.g. a flake error) would leave the loop empty and the\
-        \ job GREEN.\nnames=\"$(nix eval --json \".#containers.$sys\" --apply builtins.attrNames\
-        \ | jq -r '.[]')\"\n[ -n \"$names\" ] || { echo \"::error::no containers found\
-        \ under .#containers.$sys\" >&2; exit 1; }\n# nixpkgs skopeo rejects the GH\
-        \ runner's v1-format /etc/containers/registries.conf\n# (\"must be in v2 format\"\
-        ); point it at our own minimal v2 file so it never reads the host's.\nCONTAINERS_REGISTRIES_CONF=\"\
-        $(mktemp)\"; export CONTAINERS_REGISTRIES_CONF\nprintf 'unqualified-search-registries\
-        \ = []\\n' > \"$CONTAINERS_REGISTRIES_CONF\"\nfor name in $names; do\n  echo\
-        \ \"::group::$name\"\n  RESULT=\"$(nix build \".#$name-container\" --no-link\
-        \ --print-out-paths --quiet)\"\n  if [ \"${{ github.ref_type }}\" = \"tag\"\
-        \ ]; then\n    nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\"\
-        \ \\\n      \"docker://ghcr.io/ev-main/${name,,}:${{ github.ref_name }}\"\n\
-        \  elif [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ]; then\n \
-        \   [ \"${{ github.ref }}\" = \"refs/heads/main\" ] || { echo \"::error::dispatch\
-        \ publishes main's head only, not ${{ github.ref }}\" >&2; exit 1; }\n   \
-        \ nix run nixpkgs#skopeo -- copy \\\n      \"docker-archive:$RESULT\" \\\n\
-        \      \"docker://ghcr.io/ev-main/${name,,}:main-${GITHUB_SHA::8}\"\n  elif\
-        \ [ \"${{ github.event_name }}\" = \"pull_request\" ]; then\n    head=\"${{\
-        \ github.event.pull_request.head.sha }}\"\n    nix run nixpkgs#skopeo -- copy\
-        \ \\\n      \"docker-archive:$RESULT\" \\\n      \"docker://ghcr.io/ev-main/${name,,}:pr-${{\
-        \ github.event.pull_request.number }}-${head::8}\"\n  else\n    echo \"cache-seed\
-        \ build ($name) on ${{ github.ref_name }} — skipping GHCR push\"\n  fi\n \
-        \ echo \"::endgroup::\"\ndone\n"
-      shell: bash
+      - uses: actions/checkout@v5
+        with:
+          lfs: true
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - if: github.ref_type == 'tag'
+        name: Validate tag (strict semver)
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not a strict semver vX.Y.Z[-prerelease] — refusing to release" >&2
+            exit 1
+          fi
+        shell: bash
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: lazy-trees = true
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v17
+        with:
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          name: ev-invest
+      - if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+        name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+      - name: Build + push containers
+        run: |
+          set -euo pipefail
+          sys="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          # Extract to a var first: `for x in $(cmd)` swallows cmd's exit code, so a
+          # failed eval (e.g. a flake error) would leave the loop empty and the job GREEN.
+          names="$(nix eval --json ".#containers.$sys" --apply builtins.attrNames | jq -r '.[]')"
+          [ -n "$names" ] || { echo "::error::no containers found under .#containers.$sys" >&2; exit 1; }
+          # nixpkgs skopeo rejects the GH runner's v1-format /etc/containers/registries.conf
+          # ("must be in v2 format"); point it at our own minimal v2 file so it never reads the host's.
+          CONTAINERS_REGISTRIES_CONF="$(mktemp)"; export CONTAINERS_REGISTRIES_CONF
+          printf 'unqualified-search-registries = []\n' > "$CONTAINERS_REGISTRIES_CONF"
+          for name in $names; do
+            echo "::group::$name"
+            RESULT="$(nix build ".#$name-container" --no-link --print-out-paths --quiet)"
+            if [ "${{ github.ref_type }}" = "tag" ]; then
+              nix run nixpkgs#skopeo -- copy \
+                "docker-archive:$RESULT" \
+                "docker://ghcr.io/ev-main/${name,,}:${{ github.ref_name }}"
+            elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              [ "${{ github.ref }}" = "refs/heads/main" ] || { echo "::error::dispatch publishes main's head only, not ${{ github.ref }}" >&2; exit 1; }
+              nix run nixpkgs#skopeo -- copy \
+                "docker-archive:$RESULT" \
+                "docker://ghcr.io/ev-main/${name,,}:main-${GITHUB_SHA::8}"
+            elif [ "${{ github.event_name }}" = "pull_request" ]; then
+              head="${{ github.event.pull_request.head.sha }}"
+              nix run nixpkgs#skopeo -- copy \
+                "docker-archive:$RESULT" \
+                "docker://ghcr.io/ev-main/${name,,}:pr-${{ github.event.pull_request.number }}-${head::8}"
+            else
+              echo "cache-seed build ($name) on ${{ github.ref_name }} — skipping GHCR push"
+            fi
+            echo "::endgroup::"
+          done
+        shell: bash
     timeout-minutes: 40
 name: Release containers
-'on':
+on:
   pull_request:
     types:
-    - labeled
-    - synchronize
+      - labeled
+      - synchronize
   push:
     tags:
-    - v[0-9]+.*
+      - v[0-9]+.*
   workflow_dispatch: {}
 permissions:
   contents: read
