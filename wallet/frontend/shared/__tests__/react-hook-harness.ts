@@ -74,14 +74,3 @@ export async function settle(step: () => unknown = () => undefined): Promise<voi
     await new Promise<void>((resolve) => setImmediate(resolve));
   });
 }
-
-/** A promise the test resolves or rejects by hand. */
-export interface Deferred<T> {
-  promise: Promise<T>;
-  resolve(value: T): void;
-  reject(error: unknown): void;
-}
-
-export function deferred<T>(): Deferred<T> {
-  return Promise.withResolvers<T>();
-}

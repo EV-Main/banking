@@ -312,12 +312,6 @@ impl PaymentState {
 	pub fn is_pending(self) -> bool {
 		matches!(self, Self::Pending)
 	}
-
-	/// Whether the order still holds (or may yet take) its source claim — the predicate the
-	/// "one open payment per treasury source" index is written over.
-	pub fn is_open(self) -> bool {
-		matches!(self, Self::Pending | Self::Approved)
-	}
 }
 
 /// The immutable subject of a payment. There is no edit path: changing anything means
@@ -1326,7 +1320,6 @@ mod tests {
 			assert_eq!(from, &treasury());
 			assert_eq!(*amount, usdt("100"));
 			assert_eq!(order.state(), PaymentState::ExecutionFailed);
-			assert!(!order.state().is_open(), "a failed order no longer holds its source");
 			// Idempotent: a second failure releases nothing twice.
 			order.mark_execution_failed("again".into(), NOW + 2).unwrap();
 			assert!(order.drain_events().is_empty());
@@ -1356,18 +1349,6 @@ mod tests {
 			assert_eq!(PaymentState::parse(state.as_str()).unwrap(), state);
 		}
 		assert!(PaymentState::parse("settled").is_err());
-		// The index predicate: exactly the two states that still hold a source claim.
-		assert!(PaymentState::Pending.is_open());
-		assert!(PaymentState::Approved.is_open());
-		for closed in [
-			PaymentState::Executed,
-			PaymentState::ExecutionFailed,
-			PaymentState::Rejected,
-			PaymentState::Expired,
-			PaymentState::Cancelled,
-		] {
-			assert!(!closed.is_open(), "{} still claims its source", closed.as_str());
-		}
 	}
 
 	#[test]

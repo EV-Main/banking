@@ -337,14 +337,6 @@ impl ScopeNotificationWorker {
 	}
 }
 
-/// How many notices are still owed — for the boot line and for tests.
-pub async fn pending_count(pool: &PgPool) -> Result<i64, DomainError> {
-	sqlx::query_scalar("SELECT COUNT(*) FROM scope_notification_outbox WHERE sent_at IS NULL AND withdrawn_at IS NULL")
-		.fetch_one(pool)
-		.await
-		.map_err(repo_err)
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;

@@ -480,7 +480,7 @@ impl Ledger for TbLedger {
 		for (bytes, code) in &rows {
 			let id = u128_from_be(bytes)?;
 			ids.push(id);
-			let side = u16::try_from(*code).ok().and_then(CashSide::of);
+			let side = u16::try_from(*code).ok().and_then(CashSide::of); // a code that does not fit u16 is no kind: unclassified, which fails reconciliation
 			side_of.insert(id, side);
 		}
 		// One `lookup_accounts` is capped at `LOOKUP_ACCOUNTS_MAX`; the cash plane grows

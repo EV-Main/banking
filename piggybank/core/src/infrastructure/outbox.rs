@@ -12,24 +12,14 @@ use domain::{
 	architecture::{DomainEvent, EmitsEvents, Entity, Identifier},
 	balance::LedgerAccountKey,
 	error::DomainError,
-	users::UserId,
 };
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-/// Take the per-user write lock — a transaction-scoped `pg_advisory_xact_lock` keyed on the
-/// user id — inside an open command transaction, held until commit. Every flow that spends a
-/// user's unified `UserClaim` (withdraw, move, payment) takes this *same* target before its
-/// Read-First so the optimistic solvency checks serialize across flows: without it two
-/// concurrent spends of one claim both read the same stale `available()`, both commit, and
-/// the second reserve then parks in the relay, silently diverging PG from TB. An advisory lock (over a `users`-row `FOR UPDATE`)
-/// engages even before the user row is materialized and needs no FK, so the serialization is
-/// unconditional. TigerBeetle's non-negative flag remains the actual money backstop.
-pub async fn lock_user(conn: &mut PgConnection, user_id: Uuid) -> Result<(), DomainError> {
-	lock_claim(conn, &LedgerAccountKey::UserClaim(UserId::from_raw(user_id))).await
-}
-
-/// Take the write lock for ONE claim — the general form of [`lock_user`].
+/// Take the write lock for ONE claim — a transaction-scoped `pg_advisory_xact_lock`, held
+/// until commit. An advisory lock (over a row `FOR UPDATE`) engages before the row exists and
+/// needs no FK, so the serialization is unconditional; TigerBeetle's non-negative flag stays
+/// the money backstop.
 ///
 /// Every writer that spends a claim must take this same target before its optimistic
 /// Read-First, or the serialization silently stops covering whoever was added last. Keying
@@ -313,6 +303,8 @@ fn repo_err(err: sqlx::Error) -> DomainError {
 
 #[cfg(test)]
 mod tests {
+	use domain::users::UserId;
+
 	use super::*;
 
 	#[test]

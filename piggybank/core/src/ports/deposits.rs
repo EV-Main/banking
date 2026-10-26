@@ -27,10 +27,6 @@ pub trait Deposits: Send + Sync {
 	/// the idempotency-gate rows where `party_kind = 'user'`.
 	async fn list_by_user(&self, user: UserId) -> Result<Vec<DepositRecord>, DomainError>;
 
-	/// Whether `tx_ref` has already passed the gate — under any party. The gate itself, not
-	/// this read, is what keeps a double credit impossible.
-	async fn is_recorded(&self, tx_ref: &TxRef) -> Result<bool, DomainError>;
-
 	/// Does `user` still have a credited deposit on `network` that no sweep cycle has
 	/// observed drained?
 	///
@@ -42,7 +38,7 @@ pub trait Deposits: Send + Sync {
 	///
 	/// It is bookkeeping, not a chain read, and the difference matters in one direction only.
 	/// `swept_at` is stamped when a cycle sees the address drained **below the sweep
-	/// minimum**, so `false` means "nothing the fund is owed is left there", not "the balance
+	/// minimum**, so `false` means "nothing credited is left there", not "the balance
 	/// is exactly zero" — dust under the sweep floor can remain, and is knowingly abandoned
 	/// (moving it costs more gas than it is worth). What `false` does NOT cover is an arrival
 	/// the watcher has not credited yet; that residual is why the signer archives the old key

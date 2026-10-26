@@ -3,32 +3,16 @@
 // parsed number back into a money operation. The exact-math helpers at the bottom are the
 // only place a money value is ever computed, and they work on bigint base units.
 //
-// Precision is a policy per unit of measure, not a per-screen choice, because the same
-// amount used to render differently depending on which screen you were on:
-//
-//   summary money (USD)   exactly 2 dp  — a figure rounded to the dollar reads as an
-//                                         estimate rather than a statement
-//   ledger money (USDT)   2–6 dp        — a wallet row has to show what actually moved
-//
-// Separators follow the reader's locale; the precision policy does not. A German reader
-// sees "1.234,50" for the balance an English one sees as "1,234.50" — the same figure,
-// and reading "1,234.50" with German separators is off by three orders of magnitude. What
-// a locale is NOT allowed to touch is the unit: the "$" stays a bare "$" everywhere
-// (`currencyDisplay: "narrowSymbol"`, never "US$"/"$US"), the "%" is appended as-is, and
-// the sign column keeps its Unicode minus. Every display formatter takes the locale last
-// and defaults to English, so a server path or a test that has no reader gets exactly the
-// output this module has always produced.
+// Ledger USDT shows 2–6 dp: a wallet row has to show what actually moved. Separators follow
+// the reader's locale; the precision does not. A German reader sees "1.234,50" for the
+// balance an English one sees as "1,234.50" — the same figure, and reading "1,234.50" with
+// German separators is off by three orders of magnitude. The sign keeps its Unicode minus.
+// Every display formatter takes the locale last and defaults to English.
 
 import type { Locale } from "@evinvest/i18n";
 
-/** A wire decimal parsed for on-screen arithmetic (sums, proportions). Display only. */
-export function num(value: string | undefined): number {
-  const n = Number(value ?? "0");
-  return Number.isFinite(n) ? n : 0;
-}
-
 /** The locale a formatter falls back to when no reader is known: tests, server paths. */
-export const DEFAULT_MONEY_LOCALE: Locale = "en";
+const DEFAULT_MONEY_LOCALE: Locale = "en";
 
 // What `en` means to `Intl` here is `en-US`: that is the tag this module pinned before it
 // learnt about locales, so English output is byte-for-byte what it was. (Dates map `en` to
@@ -59,37 +43,11 @@ function decimalSeparator(locale: Locale): string {
   return numberFormat(locale, "decimal-probe", { maximumFractionDigits: 1 }).formatToParts(1.1).find((p) => p.type === "decimal")?.value ?? ".";
 }
 
-// Summary money is shown to the cent, always — a trailing "$1,234.5" breaks the column
-// and a rounded "$85" loses the P&L.
-const CENTS = { minimumFractionDigits: 2, maximumFractionDigits: 2 } as const;
-
-/** Summary money: "$48,250.00", "$1,234.56". Dashboards, profile and the treasury bank line. */
-export function formatUsd(value: string | number | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = typeof value === "number" ? value : num(value);
-  return numberFormat(locale, "usd", { style: "currency", currency: "USD", currencyDisplay: "narrowSymbol", ...CENTS }).format(n);
-}
-
-/** The same figure without the currency symbol, for columns that name the unit elsewhere. */
-export function formatAmount(value: string | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = Number(value ?? "0");
-  if (!Number.isFinite(n)) return value ?? "0";
-  return numberFormat(locale, "amount", CENTS).format(n);
-}
-
-// Signed summary money: "+$84.83" / "−$540.00" / "$0.00". The Unicode minus (U+2212) is
-// the plus sign's mirror — a hyphen is narrower and the sign column stops lining up. Zero
-// carries no sign: "+$0.00" claims a gain that did not happen.
-export function formatSignedUsd(value: string | number | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = typeof value === "number" ? value : num(value);
-  const sign = n < 0 ? "−" : n > 0 ? "+" : "";
-  return `${sign}${formatUsd(Math.abs(n), locale)}`;
-}
-
 /**
  * A wire decimal shown EXACTLY as it arrived, grouped for reading: "1,234.50",
  * "1,000.0000005", "0.000000000000000001".
  *
- * The other formatters here parse to a `number` first, which is right for a balance — a
+ * `formatUsdt` parses to a `number` first, which is right for a balance — a
  * float is plenty for a figure the reader is only comparing against other figures, and
  * capping the fraction is what keeps a column aligned. It is wrong for an amount the reader
  * is *authorizing*: `formatUsdt` caps at 6 dp, so an 18-decimal value is silently rounded on
@@ -124,85 +82,14 @@ export function formatUsdt(value: string | number | undefined, locale: Locale = 
   return numberFormat(locale, "usdt", { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(n);
 }
 
-// Signed USDT (P&L): "+1,234.50" / "−5.00" / "0.00". The sign is read off the wire string
-// exactly, never off a float; the same Unicode minus as the signed USD, and like it no sign
-// on zero — "+0.00" claims a gain that did not happen.
-export function formatSignedUsdt(value: string | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const s = (value ?? "0").trim();
-  const v = valence(s);
-  const formatted = formatUsdt(s.replace(/^-/, ""), locale);
-  return `${v === "loss" ? "\u2212" : v === "gain" ? "+" : ""}${formatted}`;
-}
-
-// A signed figure is one of three things to the eye, and every investor screen colours
-// them the same way: `positive` for a gain, `accent-error` for a loss, and the plain ink for
-// a flat figure. A zero drawn green is the bug this exists to close — it used to be "a gain"
-// on one screen and unstyled on the next. Strings are read exactly (no float); numbers and
-// bigints by sign.
-export type Valence = "gain" | "loss" | "flat";
-
-export function valence(value: number | bigint | string | undefined): Valence {
-  if (typeof value === "string" || value === undefined) {
-    if (isZero(value)) return "flat";
-    return isNegative(value) ? "loss" : "gain";
-  }
-  if (value < 0) return "loss";
-  return value > 0 ? "gain" : "flat";
-}
-
-/** The text colour of each valence — for a caller that already holds the valence. */
-export const VALENCE_CLASS: Readonly<Record<Valence, string>> = { gain: "text-positive", loss: "text-accent-error", flat: "text-ink" };
-/** The outline that goes with it, for a pill or badge carrying a signed figure. */
-export const VALENCE_BORDER_CLASS: Readonly<Record<Valence, string>> = { gain: "border-positive/40", loss: "border-accent-error/40", flat: "border-border" };
-
-/** The text colour for a signed figure — the one gain/loss pair, neutral at zero. */
-export function valenceClass(value: number | bigint | string | undefined): string {
-  return VALENCE_CLASS[valence(value)];
-}
-
-/** Signed percentage: "+4.2%" / "−1.8%" / "0.0%", same Unicode minus as the signed money
- *  and, like it, no sign on zero. The "%" is appended rather than left to `Intl`'s percent
- *  style, which pads it with a locale space ("4,2 %") that the figures beside it do not use. */
-export function formatPct(value: number, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const digits = numberFormat(locale, "pct", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(value));
-  const sign = value < 0 ? "−" : value > 0 ? "+" : "";
-  return `${sign}${digits}%`;
-}
-
-/** An unsigned percentage in the locale's own percent form — "16.4%" / "16,4 %" (the space
- *  is Intl's NBSP). The form the landing writes its headline figures in, unlike `formatPct`,
- *  whose "%" hugs the digits to match the signed money beside it. */
-export function formatPlainPct(value: number, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  return numberFormat(locale, "pct-plain", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value / 100);
-}
-
-/** A whole number in the locale's digits and grouping — "1,000" / "1 000". */
-export function formatWhole(value: number, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  return numberFormat(locale, "whole", { maximumFractionDigits: 0 }).format(value);
-}
-
 // A decimal amount as the wire carries it. No sign, no exponent, no grouping, no bare
 // point — the hub parses this with the same strictness, so admitting less here only moves
 // the refusal. Stricter than `toBaseUnits`, which tolerates `.5` for display math.
 const WIRE_DECIMAL = /^\d+(\.\d+)?$/;
 
-export function isWireDecimal(raw: string): boolean {
-  return WIRE_DECIMAL.test(raw.trim());
-}
-
 /** A wire decimal with at least one non-zero digit — what an amount field must hold. */
 export function isPositiveWireDecimal(raw: string): boolean {
-  return isWireDecimal(raw) && /[1-9]/.test(raw);
-}
-
-// Whether a signed decimal P&L string is negative (a loss) — exact, no float.
-export function isNegative(value: string | undefined): boolean {
-  return (value ?? "").trim().startsWith("-");
-}
-
-// Whether a decimal P&L string is exactly zero — neither a gain nor a loss for colour.
-export function isZero(value: string | undefined): boolean {
-  return toBaseUnits((value ?? "").trim().replace(/^-/, "")) === 0n;
+  return WIRE_DECIMAL.test(raw.trim()) && /[1-9]/.test(raw);
 }
 
 // Exact 18-decimal USDT math on decimal strings (display-only previews). Avoids the

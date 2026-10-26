@@ -294,7 +294,7 @@ impl WithdrawalRepository for PgWithdrawals {
 	async fn open(&self, withdrawal: &mut Withdrawal, guard: &dyn SpendGuard) -> Result<(), DomainError> {
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
 		// Serialize every flow that spends this claim on one shared lock target (see
-		// [`outbox::lock_user`]) so two of them can't both pass the optimistic Read-First
+		// [`outbox::lock_claim`]) so two of them can't both pass the optimistic Read-First
 		// and both park a reserve (TB's flag is the money backstop; this lock keeps the PG
 		// projection from diverging). For a user that's withdraw + move + payment on their
 		// unified claim.

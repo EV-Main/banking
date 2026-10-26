@@ -159,24 +159,13 @@ pub struct ClaimCovers<'a> {
 	pub refusal: &'static str,
 }
 
-impl ClaimCovers<'_> {
-	/// The same question before any lock, to refuse early: [`Ledger::spendable`].
-	pub async fn check_unlocked(&self) -> Result<(), DomainError> {
-		self.answer(self.ledger.spendable(&self.key).await?)
-	}
-
-	fn answer(&self, spendable: u128) -> Result<(), DomainError> {
-		if spendable < self.amount {
-			return Err(DomainError::Validation(self.refusal.into()));
-		}
-		Ok(())
-	}
-}
-
 #[async_trait]
 impl SpendGuard for ClaimCovers<'_> {
 	async fn check(&self, reads: &mut dyn LockedReads) -> Result<(), DomainError> {
-		self.answer(self.ledger.spendable_locked(&self.key, reads).await?)
+		if self.ledger.spendable_locked(&self.key, reads).await? < self.amount {
+			return Err(DomainError::Validation(self.refusal.into()));
+		}
+		Ok(())
 	}
 }
 
