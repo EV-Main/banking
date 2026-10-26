@@ -96,7 +96,6 @@ export type ErrorCode =
   | "err.authNotConfigured"
   | "err.csrf"
   | "err.forbidden"
-  | "err.fundServiceRequired"
   | "err.kycSelf"
   | "err.kycStartFailed"
   | "err.kycThrottled"
@@ -115,7 +114,6 @@ const errorWords = (t: Translate): Record<ErrorCode, string> => ({
   "err.authNotConfigured": t("err.authNotConfigured", "Sign-in is unavailable right now. Please try again shortly."),
   "err.csrf": t("err.csrf", "This page went stale. Reload it and try again."),
   "err.forbidden": t("err.forbidden", "You don't have access to this."),
-  "err.fundServiceRequired": t("err.fundServiceRequired", "Select a fund to continue."),
   "err.kycSelf": t("err.kycSelf", "You can't set your own verification tier — another holder of KycManage has to."),
   "err.kycStartFailed": t("err.kycStartFailed", "We couldn't start verification. Please try again."),
   "err.kycThrottled": t("err.kycThrottled", "You've started verification too many times today. Try again tomorrow."),

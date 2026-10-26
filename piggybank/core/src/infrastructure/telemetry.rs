@@ -98,36 +98,6 @@ pub fn unattributed_treasury_inflows() -> u64 {
 	UNATTRIBUTED_TREASURY_INFLOWS.load(Ordering::Relaxed)
 }
 
-/// Process-lifetime count of reconciliation findings of **value without a holder**: an
-/// allocation holding cash or product units while no unit of it is outstanding, so
-/// nobody owns what it holds (#245). Not an alert: this is the expected state of the
-/// `fee` allocation between the first ownership release and the data migration that
-/// seats its holders, and it must read as a number on a dashboard, not as an incident.
-/// Once the migration has run it should stop climbing; a rise after that is an
-/// allocation everyone redeemed out of with cash still on its claim.
-static UNHELD_ALLOCATION_VALUE: AtomicU64 = AtomicU64::new(0);
-
-/// Record one allocation the reconciliation found holding value nobody owns. `warn!`,
-/// deliberately below the cash-invariant and clearing alerts: nothing is lost and
-/// nothing is inconsistent, the value is simply not yet anyone's. The line names the
-/// allocation and what it holds so the operator can tell the expected window from a
-/// stranded remainder.
-pub fn note_unheld_allocation_value(service: &str, claim: &str, product_units: usize) {
-	let total = UNHELD_ALLOCATION_VALUE.fetch_add(1, Ordering::Relaxed) + 1;
-	tracing::warn!(
-		service,
-		claim,
-		product_units,
-		total,
-		"reconciliation: allocation holds value with no units outstanding — nobody holds it yet (expected for `fee` until the ownership data migration seats its holders)"
-	);
-}
-
-/// Total unheld-value findings since process start — a number for a dashboard.
-pub fn unheld_allocation_value() -> u64 {
-	UNHELD_ALLOCATION_VALUE.load(Ordering::Relaxed)
-}
-
 /// Scope transfers and payouts recorded and still not on the ledger past reconciliation's
 /// stall threshold, as of its last pass — a gauge, not a counter: it falls back to zero once
 /// the relay catches up.

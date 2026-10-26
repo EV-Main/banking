@@ -31,7 +31,7 @@ use std::sync::{
 use async_trait::async_trait;
 use domain::{
 	auth::AuthSubject,
-	balance::{LedgerAccountKey, Party, ServiceId, TransferCode},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	payments::{PaymentDestination, PaymentReason, PaymentTerms},
@@ -41,15 +41,8 @@ use domain::{
 use piggybank_core::{
 	application::{balance as balance_app, payments as payments_app, wallet as wallet_app, withdrawals as withdrawal_app},
 	config::KycGate,
-	infrastructure::{
-		allocations::PgAllocations, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, payments::PgPayments, positions::PgFundPositions, relay::Relay,
-		users::PgUsers, withdrawals::PgWithdrawals,
-	},
-	ports::{
-		DepositAddresses, UserRepository, WithdrawalRepository,
-		ledger::{Ledger, LedgerTransfer},
-		payments::SeatView,
-	},
+	infrastructure::{custody::StubCustody, deposits::PgDeposits, outflow::PgOutflowPolicy, payments::PgPayments, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals},
+	ports::{DepositAddresses, UserRepository, WithdrawalRepository, ledger::Ledger, payments::SeatView},
 };
 use sqlx::PgPool;
 use tokio::sync::{MutexGuard, Notify};
@@ -246,16 +239,12 @@ async fn an_unconfigured_rail_and_an_unverified_caller_answer_differently() {
 async fn an_unverified_wallet_shows_the_balance_but_no_address() {
 	let Some(h) = harness().await else { return };
 	let user = user_at_tier(&h, 0).await;
-	let positions = PgFundPositions::new(h.pool.clone());
-	let nav = PgNav::new(h.pool.clone());
 
 	deposit(&h, user, Network::Bep20, "100").await;
 
 	let wallet = wallet_app::get_wallet(
 		&wallet_app::WalletPorts {
 			ledger: h.ledger.as_ref(),
-			positions: &positions,
-			nav: &nav,
 			deposit_addresses: &h.addresses,
 			users: h.users.as_ref(),
 			compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(h.pool.clone()),
@@ -323,32 +312,25 @@ async fn a_verified_user_can_withdraw() {
 	assert_eq!(Usdt::from_base_units(claim.locked), usdt("50"), "the gross is reserved into clearing");
 }
 
-/// A payment out of the fee allocation is the platform's own money moving — there is no
-/// user behind `Party::Service(fee)` (its holders own it through units), so a KYC tier is
-/// not merely unchecked at open, there is nothing to check: what stands in front of it is
-/// the owners' approval. The gate stays out of the DESTINATION too: the money lands on a
-/// tier-0 investor's claim, and the verification floor applies when they try to take it
-/// out, not when it arrives. Exercised end to end rather than asserted by reading the code.
+/// The verification floor applies to whoever's money leaves, never to the DESTINATION: a
+/// verified investor's payment lands on a tier-0 investor's claim, and the floor applies when
+/// they try to take it out, not when it arrives. Nor is the initiator gated — they are not the
+/// source. Exercised end to end rather than asserted by reading the code.
 #[tokio::test]
-async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
+async fn a_payment_to_an_unverified_investor_is_not_gated_on_their_kyc() {
 	let Some(h) = harness().await else { return };
-	let recipient = user_at_tier(&h, 0).await;
-	let fee_claim = LedgerAccountKey::ServiceClaim(ServiceId::fee());
-	// Fund the whole amount rather than leaning on whatever the shared claim happens to
-	// hold: the open runs the real solvency pre-check against it.
-	h.ledger
-		.post(&LedgerTransfer {
-			id: Uuid::new_v4().as_u128(),
-			debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
-			credit: fee_claim.clone(),
-			amount: usdt("2").base_units(),
-			code: TransferCode::Deposit,
-			reference: 0,
-		})
+	let source = user_at_tier(&h, 1).await;
+	deposit(&h, source, Network::Bep20, "2").await;
+	// The investor answers in the wallet host, so their notice needs their identity-plane id.
+	sqlx::query("UPDATE users SET concierge_user_id = $2 WHERE id = $1")
+		.bind(source.raw())
+		.bind(Uuid::new_v4())
+		.execute(&h.pool)
 		.await
-		.expect("fund the fee allocation's claim");
+		.unwrap();
+	let recipient = user_at_tier(&h, 0).await;
 	let initiator = user_at_tier(&h, 0).await;
-	let (payments, allocations) = (PgPayments::new(h.pool.clone()), PgAllocations::new(h.pool.clone()));
+	let payments = PgPayments::new(h.pool.clone());
 	let ports = payments_app::PaymentPorts {
 		payments: &payments,
 		users: h.users.as_ref(),
@@ -356,33 +338,21 @@ async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 		ledger: h.ledger.as_ref(),
 		custody: &StubCustody,
 		policy: &h.outflow,
-		allocations: &allocations,
 		relay: &h.notify,
 		configured: &Network::ALL,
 		kyc: KycGate::ENFORCED,
 	};
 	let terms = PaymentTerms::new(
-		Party::Service(ServiceId::fee()),
+		Party::User(source),
 		PaymentDestination::Internal(Party::User(recipient)),
 		usdt("2"),
 		PaymentReason::new("a documented reason").unwrap(),
 	)
 	.unwrap();
-	// Neither end is a verified account, and the open passes: the tier-0 initiator is not the
-	// source, and the tier-0 recipient is only being paid.
 	let view = payments_app::open(&ports, initiator, terms, now_unix())
 		.await
-		.expect("a payment from the fee allocation is never gated on a user's KYC tier");
-	assert!(
-		matches!(view.seat, SeatView::Concierge(_)),
-		"the fund's money is the owners' to release, and no investor is asked to consent to it"
-	);
-	// The open order would hold the fee claim's one fund-owned slot for every later test.
-	sqlx::query("UPDATE payments SET state = 'cancelled', decided_at = now() WHERE id = $1")
-		.bind(view.order.id().raw())
-		.execute(&h.pool)
-		.await
-		.unwrap();
+		.expect("neither the tier-0 recipient nor the tier-0 initiator is the source");
+	assert!(matches!(view.seat, SeatView::Session(_)), "the source investor answers it");
 }
 
 fn now_unix() -> i64 {
@@ -411,14 +381,10 @@ async fn a_lifted_gate_issues_an_unverified_user_an_address() {
 async fn a_lifted_gate_puts_an_address_on_an_unverified_wallet() {
 	let Some(h) = harness().await else { return };
 	let user = user_at_tier(&h, 0).await;
-	let positions = PgFundPositions::new(h.pool.clone());
-	let nav = PgNav::new(h.pool.clone());
 
 	let wallet = wallet_app::get_wallet(
 		&wallet_app::WalletPorts {
 			ledger: h.ledger.as_ref(),
-			positions: &positions,
-			nav: &nav,
 			deposit_addresses: &h.addresses,
 			users: h.users.as_ref(),
 			compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(h.pool.clone()),

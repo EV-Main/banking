@@ -4,29 +4,27 @@ package banking.v1;
 
 // PaymentsService — the ORDER that moves money between two named ends of the platform.
 //
-// Three tiers on one order, DERIVED from the destination and never supplied: an external
-// wallet address (L1, settled by the withdrawal saga), a product's pooled claim
-// `service:<id>` (L2, one posted transfer), any other internal claim (L3, one posted
+// Two tiers on one order, DERIVED from the destination and never supplied: an external
+// wallet address (L1, settled by the withdrawal saga), an internal claim (L3, one posted
 // transfer). See domain/src/payments.rs for the aggregate.
 //
-// AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled
-// claim (`service:<id>`) needs the owners' approval at every tier: a concierge approval of
-// kind `bank:payment`, proposed in the initiator's name, which needs their access token of
-// the last two minutes in `x-ev-user-token`. A payment out of an investor's own claim
+// AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an investor's own claim
 // (`user:<id>`) is answered by THAT investor, signed in, over PaymentConfirmationService.
-// There is deliberately no cell in which one admin moves pooled money alone. banking's
-// treasury (`treasury`, D17) is never a destination; as a source it is CLOSED until its
-// spending is decided by concierge's scope approvals (`bank:treasury_surplus`, D24) —
-// OpenPayment out of it is FAILED_PRECONDITION `treasury spending waits for scope approvals`.
+// A payment out of banking's treasury (`treasury`, D17) needs the owners' approval at every
+// tier: a concierge approval of kind `bank:payment`, proposed in the initiator's name, which
+// needs their access token of the last two minutes in `x-ev-user-token`. There is
+// deliberately no cell in which one admin moves the treasury alone. The treasury is never
+// a destination; as a source it is CLOSED until its spending is decided by concierge's
+// scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is
+// FAILED_PRECONDITION `treasury spending waits for scope approvals`.
 //
 // IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms
 // shown to the approver; changing anything means cancel and reopen.
 service PaymentsService {
   // Open a payment order (Admin/Owner). Refused when the source cannot cover the amount
   // right now, when the shape could never execute (an unconfigured rail, a sub-minimum
-  // external amount, an external destination out of a service claim, the treasury as a
-  // destination), when the source is the treasury (closed, D24), or when another order is
-  // already open against the same service claim.
+  // external amount, the treasury as a destination), or when the source is the treasury
+  // (closed, D24).
   rpc OpenPayment(OpenPaymentRequest) returns (Payment);
 
   // The payment history, newest first, filtered (Admin/Owner). Nothing is ever deleted.
@@ -64,12 +62,12 @@ enum PaymentState {
   PAYMENT_STATE_UNSPECIFIED = 0;
   // Recorded, awaiting its one approval.
   PAYMENT_STATE_PENDING = 1;
-  // Approved; for L2/L3 the source is reserved. The effect does not exist yet.
+  // Approved; for L3 the source is reserved. The effect does not exist yet.
   PAYMENT_STATE_APPROVED = 2;
-  // The effect exists: a withdrawal (L1) or a settled transfer (L2/L3).
+  // The effect exists: a withdrawal (L1) or a settled transfer (L3).
   PAYMENT_STATE_EXECUTED = 3;
   // Approved, but the effect could not be created. `failure_reason` says why. Nothing
-  // retries silently; an L2/L3 reservation is released.
+  // retries silently; an L3 reservation is released.
   PAYMENT_STATE_EXECUTION_FAILED = 4;
   // The approver refused, or their consent was voided.
   PAYMENT_STATE_REJECTED = 5;
@@ -89,14 +87,11 @@ enum ConsentDecision {
 
 // One end of a payment, as a REQUEST names it.
 message Party {
-  // user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's
-  // money is the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
-  // `treasury` is banking's own (D17), never a destination, and closed as a source until
-  // concierge's scope approvals decide its spending (D24); its id is empty or
-  // `main:treasury`.
+  // user | treasury. `treasury` is banking's own (D17), never a destination, and closed as
+  // a source until concierge's scope approvals decide its spending (D24); its id is empty
+  // or `main:treasury`.
   string kind = 1;
-  // A service slug for `service` (`fee` and `fund` included). For `user`, the CONCIERGE
-  // user id the console carries (resolved to the money-plane id here; a banking id is
+  // For `user`, the CONCIERGE user id the console carries (resolved to the money-plane id here; a banking id is
   // accepted as a fallback, the way UsersService.GetUserBalance resolves one).
   string id = 2;
 }
@@ -123,16 +118,16 @@ message PaymentDestination {
 // fields let a screen link to the account.
 message PaymentEnd {
   string label = 1;
-  // service | user | treasury, or `external` for an address.
+  // user | treasury, or `external` for an address.
   string kind = 2;
-  // The service slug, or the MONEY-PLANE user id (the request accepts a concierge id; the
+  // The MONEY-PLANE user id (the request accepts a concierge id; the
   // response carries what the order stored). Empty for addresses.
   string id = 3;
   // Set only when `kind` is `external`.
   string network = 4;
   string address = 5;
   // What a person recognises this end BY, beside the label: the receiving investor's
-  // MASKED mailbox for `user`, the product's title for `service`. Empty otherwise. Never
+  // MASKED mailbox for `user`. Empty otherwise. Never
   // part of the digest — the label is what an approval binds.
   string detail = 6;
 }
@@ -140,7 +135,7 @@ message PaymentEnd {
 message Payment {
   string id = 1;
   PaymentState state = 2;
-  // internal | service | external — DERIVED from the destination, never supplied.
+  // internal | external — DERIVED from the destination, never supplied.
   string tier = 3;
   PaymentEnd source = 4;
   PaymentEnd destination = 5;
@@ -195,8 +190,7 @@ message ListPaymentsRequest {
   PaymentState state = 2;
   // Either end. Unset means every party.
   Party party = 3;
-  // Only orders whose source is an allocation's claim (`service:<id>`) or banking's
-  // treasury — the ones the owners gate, i.e. the governance surface.
+  // Only orders whose source is banking's treasury — the ones the owners gate.
   bool fund_owned_only = 4;
 }
 

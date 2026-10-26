@@ -14,15 +14,14 @@
 //! only which ([`PaymentEffect`]). The machinery behind each stays in the application
 //! layer.
 //!
-//! # The three tiers, and why the caller never picks one
+//! # The two tiers, and why the caller never picks one
 //!
 //! [`PaymentTier`] is a pure function of the destination:
 //!
 //! | destination | tier | effect |
 //! | --- | --- | --- |
 //! | an external wallet address | [`PaymentTier::External`] (L1) | a [`crate::withdrawals::Withdrawal`] |
-//! | a product's pooled claim (`service:<id>`) | [`PaymentTier::Service`] (L2) | one posted transfer |
-//! | any other internal claim | [`PaymentTier::Internal`] (L3) | one posted transfer |
+//! | an internal claim | [`PaymentTier::Internal`] (L3) | one posted transfer |
 //!
 //! A caller-supplied tier would be a second statement of a fact the destination already
 //! makes, and the interesting failure is the one where the two disagree — a request that
@@ -32,16 +31,12 @@
 //!
 //! # Authorization is a function of the SOURCE
 //!
-//! > Every payment out of `User(u)` requires `u`'s own consent, at every tier. Every
-//! > other source — an allocation's pooled claim (`Service`, the reserved `fee` and `fund`
-//! > allocations included) and banking's treasury — requires the owners' approval, at
-//! > every tier.
+//! > Every payment out of `User(u)` requires `u`'s own consent, at every tier. A payment
+//! > out of banking's treasury requires the owners' approval, at every tier.
 //!
 //! [`PaymentTerms::requirement`] is that rule, and it is total over [`Party`] by
-//! construction: a party is a person, or it is money held for people through an
-//! allocation, and the owners' quorum speaks for the latter (phase 2 of #245 makes that
-//! quorum per-allocation). There is **no** "an admin may move money between fund-owned
-//! claims alone" cell: a security review found it turns three pre-existing single-actor
+//! construction. There is **no** "an admin may move money between fund-owned claims
+//! alone" cell: a security review found it turns three pre-existing single-actor
 //! holes into a treasury-wide one, and deleting it is what makes payments add no new
 //! capability to an attacker. Do not reintroduce it.
 //!
@@ -52,7 +47,7 @@ use ev::architecture::{AggregateRoot, DomainEvent, EmitsEvents, Entity, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	balance::{LedgerAccountKey, Party, ServiceId},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	hex32,
 	money::{Network, Usdt, WalletAddress},
@@ -145,7 +140,7 @@ impl core::fmt::Display for PaymentReason {
 /// types rather than one symmetrical one.
 /// ADJACENTLY tagged, not internally. [`Party`] is itself tagged on `kind`, and an internal
 /// tag would splice the two maps together: the inner `kind` overwrites the outer one, so
-/// `Internal(Party::Service(_))` serializes as `{"kind":"service",…}` — a value that has lost
+/// `Internal(Party::User(_))` serializes as `{"kind":"user",…}` — a value that has lost
 /// which VARIANT it is and cannot be read back. `PaymentEvent::Opened` carries these bytes
 /// into `event_log`, so a shape that only survives one direction is an audit row nobody can
 /// ever load.
@@ -163,10 +158,7 @@ impl PaymentDestination {
 	pub fn tier(&self) -> PaymentTier {
 		match self {
 			Self::External { .. } => PaymentTier::External,
-			// The treasury is never a destination (`PaymentTerms::new` refuses it); were a
-			// stored row ever to carry one, it is platform money like a service's.
-			Self::Internal(Party::Service(_) | Party::Treasury) => PaymentTier::Service,
-			Self::Internal(Party::User(_)) => PaymentTier::Internal,
+			Self::Internal(_) => PaymentTier::Internal,
 		}
 	}
 
@@ -192,10 +184,8 @@ impl PaymentDestination {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PaymentTier {
-	/// L3 — claim to claim, neither end a product.
+	/// L3 — claim to claim.
 	Internal,
-	/// L2 — into a product's pooled funds.
-	Service,
 	/// L1 — off the platform, on a rail.
 	External,
 }
@@ -204,7 +194,6 @@ impl PaymentTier {
 	pub fn as_str(self) -> &'static str {
 		match self {
 			Self::Internal => "internal",
-			Self::Service => "service",
 			Self::External => "external",
 		}
 	}
@@ -212,17 +201,16 @@ impl PaymentTier {
 	pub fn parse(raw: &str) -> Result<Self, DomainError> {
 		match raw {
 			"internal" => Ok(Self::Internal),
-			"service" => Ok(Self::Service),
 			"external" => Ok(Self::External),
 			other => Err(DomainError::Validation(format!("unknown payment tier: {other}"))),
 		}
 	}
 
-	/// Whether a payment on this tier settles as a ledger transfer of its own (L2/L3) or by
+	/// Whether a payment on this tier settles as a ledger transfer of its own (L3) or by
 	/// handing the money to the withdrawal saga (L1).
 	fn settles_on_the_ledger(self) -> bool {
 		match self {
-			Self::Internal | Self::Service => true,
+			Self::Internal => true,
 			Self::External => false,
 		}
 	}
@@ -230,7 +218,7 @@ impl PaymentTier {
 
 /// What an executed order produced — an identity, never the machinery behind it.
 ///
-/// `Transfer` carries nothing: an L2/L3 settlement's transfer id is
+/// `Transfer` carries nothing: an L3 settlement's transfer id is
 /// `uuid_v5(payment_id, "payment:transfer")`, a pure function of the order, so storing it
 /// would be storing a value that can only ever be recomputed and could only ever be wrong.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -238,7 +226,7 @@ impl PaymentTier {
 pub enum PaymentEffect {
 	/// L1 — the withdrawal saga now owns the money.
 	Withdrawal(WithdrawalId),
-	/// L2/L3 — one balanced posted transfer, already settled.
+	/// L3 — one balanced posted transfer, already settled.
 	Transfer,
 }
 
@@ -256,7 +244,7 @@ impl PaymentEffect {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "requirement", content = "subject", rename_all = "snake_case")]
 pub enum PaymentApproval {
-	/// The source is the fund's money: the owners, through a concierge `bank:payment` approval.
+	/// The source is banking's treasury: the owners, through a concierge `bank:payment` approval.
 	OwnerConsilium,
 	/// The source is one investor's claim: that investor's own consent.
 	SubjectConsent(UserId),
@@ -281,12 +269,12 @@ impl PaymentApproval {
 pub enum PaymentState {
 	/// Recorded, awaiting its one approval.
 	Pending,
-	/// Approved; for L2/L3 the source is reserved. The effect does not exist yet.
+	/// Approved; for L3 the source is reserved. The effect does not exist yet.
 	Approved,
 	/// The effect exists.
 	Executed,
 	/// Approved, but the effect could not be created. Terminal — nothing retries silently —
-	/// and for L2/L3 the reservation taken at approval is released on the way in.
+	/// and for L3 the reservation taken at approval is released on the way in.
 	ExecutionFailed,
 	/// The approver refused, or their consent was voided.
 	Rejected,
@@ -374,7 +362,7 @@ impl PaymentTerms {
 			return Err(DomainError::Validation("a payment must move a non-zero amount".into()));
 		}
 		// The treasury fills from the fees banking charges, never from a payment: one
-		// paying into it would turn an allocation's or an investor's money into banking's.
+		// paying into it would turn an investor's money into banking's.
 		if to.party() == Some(&Party::Treasury) {
 			return Err(DomainError::Validation("banking's treasury is not a payment destination".into()));
 		}
@@ -432,13 +420,11 @@ impl PaymentTerms {
 	///
 	/// It reads the SOURCE and nothing else — not the tier, not the destination, not the
 	/// initiator's role. An investor's claim is theirs however internal the destination;
-	/// everything else is money held for people through an allocation, and the owners'
-	/// quorum speaks for it however short the hop.
+	/// banking's treasury is the owners' to spend (D17, D18).
 	pub fn requirement(&self) -> PaymentApproval {
 		match &self.from {
 			Party::User(user) => PaymentApproval::SubjectConsent(*user),
-			// banking's own money: the same owners' quorum as an allocation's (D17, D18).
-			Party::Service(_) | Party::Treasury => PaymentApproval::OwnerConsilium,
+			Party::Treasury => PaymentApproval::OwnerConsilium,
 		}
 	}
 
@@ -510,14 +496,9 @@ impl PaymentTerms {
 /// payments history — and the terms are the only thing all three are bound to. A per-surface
 /// formatter is how two surfaces come to disagree about what was approved.
 ///
-/// The reserved allocations get the names an operator uses out loud; a product and an
-/// investor keep their id, because "a service" and "an investor" are not answers to
-/// "which one".
+/// An investor keeps their id, because "an investor" is not an answer to "which one".
 fn party_label(party: &Party) -> String {
 	match party {
-		Party::Service(service) if *service == ServiceId::fee() => "the fee allocation".to_owned(),
-		Party::Service(service) if *service == ServiceId::fund() => "the fund allocation".to_owned(),
-		Party::Service(service) => format!("the {service} product"),
 		Party::User(user) => format!("investor {user}"),
 		Party::Treasury => "banking's treasury".to_owned(),
 	}
@@ -635,7 +616,7 @@ impl PaymentOrder {
 	/// The order's one requirement is satisfied — the owners' approval passed, or the subject
 	/// consented. Idempotent.
 	///
-	/// For an L2/L3 order this is also where the source is **reserved**: a pending
+	/// For an L3 order this is also where the source is **reserved**: a pending
 	/// `Dr <source> / Cr clearing`, exactly as a withdrawal reserves, so N concurrent
 	/// approved payments physically cannot overdraw one claim. An L1 order raises no
 	/// reservation here — its withdrawal takes the identical reserve when it is created,
@@ -696,7 +677,7 @@ impl PaymentOrder {
 	/// idempotent retry an at-least-once execution path depends on, and one naming a
 	/// different effect is a conflict rather than a silent overwrite.
 	///
-	/// An L2/L3 order raises its [`PaymentEvent::Settled`] here, immediately before
+	/// An L3 order raises its [`PaymentEvent::Settled`] here, immediately before
 	/// `Executed`. The reservation raised by [`Self::approve`] committed in its own, earlier
 	/// transaction; the relay is single-worker and strictly ordered, so it always applies
 	/// before the settlement that posts it.
@@ -732,7 +713,7 @@ impl PaymentOrder {
 	/// The approved payment could not be executed. Terminal: nothing retries silently, and
 	/// the reason is what the initiator reads.
 	///
-	/// An L2/L3 order RELEASES ITS RESERVATION here. `Approved` is a real committed state
+	/// An L3 order RELEASES ITS RESERVATION here. `Approved` is a real committed state
 	/// for those tiers — the reservation is raised by [`Self::approve`] in one transaction
 	/// and the settlement by [`Self::mark_executed`] in another, so an execution that fails
 	/// between them (a re-check refusing a stale consent, say) would otherwise leave the
@@ -854,7 +835,7 @@ impl PaymentOrder {
 	}
 
 	/// The executed effect NARROWED to a withdrawal — the projection the `payments` table's
-	/// `executed_withdrawal_id` column wants. An L2/L3 settlement leaves that column NULL,
+	/// `executed_withdrawal_id` column wants. An L3 settlement leaves that column NULL,
 	/// which is why this returns an `Option` over the variant rather than over the effect.
 	pub fn executed_withdrawal_id(&self) -> Option<WithdrawalId> {
 		// Exhaustive on purpose: a third effect must not silently fall through to `None` and
@@ -878,7 +859,7 @@ impl PaymentOrder {
 ///
 /// **Only [`PaymentEvent::Reserved`], [`PaymentEvent::Settled`] and
 /// [`PaymentEvent::Released`] reach the outbox** ([`PaymentEvent::relays`]); everything else
-/// is an audit fact drained with `relay = false` exactly as `allocations` are. In particular
+/// is an audit fact drained with `relay = false`. In particular
 /// [`PaymentEvent::Executed`] must NOT be relayed: for an L1 order the money is already
 /// moved by the [`crate::withdrawals::WithdrawalEvent::Requested`] sitting in the outbox,
 /// and two relayed events over one payment means two reservations against one claim.
@@ -903,7 +884,7 @@ pub enum PaymentEvent {
 		payment_id: PaymentId,
 		at: i64,
 	},
-	/// L2/L3 only — reserve the gross against the source claim into `clearing` (relay:
+	/// L3 only — reserve the gross against the source claim into `clearing` (relay:
 	/// pending `Dr <source> / Cr clearing`).
 	Reserved {
 		payment_id: PaymentId,
@@ -911,7 +892,7 @@ pub enum PaymentEvent {
 		amount: Usdt,
 		at: i64,
 	},
-	/// L2/L3 only — post the reservation, then move the gross out of `clearing` into the
+	/// L3 only — post the reservation, then move the gross out of `clearing` into the
 	/// destination claim.
 	Settled {
 		payment_id: PaymentId,
@@ -925,7 +906,7 @@ pub enum PaymentEvent {
 		effect: PaymentEffect,
 		at: i64,
 	},
-	/// L2/L3 only — the execution failed after the reservation landed: void the pending
+	/// L3 only — the execution failed after the reservation landed: void the pending
 	/// `Dr <source> / Cr clearing`, returning the amount to the source in full (relay).
 	Released {
 		payment_id: PaymentId,
@@ -1003,18 +984,12 @@ mod tests {
 
 	const NOW: i64 = 1_700_000_000;
 
-	fn svc() -> ServiceId {
-		ServiceId::parse("trading").unwrap()
+	fn investor() -> Party {
+		Party::User(UserId::from_raw(uuid::Uuid::from_u128(7)))
 	}
 
-	/// The platform's earned money — the `fee` allocation's claim (#245).
-	fn fee() -> Party {
-		Party::Service(ServiceId::fee())
-	}
-
-	/// The platform's own capital — the `fund` allocation's claim (#245).
-	fn fund() -> Party {
-		Party::Service(ServiceId::fund())
+	fn treasury() -> Party {
+		Party::Treasury
 	}
 
 	fn reason() -> PaymentReason {
@@ -1049,50 +1024,33 @@ mod tests {
 	#[test]
 	fn the_tier_is_read_off_the_destination_and_never_supplied() {
 		// The table in the module header, asserted rather than described.
-		assert_eq!(PaymentDestination::Internal(fund()).tier(), PaymentTier::Service);
-		assert_eq!(PaymentDestination::Internal(fee()).tier(), PaymentTier::Service);
-		assert_eq!(PaymentDestination::Internal(Party::User(UserId::new())).tier(), PaymentTier::Internal);
-		assert_eq!(PaymentDestination::Internal(Party::Service(svc())).tier(), PaymentTier::Service);
+		assert_eq!(PaymentDestination::Internal(investor()).tier(), PaymentTier::Internal);
 		assert_eq!(external().tier(), PaymentTier::External);
 		// And the effect each tier admits: only the external tier hands the money to the
 		// withdrawal saga, so only it may record a withdrawal id.
 		assert!(!PaymentTier::External.settles_on_the_ledger());
 		assert!(PaymentTier::Internal.settles_on_the_ledger());
-		assert!(PaymentTier::Service.settles_on_the_ledger());
-		for tier in [PaymentTier::Internal, PaymentTier::Service, PaymentTier::External] {
+		for tier in [PaymentTier::Internal, PaymentTier::External] {
 			assert_eq!(PaymentTier::parse(tier.as_str()).unwrap(), tier);
 		}
 		assert!(PaymentTier::parse("l1").is_err());
+		assert!(PaymentTier::parse("service").is_err());
 	}
 
 	#[test]
-	fn fund_money_needs_the_owners_and_a_users_money_needs_their_consent_at_every_tier() {
+	fn treasury_money_needs_the_owners_and_a_users_money_needs_their_consent_at_every_tier() {
 		// THE §3 MATRIX. The source decides, and the tier does not enter into it — which is
 		// the whole content of the rule, and the cell an earlier draft got wrong.
 		let user = UserId::new();
-		let destinations = || {
-			vec![
-				PaymentDestination::Internal(fund()),
-				PaymentDestination::Internal(fee()),
-				PaymentDestination::Internal(Party::Service(svc())),
-				PaymentDestination::Internal(Party::User(UserId::new())),
-				external(),
-			]
-		};
-		for source in [fund(), fee(), Party::Service(svc()), Party::Treasury] {
-			for to in destinations() {
-				// A claim paying itself is refused by the constructor, so it is not a cell.
-				if to.party() == Some(&source) {
-					continue;
-				}
-				let terms = PaymentTerms::new(source.clone(), to, usdt("5"), reason()).unwrap();
-				assert_eq!(
-					terms.requirement(),
-					PaymentApproval::OwnerConsilium,
-					"fund-owned money at the {} tier must need the owners",
-					terms.tier().as_str()
-				);
-			}
+		let destinations = || vec![PaymentDestination::Internal(investor()), PaymentDestination::Internal(Party::User(UserId::new())), external()];
+		for to in destinations() {
+			let terms = PaymentTerms::new(treasury(), to, usdt("5"), reason()).unwrap();
+			assert_eq!(
+				terms.requirement(),
+				PaymentApproval::OwnerConsilium,
+				"treasury money at the {} tier must need the owners",
+				terms.tier().as_str()
+			);
 		}
 		for to in destinations() {
 			let terms = PaymentTerms::new(Party::User(user), to, usdt("5"), reason()).unwrap();
@@ -1103,58 +1061,55 @@ mod tests {
 				terms.tier().as_str()
 			);
 		}
-		// There is NO cell in which an admin alone may move fund-owned money: every source
+		// There is NO cell in which an admin alone may move treasury money: every source
 		// resolves to one of exactly two requirements, and neither is "the initiator".
 	}
 
 	#[test]
-	fn the_treasury_pays_out_like_an_allocation_but_is_never_paid_into() {
-		let treasury = terms(Party::Treasury, external());
-		assert_eq!(treasury.requirement(), PaymentApproval::OwnerConsilium);
-		assert_eq!(treasury.source_claim(), crate::balance::FeePayee::treasury().claim_key());
-		assert_eq!(treasury.source_label(), "banking's treasury");
-		assert!(PaymentTerms::new(Party::Treasury, PaymentDestination::Internal(fee()), usdt("5"), reason()).is_ok());
-		for from in [fee(), Party::User(UserId::new())] {
-			assert!(PaymentTerms::new(from, PaymentDestination::Internal(Party::Treasury), usdt("5"), reason()).is_err());
+	fn the_treasury_pays_out_but_is_never_paid_into() {
+		let terms = terms(treasury(), external());
+		assert_eq!(terms.requirement(), PaymentApproval::OwnerConsilium);
+		assert!(PaymentTerms::new(treasury(), PaymentDestination::Internal(investor()), usdt("5"), reason()).is_ok());
+		for from in [investor(), Party::User(UserId::new())] {
+			assert!(PaymentTerms::new(from, PaymentDestination::Internal(treasury()), usdt("5"), reason()).is_err());
 		}
 	}
 
 	#[test]
 	fn the_source_claim_is_the_partys_own_claim() {
-		assert_eq!(terms(fee(), external()).source_claim(), LedgerAccountKey::ServiceClaim(ServiceId::fee()));
-		assert_eq!(terms(fund(), external()).source_claim(), LedgerAccountKey::ServiceClaim(ServiceId::fund()));
 		let user = UserId::new();
 		assert_eq!(terms(Party::User(user), external()).source_claim(), LedgerAccountKey::UserClaim(user));
-		assert_eq!(terms(Party::Service(svc()), external()).source_claim(), LedgerAccountKey::ServiceClaim(svc()));
+		assert_eq!(
+			terms(treasury(), external()).source_claim(),
+			LedgerAccountKey::ScopeAccount(crate::scopes::ScopeId::main(), crate::scopes::ScopeAccountLabel::treasury())
+		);
 	}
 
 	#[test]
-	fn the_reserved_allocations_are_named_out_loud_and_products_by_slug() {
+	fn the_parties_are_named_out_loud() {
 		// The label is what the owners' approval, the confirmation page and the history all
 		// render — one wording per party, decided here.
-		assert_eq!(terms(fee(), external()).source_label(), "the fee allocation");
-		assert_eq!(terms(fund(), external()).source_label(), "the fund allocation");
-		assert_eq!(terms(Party::Service(svc()), external()).source_label(), "the trading product");
+		assert_eq!(terms(treasury(), external()).source_label(), "banking's treasury");
 		let user = UserId::new();
 		assert_eq!(terms(Party::User(user), external()).source_label(), format!("investor {user}"));
-		assert_eq!(terms(fee(), PaymentDestination::Internal(fund())).destination_label(), "the fund allocation");
+		assert_eq!(terms(treasury(), PaymentDestination::Internal(Party::User(user))).destination_label(), format!("investor {user}"));
 	}
 
 	#[test]
 	fn the_constructor_refuses_every_shape_that_can_never_execute() {
 		// from == to: nothing moves, yet an approval and an index slot are spent.
-		let err = PaymentTerms::new(fee(), PaymentDestination::Internal(fee()), usdt("5"), reason()).unwrap_err();
+		let err = PaymentTerms::new(investor(), PaymentDestination::Internal(investor()), usdt("5"), reason()).unwrap_err();
 		assert!(matches!(err, DomainError::Validation(_)));
 		let user = UserId::new();
 		assert!(PaymentTerms::new(Party::User(user), PaymentDestination::Internal(Party::User(user)), usdt("5"), reason()).is_err());
 		// Zero: TigerBeetle rejects a zero-amount transfer, so this order could only park.
-		assert!(PaymentTerms::new(fee(), external(), Usdt::ZERO, reason()).is_err());
+		assert!(PaymentTerms::new(investor(), external(), Usdt::ZERO, reason()).is_err());
 		// An address for another rail.
 		let mismatched = PaymentDestination::External {
 			network: Network::Trc20,
 			address: address(),
 		};
-		assert!(PaymentTerms::new(fee(), mismatched, usdt("5"), reason()).is_err());
+		assert!(PaymentTerms::new(investor(), mismatched, usdt("5"), reason()).is_err());
 		// The two ends are still allowed to be different users, and a different service.
 		assert!(PaymentTerms::new(Party::User(user), PaymentDestination::Internal(Party::User(UserId::new())), usdt("5"), reason()).is_ok());
 	}
@@ -1177,19 +1132,19 @@ mod tests {
 
 	#[test]
 	fn the_canonical_encoding_separates_fields_and_carries_the_reason() {
-		let a = PaymentTerms::new(fee(), external(), usdt("100"), PaymentReason::new("ab").unwrap()).unwrap();
-		let b = PaymentTerms::new(fee(), external(), usdt("100"), PaymentReason::new("a").unwrap()).unwrap();
+		let a = PaymentTerms::new(investor(), external(), usdt("100"), PaymentReason::new("ab").unwrap()).unwrap();
+		let b = PaymentTerms::new(investor(), external(), usdt("100"), PaymentReason::new("a").unwrap()).unwrap();
 		// Length prefixes: two reasons that concatenate alike must not encode alike.
 		assert_ne!(a.canonical_bytes(), b.canonical_bytes());
 		assert_eq!(a.canonical_bytes(), a.canonical_bytes());
 		// THE REASON IS IN THE DIGEST. Without this an approval would bind to the amount and
 		// the destination while the sentence the human read stayed free to change.
-		let reworded = PaymentTerms::new(fee(), external(), usdt("100"), PaymentReason::new("something else entirely").unwrap()).unwrap();
+		let reworded = PaymentTerms::new(investor(), external(), usdt("100"), PaymentReason::new("something else entirely").unwrap()).unwrap();
 		assert_ne!(a.canonical_bytes(), reworded.canonical_bytes());
 		// So are the amount and both ends.
-		let dearer = PaymentTerms::new(fee(), external(), usdt("101"), PaymentReason::new("ab").unwrap()).unwrap();
+		let dearer = PaymentTerms::new(investor(), external(), usdt("101"), PaymentReason::new("ab").unwrap()).unwrap();
 		assert_ne!(a.canonical_bytes(), dearer.canonical_bytes());
-		let elsewhere = PaymentTerms::new(fund(), external(), usdt("100"), PaymentReason::new("ab").unwrap()).unwrap();
+		let elsewhere = PaymentTerms::new(treasury(), external(), usdt("100"), PaymentReason::new("ab").unwrap()).unwrap();
 		assert_ne!(a.canonical_bytes(), elsewhere.canonical_bytes());
 		// The domain prefix opens every encoding, so a digest over these terms can never be
 		// mistaken for one over another subject.
@@ -1201,14 +1156,14 @@ mod tests {
 	fn an_internal_destination_cannot_encode_as_an_external_one() {
 		// The discriminator is length-prefixed inside the encoding, so no arrangement of a
 		// party id can make an internal payment hash like a payment to an address.
-		let internal = PaymentTerms::new(fee(), PaymentDestination::Internal(fund()), usdt("1"), reason()).unwrap();
-		let out = PaymentTerms::new(fee(), external(), usdt("1"), reason()).unwrap();
+		let internal = PaymentTerms::new(treasury(), PaymentDestination::Internal(investor()), usdt("1"), reason()).unwrap();
+		let out = PaymentTerms::new(treasury(), external(), usdt("1"), reason()).unwrap();
 		assert_ne!(internal.canonical_bytes(), out.canonical_bytes());
 	}
 
 	#[test]
 	fn an_internal_payment_reserves_on_approval_and_settles_on_execution() {
-		let mut order = opened(fund(), PaymentDestination::Internal(fee()));
+		let mut order = opened(treasury(), PaymentDestination::Internal(investor()));
 		order.approve(NOW).unwrap();
 		let events = order.drain_events();
 		assert!(matches!(events[0], PaymentEvent::ApprovalRecorded { .. }));
@@ -1236,7 +1191,7 @@ mod tests {
 		// TWO RESERVES AGAINST ONE CLAIM IS THE BUG THIS PREVENTS. An L1 payment's money is
 		// moved by the withdrawal it creates, whose own `Requested` event is already in the
 		// outbox taking the identical `Dr <source> / Cr clearing` pending.
-		let mut order = opened(fee(), external());
+		let mut order = opened(investor(), external());
 		order.approve(NOW).unwrap();
 		let events = order.drain_events();
 		assert!(!events.iter().any(|e| matches!(e, PaymentEvent::Reserved { .. })));
@@ -1254,21 +1209,21 @@ mod tests {
 	fn an_effect_that_does_not_match_the_tier_is_refused() {
 		// The tier says which effect is possible; recording the other one would leave the
 		// money in one plane and the record in the other.
-		let mut internal = opened(fund(), PaymentDestination::Internal(fee()));
+		let mut internal = opened(treasury(), PaymentDestination::Internal(investor()));
 		internal.approve(NOW).unwrap();
 		assert!(matches!(
 			internal.mark_executed(PaymentEffect::Withdrawal(WithdrawalId::new()), NOW),
 			Err(DomainError::Conflict(_))
 		));
 
-		let mut out = opened(fee(), external());
+		let mut out = opened(investor(), external());
 		out.approve(NOW).unwrap();
 		assert!(matches!(out.mark_executed(PaymentEffect::Transfer, NOW), Err(DomainError::Conflict(_))));
 	}
 
 	#[test]
 	fn execution_is_recorded_once_and_retries_are_no_ops() {
-		let mut order = opened(fee(), external());
+		let mut order = opened(investor(), external());
 		order.approve(NOW).unwrap();
 		order.drain_events();
 		let withdrawal = WithdrawalId::new();
@@ -1289,13 +1244,13 @@ mod tests {
 
 	#[test]
 	fn approval_is_idempotent_and_only_reachable_from_pending() {
-		let mut order = opened(fund(), PaymentDestination::Internal(fee()));
+		let mut order = opened(treasury(), PaymentDestination::Internal(investor()));
 		order.approve(NOW).unwrap();
 		order.drain_events();
 		order.approve(NOW + 1).unwrap();
 		assert!(order.drain_events().is_empty(), "a repeat approval raises nothing — and reserves nothing twice");
 
-		let mut cancelled = opened(fund(), PaymentDestination::Internal(fee()));
+		let mut cancelled = opened(treasury(), PaymentDestination::Internal(investor()));
 		cancelled.cancel(NOW).unwrap();
 		assert!(matches!(cancelled.approve(NOW + 1), Err(DomainError::Conflict(_))));
 	}
@@ -1314,14 +1269,14 @@ mod tests {
 
 	#[test]
 	fn cancel_and_expire_are_idempotent_mutually_exclusive_and_never_early() {
-		let mut cancelled = opened(fee(), external());
+		let mut cancelled = opened(investor(), external());
 		cancelled.cancel(NOW).unwrap();
 		cancelled.drain_events();
 		cancelled.cancel(NOW + 1).unwrap();
 		assert!(cancelled.drain_events().is_empty());
 		assert!(cancelled.expire(NOW + TTL_SECS + 1).is_err());
 
-		let mut expired = opened(fee(), external());
+		let mut expired = opened(investor(), external());
 		// Refuses to cut the window short, so a clock skew cannot void a live approval.
 		assert!(matches!(expired.expire(NOW + 10), Err(DomainError::Conflict(_))));
 		expired.expire(NOW + TTL_SECS).unwrap();
@@ -1334,7 +1289,7 @@ mod tests {
 
 	#[test]
 	fn execution_failure_is_terminal_and_states_why() {
-		let mut order = opened(fee(), external());
+		let mut order = opened(investor(), external());
 		order.approve(NOW).unwrap();
 		order.drain_events();
 		order.mark_execution_failed("payout exceeds the fund's available revenue".into(), NOW).unwrap();
@@ -1355,8 +1310,8 @@ mod tests {
 	/// locked amount back, or a terminal order strands it in `clearing` forever.
 	#[test]
 	fn an_internal_payment_that_fails_to_execute_releases_its_reservation() {
-		for to in [PaymentDestination::Internal(fee()), PaymentDestination::Internal(Party::Service(svc()))] {
-			let mut order = opened(fund(), to);
+		for to in [PaymentDestination::Internal(investor()), PaymentDestination::Internal(Party::User(UserId::new()))] {
+			let mut order = opened(treasury(), to);
 			order.approve(NOW).unwrap();
 			order.drain_events();
 			order.mark_execution_failed("the consent was voided".into(), NOW + 1).unwrap();
@@ -1369,7 +1324,7 @@ mod tests {
 			assert!(!events[1].relays());
 			assert_eq!(events.iter().filter(|e| e.relays()).count(), 1, "exactly one money fact: the release");
 			let PaymentEvent::Released { from, amount, .. } = &events[0] else { unreachable!() };
-			assert_eq!(from, &fund());
+			assert_eq!(from, &treasury());
 			assert_eq!(*amount, usdt("100"));
 			assert_eq!(order.state(), PaymentState::ExecutionFailed);
 			assert!(!order.state().is_open(), "a failed order no longer holds its source");
@@ -1381,7 +1336,7 @@ mod tests {
 
 	#[test]
 	fn the_version_moves_on_every_fact() {
-		let mut order = opened(fund(), PaymentDestination::Internal(fee()));
+		let mut order = opened(treasury(), PaymentDestination::Internal(investor()));
 		let at_open = order.version();
 		order.approve(NOW).unwrap();
 		// Three facts: the approval record, the verdict, and the reservation.
@@ -1418,7 +1373,7 @@ mod tests {
 
 	#[test]
 	fn events_round_trip_through_json() {
-		let mut order = PaymentOrder::open(PaymentId::new(), terms(fee(), external()), [0xab; 32], UserId::new(), NOW);
+		let mut order = PaymentOrder::open(PaymentId::new(), terms(treasury(), external()), [0xab; 32], UserId::new(), NOW);
 		let event = order.drain_events().pop().unwrap();
 		let json = serde_json::to_string(&event).unwrap();
 		let back: PaymentEvent = serde_json::from_str(&json).unwrap();
@@ -1442,13 +1397,8 @@ mod tests {
 	/// bytes are audit (`event_log`), so a one-way encoding is a row nobody can ever read.
 	#[test]
 	fn every_destination_shape_survives_a_json_round_trip() {
-		for destination in [
-			external(),
-			PaymentDestination::Internal(fee()),
-			PaymentDestination::Internal(Party::User(UserId::new())),
-			PaymentDestination::Internal(Party::Service(ServiceId::parse("alpha").unwrap())),
-		] {
-			let terms = terms(fund(), destination.clone());
+		for destination in [external(), PaymentDestination::Internal(investor()), PaymentDestination::Internal(Party::User(UserId::new()))] {
+			let terms = terms(treasury(), destination.clone());
 			let json = serde_json::to_string(&terms).unwrap();
 			let back: PaymentTerms = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{destination:?} must read back: {err} — from {json}"));
 			assert_eq!(back, terms);
@@ -1463,7 +1413,7 @@ mod tests {
 	fn a_payment_approval_carries_what_the_catalog_declares() {
 		use crate::scope_operations::{BANK_CATALOG, FieldType, PAYMENT_KIND};
 		let spec = BANK_CATALOG.iter().find(|spec| spec.kind == PAYMENT_KIND).expect("bank:payment is published");
-		let fields = terms(fund(), external()).approval_fields("0x5290 on bep20").unwrap();
+		let fields = terms(treasury(), external()).approval_fields("0x5290 on bep20").unwrap();
 		for sent in &fields {
 			let declared = spec.fields.iter().find(|field| field.key == sent.key).unwrap_or_else(|| panic!("{} undeclared", sent.key));
 			assert_eq!(declared.field_type, sent.value.field_type(), "{}", sent.key);
@@ -1478,15 +1428,15 @@ mod tests {
 	/// the owners decide over the whole sentence.
 	#[test]
 	fn a_text_the_approval_cannot_carry_is_refused_not_shortened() {
-		let long = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES + 1)).unwrap()).unwrap();
+		let long = PaymentTerms::new(treasury(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES + 1)).unwrap()).unwrap();
 		assert!(matches!(long.approval_fields("a place"), Err(DomainError::Validation(_))));
-		let exact = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES)).unwrap()).unwrap();
+		let exact = PaymentTerms::new(treasury(), external(), usdt("5"), PaymentReason::new("x".repeat(APPROVAL_TEXT_MAX_BYTES)).unwrap()).unwrap();
 		assert!(exact.approval_fields("a place").is_ok());
 		for reason in ["see https://example.test/invoice", "pay via WWW.example.test"] {
-			let linked = PaymentTerms::new(fund(), external(), usdt("5"), PaymentReason::new(reason).unwrap()).unwrap();
+			let linked = PaymentTerms::new(treasury(), external(), usdt("5"), PaymentReason::new(reason).unwrap()).unwrap();
 			assert!(linked.approval_fields("a place").is_err(), "{reason}");
 		}
-		assert!(terms(fund(), external()).approval_fields("a\nplace").is_err(), "a control character in a destination");
+		assert!(terms(treasury(), external()).approval_fields("a\nplace").is_err(), "a control character in a destination");
 	}
 
 	#[test]

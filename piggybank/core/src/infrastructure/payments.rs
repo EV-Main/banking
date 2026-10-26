@@ -271,9 +271,8 @@ async fn email_of(conn: &mut PgConnection, id: UserId) -> Result<String, DomainE
 		.ok_or_else(|| DomainError::Repository(format!("payment initiator {id} has no mirrored user row")))
 }
 
-/// The receiving end's recognisable detail — an investor's mirrored mailbox, a product's
-/// title — or `None` for a singleton claim, an address, or a row that is not there (a
-/// product deregistered after the order was opened still has a label; it just has no title).
+/// The receiving end's recognisable detail — an investor's mirrored mailbox — or `None` for
+/// an address or a row that is not there.
 async fn detail_of(conn: &mut PgConnection, to: &PaymentDestination) -> Result<Option<EndDetail>, DomainError> {
 	Ok(match to.party() {
 		Some(Party::User(user)) => sqlx::query_scalar::<_, String>("SELECT email FROM users WHERE id = $1")
@@ -282,12 +281,6 @@ async fn detail_of(conn: &mut PgConnection, to: &PaymentDestination) -> Result<O
 			.await
 			.map_err(repo_err)?
 			.map(EndDetail::Mailbox),
-		Some(Party::Service(service)) => sqlx::query_scalar::<_, String>("SELECT title FROM allocations WHERE service = $1")
-			.bind(service.as_str())
-			.fetch_optional(&mut *conn)
-			.await
-			.map_err(repo_err)?
-			.map(EndDetail::ProductTitle),
 		// Never a destination; the label says all there is.
 		Some(Party::Treasury) | None => None,
 	})
@@ -301,7 +294,6 @@ fn shown_destination(terms: &PaymentTerms, detail: Option<&EndDetail>) -> String
 	let label = terms.destination_label();
 	match detail {
 		Some(EndDetail::Mailbox(email)) => format!("{label} ({})", mask_email(email)),
-		Some(EndDetail::ProductTitle(title)) => format!("{label} ({title})"),
 		None => label,
 	}
 }
@@ -312,22 +304,9 @@ const CONSENT_NOTICE_KIND: &str = "payment_consent";
 const OUTCOME_NOTICE_KIND: &str = "payment_outcome";
 
 /// Where in the wallet host an order is answered. A path and not a URL: concierge joins it onto
-/// `CABINET_URL`, or onto the base of the notice's `link_scope`, so this plane never mints a
-/// host. Relative to the wallet host root, because every base already carries the `/cabinet` prefix.
+/// `CABINET_URL`, so this plane never mints a host. Relative to the wallet host root, because every base already carries the `/cabinet` prefix.
 fn answer_link(payment: PaymentId) -> String {
 	format!("/wallet/payment/{}", payment.raw())
-}
-
-/// The cabinet a payment's notices open in: the scope of the product the order pays out of or
-/// into, the source first. A fund payment from the admin console names a product at one end,
-/// and its holders are that scope's people. Banking records no scope a person belongs to, so an
-/// order with no product end (user to user, the treasury) stays in the platform wallet host.
-fn payment_link_scope(terms: &PaymentTerms) -> Result<String, DomainError> {
-	let product = match (terms.from(), terms.to()) {
-		(Party::Service(service), _) | (_, PaymentDestination::Internal(Party::Service(service))) => service,
-		(Party::User(_) | Party::Treasury, PaymentDestination::Internal(Party::User(_) | Party::Treasury) | PaymentDestination::External { .. }) => return Ok(String::new()),
-	};
-	Ok(if product.as_str() == "service_arb" { "sa" } else { "invest" }.to_owned())
 }
 
 /// The amount as a notice spells it: the exact decimal, one space, the currency code.
@@ -399,7 +378,6 @@ async fn queue_consent_end(conn: &mut PgConnection, order: &PaymentOrder, cause:
 		ConsentInvalidation::SessionsRevoked { .. } => "the sessions of the account were revoked after the payment was opened",
 		ConsentInvalidation::EmailChanged => "the mailbox of the account changed after the payment was opened",
 	};
-	let link_scope = payment_link_scope(order.terms())?;
 	let mut notices = Vec::with_capacity(2);
 	if !matches!(cause, ConsentInvalidation::EmailChanged) {
 		notices.push((subject, format!("The payment of {what} out of your account was stopped because {why}. Nothing was moved.")));
@@ -415,7 +393,7 @@ async fn queue_consent_end(conn: &mut PgConnection, order: &PaymentOrder, cause:
 			title: "A payment was stopped".to_owned(),
 			body,
 			link: String::new(),
-			link_scope: link_scope.clone(),
+			link_scope: String::new(),
 			dedupe_key: format!("payment:{}:outcome:{recipient}", order.id()),
 		};
 		scope_notifications::enqueue(conn, &notice, Some(order.id().raw())).await?;
@@ -477,7 +455,7 @@ async fn lock_subject(conn: &mut PgConnection, payment: PaymentId) -> Result<(),
 /// investor reached once the queue is back would be asked to answer an order nobody can act
 /// on. Nothing of the transition is decided yet: an order found already decided under the
 /// lock has lost nothing but a notice about a decision already made, and a rolled-back
-/// transition rolls this back with it. A no-op for a fund-owned order, which queues none.
+/// transition rolls this back with it. A no-op for a treasury order, which queues none.
 async fn withdraw_consent(conn: &mut PgConnection, id: PaymentId) -> Result<(), DomainError> {
 	let withdrawn = scope_notifications::withdraw_undelivered(conn, id.raw(), CONSENT_NOTICE_KIND).await?;
 	// `debug`, not `info`: the transaction is still open here and may yet roll back (a
@@ -533,7 +511,7 @@ async fn persist(conn: &mut PgConnection, order: &mut PaymentOrder) -> Result<()
 ///
 /// The requirement is read off the SOURCE and the seat is minted by the caller, so the two
 /// are two statements of one fact — and the interesting failure is where they disagree: the
-/// owners seated over an investor's money, or one investor's consent over the fund's.
+/// owners seated over an investor's money, or one investor's consent over the treasury's.
 /// The schema refuses both too (each seat table carries a composite FK into `payments`), but
 /// a foreign-key error is an infrastructure string; this names the mismatch before a row is
 /// written.
@@ -544,7 +522,7 @@ fn require_seat_matches(seat: &ApprovalSeat, requirement: PaymentApproval) -> Re
 		(ApprovalSeat::Session(_), PaymentApproval::SubjectConsent(_)) => Err(DomainError::Validation("the consent seat names an investor other than the order's source".into())),
 		(ApprovalSeat::Concierge, PaymentApproval::SubjectConsent(_)) =>
 			Err(DomainError::Validation("an investor's own money is decided by that investor's consent, not by the owners".into())),
-		(ApprovalSeat::Session(_), PaymentApproval::OwnerConsilium) => Err(DomainError::Validation("fund-owned money is decided by the owners, not by one investor's consent".into())),
+		(ApprovalSeat::Session(_), PaymentApproval::OwnerConsilium) => Err(DomainError::Validation("the treasury is decided by the owners, not by one investor's consent".into())),
 	}
 }
 
@@ -575,7 +553,7 @@ impl PaymentRepository for PgPayments {
 	async fn open(&self, order: &mut PaymentOrder, seat: ApprovalSeat) -> Result<(), DomainError> {
 		require_seat_matches(&seat, order.requirement())?;
 		let mut tx = self.pool.begin().await.map_err(repo_err)?;
-		// A payment spends the same claims a withdrawal or a subscription does. Skipping this
+		// A payment spends the same claims a withdrawal or a move does. Skipping this
 		// would not fail loudly — it would silently stop the serialization those two rely on
 		// from covering the writer that was added last.
 		outbox::lock_claim(&mut tx, &order.source_claim()).await?;
@@ -603,7 +581,7 @@ impl PaymentRepository for PgPayments {
 		if let Err(sqlx::Error::Database(err)) = &inserted
 			&& err.code().as_deref() == Some(UNIQUE_VIOLATION)
 		{
-			// The partial unique index spoke: one open order per fund-owned source claim. A
+			// The partial unique index spoke: one open order per treasury source. A
 			// refusal, not a retry — the operator has a live request to finish or withdraw.
 			return Err(already_open());
 		}
@@ -668,7 +646,7 @@ impl PaymentRepository for PgPayments {
 						},
 					),
 					link: answer_link(order.id()),
-					link_scope: payment_link_scope(order.terms())?,
+					link_scope: String::new(),
 					dedupe_key: format!("payment:{}:consent:{}", order.id(), session.subject),
 				};
 				scope_notifications::enqueue(&mut tx, &notice, Some(order.id().raw())).await?;
@@ -1223,14 +1201,11 @@ impl PaymentFeed for PgPayments {
 		}
 
 		// One users read serves both the initiators' addresses and the receiving investors'
-		// (the destination detail); one allocations read serves the receiving products'.
+		// (the destination detail).
 		let mut user_ids = initiators;
-		let mut services: Vec<String> = Vec::new();
 		for order in &orders {
-			match order.terms().to().party() {
-				Some(Party::User(user)) => user_ids.push(user.raw()),
-				Some(Party::Service(service)) => services.push(service.as_str().to_owned()),
-				Some(Party::Treasury) | None => {}
+			if let Some(Party::User(user)) = order.terms().to().party() {
+				user_ids.push(user.raw());
 			}
 		}
 		let mut email_by_user = HashMap::new();
@@ -1242,18 +1217,6 @@ impl PaymentFeed for PgPayments {
 		{
 			email_by_user.insert(row.try_get::<Uuid, _>("id").map_err(repo_err)?, row.try_get::<String, _>("email").map_err(repo_err)?);
 		}
-		let mut title_by_service = HashMap::new();
-		if !services.is_empty() {
-			for row in &sqlx::query("SELECT service, title FROM allocations WHERE service = ANY($1)")
-				.bind(&services)
-				.fetch_all(&mut *conn)
-				.await
-				.map_err(repo_err)?
-			{
-				title_by_service.insert(row.try_get::<String, _>("service").map_err(repo_err)?, row.try_get::<String, _>("title").map_err(repo_err)?);
-			}
-		}
-
 		orders
 			.into_iter()
 			.map(|order| {
@@ -1264,7 +1227,6 @@ impl PaymentFeed for PgPayments {
 					.ok_or_else(|| DomainError::Repository(format!("payment initiator {} has no mirrored user row", order.initiator())))?;
 				let destination_detail = match order.terms().to().party() {
 					Some(Party::User(user)) => email_by_user.get(&user.raw()).cloned().map(EndDetail::Mailbox),
-					Some(Party::Service(service)) => title_by_service.get(service.as_str()).cloned().map(EndDetail::ProductTitle),
 					Some(Party::Treasury) | None => None,
 				};
 				Ok(PaymentView {

@@ -8,37 +8,28 @@
 //! It carries the cross-cutting [`error::DomainError`], re-exports the `ev`
 //! architecture building blocks, and holds the hub's bounded contexts — `auth` /
 //! `authz` (the mirrored seat), `balance` / `money` (the chart of accounts
-//! and the 18-dp USDT unit), `allocations` (the registry of investable products), `fees`
-//! (the management + performance fee policy), `issuance` (an operator minting units in
-//! kind, to an investor or the company), `book` (the secondary market in a product's
-//! units — orders, the matching engine, the escrow facts), `scopes` (a user's wallet split
-//! by scope, and the scope's own accounts), `scope_ledger` (what a scope's own service may
-//! do with money there — its grants, its accounts, its transfers), `scope_operations` (its
-//! payouts, and the operations that wait on an approval), `scope_invoices` (a scope asking a
-//! user to pay into one of its accounts), `scope_charges` (a one-off debit of a compartment on
-//! the user's mandate), `scope_mandates` (a user's consent to a service
-//! drawing on their compartment), and
-//! the `users` / `subscriptions` / `redemptions` / `withdrawals` aggregates.
+//! and the 18-dp USDT unit), `payments` (an approved move between two ends), `scopes` (a
+//! user's wallet split by scope, and the scope's own accounts), `scope_ledger` (what a
+//! scope's own service may do with money there — its grants, its accounts, its transfers),
+//! `scope_operations` (its payouts, and the operations that wait on an approval),
+//! `scope_invoices` (a scope asking a user to pay into one of its accounts), `scope_charges`
+//! (a one-off debit of a compartment on the user's mandate), `scope_mandates` (a user's
+//! consent to a service drawing on their compartment), and the `users` / `withdrawals`
+//! aggregates.
 
 pub mod error;
 
-pub mod allocations;
 pub mod auth;
 pub mod authz;
 pub mod balance;
-pub mod book;
-pub mod fees;
-pub mod issuance;
 pub mod money;
 pub mod payments;
-pub mod redemptions;
 pub mod scope_charges;
 pub mod scope_invoices;
 pub mod scope_ledger;
 pub mod scope_mandates;
 pub mod scope_operations;
 pub mod scopes;
-pub mod subscriptions;
 pub mod users;
 pub mod withdrawals;
 

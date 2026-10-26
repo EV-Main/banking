@@ -16,7 +16,7 @@ use std::{
 use async_trait::async_trait;
 use domain::{
 	auth::AuthSubject,
-	balance::{FeePayee, LedgerAccountKey},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	users::{Email, UserId},
@@ -195,7 +195,7 @@ async fn withdraw_reserves_then_settles_and_retains_fee() {
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	let claim = LedgerAccountKey::UserClaim(user);
-	let fee_account = FeePayee::treasury().claim_key();
+	let fee_account = Party::Treasury.claim_key();
 
 	deposit(&h, user, network, "100").await;
 	let fee_before = bal(&h, &fee_account).await.posted;
@@ -773,7 +773,7 @@ async fn withdraw_on_polygon_reserves_then_settles_and_retains_fee() {
 	let user = active_user(&h).await;
 	let network = Network::Polygon;
 	let claim = LedgerAccountKey::UserClaim(user);
-	let fee_account = FeePayee::treasury().claim_key();
+	let fee_account = Party::Treasury.claim_key();
 
 	deposit(&h, user, network, "100").await;
 	let fee_before = bal(&h, &fee_account).await.posted;

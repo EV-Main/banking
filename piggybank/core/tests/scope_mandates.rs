@@ -24,7 +24,7 @@ use piggybank_core::{
 		scope_ledger::{self as ledger_app, CaptureRequest, ReserveRequest, ScopeLedgerPorts, TransferError, VoidRequest},
 		scope_mandates::{self as mandates_app, GrantRequest, MandatePorts},
 	},
-	infrastructure::{allocations::PgAllocations, compartments::PgCompartments, outbox, reconciliation::Reconciliation, relay::Relay, scope_ledger::PgScopeLedger},
+	infrastructure::{compartments::PgCompartments, outbox, reconciliation::Reconciliation, relay::Relay, scope_ledger::PgScopeLedger},
 	ports::{
 		ledger::{Ledger, LedgerBalance, LedgerTransfer},
 		scope_ledger::{CaptureTarget, RecordedHold},
@@ -843,7 +843,7 @@ async fn hold_clearing_matches_the_active_holds() {
 	let (user, subject) = user_with(&h, &scope, "10").await;
 	grant_mandate(&h, &grants, user, grant_request(&client, &scope, "5", "10", "10")).await;
 	let p = ports(&h, &grants);
-	let recon = Reconciliation::new(h.pool.clone(), h.ledger.clone(), Arc::new(PgAllocations::new(h.pool.clone())));
+	let recon = Reconciliation::new(h.pool.clone(), h.ledger.clone());
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	let before = recon.scan().await.unwrap().hold_clearing.expect("compared on a quiet pass");
 	assert!(before.holds(), "{before:?}");

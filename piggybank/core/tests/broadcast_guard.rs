@@ -33,7 +33,7 @@ use piggybank_core::{
 	ports::{
 		UserRepository, WithdrawalRepository,
 		custody::{BroadcastRequest, Custody, CustodyError},
-		ledger::{Ledger, NoSpendCheck},
+		ledger::Ledger,
 	},
 };
 use sqlx::PgPool;
@@ -184,7 +184,7 @@ async fn a_withdrawal_whose_reserve_parked_is_never_broadcast() {
 	assert!(refused.is_err(), "the Read-First counts the undrained reserve: {refused:?}");
 	let source = WithdrawalSource::User(user);
 	let mut second = Withdrawal::request(WithdrawalId::new(), source, network, destination, usdt("100"), WithdrawalPolicy::fee_for(source, network)).unwrap();
-	h.withdrawals.open(&mut second, &NoSpendCheck).await.unwrap();
+	h.withdrawals.open(&mut second, &common::NoSpendCheck).await.unwrap();
 	if second.state() == WithdrawalState::Queued {
 		withdrawal_app::dispatch_withdrawal(
 			h.withdrawals.as_ref(),

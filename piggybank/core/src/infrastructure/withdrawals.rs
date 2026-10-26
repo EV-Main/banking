@@ -1,7 +1,6 @@
 //! Postgres adapter for the [`WithdrawalRepository`] port.
 //!
-//! Mirrors [`PgRedemptions`](super::redemptions::PgRedemptions): the command methods
-//! are atomic and **row-locked** — load `FOR UPDATE`, apply the aggregate command
+//! The command methods are atomic and **row-locked** — load `FOR UPDATE`, apply the aggregate command
 //! inside the lock (the aggregate is the single authority on a transition's validity),
 //! then persist the new state together with the drained events (event_log + outbox)
 //! in one transaction. A transition emits an event only when it actually happens, so
@@ -297,7 +296,7 @@ impl WithdrawalRepository for PgWithdrawals {
 		// Serialize every flow that spends this claim on one shared lock target (see
 		// [`outbox::lock_user`]) so two of them can't both pass the optimistic Read-First
 		// and both park a reserve (TB's flag is the money backstop; this lock keeps the PG
-		// projection from diverging). For a user that's withdraw + subscribe on their
+		// projection from diverging). For a user that's withdraw + move + payment on their
 		// unified claim.
 		outbox::lock_claim(&mut tx, &withdrawal.source().claim_key()).await?;
 		guard.check(&mut TxReads::new(&mut tx)).await?;

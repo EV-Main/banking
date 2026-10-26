@@ -12,7 +12,7 @@
 
 use concierge_domain::authz::bank;
 use domain::{
-	balance::{Party, ServiceId},
+	balance::Party,
 	error::DomainError,
 	money::{Network, Usdt, WalletAddress},
 	payments::{PaymentDestination, PaymentId, PaymentReason, PaymentState, PaymentTerms},
@@ -64,7 +64,6 @@ impl AppState {
 			ledger: self.ledger.as_ref(),
 			custody: self.custody.as_ref(),
 			policy: self.outflow.as_ref(),
-			allocations: self.allocations.as_ref(),
 			relay: &self.relay_notify,
 			configured: &self.configured_networks,
 			kyc: self.kyc_gate,
@@ -80,13 +79,6 @@ impl AppState {
 	async fn parse_party(&self, party: Option<&pb::Party>) -> Result<Party, Status> {
 		let party = party.ok_or_else(|| Status::invalid_argument("a party is required"))?;
 		match party.kind.as_str() {
-			// The retired kinds (#245) are refused by name rather than falling through to
-			// "unknown": a console still sending them is told where the money went.
-			"piggybank" | "revenue" => Err(Status::invalid_argument(format!(
-				"party kind '{}' is retired: the fund's money is the fee and fund allocations — use {{kind: \"service\", id: \"fee\" | \"fund\"}}",
-				party.kind
-			))),
-			"service" => ServiceId::parse(&party.id).map(Party::Service).map_err(map_err),
 			// banking's own treasury (D17). The id is optional on the wire; there is one.
 			"treasury" if party.id.is_empty() || party.id == Party::Treasury.id_str() => Ok(Party::Treasury),
 			"treasury" => Err(Status::invalid_argument(format!("treasury party id must be empty or {}", Party::Treasury.id_str()))),
@@ -176,7 +168,6 @@ fn decision_from_proto(raw: i32) -> Result<ConsentDecision, Status> {
 fn detail_to_proto(detail: Option<&EndDetail>) -> String {
 	match detail {
 		Some(EndDetail::Mailbox(email)) => mask_email(email),
-		Some(EndDetail::ProductTitle(title)) => title.clone(),
 		None => String::new(),
 	}
 }
@@ -443,9 +434,8 @@ mod tests {
 	}
 
 	#[test]
-	fn a_receiving_mailbox_is_masked_and_a_title_is_not() {
+	fn a_receiving_mailbox_is_masked() {
 		assert_eq!(detail_to_proto(Some(&EndDetail::Mailbox("bob@example.com".into()))), "b***@example.com");
-		assert_eq!(detail_to_proto(Some(&EndDetail::ProductTitle("Alpha".into()))), "Alpha");
 		assert_eq!(detail_to_proto(None), "");
 	}
 }

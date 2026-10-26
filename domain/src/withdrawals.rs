@@ -30,7 +30,7 @@ use ev::architecture::{AggregateRoot, DomainEvent, EmitsEvents, Entity, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	balance::{FeePayee, LedgerAccountKey},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	payments::PaymentId,
@@ -100,7 +100,7 @@ impl WithdrawalSource {
 	pub fn claim_key(&self) -> LedgerAccountKey {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
-			Self::Treasury { .. } => crate::balance::FeePayee::treasury().claim_key(),
+			Self::Treasury { .. } => Party::Treasury.claim_key(),
 		}
 	}
 
@@ -329,7 +329,6 @@ impl Withdrawal {
 			amount: self.amount,
 			fee: self.fee,
 			tx_ref,
-			payee: FeePayee::treasury(),
 		});
 		Ok(())
 	}
@@ -468,10 +467,7 @@ pub enum WithdrawalEvent {
 		fee: Usdt,
 	},
 	/// Confirmed on-chain (relay: post the clearing pending, then move net→`wallet:<net>`
-	/// and the retained fee→`payee`'s account).
-	///
-	/// `payee` is banking's treasury (D17); an event raised before names the `fee`
-	/// allocation and still pays it.
+	/// and the retained fee→banking's treasury, D17).
 	Settled {
 		withdrawal_id: WithdrawalId,
 		#[serde(alias = "user")]
@@ -480,7 +476,6 @@ pub enum WithdrawalEvent {
 		amount: Usdt,
 		fee: Usdt,
 		tx_ref: TxRef,
-		payee: FeePayee,
 	},
 	/// Broadcast confirmed not to have landed — void the clearing reservation (refund).
 	Failed {

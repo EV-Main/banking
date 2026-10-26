@@ -29,7 +29,7 @@ use crate::{
 		payments::{self, PaymentPorts},
 	},
 	config::KycGate,
-	ports::{AllocationRegistry, Custody, OutflowPolicy, PaymentRepository, UserRepository, WithdrawalRepository, ledger::Ledger},
+	ports::{Custody, OutflowPolicy, PaymentRepository, UserRepository, WithdrawalRepository, ledger::Ledger},
 };
 
 fn unix_now() -> i64 {
@@ -57,7 +57,6 @@ pub struct PaymentsSweeper {
 	pub ledger: Arc<dyn Ledger>,
 	pub custody: Arc<dyn Custody>,
 	pub policy: Arc<dyn OutflowPolicy>,
-	pub allocations: Arc<dyn AllocationRegistry>,
 	pub notify: Arc<Notify>,
 	pub configured: Arc<[Network]>,
 	pub kyc: KycGate,
@@ -118,7 +117,6 @@ impl PaymentsSweeper {
 			ledger: self.ledger.as_ref(),
 			custody: self.custody.as_ref(),
 			policy: self.policy.as_ref(),
-			allocations: self.allocations.as_ref(),
 			relay: &self.notify,
 			configured: &self.configured,
 			kyc: self.kyc,

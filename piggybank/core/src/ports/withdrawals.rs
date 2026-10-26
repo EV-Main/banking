@@ -1,7 +1,6 @@
 //! Persistence + read port for the [`Withdrawal`] aggregate.
 //!
-//! Mirrors [`RedemptionRepository`](super::RedemptionRepository): each command is
-//! internally atomic and row-locked — load `FOR UPDATE`, apply the aggregate command
+//! Each command is internally atomic and row-locked — load `FOR UPDATE`, apply the aggregate command
 //! inside the lock (the aggregate is the single authority on a transition's
 //! validity), then persist the transition together with the drained events
 //! (`event_log` + `outbox`) in one transaction. The relay then reserves/settles/voids

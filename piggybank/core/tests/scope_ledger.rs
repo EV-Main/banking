@@ -20,11 +20,9 @@ use domain::{
 use piggybank_core::{
 	application::scope_ledger::{self as ledger_app, ScopeLedgerPorts, TransferError, TransferRequest},
 	infrastructure::{
-		allocations::PgAllocations,
 		compartments::PgCompartments,
 		reaper::Reaper,
 		reconciliation::Reconciliation,
-		redemptions::PgRedemptions,
 		relay::Relay,
 		scope_ledger::{self, PgScopeLedger},
 		withdrawals::PgWithdrawals,
@@ -467,12 +465,7 @@ async fn invest_fees_route_to_alloc_fee_and_the_reaper_delivers_what_found_no_de
 	let lost: Vec<_> = route_rows(&h, &invest).await.into_iter().filter(|row| row.3 == second.transfer.id().raw()).collect();
 	assert_eq!((lost.len(), lost[0].1.as_str(), lost[0].2.as_deref()), (1, "failed", Some("destination_missing")));
 	assert_eq!(balance_of(&h, &invest, "fee").await, sum_of(&[fee_before, usdt("10")]));
-	let reaper = Reaper::new(
-		h.pool.clone(),
-		Arc::new(PgWithdrawals::new(h.pool.clone())),
-		Arc::new(PgRedemptions::new(h.pool.clone())),
-		h.notify.clone(),
-	);
+	let reaper = Reaper::new(h.pool.clone(), Arc::new(PgWithdrawals::new(h.pool.clone())), h.notify.clone());
 	let still = scope_ledger::redrive_fee_routes(&h.pool).await.unwrap();
 	assert_eq!((still.revived, still.stuck >= 1), (0, true), "no account, nothing to deliver, and it is alerted");
 
@@ -917,13 +910,7 @@ async fn a_transfer_an_older_relay_dropped_is_replayed_once() {
 		.execute(&h.pool)
 		.await
 		.unwrap();
-	let reaper = Reaper::new(
-		h.pool.clone(),
-		Arc::new(PgWithdrawals::new(h.pool.clone())),
-		Arc::new(PgRedemptions::new(h.pool.clone())),
-		h.notify.clone(),
-	)
-	.with_move_redrive_after(std::time::Duration::from_secs(60));
+	let reaper = Reaper::new(h.pool.clone(), Arc::new(PgWithdrawals::new(h.pool.clone())), h.notify.clone()).with_move_redrive_after(std::time::Duration::from_secs(60));
 	assert!(reaper.sweep().await.unwrap().redriven_scope_transfers >= 1);
 	assert_eq!(reaper.sweep().await.unwrap().redriven_scope_transfers, 0, "a replay waits for its own event");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
@@ -945,7 +932,7 @@ async fn a_transfer_an_older_relay_dropped_is_replayed_once() {
 #[tokio::test]
 async fn reconciliation_alerts_on_value_in_a_scope_account_nobody_owns() {
 	let Some(h) = harness().await else { return };
-	let reconciliation = Reconciliation::new(h.pool.clone(), h.ledger.clone(), Arc::new(PgAllocations::new(h.pool.clone())));
+	let reconciliation = Reconciliation::new(h.pool.clone(), h.ledger.clone());
 	let (_, scope, _) = client_with_account(&h, "alloc:", "alloc:owned").await;
 	fund(&h, &scope, "alloc:owned", "5").await;
 	fund(&h, &scope, "alloc:orphan", "5").await;

@@ -1,5 +1,4 @@
-//! Balance use cases — record chain-proven arrivals (a user's deposit), read the treasury and
-//! the fund's revenue.
+//! Balance use cases — record chain-proven arrivals (a user's deposit), read the treasury.
 //!
 //! Commands validate and hand the fact to the [`Deposits`] port, whose adapter is
 //! its own atomic unit (one Postgres transaction: the gate row + the outbox event),
@@ -16,22 +15,18 @@
 //! chain cannot say, so it is refused rather than attributed by one administrator.
 
 use domain::{
-	allocations::{Allocation, AllocationAccess},
-	balance::{LedgerAccountKey, Party, ServiceId},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
-	money::{Network, Shares, TxRef, Usdt},
+	money::{Network, TxRef, Usdt},
 	users::UserId,
 };
 use tokio::sync::Notify;
 
-use crate::{
-	application::{
-		allocations as allocations_app,
-		funds::{self as funds_app, NavQuote},
-		issuance::UnitHolding,
-		ownership::{self as ownership_app, AllocationClaim},
-	},
-	ports::{AllocationRegistry, Custody, Deposits, custody::InboundTransfer, deposit_addresses::DepositAddresses, ledger::Ledger, nav::NavMarks},
+use crate::ports::{
+	Custody, Deposits,
+	custody::InboundTransfer,
+	deposit_addresses::DepositAddresses,
+	ledger::{Ledger, LedgerBalance},
 };
 
 /// Per-rail on-chain liquidity (the treasury / Layer 2). `custody` is
@@ -56,8 +51,8 @@ pub struct RailLiquidity {
 /// The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong
 /// to (Layer 1). Under the unified-claim model the invariant is **global** —
 /// `total_custody` (the asset side) equals the sum of all claims — and every claim is
-/// somebody's (#245): a person's directly (`held_by_users`), or an allocation's, whose
-/// units people hold (`allocations`). Nothing here is a remainder: each figure is read
+/// somebody's (#245): a person's (`held_by_users`, `held_in_compartments`), or banking's
+/// own (`banking_treasury`). Nothing here is a remainder: each figure is read
 /// off its own accounts, and what they add up to against the custody is the
 /// reconciliation's finding, not this view's arithmetic.
 pub struct Treasury {
@@ -67,64 +62,46 @@ pub struct Treasury {
 	pub bank: Usdt,
 	/// Sum of per-rail custody — the asset side of the USDT ledger.
 	pub total_custody: Usdt,
-	/// Layer 1 — Σ `user:<id>` claims: what people hold directly, outside any allocation.
+	/// Layer 1 — Σ `user:<id>` claims: what people hold in `main`.
 	pub held_by_users: Usdt,
 	/// Layer 1 — Σ users' scope compartments (`scope_claim`): still people's, earmarked for
 	/// a scope (D9).
 	pub held_in_compartments: Usdt,
-	/// banking's own treasury (`scope_account:main:treasury`, D17) — not an allocation, so
-	/// a line of its own.
-	pub banking_treasury: AllocationClaim,
-	/// Layer 1 — every allocation the registry knows, the hidden `fee` and `fund` included,
-	/// each with its claim, its supply and who holds it.
-	pub allocations: Vec<AllocationTreasury>,
+	/// banking's own treasury (`scope_account:main:treasury`, D17).
+	pub banking_treasury: ClaimBalance,
 	/// The amount reserved by queued/in-flight withdrawals and approved payments (the
 	/// clearing account's pending balance).
 	pub reserved_for_withdrawals: Usdt,
 }
 
-/// One allocation as the treasury shows it: the registry's name for it, its ownership
-/// picture read off the ledger ([`ownership_app::allocation_ownership`]) and its price
-/// ([`funds_app::nav_of`]). The same shape for a product and for the reserved `fee` /
-/// `fund` allocations — the admin revenue screen is this struct for `fee`
-/// ([`fee_allocation`]), not a second computation of the same accounts.
-pub struct AllocationTreasury {
-	pub service: ServiceId,
-	pub title: String,
-	pub access: AllocationAccess,
-	/// The allocation's cash: settled, reserved by approved payments out of it, and the
-	/// difference. Grows by every subscription, every settled fee class and (for `fee`)
-	/// every taker fee — the retained withdrawal fee goes to banking's treasury instead
-	/// (D17); falls by a holder's redemption or a payment the owners approved out of it.
-	pub claim: AllocationClaim,
-	/// Units outstanding — what the cash and the held fee classes are divided over.
-	pub units_outstanding: Shares,
-	/// The allocation's price and the value it prices — a product's posted mark, or the
-	/// computed value of a reserved allocation (cash plus every fee class it holds at
-	/// that product's NAV).
-	pub nav: NavQuote,
-	/// Who holds it, largest first — people, or the `fee` allocation holding a product's
-	/// fee class.
-	pub holders: Vec<UnitHolding>,
+/// A claim's cash, split the way every reader of it needs: what is settled, what an approved
+/// payment out of it has spoken for, and what is left to spend. Read off ONE balance, so
+/// the three can never disagree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClaimBalance {
+	pub posted: Usdt,
+	/// `posted − reserved`.
+	pub available: Usdt,
+	/// Locked by approved payments out of the claim that have not settled.
+	pub reserved: Usdt,
 }
 
-/// The driven ports the treasury reads through: the ledger and the chain view for the
-/// rails, the registry for the list of allocations, and the marks their units are
-/// priced at.
-pub struct TreasuryPorts<'a> {
-	pub ledger: &'a dyn Ledger,
-	pub custody: &'a dyn Custody,
-	pub allocations: &'a dyn AllocationRegistry,
-	pub nav: &'a dyn NavMarks,
+impl From<LedgerBalance> for ClaimBalance {
+	fn from(balance: LedgerBalance) -> Self {
+		Self {
+			posted: Usdt::from_base_units(balance.posted),
+			available: Usdt::from_base_units(balance.available()),
+			reserved: Usdt::from_base_units(balance.locked),
+		}
+	}
 }
 
 /// Record an on-chain deposit, **idempotent by `tx_ref`** (see [`Deposits::record`]).
 /// Returns `true` if newly recorded, `false` for a duplicate; the relay is nudged
 /// only when a new event was committed.
 ///
-/// The depositor is a person, by type: an allocation's claim grows by a subscription or a
-/// settled fee, both of which move a dollar already on the ledger, never by new custody
-/// booked straight onto it — a claim credited that way would have nobody behind it (#245).
+/// The depositor is a person, by type: a claim credited with new custody on anyone else's
+/// say-so would have nobody behind it (#245).
 pub async fn record_deposit(deposits: &dyn Deposits, relay: &Notify, tx_ref: TxRef, user: UserId, network: Network, amount: Usdt) -> Result<bool, DomainError> {
 	if amount.is_zero() {
 		return Err(DomainError::Validation("deposit amount must be positive".into()));
@@ -139,9 +116,7 @@ pub async fn record_deposit(deposits: &dyn Deposits, relay: &Notify, tx_ref: TxR
 /// Whose money a confirmed transfer is, decided by the address it landed on.
 ///
 /// An application-layer answer rather than a [`Party`]: the treasury is not a party
-/// anyone is credited as — its arrivals are attributed to a person by the operator who
-/// knows who sent them (see [`seed_fund_capital`]) or refused (see
-/// [`record_verified_arrival`]) — so the type that names it cannot be the type a deposit
+/// anyone is credited as — its arrivals are refused (see [`record_verified_arrival`]) — so the type that names it cannot be the type a deposit
 /// is recorded against.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Arrival {
@@ -277,19 +252,16 @@ async fn attribute(custody: &dyn Custody, addresses: &dyn DepositAddresses, netw
 /// — an unwired rail or a chain-RPC failure leaves those fields `None`; the ledger read
 /// must never fail because a chain node is down.
 ///
-/// The allocations are the registry's, every state and level: the treasury is the
-/// platform's own picture of what it runs, and the hidden `fee` and `fund` allocations
-/// are exactly the ones whose holders an operator has to be able to see. What people
-/// hold directly is the cash plane's own sum of `user:<id>` claims — read through the
-/// same scan the reconciliation asserts conservation with, so the two can never name
-/// different figures.
-pub async fn treasury(ports: &TreasuryPorts<'_>) -> Result<Treasury, DomainError> {
+/// What people hold is the cash plane's own sum of their claims — read through the same
+/// scan the reconciliation asserts conservation with, so the two can never name different
+/// figures.
+pub async fn treasury(ledger: &dyn Ledger, custody: &dyn Custody) -> Result<Treasury, DomainError> {
 	let mut rails = Vec::with_capacity(Network::ALL.len());
 	let mut total_custody = Usdt::ZERO;
 	for network in Network::ALL {
-		let rail_custody = Usdt::from_base_units(ports.ledger.balance(&LedgerAccountKey::CryptoWallet(network)).await?.posted);
+		let rail_custody = Usdt::from_base_units(ledger.balance(&LedgerAccountKey::CryptoWallet(network)).await?.posted);
 		total_custody = total_custody.checked_add(rail_custody).ok_or_else(|| DomainError::Repository("custody total overflow".into()))?;
-		let funding = ports.custody.treasury_funding(network).await.unwrap_or_else(|err| {
+		let funding = custody.treasury_funding(network).await.unwrap_or_else(|err| {
 			tracing::debug!(%network, "treasury funding view unavailable: {err}");
 			None
 		});
@@ -307,16 +279,12 @@ pub async fn treasury(ports: &TreasuryPorts<'_>) -> Result<Treasury, DomainError
 			gas_station_gas,
 		});
 	}
-	let bank = Usdt::from_base_units(ports.ledger.balance(&LedgerAccountKey::BankCustody).await?.posted);
-	let claims = ports.ledger.cash_invariant().await?;
+	let bank = Usdt::from_base_units(ledger.balance(&LedgerAccountKey::BankCustody).await?.posted);
+	let claims = ledger.cash_invariant().await?;
 	let held_by_users = Usdt::from_base_units(claims.user_claims);
 	let held_in_compartments = Usdt::from_base_units(claims.scope_claims);
-	let banking_treasury = banking_treasury(ports.ledger).await?;
-	let mut allocations = Vec::new();
-	for allocation in ports.allocations.list_all().await? {
-		allocations.push(allocation_treasury(ports.ledger, ports.nav, &allocation).await?);
-	}
-	let reserved_for_withdrawals = Usdt::from_base_units(ports.ledger.balance(&LedgerAccountKey::WithdrawalClearing).await?.pending);
+	let banking_treasury = ledger.balance(&Party::Treasury.claim_key()).await?.into();
+	let reserved_for_withdrawals = Usdt::from_base_units(ledger.balance(&LedgerAccountKey::WithdrawalClearing).await?.pending);
 	Ok(Treasury {
 		rails,
 		bank,
@@ -324,45 +292,6 @@ pub async fn treasury(ports: &TreasuryPorts<'_>) -> Result<Treasury, DomainError
 		held_by_users,
 		held_in_compartments,
 		banking_treasury,
-		allocations,
 		reserved_for_withdrawals,
 	})
-}
-
-/// banking's own treasury (D17): settled, reserved by approved payments out of it, and what
-/// is left — the same three-way split an allocation's claim is read in.
-pub async fn banking_treasury(ledger: &dyn Ledger) -> Result<AllocationClaim, DomainError> {
-	Ok(ledger.balance(&Party::Treasury.claim_key()).await?.into())
-}
-
-/// One allocation's treasury line: the registry row the caller has in hand, its
-/// ownership picture and its price, each read once.
-///
-/// The claim is read on its own rather than taken from the quote's AUM: the AUM of a
-/// reserved allocation sums the held fee classes in, and the treasury has to tell cash
-/// from units.
-pub async fn allocation_treasury(ledger: &dyn Ledger, nav: &dyn NavMarks, allocation: &Allocation) -> Result<AllocationTreasury, DomainError> {
-	let service = allocation.service().clone();
-	let ownership = ownership_app::allocation_ownership(ledger, service.clone()).await?;
-	let quote = funds_app::nav_of(nav, ledger, &service).await?;
-	Ok(AllocationTreasury {
-		service,
-		title: allocation.title().to_owned(),
-		access: allocation.access(),
-		claim: ownership.claim,
-		units_outstanding: ownership.units_outstanding,
-		nav: quote,
-		holders: ownership.holders,
-	})
-}
-
-/// The `fee` allocation as its owners read it — the view behind the admin revenue screen
-/// (#245). What the platform has earned is not a claim it may pay itself out of: it is an
-/// allocation people hold through units, priced at what it holds, and cash leaves it only
-/// by a holder's redemption. So the screen shows the allocation — the same line the
-/// treasury lists it as, for the one reserved slug. `NotFound` if the registry has no
-/// `fee` row (a database that predates migration `0045`).
-pub async fn fee_allocation(allocations: &dyn AllocationRegistry, ledger: &dyn Ledger, nav: &dyn NavMarks) -> Result<AllocationTreasury, DomainError> {
-	let fee = allocations_app::get(allocations, &ServiceId::fee()).await?;
-	allocation_treasury(ledger, nav, &fee).await
 }

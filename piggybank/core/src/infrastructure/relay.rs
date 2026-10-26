@@ -36,19 +36,14 @@ use std::{sync::Arc, time::Duration};
 
 use domain::{
 	architecture::DomainEvent,
-	balance::{LedgerAccountKey, LedgerEvent, TransferCode},
-	book::{BookEvent, Locked, Side},
-	fees::FeeEvent,
-	issuance::{IssuanceEvent, IssuanceSource},
+	balance::{LedgerAccountKey, LedgerEvent, Party, TransferCode},
 	money::Usdt,
 	payments::PaymentEvent,
-	redemptions::RedemptionEvent,
 	scope_charges::ChargeEvent,
 	scope_invoices::{InvoiceEvent, InvoiceRefusal},
 	scope_ledger::{HoldDestination, HoldEvent, LedgerRefusal, ScopeLedgerEvent},
 	scope_operations::ScopePayoutEvent,
 	scopes::{CompartmentEvent, MoveRefusal, MoveState},
-	subscriptions::SubscriptionEvent,
 	users::UserId,
 	withdrawals::{WithdrawalEvent, WithdrawalSource},
 };
@@ -60,10 +55,9 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{
-		book, compartments, fee_accrual, issuance,
+		compartments,
 		money_events::{self, MoneyEventError},
 		outbox::{self, OutboxRow},
-		rails::now_unix_i64,
 		scope_charges, scope_holds, scope_invoices, scope_ledger, scope_payouts,
 	},
 	ports::{
@@ -75,8 +69,7 @@ use crate::{
 /// Distinct salts deriving a withdrawal's deterministic TigerBeetle transfer ids from
 /// the (stable) withdrawal id. The reservation locks the gross against the user's claim
 /// into clearing; settle posts that pending and redistributes the net to the rail's
-/// custody and the retained fee to the event's payee — banking's treasury since D17, the
-/// fee allocation on an event raised before; fail/cancel void the pending (refund). A
+/// custody and the retained fee to banking's treasury (D17); fail/cancel void the pending (refund). A
 /// completion references the reservation's id as its `pending_id`.
 const CLEARING_RESERVE: &[u8] = b"withdraw:clearing";
 const CLEARING_SETTLE: &[u8] = b"withdraw:clearing:settle";
@@ -84,32 +77,6 @@ const WALLET_REDISTRIBUTE: &[u8] = b"withdraw:wallet";
 const FEE_REDISTRIBUTE: &[u8] = b"withdraw:fee";
 const CLEARING_VOID_FAIL: &[u8] = b"withdraw:clearing:void:fail";
 const CLEARING_VOID_CANCEL: &[u8] = b"withdraw:clearing:void:cancel";
-
-/// Salts for a subscription's two posted legs (one event → two transfers, so they can't
-/// share the event id): the cash move `Dr user / Cr service` and the unit mint
-/// `Dr user-shares / Cr shares-outstanding`. Cash-leg first, so an insufficient claim
-/// parks before any units are minted.
-const SUBSCRIBE_CASH: &[u8] = b"subscribe:cash";
-const SUBSCRIBE_MINT: &[u8] = b"subscribe:mint";
-
-/// Salt for an in-kind issuance's single posted leg, the mint `Dr <holder shares> / Cr
-/// shares-outstanding`. Derived from the issuance id (not the event id) so an operator
-/// can recompute the transfer from the row alone when reconciling supply against the
-/// issuance table.
-const ISSUE_MINT: &[u8] = b"issue:mint";
-/// The same, for a retirement: the burn `Dr shares-outstanding / Cr <holder shares>`.
-/// Its own salt for the same reason — the transfer id alone must say which way the row
-/// moved the supply.
-const ISSUE_RETIRE: &[u8] = b"issue:retire";
-
-/// Salts for a redemption's saga: the reservation locks the units as a pending burn;
-/// settle posts the burn and pays the cash out of the fund's claim; fail/cancel void the
-/// burn (returning the units). A completion references the reservation's id as `pending_id`.
-const BURN_RESERVE: &[u8] = b"redeem:burn";
-const BURN_SETTLE: &[u8] = b"redeem:burn:settle";
-const REDEEM_PAYOUT: &[u8] = b"redeem:payout";
-const BURN_VOID_FAIL: &[u8] = b"redeem:burn:void:fail";
-const BURN_VOID_CANCEL: &[u8] = b"redeem:burn:void:cancel";
 
 /// Salts for a payment's two money legs. A payment settles exactly as a withdrawal does —
 /// reserve the gross against the source claim into `clearing` on approval, then post that
@@ -127,22 +94,6 @@ const PAYMENT_RESERVE: &[u8] = b"payment:reserve";
 const PAYMENT_RESERVE_SETTLE: &[u8] = b"payment:reserve:settle";
 const PAYMENT_RESERVE_VOID: &[u8] = b"payment:reserve:void";
 const PAYMENT_TRANSFER: &[u8] = b"payment:transfer";
-
-/// Salts for a fee settlement's two posted legs — burning the accumulated fee units and
-/// paying their value out of the fund's claim into the fee allocation's. The *charge* itself needs
-/// no salt: it is a single leg, so it uses the event id directly, like a deposit.
-const FEE_SETTLE_BURN: &[u8] = b"fee:settle:burn";
-const FEE_SETTLE_PAYOUT: &[u8] = b"fee:settle:payout";
-
-/// Salts for the book. An order has exactly one lock and at most one release, both
-/// derived from the ORDER id (an operator reconciling the escrow recomputes them from the
-/// row alone); a trade's three legs are derived from the TRADE id and posted as one
-/// linked chain, so the units, the cash and the fee land together or not at all.
-const BOOK_LOCK: &[u8] = b"book:lock";
-const BOOK_RELEASE: &[u8] = b"book:release";
-const BOOK_FILL_UNITS: &[u8] = b"book:fill:units";
-const BOOK_FILL_CASH: &[u8] = b"book:fill:cash";
-const BOOK_FILL_FEE: &[u8] = b"book:fill:fee";
 
 /// Salt for a compartment move's one posted leg, derived from the MOVE id rather than the
 /// event id so an operator reconciling a `compartment_moves` row recomputes the transfer id
@@ -273,13 +224,6 @@ const MAX_RETRYABLE_ATTEMPTS: i32 = 25;
 /// two cohorts drain concurrently across a deploy that mixed old and new keys.
 const OUTBOX_LOCK_KEY: i64 = 0x4556_424b_4f42_585f_u64 as i64;
 
-/// Salt deriving the subscription projection marker's id, distinct from any TB transfer salt
-/// so the `saga_steps.tb_transfer_id` unique constraint never aliases a real transfer.
-const SUBSCRIBE_POSITION: &[u8] = b"subscribe:position";
-/// The same, for an issuance's `applied` stamp + cost-basis projection.
-const ISSUE_APPLIED: &[u8] = b"issue:applied";
-/// The same, for a trade's two-sided cost-basis projection.
-const BOOK_TRADE_POSITION: &[u8] = b"book:trade:position";
 /// The relay task: drains the outbox to the ledger + custody. Cloneable handles
 /// (`pool`, `ledger`, `custody`, `notify`) so command handlers can `notify` it to
 /// dispatch promptly.
@@ -530,15 +474,6 @@ impl Relay {
 		if let Err(err) = parked {
 			error!(seq = row.seq, "relay: failed to stamp parked_at (event will re-deliver): {err}");
 		}
-		// A parked escrow lock is an order standing on the book with nothing behind it —
-		// the one park that must ALSO change control-plane state, because the matcher
-		// would otherwise keep filling an order whose settlement is bound to park too.
-		if row.kind == BookEvent::KIND
-			&& let Ok(BookEvent::OrderPlaced { order_id, .. }) = serde_json::from_str::<BookEvent>(&row.payload)
-			&& let Err(err) = book::mark_rejected(&self.pool, order_id.raw(), &format!("ledger refused the escrow: {reason}")).await
-		{
-			error!(seq = row.seq, order = %order_id, "relay: failed to mark the order rejected after its lock parked: {err}");
-		}
 		// A parked move, scope transfer or invoice payment is a refused one: the caller is told it
 		// failed (a payment's invoice is open again), the money it promised is spendable again,
 		// and an operator's unpark replays an event whose attempt is over — a no-op (see
@@ -649,21 +584,14 @@ impl Relay {
 		// Read-First check over *all* legs here guarantees a gated leg cannot fail with
 		// InsufficientFunds mid-event (which would half-apply and strand value). A shortfall
 		// parks the whole event atomically (nothing applied); a top-up + reconciliation
-		// recovers it. Two gated legs, on opposite sides:
-		//   - `withdraw_disburse` — the net leaves a rail's custody (`Cr wallet:<net>`), so
-		//     guard that *credit* account's posted liquidity.
-		//   - `redeem_payout` — cash leaves the fund's claim (`Dr service`), so guard that
-		//     *debit* account's available balance (other queued payouts may hold it).
+		// recovers it. The gated leg is `withdraw_disburse`: the net leaves a rail's custody
+		// (`Cr wallet:<net>`), so guard that *credit* account's posted liquidity.
 		for op in &ops {
 			let LedgerAction::Post(transfer) = &op.action else { continue };
-			let (guarded, liquidity) = match op.role {
-				"withdraw_disburse" => (&transfer.credit, None),
-				//   - `fee_payout` — the same shape as a redemption payout: cash leaves the
-				//     fund's claim (`Dr service`), so a fund short of it must park the whole
-				//     settlement before any fee units are burned, never after.
-				"redeem_payout" | "fee_payout" => (&transfer.debit, Some(())),
-				_ => continue,
-			};
+			if op.role != "withdraw_disburse" {
+				continue;
+			}
+			let guarded = &transfer.credit;
 			// Delivery is at-least-once, and legs apply as separate TB calls — a redelivery
 			// may re-plan an event whose guarded leg already posted (a later leg, or the
 			// leg's own saga-step insert, failed transiently). The re-read balance then
@@ -680,13 +608,9 @@ impl Relay {
 				Err(err) => return Outcome::park(format!("settle applied-leg check: {err}")),
 			}
 			match self.ledger.balance(guarded).await {
-				Ok(balance) => {
-					let have = if liquidity.is_some() { balance.available() } else { balance.posted };
-					if have < transfer.amount {
-						// Pre-check parks before any leg applies — nothing half-applied.
-						return Outcome::park(format!("{} liquidity insufficient at settle", guarded.logical_key()));
-					}
-				}
+				// Pre-check parks before any leg applies — nothing half-applied.
+				Ok(balance) if balance.posted < transfer.amount => return Outcome::park(format!("{} liquidity insufficient at settle", guarded.logical_key())),
+				Ok(_) => {}
 				Err(LedgerError::Unavailable(err)) => return Outcome::Retry(err),
 				Err(LedgerError::Retryable(err)) => return Outcome::RetryBounded(err),
 				Err(err) => return Outcome::park(format!("settle liquidity check: {err}")),
@@ -811,32 +735,6 @@ impl Relay {
 				}
 			}
 		}
-		// A subscription's cost-basis projection is written **here**, after both ledger legs
-		// post — never on the synchronous open path, where a later parked cash-leg would leave
-		// a phantom `fund_positions` row (basis without units or cash). The upsert is idempotent
-		// under at-least-once delivery: a per-event `saga_steps` marker gates the relative add,
-		// applied in the same transaction so a redelivery never double-counts the basis.
-		if row.kind == "subscriptions"
-			&& let Err(err) = project_subscription(&self.pool, row).await
-		{
-			return Outcome::Retry(format!("subscribe cost-basis projection: {err}"));
-		}
-		// An issuance's `applied` stamp (and, for a user holder, its cost-basis projection)
-		// follows the same rule: written here, after the mint posted, never on the open
-		// path — a parked mint must leave the row `queued`, not claiming units it never got.
-		if row.kind == "issuances"
-			&& let Err(err) = project_issuance(&self.pool, row).await
-		{
-			return Outcome::Retry(format!("issuance applied projection: {err}"));
-		}
-		// A trade moves cost basis on both sides — the buyer gains what they paid, the
-		// seller loses the pro-rata share of theirs — under the same discipline: after the
-		// linked batch posted, at most once per event.
-		if row.kind == BookEvent::KIND
-			&& let Err(err) = project_trade(&self.pool, row).await
-		{
-			return Outcome::Retry(format!("book trade projection: {err}"));
-		}
 		// Before the posted stamp: a failure here retries the row, and the stamp's early path
 		// above records the event that is still owed.
 		if let Err(err) = money_events::record_relayed(&self.pool, self.ledger.as_ref(), row).await {
@@ -849,179 +747,6 @@ impl Relay {
 		}
 		Outcome::Done
 	}
-}
-
-/// Apply a trade's cost-basis projection to both parties, idempotently under a per-event
-/// `saga_steps` marker, in one transaction. The buyer's basis grows by what they paid —
-/// the notional plus the fee when they were the taker — and their units by the size,
-/// with the high-water mark blended at the fund's NAV of the moment (the accounting
-/// price, not the quote: performance is still measured against NAV, so the mark has to
-/// be one). The seller's basis shrinks pro rata, as a redemption's does.
-///
-/// The seller's reduction clamps at zero rather than refusing (`reduce_cost_basis` on the
-/// redemption path rolls back with `Conflict`, which its synchronous caller can retry):
-/// here a refusal would be a `Retry` that wedges the single-worker relay on a projection
-/// that can never catch up, and every unit a seller can lock came through this same relay
-/// in an earlier `seq` — so a short projection is a fee clawback or a drift already
-/// reconciled elsewhere, and an understated basis is the recoverable side of that.
-async fn project_trade(pool: &PgPool, row: &OutboxRow) -> Result<(), sqlx::Error> {
-	const PROJECTION_LEG: i32 = 100;
-	let event: BookEvent = serde_json::from_str(&row.payload).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-	let BookEvent::TradeExecuted {
-		service,
-		buyer,
-		seller,
-		taker_side,
-		size,
-		notional,
-		fee,
-		nav,
-		..
-	} = event
-	else {
-		return Ok(());
-	};
-	let marker_id = tid(row.aggregate_id, BOOK_TRADE_POSITION);
-	let mut tx = pool.begin().await?;
-	let marked = sqlx::query("INSERT INTO saga_steps (event_id, leg, role, tb_transfer_id) VALUES ($1, $2, 'book_trade_position', $3) ON CONFLICT (event_id, leg) DO NOTHING")
-		.bind(row.event_id)
-		.bind(PROJECTION_LEG)
-		.bind(&marker_id.to_be_bytes()[..])
-		.execute(&mut *tx)
-		.await?
-		.rows_affected();
-	if marked == 1 {
-		let buyer_paid = match taker_side {
-			Side::Buy => notional.checked_add(fee).ok_or_else(|| sqlx::Error::Protocol("trade cost overflows".into()))?,
-			Side::Sell => notional,
-		};
-		// Both positions settle what their old basis accrued before it moves (see
-		// [`super::fee_accrual`]); the buyer's row may not exist yet, which is fine.
-		fee_accrual::carry_accrual(&mut tx, buyer.raw(), service.as_str(), now_unix_i64())
-			.await
-			.map_err(|err| sqlx::Error::Protocol(format!("carry fee accrual before buy basis change: {err}")))?;
-		sqlx::query(
-			"INSERT INTO fund_positions (user_id, service, cost_basis, units, high_water_mark) VALUES ($1, $2, $3, $4, $5) \
-			 ON CONFLICT (user_id, service) DO UPDATE SET \
-			 cost_basis = (fund_positions.cost_basis::numeric + EXCLUDED.cost_basis::numeric)::text, \
-			 units = (fund_positions.units::numeric + EXCLUDED.units::numeric)::text, \
-			 high_water_mark = GREATEST(fund_positions.high_water_mark::numeric, EXCLUDED.high_water_mark::numeric)::text, \
-			 updated_at = now()",
-		)
-		.bind(buyer.raw())
-		.bind(service.as_str())
-		.bind(buyer_paid.base_units().to_string())
-		.bind(size.base_units().to_string())
-		.bind(nav.base_units().to_string())
-		.execute(&mut *tx)
-		.await?;
-		fee_accrual::carry_accrual(&mut tx, seller.raw(), service.as_str(), now_unix_i64())
-			.await
-			.map_err(|err| sqlx::Error::Protocol(format!("carry fee accrual before sell basis change: {err}")))?;
-		sqlx::query(
-			"UPDATE fund_positions SET \
-			 cost_basis = CASE WHEN units::numeric > $3::numeric THEN trunc(cost_basis::numeric * (units::numeric - $3::numeric) / units::numeric)::text ELSE '0' END, \
-			 units = GREATEST(units::numeric - $3::numeric, 0)::text, \
-			 updated_at = now() \
-			 WHERE user_id = $1 AND service = $2",
-		)
-		.bind(seller.raw())
-		.bind(service.as_str())
-		.bind(size.base_units().to_string())
-		.execute(&mut *tx)
-		.await?;
-	}
-	tx.commit().await?;
-	Ok(())
-}
-
-/// Stamp an issuance `applied` and, when the holder is a user, add its cost basis to
-/// their `fund_positions` projection — idempotently, under the same per-event
-/// `saga_steps` marker discipline as [`project_subscription`], in one transaction. The
-/// projection carries the issuance's `nav` as the high-water mark blend, exactly as a
-/// subscription at that NAV would: an investor handed units in kind is measured for
-/// performance fees from the price they were handed them at. An allocation holder gets no
-/// projection — there is no investor to report P&L or charge fees to. The projection
-/// itself is [`issuance::project_holder_position`]: one place says what a holder's
-/// position gains from a mint.
-async fn project_issuance(pool: &PgPool, row: &OutboxRow) -> Result<(), sqlx::Error> {
-	const PROJECTION_LEG: i32 = 100;
-	let IssuanceEvent::Issued {
-		holder,
-		source,
-		service,
-		units,
-		nav,
-		cost_basis,
-		..
-	} = serde_json::from_str(&row.payload).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-	let marker_id = tid(row.aggregate_id, ISSUE_APPLIED);
-	let mut tx = pool.begin().await?;
-	let marked = sqlx::query("INSERT INTO saga_steps (event_id, leg, role, tb_transfer_id) VALUES ($1, $2, 'issue_applied', $3) ON CONFLICT (event_id, leg) DO NOTHING")
-		.bind(row.event_id)
-		.bind(PROJECTION_LEG)
-		.bind(&marker_id.to_be_bytes()[..])
-		.execute(&mut *tx)
-		.await?
-		.rows_affected();
-	if marked == 1 {
-		sqlx::query("UPDATE unit_issuances SET state = 'applied', applied_at = now() WHERE id = $1 AND state = 'queued'")
-			.bind(row.aggregate_id)
-			.execute(&mut *tx)
-			.await?;
-		issuance::project_holder_position(&mut tx, &holder, source, &service, units, nav, cost_basis).await?;
-	}
-	tx.commit().await?;
-	Ok(())
-}
-
-/// Apply a settled subscription's cost-basis projection (`fund_positions.cost_basis +=
-/// cash`, `units += minted units`, high-water mark = max) idempotently: a synthetic
-/// `saga_steps` leg keys the apply to the event, so the relative add lands at most once even
-/// on a redelivery. The upsert runs in the same transaction as that marker insert — both
-/// commit or neither does. The projection-tracked `units` is the denominator the redemption
-/// settle reduces the cost basis against (see [`super::redemptions::reduce_cost_basis`]),
-/// kept off TB so it never lags the async burn.
-async fn project_subscription(pool: &PgPool, row: &OutboxRow) -> Result<(), sqlx::Error> {
-	const PROJECTION_LEG: i32 = 100;
-	let SubscriptionEvent::Subscribed {
-		user, service, cash, nav, units, ..
-	} = serde_json::from_str(&row.payload).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-	let marker_id = tid(row.aggregate_id, SUBSCRIBE_POSITION);
-	let mut tx = pool.begin().await?;
-	let marked = sqlx::query("INSERT INTO saga_steps (event_id, leg, role, tb_transfer_id) VALUES ($1, $2, 'subscribe_position', $3) ON CONFLICT (event_id, leg) DO NOTHING")
-		.bind(row.event_id)
-		.bind(PROJECTION_LEG)
-		.bind(&marker_id.to_be_bytes()[..])
-		.execute(&mut *tx)
-		.await?
-		.rows_affected();
-	if marked == 1 {
-		// The basis is about to move, so whatever the OLD basis accrued has to be settled
-		// first — otherwise the next assessment charges this whole elapsed window on money
-		// that arrives on the next line. See [`super::fee_accrual`] for why resetting the
-		// clock without settling would be the worse bug of the two.
-		fee_accrual::carry_accrual(&mut tx, user.raw(), service.as_str(), now_unix_i64())
-			.await
-			.map_err(|err| sqlx::Error::Protocol(format!("carry fee accrual before subscribe basis change: {err}")))?;
-		sqlx::query(
-			"INSERT INTO fund_positions (user_id, service, cost_basis, units, high_water_mark) VALUES ($1, $2, $3, $4, $5) \
-			 ON CONFLICT (user_id, service) DO UPDATE SET \
-			 cost_basis = (fund_positions.cost_basis::numeric + EXCLUDED.cost_basis::numeric)::text, \
-			 units = (fund_positions.units::numeric + EXCLUDED.units::numeric)::text, \
-			 high_water_mark = GREATEST(fund_positions.high_water_mark::numeric, EXCLUDED.high_water_mark::numeric)::text, \
-			 updated_at = now()",
-		)
-		.bind(user.raw())
-		.bind(service.as_str())
-		.bind(cash.base_units().to_string())
-		.bind(units.base_units().to_string())
-		.bind(nav.base_units().to_string())
-		.execute(&mut *tx)
-		.await?;
-	}
-	tx.commit().await?;
-	Ok(())
 }
 
 /// Custody failures fold into the existing ledger outcomes: an outage is transient
@@ -1158,7 +883,7 @@ fn chain_debit(legs: &[LinkedLeg], key: &LedgerAccountKey) -> Result<u128, Strin
 
 /// Map an outbox event to the ledger op(s) (and any custody broadcast) it performs.
 /// `reference` (stamped into `user_data_128`) is always the aggregate id, tying every
-/// TB transfer back to its allocation/deposit/withdrawal for reconciliation.
+/// TB transfer back to its deposit/withdrawal/payment for reconciliation.
 fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 	let reference = row.aggregate_id.as_u128();
 	let event_tid = row.event_id.as_u128();
@@ -1170,26 +895,6 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 		"withdrawals" => {
 			let event: WithdrawalEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			plan_withdrawal(event, row.aggregate_id, reference)
-		}
-		"subscriptions" => {
-			let event: SubscriptionEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-			Ok(plan_subscription(event, row.aggregate_id, reference))
-		}
-		"redemptions" => {
-			let event: RedemptionEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-			Ok(plan_redemption(event, row.aggregate_id, reference))
-		}
-		"fees" => {
-			let event: FeeEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-			Ok(plan_fee(event, row.aggregate_id, event_tid, reference))
-		}
-		"issuances" => {
-			let event: IssuanceEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-			plan_issuance(event, row.aggregate_id, reference).map(|op| vec![op])
-		}
-		"book" => {
-			let event: BookEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
-			Ok(vec![plan_book(event, row.aggregate_id, reference)])
 		}
 		"payments" => {
 			let event: PaymentEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
@@ -1497,345 +1202,14 @@ fn plan_balance(event: LedgerEvent, event_tid: u128, reference: u128) -> Planned
 	}
 }
 
-/// A subscription mints fund units in two posted legs, **cash-leg first**: move the cash
-/// into the fund pool (`Dr user / Cr service`), then mint the units (`Dr user-shares /
-/// Cr shares-outstanding`). The mint never fails (it only moves between two share
-/// accounts whose supply we control), and an insufficient claim parks the cash leg before
-/// the mint runs — so the relay can never strand minted units without the cash behind them.
-fn plan_subscription(event: SubscriptionEvent, aggregate_id: Uuid, reference: u128) -> Vec<PlannedOp> {
-	let SubscriptionEvent::Subscribed { user, service, cash, units, .. } = event;
-	vec![
-		PlannedOp {
-			role: "subscribe_cash",
-			transfer_id: tid(aggregate_id, SUBSCRIBE_CASH),
-			action: LedgerAction::Post(LedgerTransfer {
-				id: tid(aggregate_id, SUBSCRIBE_CASH),
-				debit: LedgerAccountKey::UserClaim(user),
-				credit: LedgerAccountKey::ServiceClaim(service.clone()),
-				amount: cash.base_units(),
-				code: TransferCode::Subscribe,
-				reference,
-			}),
-		},
-		PlannedOp {
-			role: "subscribe_mint",
-			transfer_id: tid(aggregate_id, SUBSCRIBE_MINT),
-			action: LedgerAction::Post(LedgerTransfer {
-				id: tid(aggregate_id, SUBSCRIBE_MINT),
-				debit: LedgerAccountKey::UserShares(service.clone(), user),
-				credit: LedgerAccountKey::SharesOutstanding(service),
-				amount: units.base_units(),
-				code: TransferCode::ShareMint,
-				reference,
-			}),
-		},
-	]
-}
-
-/// An in-kind issuance is one posted transfer on the Share ledger, by `source`:
-/// - **Mint** — a subscription's mint leg with no cash leg in front of it, `Dr <holder
-///   shares> / Cr shares-outstanding`, under its own [`TransferCode::UnitIssue`] so
-///   supply growth the fund's cash never paid for is distinguishable from a
-///   subscription's on the Share ledger alone. It cannot fail for funds (both accounts
-///   are supply we control), so the only park is a genuine conflict.
-/// - **Retire** — the mint reversed, `Dr shares-outstanding / Cr <holder shares>` under
-///   [`TransferCode::UnitRetire`]: supply shrinks by `units`, no cash moves. The
-///   holder's account is debit-normal with the non-negative flag, so retiring more than
-///   it holds parks — the backstop under the use case's Read-First on `available()`.
-///
-/// A holder with no account in the product (an allocation other than `fee`) is
-/// unplannable rather than a
-/// transfer TigerBeetle would refuse anyway: the aggregate cannot build one, so the park
-/// reason should say "corrupt payload", not "accounts must differ".
-fn plan_issuance(event: IssuanceEvent, aggregate_id: Uuid, reference: u128) -> Result<PlannedOp, String> {
-	let IssuanceEvent::Issued { holder, source, service, units, .. } = event;
-	let (role, salt, debit, credit, code) = match source {
-		IssuanceSource::Mint => (
-			"issue_mint",
-			ISSUE_MINT,
-			holder.shares_key(&service).map_err(|err| err.to_string())?,
-			LedgerAccountKey::SharesOutstanding(service),
-			TransferCode::UnitIssue,
-		),
-		IssuanceSource::Retire => (
-			"issue_retire",
-			ISSUE_RETIRE,
-			LedgerAccountKey::SharesOutstanding(service.clone()),
-			holder.shares_key(&service).map_err(|err| err.to_string())?,
-			TransferCode::UnitRetire,
-		),
-	};
-	Ok(PlannedOp {
-		role,
-		transfer_id: tid(aggregate_id, salt),
-		action: LedgerAction::Post(LedgerTransfer {
-			id: tid(aggregate_id, salt),
-			debit,
-			credit,
-			amount: units.base_units(),
-			code,
-			reference,
-		}),
-	})
-}
-
-/// The book in the ledger. Every fact is a posted transfer — no two-phase pendings,
-/// because an order's escrow is a real balance in a real account (`BookShares` /
-/// `BookCash`) that a fill draws on, and a pending cannot be partially consumed.
-/// - **OrderPlaced** → lock the escrow: a sell `Dr BookShares / Cr UserShares` (the
-///   holding's non-negative flag refuses an over-lock), a buy `Dr UserClaim / Cr BookCash`
-///   (the claim's flag does the same). A refusal parks, and the relay marks the order
-///   `rejected` so the matcher stops filling an order with nothing behind it.
-/// - **TradeExecuted** → ONE linked chain: `Dr UserShares(buyer) / Cr BookShares(seller)`
-///   for the units, `Dr BookCash(buyer) / Cr UserClaim(seller)` for the cash, and — when
-///   the taker owes one — the fee out of the taker's side into the event's `payee`
-///   claim (the `fee` allocation's),
-///   which for a taking seller debits the claim the cash leg just credited (linked legs
-///   see each other's effect). Delivery versus payment: units and cash move together or
-///   not at all, and neither party can end up with both or neither.
-/// - **OrderReleased** → hand the unspent escrow back: `Dr UserShares / Cr BookShares`
-///   or `Dr BookCash / Cr UserClaim`.
-fn plan_book(event: BookEvent, aggregate_id: Uuid, reference: u128) -> PlannedOp {
-	match event {
-		BookEvent::OrderPlaced { service, user, locked, .. } => {
-			let (debit, credit, amount) = match locked {
-				Locked::Units(units) => (
-					LedgerAccountKey::BookShares(service.clone(), user),
-					LedgerAccountKey::UserShares(service, user),
-					units.base_units(),
-				),
-				Locked::Cash(cash) => (LedgerAccountKey::UserClaim(user), LedgerAccountKey::BookCash(user), cash.base_units()),
-			};
-			PlannedOp {
-				role: "book_lock",
-				transfer_id: tid(aggregate_id, BOOK_LOCK),
-				action: LedgerAction::Post(LedgerTransfer {
-					id: tid(aggregate_id, BOOK_LOCK),
-					debit,
-					credit,
-					amount,
-					code: TransferCode::BookLock,
-					reference,
-				}),
-			}
-		}
-		BookEvent::OrderReleased { service, user, released, .. } => {
-			let (debit, credit, amount) = match released {
-				Locked::Units(units) => (
-					LedgerAccountKey::UserShares(service.clone(), user),
-					LedgerAccountKey::BookShares(service, user),
-					units.base_units(),
-				),
-				Locked::Cash(cash) => (LedgerAccountKey::BookCash(user), LedgerAccountKey::UserClaim(user), cash.base_units()),
-			};
-			PlannedOp {
-				role: "book_release",
-				transfer_id: tid(aggregate_id, BOOK_RELEASE),
-				action: LedgerAction::Post(LedgerTransfer {
-					id: tid(aggregate_id, BOOK_RELEASE),
-					debit,
-					credit,
-					amount,
-					code: TransferCode::BookRelease,
-					reference,
-				}),
-			}
-		}
-		BookEvent::TradeExecuted {
-			service,
-			buyer,
-			seller,
-			taker_side,
-			size,
-			notional,
-			fee,
-			payee,
-			..
-		} => {
-			let mut legs = vec![
-				LedgerTransfer {
-					id: tid(aggregate_id, BOOK_FILL_UNITS),
-					debit: LedgerAccountKey::UserShares(service.clone(), buyer),
-					credit: LedgerAccountKey::BookShares(service, seller),
-					amount: size.base_units(),
-					code: TransferCode::BookFill,
-					reference,
-				},
-				LedgerTransfer {
-					id: tid(aggregate_id, BOOK_FILL_CASH),
-					debit: LedgerAccountKey::BookCash(buyer),
-					credit: LedgerAccountKey::UserClaim(seller),
-					amount: notional.base_units(),
-					code: TransferCode::BookFill,
-					reference,
-				},
-			];
-			// TB refuses a zero-amount transfer, so a fee-free fill has two legs.
-			if !fee.is_zero() {
-				let debit = match taker_side {
-					Side::Buy => LedgerAccountKey::BookCash(buyer),
-					Side::Sell => LedgerAccountKey::UserClaim(seller),
-				};
-				legs.push(LedgerTransfer {
-					id: tid(aggregate_id, BOOK_FILL_FEE),
-					debit,
-					credit: payee.claim_key(),
-					amount: fee.base_units(),
-					code: TransferCode::BookFee,
-					reference,
-				});
-			}
-			PlannedOp {
-				role: "book_fill",
-				transfer_id: tid(aggregate_id, BOOK_FILL_UNITS),
-				action: LedgerAction::PostLinked(legs),
-			}
-		}
-	}
-}
-
-/// A redemption's saga in the ledger (accept-and-queue, settle-time priced):
-/// - **Requested** → reserve a pending burn `Dr shares-outstanding / Cr user-shares`,
-///   which locks the user's units (TigerBeetle's flag rejects an over-redeem here).
-/// - **Settled** → **burn first, pay second**: post the pending burn, then pay the cash
-///   `Dr service / Cr user`. The settle pre-check guards the payout's fund claim, so a
-///   short fund parks before either leg; and burn-first means a parked reserve (a raced
-///   over-redeem) fails the burn-post *before* any cash leaves — neither half-applies.
-/// - **Failed/Cancelled** → void the pending burn (the units return to the user).
-fn plan_redemption(event: RedemptionEvent, aggregate_id: Uuid, reference: u128) -> Vec<PlannedOp> {
-	match event {
-		RedemptionEvent::Requested { user, service, units, .. } => vec![PlannedOp {
-			role: "redeem_reserve",
-			transfer_id: tid(aggregate_id, BURN_RESERVE),
-			action: LedgerAction::Reserve(LedgerTransfer {
-				id: tid(aggregate_id, BURN_RESERVE),
-				debit: LedgerAccountKey::SharesOutstanding(service.clone()),
-				credit: LedgerAccountKey::UserShares(service, user),
-				amount: units.base_units(),
-				code: TransferCode::ShareBurn,
-				reference,
-			}),
-		}],
-		RedemptionEvent::Settled { user, service, units, cash, .. } => vec![
-			PlannedOp {
-				role: "redeem_burn",
-				transfer_id: tid(aggregate_id, BURN_SETTLE),
-				action: LedgerAction::Complete(PendingCompletion {
-					id: tid(aggregate_id, BURN_SETTLE),
-					pending_id: tid(aggregate_id, BURN_RESERVE),
-					kind: CompletionKind::Post,
-					debit: LedgerAccountKey::SharesOutstanding(service.clone()),
-					credit: LedgerAccountKey::UserShares(service.clone(), user),
-					amount: units.base_units(),
-					code: TransferCode::ShareBurn,
-					reference,
-				}),
-			},
-			PlannedOp {
-				role: "redeem_payout",
-				transfer_id: tid(aggregate_id, REDEEM_PAYOUT),
-				action: LedgerAction::Post(LedgerTransfer {
-					id: tid(aggregate_id, REDEEM_PAYOUT),
-					debit: LedgerAccountKey::ServiceClaim(service),
-					credit: LedgerAccountKey::UserClaim(user),
-					amount: cash.base_units(),
-					code: TransferCode::Redeem,
-					reference,
-				}),
-			},
-		],
-		RedemptionEvent::Failed { user, service, units, .. } => vec![void_burn(aggregate_id, user, service, units, reference, BURN_VOID_FAIL)],
-		RedemptionEvent::Cancelled { user, service, units, .. } => vec![void_burn(aggregate_id, user, service, units, reference, BURN_VOID_CANCEL)],
-	}
-}
-
-/// Void the pending burn (return the units) — shared by fail and cancel, which differ only
-/// by the completion's deterministic id salt (a redemption reaches at most one).
-fn void_burn(aggregate_id: Uuid, user: UserId, service: domain::balance::ServiceId, units: domain::money::Shares, reference: u128, salt: &[u8]) -> PlannedOp {
-	PlannedOp {
-		role: "redeem_void",
-		transfer_id: tid(aggregate_id, salt),
-		action: LedgerAction::Complete(PendingCompletion {
-			id: tid(aggregate_id, salt),
-			pending_id: tid(aggregate_id, BURN_RESERVE),
-			kind: CompletionKind::Void,
-			debit: LedgerAccountKey::SharesOutstanding(service.clone()),
-			credit: LedgerAccountKey::UserShares(service, user),
-			amount: units.base_units(),
-			code: TransferCode::ShareBurn,
-			reference,
-		}),
-	}
-}
-
-/// The fee plane in the ledger.
-///
-/// - **Charged** → one posted leg, `Dr FeeShares / Cr UserShares`, entirely on the Share
-///   ledger. No cash account is touched, so no chain fee is ever paid to collect a fee
-///   and an investor's cash claim cannot be moved by one. Because it is a transfer
-///   *between two holders*, `SharesOutstanding` does not change and NAV per unit is
-///   unaffected — nobody else pays for this investor's charge. TigerBeetle's
-///   `credits_must_not_exceed_debits` flag on the holder's account is the backstop
-///   under the application's own cap: a clawback larger than the holding is refused by
-///   the ledger rather than driving a balance negative.
-/// - **SharesSettled** → **burn first, pay second**: post `Dr SharesOutstanding /
-///   Cr FeeShares` to destroy the units, then `Dr ServiceClaim / Cr <payee claim>` for
-///   their value — the product buying its fee class back from the `fee` allocation at
-///   the day's NAV. Same
-///   ordering rule as a redemption settle, for the same reason — the payout leg is
-///   liquidity-gated in the pre-check above, so a short fund parks the whole event with
-///   nothing applied instead of burning units it cannot pay for.
-fn plan_fee(event: FeeEvent, aggregate_id: Uuid, event_tid: u128, reference: u128) -> Vec<PlannedOp> {
-	match event {
-		FeeEvent::Charged { user, service, units, .. } => vec![PlannedOp {
-			role: "fee_clawback",
-			transfer_id: event_tid,
-			action: LedgerAction::Post(LedgerTransfer {
-				id: event_tid,
-				debit: LedgerAccountKey::FeeShares(service.clone()),
-				credit: LedgerAccountKey::UserShares(service, user),
-				amount: units.base_units(),
-				code: TransferCode::FeeClawback,
-				reference,
-			}),
-		}],
-		FeeEvent::SharesSettled { service, units, cash, payee, .. } => vec![
-			PlannedOp {
-				role: "fee_burn",
-				transfer_id: tid(aggregate_id, FEE_SETTLE_BURN),
-				action: LedgerAction::Post(LedgerTransfer {
-					id: tid(aggregate_id, FEE_SETTLE_BURN),
-					debit: LedgerAccountKey::SharesOutstanding(service.clone()),
-					credit: LedgerAccountKey::FeeShares(service.clone()),
-					amount: units.base_units(),
-					code: TransferCode::ShareBurn,
-					reference,
-				}),
-			},
-			PlannedOp {
-				role: "fee_payout",
-				transfer_id: tid(aggregate_id, FEE_SETTLE_PAYOUT),
-				action: LedgerAction::Post(LedgerTransfer {
-					id: tid(aggregate_id, FEE_SETTLE_PAYOUT),
-					debit: LedgerAccountKey::ServiceClaim(service),
-					credit: payee.claim_key(),
-					amount: cash.base_units(),
-					code: TransferCode::FeeSettle,
-					reference,
-				}),
-			},
-		],
-	}
-}
-
 /// A payment's money in the ledger — the SAME two-phase shape a withdrawal uses, because it
 /// spends the same claims and must be just as unable to overdraw one:
-/// - **Reserved** (raised on approval, L2/L3 only) → a pending `Dr <source> / Cr clearing`,
+/// - **Reserved** (raised on approval, L3 only) → a pending `Dr <source> / Cr clearing`,
 ///   so N concurrently approved payments physically cannot overdraw one claim;
 /// - **Settled** → post that pending, then move the gross out of `clearing` into the
 ///   destination claim. The Vec order matters: the post must land before the second leg
 ///   debits the now-posted clearing balance.
-/// - **Released** (raised on a failed execution, L2/L3 only) → void that pending, returning
+/// - **Released** (raised on a failed execution, L3 only) → void that pending, returning
 ///   the amount to the source in full — a withdrawal's fail void, by another name. The
 ///   reservation and the settlement commit in different transactions, so `approved` is a
 ///   real state an execution can fail out of, and without this leg the amount would stay
@@ -1853,8 +1227,8 @@ fn plan_fee(event: FeeEvent, aggregate_id: Uuid, event_tid: u128, reference: u12
 /// vanish between the two legs and half-apply the settlement.
 ///
 /// ONE TRANSFER CODE for both legs and every tier. The code is forensic and the tier is
-/// already derivable from the claim pair a transfer names — a credit to `service:<id>` IS the
-/// service tier — so three codes would encode one fact twice and let the two disagree.
+/// already derivable from the claim pair a transfer names, so a code per tier would encode
+/// one fact twice and let the two disagree.
 fn plan_payment(event: PaymentEvent, aggregate_id: Uuid, reference: u128) -> Vec<PlannedOp> {
 	match event {
 		PaymentEvent::Reserved { from, amount, .. } => vec![PlannedOp {
@@ -1927,8 +1301,7 @@ fn plan_payment(event: PaymentEvent, aggregate_id: Uuid, reference: u128) -> Vec
 ///   touched, so acceptance never depends on rail liquidity).
 /// - **Dispatched** → broadcast the net to custody (idempotent by withdrawal id).
 /// - **Settled** → post the clearing pending, then move net→`wallet:<net>` and (when
-///   non-zero) the retained fee→the event's `payee` account — banking's treasury since D17,
-///   the `fee` allocation's claim on an event raised before. The `Cr wallet:<net>` is where
+///   non-zero) the retained fee→banking's treasury (D17). The `Cr wallet:<net>` is where
 ///   rail liquidity is finally checked by the non-negative flag.
 /// - **Failed/Cancelled** → void the clearing pending, refunding the source in full.
 ///
@@ -1964,14 +1337,7 @@ fn plan_withdrawal(event: WithdrawalEvent, aggregate_id: Uuid, reference: u128) 
 				}),
 			}]
 		}
-		WithdrawalEvent::Settled {
-			source,
-			network,
-			amount,
-			fee,
-			payee,
-			..
-		} => {
+		WithdrawalEvent::Settled { source, network, amount, fee, .. } => {
 			let net = amount.checked_sub(fee).ok_or("withdrawal fee exceeds amount")?;
 			// Post the clearing reservation, then disburse: net leaves the rail's custody,
 			// the fee is retained. The Vec order matters — the post must land before the
@@ -2011,7 +1377,7 @@ fn plan_withdrawal(event: WithdrawalEvent, aggregate_id: Uuid, reference: u128) 
 					action: LedgerAction::Post(LedgerTransfer {
 						id: tid(aggregate_id, FEE_REDISTRIBUTE),
 						debit: LedgerAccountKey::WithdrawalClearing,
-						credit: payee.claim_key(),
+						credit: Party::Treasury.claim_key(),
 						amount: fee.base_units(),
 						code: TransferCode::WithdrawFee,
 						reference,
@@ -2052,16 +1418,8 @@ fn tid(aggregate_id: Uuid, salt: &[u8]) -> u128 {
 	Uuid::new_v5(&aggregate_id, salt).as_u128()
 }
 
-/// The transfer id of an issuance's mint leg, derived from the issuance id the way
-/// [`plan_issuance`] derives it — exposed so the ownership data migration, which posts its
-/// mints itself, stamps the ids the relay would have, and a reconciler recomputing a
-/// transfer from a `unit_issuances` row finds the migration's mints like any other.
-pub fn issuance_mint_id(issuance_id: Uuid) -> u128 {
-	tid(issuance_id, ISSUE_MINT)
-}
-
 /// The transfer id of a payment's reservation leg — what the payment execution path asks
-/// `saga_steps` and the ledger about before recording an L2/L3 settlement, so the settle can
+/// `saga_steps` and the ledger about before recording an L3 settlement, so the settle can
 /// never be recorded over a reserve that has not landed. The same derivation
 /// [`plan_payment`] uses, exposed rather than duplicated so the two cannot drift.
 pub fn payment_reserve_id(payment_id: Uuid) -> u128 {
@@ -2112,217 +1470,18 @@ async fn record_saga_step(pool: &PgPool, event_id: Uuid, leg: i32, role: &str, t
 
 #[cfg(test)]
 mod tests {
-	use domain::{
-		balance::{Party, ServiceId},
-		book::{OrderId, TradeId},
-		issuance::{UnitHolder, UnitIssuanceId},
-		money::{Nav, Shares, Usdt},
-	};
+	use domain::money::Usdt;
 
 	use super::*;
 
-	// A subscription — an investor's, or the depositor's into `fund` that a seed opens —
-	// is the one planned event that puts cash on an allocation's claim AND mints the units
-	// that own it, and the two legs must name the same allocation: cash on `service:X`
-	// with units of `Y` would be value on `X` nobody holds. There is no transit account
-	// to zero out: every leg is a direct double entry, so a chain can never create value —
-	// only put it where nobody holds it, which is the ledger-state finding the
-	// reconciliation's unheld-value check reports.
-	#[test]
-	fn a_subscription_credits_the_allocation_whose_units_it_mints() {
-		for service in [ServiceId::parse("trading").unwrap(), ServiceId::fund()] {
-			let subscriber = UserId::new();
-			let id = Uuid::new_v4();
-			let ops = plan_subscription(
-				SubscriptionEvent::Subscribed {
-					subscription_id: domain::subscriptions::SubscriptionId::from_raw(id),
-					user: subscriber,
-					service: service.clone(),
-					cash: Usdt::parse_decimal("100").unwrap(),
-					nav: Nav::SEED,
-					units: Shares::parse_decimal("100").unwrap(),
-				},
-				id,
-				id.as_u128(),
-			);
-			let [cash, mint] = ops.as_slice() else { panic!("a subscription is a cash leg then a mint") };
-			let (LedgerAction::Post(cash), LedgerAction::Post(mint)) = (&cash.action, &mint.action) else {
-				panic!("both legs are posted, so a parked cash leg leaves the money on the subscriber's own claim")
-			};
-			assert_eq!(cash.debit, LedgerAccountKey::UserClaim(subscriber), "{service}: the cash is the subscriber's");
-			assert_eq!(cash.credit, LedgerAccountKey::ServiceClaim(service.clone()), "{service}: it lands on the allocation's claim");
-			assert_eq!(mint.debit, LedgerAccountKey::UserShares(service.clone(), subscriber), "{service}: the subscriber holds the units");
-			assert_eq!(
-				mint.credit,
-				LedgerAccountKey::SharesOutstanding(service.clone()),
-				"{service}: of the same allocation the cash went to"
-			);
-			assert_eq!(cash.debit.ledger(), cash.credit.ledger(), "{service}: a leg never crosses ledgers");
-			assert_eq!(mint.debit.ledger(), mint.credit.ledger(), "{service}: a leg never crosses ledgers");
-		}
-	}
-
-	// A mint grows supply and a retirement shrinks it: same event, two legs, told apart by
-	// the source — and by the transfer id, so a reconciler can tell them from the row.
-	#[test]
-	fn an_issuance_mints_or_retires_by_its_source() {
-		let user = UserId::new();
-		let service = ServiceId::parse("service_arb").unwrap();
-		let fee = UnitHolder::Allocation(ServiceId::fee());
-		let issuance_id = UnitIssuanceId::new();
-		let event = |holder, source| IssuanceEvent::Issued {
-			issuance_id,
-			service: service.clone(),
-			holder,
-			source,
-			units: Shares::parse_decimal("13000").unwrap(),
-			nav: Nav::SEED,
-			cost_basis: Usdt::parse_decimal("13000").unwrap(),
-		};
-		let plan = |holder, source| plan_issuance(event(holder, source), issuance_id.raw(), issuance_id.raw().as_u128());
-
-		// The fee allocation's holding of a product is its fee class: the mint lands on
-		// `FeeShares`, the same account a clawback moves units into.
-		let mint = plan(fee.clone(), IssuanceSource::Mint).unwrap();
-		let LedgerAction::Post(leg) = &mint.action else { panic!("a mint is one posted leg") };
-		assert_eq!(
-			(leg.debit.clone(), leg.credit.clone()),
-			(LedgerAccountKey::FeeShares(service.clone()), LedgerAccountKey::SharesOutstanding(service.clone()))
-		);
-		assert_eq!(leg.code, TransferCode::UnitIssue);
-		assert_eq!(mint.transfer_id, tid(issuance_id.raw(), ISSUE_MINT));
-
-		// A holder with no account in the product (the fund allocation, phase 1) is not a
-		// leg the ledger should even see.
-		assert!(plan(UnitHolder::Allocation(ServiceId::fund()), IssuanceSource::Mint).is_err());
-		assert!(plan(UnitHolder::Allocation(ServiceId::fund()), IssuanceSource::Retire).is_err());
-
-		// A retirement is the mint reversed — same two accounts, swapped sides — for either
-		// holder, under its own code and its own transfer id.
-		for holder in [UnitHolder::User(user), fee] {
-			let retire = plan(holder.clone(), IssuanceSource::Retire).unwrap();
-			let LedgerAction::Post(leg) = &retire.action else { panic!("a retirement is one posted leg") };
-			assert_eq!(
-				(leg.debit.clone(), leg.credit.clone()),
-				(LedgerAccountKey::SharesOutstanding(service.clone()), holder.shares_key(&service).unwrap())
-			);
-			assert_eq!(leg.code, TransferCode::UnitRetire);
-			assert_eq!(leg.amount, Shares::parse_decimal("13000").unwrap().base_units(), "the row's units are the magnitude");
-			assert_eq!(retire.role, "issue_retire");
-			assert_eq!(retire.transfer_id, tid(issuance_id.raw(), ISSUE_RETIRE));
-			assert_ne!(retire.transfer_id, mint.transfer_id, "a burn must never alias the mint it reverses");
-		}
-	}
-
-	// A fill is delivery versus payment or nothing: units, cash and the taker's fee are
-	// ONE linked chain, and the fee leg comes off the taker's side — a taking seller pays
-	// it out of the claim the cash leg just credited, a taking buyer out of the escrow.
-	#[test]
-	fn a_trade_is_one_linked_chain_with_the_fee_on_the_takers_side() {
-		let (buyer, seller) = (UserId::new(), UserId::new());
-		let service = ServiceId::parse("service_arb").unwrap();
-		let trade_id = TradeId::new();
-		let event = |taker_side, fee| BookEvent::TradeExecuted {
-			trade_id,
-			service: service.clone(),
-			buyer,
-			seller,
-			buy_order_id: OrderId::new(),
-			sell_order_id: OrderId::new(),
-			taker_side,
-			size: Shares::parse_decimal("2").unwrap(),
-			price: domain::book::Price::parse_decimal("1.5").unwrap(),
-			notional: Usdt::parse_decimal("3").unwrap(),
-			fee: Usdt::parse_decimal(fee).unwrap(),
-			nav: Nav::SEED,
-			payee: Party::fee_payee(),
-		};
-
-		let op = plan_book(event(Side::Sell, "0.003"), trade_id.raw(), trade_id.raw().as_u128());
-		let LedgerAction::PostLinked(legs) = &op.action else {
-			panic!("a trade must be a linked chain")
-		};
-		assert_eq!(legs.len(), 3);
-		assert_eq!(
-			(legs[0].debit.clone(), legs[0].credit.clone()),
-			(LedgerAccountKey::UserShares(service.clone(), buyer), LedgerAccountKey::BookShares(service.clone(), seller))
-		);
-		assert_eq!(
-			(legs[1].debit.clone(), legs[1].credit.clone()),
-			(LedgerAccountKey::BookCash(buyer), LedgerAccountKey::UserClaim(seller))
-		);
-		assert_eq!(
-			(legs[2].debit.clone(), legs[2].credit.clone()),
-			(LedgerAccountKey::UserClaim(seller), LedgerAccountKey::ServiceClaim(ServiceId::fee())),
-			"the taker's fee is paid to the fee allocation"
-		);
-		assert_eq!(op.transfer_id, legs[0].id, "the chain is identified by its first leg");
-
-		let op = plan_book(event(Side::Buy, "0.003"), trade_id.raw(), trade_id.raw().as_u128());
-		let LedgerAction::PostLinked(legs) = &op.action else {
-			panic!("a trade must be a linked chain")
-		};
-		assert_eq!(legs[2].debit, LedgerAccountKey::BookCash(buyer), "a taking buyer pays the fee out of its escrow");
-
-		// No fee, no third leg — TigerBeetle refuses a zero-amount transfer.
-		let op = plan_book(event(Side::Buy, "0"), trade_id.raw(), trade_id.raw().as_u128());
-		let LedgerAction::PostLinked(legs) = &op.action else {
-			panic!("a trade must be a linked chain")
-		};
-		assert_eq!(legs.len(), 2);
-	}
-
-	#[test]
-	fn a_lock_and_its_release_are_mirror_images_derived_from_the_order() {
-		let user = UserId::new();
-		let service = ServiceId::parse("service_arb").unwrap();
-		let order_id = OrderId::new();
-		let lock = plan_book(
-			BookEvent::OrderPlaced {
-				order_id,
-				service: service.clone(),
-				user,
-				side: Side::Buy,
-				locked: Locked::Cash(Usdt::parse_decimal("10").unwrap()),
-			},
-			order_id.raw(),
-			order_id.raw().as_u128(),
-		);
-		let release = plan_book(
-			BookEvent::OrderReleased {
-				order_id,
-				service: service.clone(),
-				user,
-				side: Side::Buy,
-				released: Locked::Cash(Usdt::parse_decimal("4").unwrap()),
-			},
-			order_id.raw(),
-			order_id.raw().as_u128(),
-		);
-		let (LedgerAction::Post(lock), LedgerAction::Post(release)) = (&lock.action, &release.action) else {
-			panic!("posted legs")
-		};
-		assert_eq!((lock.debit.clone(), lock.credit.clone()), (LedgerAccountKey::UserClaim(user), LedgerAccountKey::BookCash(user)));
-		assert_eq!(
-			(release.debit.clone(), release.credit.clone()),
-			(LedgerAccountKey::BookCash(user), LedgerAccountKey::UserClaim(user))
-		);
-		assert_ne!(lock.id, release.id, "one order, two distinct deterministic ids");
-	}
-
-	// The payment settle's leg order, for the same reason the redemption's is guarded: the
-	// pending must be POSTED before the second leg debits the clearing balance it creates.
-	// A `transfer-first` regression would debit `clearing` against a balance the reservation
-	// has not yet contributed, and TigerBeetle's non-negative flag would park a settlement
-	// whose money was perfectly available.
 	#[test]
 	fn a_settled_payment_posts_its_reservation_before_it_moves_the_money() {
 		let aggregate_id = Uuid::new_v4();
 		let user = UserId::new();
 		let event = PaymentEvent::Settled {
 			payment_id: domain::payments::PaymentId::from_raw(aggregate_id),
-			from: domain::balance::Party::User(user),
-			to: domain::balance::Party::Service(ServiceId::fee()),
+			from: Party::User(user),
+			to: Party::User(UserId::new()),
 			amount: Usdt::parse_decimal("25").unwrap(),
 			at: 0,
 		};
@@ -2342,7 +1501,7 @@ mod tests {
 		assert_ne!(completion.id, completion.pending_id, "a completion is a transfer of its own");
 	}
 
-	// A failed L2/L3 execution VOIDS the reservation the approval raised — the same completion
+	// A failed L3 execution VOIDS the reservation the approval raised — the same completion
 	// a failed withdrawal issues — and names that reservation as its pending, or the release
 	// would void a transfer that does not exist and leave the amount locked for good.
 	#[test]
@@ -2350,7 +1509,7 @@ mod tests {
 		let aggregate_id = Uuid::new_v4();
 		let event = PaymentEvent::Released {
 			payment_id: domain::payments::PaymentId::from_raw(aggregate_id),
-			from: domain::balance::Party::Service(ServiceId::fund()),
+			from: Party::Treasury,
 			amount: Usdt::parse_decimal("25").unwrap(),
 			at: 0,
 		};
@@ -2364,7 +1523,7 @@ mod tests {
 		};
 		assert!(matches!(completion.kind, CompletionKind::Void));
 		assert_eq!(completion.pending_id, tid(aggregate_id, PAYMENT_RESERVE));
-		assert_eq!(completion.debit, LedgerAccountKey::ServiceClaim(ServiceId::fund()));
+		assert_eq!(completion.debit, Party::Treasury.claim_key());
 		assert_eq!(completion.credit, LedgerAccountKey::WithdrawalClearing);
 		// Its own id is distinct from both the reservation's and the settle's, so a settle and
 		// a release over one payment can never alias in `saga_steps`.
@@ -2387,8 +1546,7 @@ mod tests {
 		assert!(plan_payment(event, aggregate_id, aggregate_id.as_u128()).is_empty());
 	}
 
-	// A seed is a deposit to the depositor plus an ordinary subscription (#245): the
-	// balance plan credits the person's claim and nothing else. The retired
+	// A deposit credits the person's claim and nothing else. The retired
 	// `capital_seeded` event has no plan at all: production's outbox holds none pending,
 	// and a stray one is a payload this build cannot read, never a credit to a claim
 	// nobody holds.
@@ -2417,41 +1575,9 @@ mod tests {
 		assert!(serde_json::from_str::<LedgerEvent>(legacy_deposit).is_err(), "nor a deposit onto the retired fund claim");
 	}
 
-	// A fee settlement pays the product's claim into the FEE ALLOCATION's, burn-first. A
-	// payload written before the event carried a `payee` has no plan: the relay would have
-	// had to guess a claim, and the only one it could have meant is retired.
+	// The retained withdrawal fee lands in banking's treasury (D17).
 	#[test]
-	fn a_fee_settlement_pays_the_fee_allocation_and_a_payload_without_a_payee_does_not_read() {
-		use domain::architecture::EmitsEvents;
-		let service = ServiceId::parse("service_arb").unwrap();
-		let settlement_id = domain::fees::FeeSettlementId::new();
-		let mut settlement = domain::fees::FeeSettlement::record(settlement_id, service.clone(), Shares::parse_decimal("10").unwrap(), Nav::SEED).unwrap();
-		let json = serde_json::to_string(&settlement.drain_events()[0]).unwrap();
-		assert!(json.contains(r#""payee":{"kind":"service","id":"fee"}"#), "{json}");
-
-		let ops = plan_fee(serde_json::from_str(&json).unwrap(), settlement_id.raw(), 7, settlement_id.raw().as_u128());
-		assert_eq!((ops[0].role, ops[1].role), ("fee_burn", "fee_payout"));
-		let LedgerAction::Post(payout) = &ops[1].action else { panic!("the payout is a posted leg") };
-		assert_eq!(payout.debit, LedgerAccountKey::ServiceClaim(service.clone()));
-		assert_eq!(payout.credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
-
-		// The same event as it was written before #245: no `payee` at all.
-		assert!(serde_json::from_value::<domain::fees::FeeEvent>(without_payee(&json)).is_err());
-	}
-
-	/// A stored payload as it looked before the fee events carried a `payee`.
-	fn without_payee(json: &str) -> serde_json::Value {
-		let mut legacy = serde_json::from_str::<serde_json::Value>(json).unwrap();
-		legacy.as_object_mut().unwrap().remove("payee");
-		legacy
-	}
-
-	// The same contract for the other two fee legs: the retained withdrawal fee lands in
-	// banking's treasury (D17) — or on the fee allocation when the stored event, raised
-	// before D17, says so — and the book's taker fee on the fee allocation. A payload without
-	// a payee does not read.
-	#[test]
-	fn the_withdrawal_fee_goes_to_the_treasury_and_the_taker_fee_to_the_fee_allocation() {
+	fn the_withdrawal_fee_goes_to_the_treasury() {
 		let withdrawal_id = domain::withdrawals::WithdrawalId::new();
 		let settled = WithdrawalEvent::Settled {
 			withdrawal_id,
@@ -2460,54 +1586,15 @@ mod tests {
 			amount: Usdt::parse_decimal("100").unwrap(),
 			fee: Usdt::parse_decimal("1").unwrap(),
 			tx_ref: domain::money::TxRef::parse("0xabc").unwrap(),
-			payee: domain::balance::FeePayee::treasury(),
 		};
-		let fee_leg = |event: WithdrawalEvent| {
-			let ops = plan_withdrawal(event, withdrawal_id.raw(), withdrawal_id.raw().as_u128()).unwrap();
-			let op = ops.into_iter().find(|op| op.role == "withdraw_fee").expect("a non-zero fee has its own leg");
-			let LedgerAction::Post(transfer) = op.action else { panic!("the fee is a posted leg") };
-			transfer
-		};
-		let json = serde_json::to_string(&settled).unwrap();
+		let ops = plan_withdrawal(settled, withdrawal_id.raw(), withdrawal_id.raw().as_u128()).unwrap();
+		let op = ops.into_iter().find(|op| op.role == "withdraw_fee").expect("a non-zero fee has its own leg");
+		let LedgerAction::Post(transfer) = op.action else { panic!("the fee is a posted leg") };
 		assert_eq!(
-			fee_leg(serde_json::from_str(&json).unwrap()).credit,
+			transfer.credit,
 			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury())
 		);
-		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).id, tid(withdrawal_id.raw(), FEE_REDISTRIBUTE));
-		assert!(serde_json::from_value::<WithdrawalEvent>(without_payee(&json)).is_err());
-		let mut before_d17 = serde_json::from_str::<serde_json::Value>(&json).unwrap();
-		before_d17["payee"] = serde_json::json!({"kind": "service", "id": "fee"});
-		assert_eq!(
-			fee_leg(serde_json::from_value(before_d17).unwrap()).credit,
-			LedgerAccountKey::ServiceClaim(ServiceId::fee()),
-			"an event raised before D17 pays where it said it would"
-		);
-
-		let trade_id = TradeId::new();
-		let trade = BookEvent::TradeExecuted {
-			trade_id,
-			service: ServiceId::parse("service_arb").unwrap(),
-			buyer: UserId::new(),
-			seller: UserId::new(),
-			buy_order_id: OrderId::new(),
-			sell_order_id: OrderId::new(),
-			taker_side: Side::Buy,
-			size: Shares::parse_decimal("2").unwrap(),
-			price: domain::book::Price::parse_decimal("1.5").unwrap(),
-			notional: Usdt::parse_decimal("3").unwrap(),
-			fee: Usdt::parse_decimal("0.003").unwrap(),
-			nav: Nav::SEED,
-			payee: Party::fee_payee(),
-		};
-		let fee_leg = |event: BookEvent| {
-			let LedgerAction::PostLinked(legs) = plan_book(event, trade_id.raw(), trade_id.raw().as_u128()).action else {
-				panic!("a trade is a linked chain")
-			};
-			legs[2].clone()
-		};
-		let json = serde_json::to_string(&trade).unwrap();
-		assert_eq!(fee_leg(serde_json::from_str(&json).unwrap()).credit, LedgerAccountKey::ServiceClaim(ServiceId::fee()));
-		assert!(serde_json::from_value::<BookEvent>(without_payee(&json)).is_err());
+		assert_eq!(transfer.id, tid(withdrawal_id.raw(), FEE_REDISTRIBUTE));
 	}
 
 	// A move is one claim-to-claim leg in the direction the event names, with an id the
@@ -2536,34 +1623,6 @@ mod tests {
 		assert_eq!(sa.claim_key(user), LedgerAccountKey::ScopeClaim(user, ScopeId::parse("sa").unwrap()));
 	}
 
-	// Guards the redemption settle leg order documented on the aggregate and PATTERNS:
-	// burn-first (post the pending burn), payout-second. A `payout-first` regression
-	// would let a raced over-redeem pay cash before a valid burn — a double-spend path.
-	#[test]
-	fn settled_redemption_burns_before_it_pays() {
-		let aggregate_id = Uuid::new_v4();
-		let user = UserId::new();
-		let service = ServiceId::parse("trading").unwrap();
-		let event = RedemptionEvent::Settled {
-			redemption_id: domain::redemptions::RedemptionId::new(),
-			user,
-			service,
-			units: Shares::parse_decimal("100").unwrap(),
-			nav: Nav::parse_decimal("1.5").unwrap(),
-			cash: Usdt::parse_decimal("150").unwrap(),
-		};
-
-		let ops = plan_redemption(event, aggregate_id, aggregate_id.as_u128());
-
-		assert_eq!(ops.len(), 2);
-		assert_eq!(ops[0].role, "redeem_burn");
-		assert!(matches!(ops[0].action, LedgerAction::Complete(PendingCompletion { kind: CompletionKind::Post, .. })));
-		assert_eq!(ops[1].role, "redeem_payout");
-		assert!(matches!(ops[1].action, LedgerAction::Post(_)));
-	}
-
-	// A payment is one posted leg out of the source the payer chose, and an undispatched one
-	// counts against that source — and that source only — in every other spender's check.
 	#[test]
 	fn an_invoice_payment_posts_once_out_of_the_chosen_source() {
 		let (invoice, payer) = (Uuid::new_v4(), UserId::new());

@@ -18,19 +18,16 @@
 //!   infrastructure  — driven adapters (Postgres control plane, TigerBeetle ledger,
 //!                     telemetry)
 //!
-//! The money plane (balance, subscriptions, redemptions, withdrawals, the allocation
-//! book) is implemented end to end through these layers; remaining domain areas stay
-//! documented placeholders until a feature explicitly asks.
+//! The money plane (balance, withdrawals, payments, compartments, the scope ledger) is
+//! implemented end to end through these layers.
 
 use std::sync::Arc;
 
-use application::book::BookFeed;
-use domain::{book::MatchingEngine, money::Network, scope_ledger::Grants};
+use domain::{money::Network, scope_ledger::Grants};
 use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
-	AllocationRegistry, BookStore, CompartmentStore, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
-	PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository,
+	CompartmentStore, Custody, DepositAddresses, Deposits, OperationFeed, OutflowPolicy, PaymentFeed, PaymentRepository, UserRepository, WithdrawalRepository,
 	ledger::Ledger,
 	scope_invoices::InvoiceStore,
 	scope_mandates::{MandateRequestStore, MandateStore},
@@ -72,35 +69,9 @@ pub struct AppState {
 	/// The admin payments screen's read model. A separate handle from [`Self::payments`] for
 	/// the reason `operations` is separate from the aggregates it reads: it owns nothing.
 	pub payment_feed: Arc<dyn PaymentFeed>,
-	/// The registry of investable products — the gate every subscribe resolves its
-	/// service through. Control plane only; moves no money.
-	pub allocations: Arc<dyn AllocationRegistry>,
-	/// The `subscriptions` aggregate's driven port (mint records + position cost basis).
-	pub subscriptions: Arc<dyn SubscriptionRepository>,
-	/// The `issuance` aggregate's driven port — an operator's in-kind mints (units to an
-	/// investor, no cash leg), idempotent by key.
-	pub issuances: Arc<dyn UnitIssuanceRepository>,
-	/// The `redemptions` aggregate's driven port (the accept-and-queue saga).
-	pub redemptions: Arc<dyn RedemptionRepository>,
-	/// The allocation book — orders, fills and per-product terms (Postgres control
-	/// plane); the escrow and the settlement of every fill go through the relay.
-	pub book: Arc<dyn BookStore>,
-	/// The matching rule the book runs under its write lock. Pure; wired here so the
-	/// composition root, not the store, decides how orders match.
-	pub book_engine: Arc<dyn MatchingEngine>,
-	/// The in-process fan-out every `WatchBook` subscriber hangs on.
-	pub book_feed: Arc<BookFeed>,
 	/// The aggregate-less on-chain arrival facts (the `tx_ref` deposit gate) + outbox.
 	pub deposits: Arc<dyn Deposits>,
-	/// Fund valuation marks → the derived NAV (the operator-posted AUM history).
-	pub nav: Arc<dyn NavMarks>,
-	/// The per-investor fund-position projection (cost basis, high-water mark).
-	pub positions: Arc<dyn FundPositionReader>,
-	/// The fee plane — a fund's "2 and 20" terms, the per-investor accrual clocks, the
-	/// charge, and the bulk settlement of accumulated fee units. A product with no policy
-	/// row charges nothing, so the fee is opt-in per product.
-	pub fees: FeePorts,
-	/// The read-side merge of the four money projections into one activity timeline.
+	/// The read-side merge of the money projections into one activity timeline.
 	/// Query only — it writes nothing and owns no aggregate.
 	pub operations: Arc<dyn OperationFeed>,
 	/// Per-user deposit-address provisioning (stub HD derivation behind a port).
@@ -141,7 +112,7 @@ pub struct AppState {
 	pub withdrawal_limits: application::withdrawal_limits::WithdrawalLimits,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
-	/// What opens a fund payment's approval with the proof of who asked.
+	/// What opens a treasury payment's approval with the proof of who asked.
 	pub payment_proposer: Arc<application::payment_approvals::PaymentProposer>,
 	/// Whether the TON rail is on testnet — surfaced on its deposit addresses so the client
 	/// renders the correct (testnet-tagged) user-friendly TON address. `false` when TON is
@@ -160,17 +131,7 @@ impl AppState {
 		withdrawals: Arc<dyn WithdrawalRepository>,
 		payments: Arc<dyn PaymentRepository>,
 		payment_feed: Arc<dyn PaymentFeed>,
-		allocations: Arc<dyn AllocationRegistry>,
-		subscriptions: Arc<dyn SubscriptionRepository>,
-		issuances: Arc<dyn UnitIssuanceRepository>,
-		redemptions: Arc<dyn RedemptionRepository>,
-		book: Arc<dyn BookStore>,
-		book_engine: Arc<dyn MatchingEngine>,
-		book_feed: Arc<BookFeed>,
 		deposits: Arc<dyn Deposits>,
-		nav: Arc<dyn NavMarks>,
-		positions: Arc<dyn FundPositionReader>,
-		fees: FeePorts,
 		operations: Arc<dyn OperationFeed>,
 		deposit_addresses: Arc<dyn DepositAddresses>,
 		custody: Arc<dyn Custody>,
@@ -193,17 +154,7 @@ impl AppState {
 			withdrawals,
 			payments,
 			payment_feed,
-			allocations,
-			subscriptions,
-			issuances,
-			redemptions,
-			book,
-			book_engine,
-			book_feed,
 			deposits,
-			nav,
-			positions,
-			fees,
 			operations,
 			deposit_addresses,
 			custody,

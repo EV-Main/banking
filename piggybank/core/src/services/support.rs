@@ -1,7 +1,7 @@
 //! Cross-cutting helpers shared by every context service: the auth gates
 //! (`caller_id`/`require_permission`), the domain→status error mapper, id parsers, and
 //! the small wire-shape utilities. Each context module ([`super::users`],
-//! [`super::balance`], [`super::funds`], [`super::wallet`]) owns its own proto
+//! [`super::balance`], [`super::wallet`]) owns its own proto
 //! mappers; only this genuinely shared surface lives here.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large
@@ -14,7 +14,6 @@ use concierge_iam::{Permission, PermissionSet};
 use domain::{
 	error::DomainError,
 	money::Network,
-	redemptions::RedemptionId,
 	users::{ConciergeUserId, UserId},
 	withdrawals::WithdrawalId,
 };
@@ -49,7 +48,7 @@ pub(super) fn caller_id<T>(request: &Request<T>) -> Result<UserId, Status> {
 	parse_user_id(&claims.sub)
 }
 
-/// Gate a user-initiated money-moving RPC (`RequestWithdrawal` / `Subscribe` / `Redeem`)
+/// Gate a user-initiated money-moving RPC (`RequestWithdrawal`, a compartment move, a payment)
 /// on the caller's standing: the token has not been revoked, outflows are not paused, and
 /// the account is not frozen. Returns the caller's id on success so the handler keeps its
 /// existing `let user = ...?` shape.
@@ -127,18 +126,6 @@ fn money_caller_gate(token_version: u64, target: Option<&IssuanceTarget>, paused
 	}
 }
 
-/// Refuse an operator money mutation (issue/retire units, settle fee units, post a
-/// valuation) while the hub is in maintenance. `operations_mode` pauses the users' paths
-/// through [`money_caller_gate`]; these have no user-money caller, so without this the
-/// migration window's cut could move under an administrator's hand. The window tool's own
-/// burn calls the application layer, not this handler, so it is unaffected.
-pub async fn require_not_paused(state: &AppState) -> Result<(), Status> {
-	if state.outflow.outflows_paused().await.map_err(map_err)? {
-		return Err(Status::failed_precondition(OUTFLOWS_PAUSED));
-	}
-	Ok(())
-}
-
 /// Gate an RPC on a `bank:*` permission, read from the caller's mirrored `users.permissions`
 /// (concierge's resolution of their seat, over the bridge). Only a human access token
 /// qualifies. Every path fails closed: no local row, or a row concierge has not yet told us
@@ -187,7 +174,7 @@ pub(super) async fn holds_permission<T>(state: &AppState, request: &Request<T>, 
 }
 
 /// Resolve the user an admin RPC names. The operator console carries CONCIERGE ids
-/// (the identity plane's `ListUsers`) while money-plane callers (the redemption queue)
+/// (the identity plane's `ListUsers`) while money-plane callers (the withdrawal queue)
 /// carry banking ids — so concierge-first via the bridge mirror, then the banking id;
 /// an id matching neither is `NOT_FOUND`. `disabled`/`token_version` on the target are
 /// deliberately ignored: an operator must be able to act on a frozen or disabled user.
@@ -211,10 +198,6 @@ pub(super) async fn resolve_target_user(state: &AppState, raw: &str) -> Result<U
 
 pub(super) fn parse_user_id(raw: &str) -> Result<UserId, Status> {
 	Uuid::parse_str(raw).map(UserId::from_raw).map_err(|_| Status::unauthenticated("subject is not a user id"))
-}
-
-pub(super) fn parse_redemption_id(raw: &str) -> Result<RedemptionId, Status> {
-	Uuid::parse_str(raw).map(RedemptionId::from_raw).map_err(|_| Status::invalid_argument("invalid redemption id"))
 }
 
 pub(super) fn parse_withdrawal_id(raw: &str) -> Result<WithdrawalId, Status> {

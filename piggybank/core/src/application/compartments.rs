@@ -8,7 +8,7 @@
 //! check — the scope's state, the freeze, the policy, what the source may spend — runs under
 //! the store's key and claim locks, read on the connection that holds them, against figures
 //! net of everything recorded against the source and not yet on the ledger (the source's
-//! [`Ledger::spendable_locked`], the same answer a withdrawal or a subscription gets), so
+//! [`Ledger::spendable_locked`], the same answer a withdrawal or a payment gets), so
 //! the loser of two racing spends is refused at once instead of failing in the relay. The
 //! relay posts the move and stamps it `posted`; a ledger refusal stamps it `failed`, for good.
 

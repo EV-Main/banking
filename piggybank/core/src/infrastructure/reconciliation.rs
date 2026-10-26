@@ -3,37 +3,27 @@
 //! The outbox relay can **park** a money-moving event into a distinct terminal state
 //! (`outbox.parked_at`, see [`super::outbox`]) when it hits a non-retryable failure. A
 //! parked event is no longer dropped, but it still needs a watcher: this periodic job is
-//! the design's reconciliation seam (PATTERNS.md § Reconciliation). It asserts four
+//! the design's reconciliation seam (PATTERNS.md § Reconciliation). It asserts these
 //! things and **alerts** (a Sentry-shipped `error!`) on any drift, without mutating money
 //! — TB is authoritative, so recovery is an operator/treasury action, not an auto-write:
 //!
 //!   1. **Global cash invariant** — `sum(custody) == sum(claims)` on the USDT ledger,
 //!      read straight from TigerBeetle ([`Ledger::cash_invariant`]), the claims broken
-//!      down by whose they are: `Σ user + Σ scope compartment + Σ service + Σ scope
-//!      account + clearing + book cash + retired == Σ custody`. The retired `fund`/`fee` accounts (codes 1/40) still exist in
-//!      TigerBeetle and count as claims by code — zero since the ownership data migration
-//!      of 2026-09-27 — and value on an account of no known kind is its own finding.
+//!      down by whose they are, every kind counted by its code — retired kinds included,
+//!      since their accounts still exist in TigerBeetle — and value on an account of no
+//!      known kind is its own finding.
 //!   2. **Clearing vs control-plane** — the `clearing` account's reserved (pending +
 //!      posted) balance vs the gross of every `queued`/`processing` withdrawal in
 //!      Postgres; a mismatch means a withdrawal whose reserve parked (nothing locked) or a
 //!      stranded reservation.
-//!   3. **Every unit at a holder, per allocation** (#245) — for each allocation the
-//!      registry knows, `Σ holder units == SharesOutstanding` read off the Share ledger
-//!      ([`ownership_app::allocation_ownership`]). Double entry makes this hold by
-//!      construction, so a mismatch is an inconsistency: an alert. Alongside it, **value
-//!      without a holder** — cash or product units on an allocation no unit of which is
-//!      outstanding — is a `warn!` and a counter
-//!      ([`telemetry::note_unheld_allocation_value`]), NOT an alert: fees can settle into
-//!      an allocation before a holder grant seats anyone, which loses nothing — the owners
-//!      decide whose it is. After the 2026-09-27 data migration it reads zero everywhere.
-//!   4. **Parked-row scan** — every `outbox.parked_at` row, surfaced with its
+//!   3. **Parked-row scan** — every `outbox.parked_at` row, surfaced with its
 //!      `last_error` and whether it has been flagged for compensation.
-//!   5. **Treasury debits vs approvals** (D17) — everything debited from banking's
+//!   4. **Treasury debits vs approvals** (D17) — everything debited from banking's
 //!      treasury must be an approved payment out of it: the internal treasury orders the
 //!      owners approved (`approved` / `executed`) plus the treasury withdrawals still
 //!      standing (`queued` / `processing` / `completed`), each tied to its order by
 //!      `withdrawals.payment_id`. A debit nobody approved is an alert.
-//!   6. **Scope stream freshness** — how long since the scope registry last got a
+//!   5. **Scope stream freshness** — how long since the scope registry last got a
 //!      well-formed page of concierge's scope stream ([`scope_events::freshness`]). Past
 //!      [`SCOPE_STREAM_STALL`] a freeze or close on concierge may not have reached the money
 //!      plane: an alert — unless concierge answers UNIMPLEMENTED (it predates ScopeEvents),
@@ -41,20 +31,20 @@
 //!      freshness, not a money invariant, and any database no consumer follows (every
 //!      test's) would read dirty for a reason that says nothing about the money.
 //!
-//!   7. **Every scope account has an owner** — value on a `scope_account:<scope>:<label>`
+//!   6. **Every scope account has an owner** — value on a `scope_account:<scope>:<label>`
 //!      the ledger holds with no `scope_accounts` row saying whose it is
 //!      ([`scope_ledger::unowned_scope_accounts`]). Scope accounts are already in (1) — the
 //!      cash invariant counts them by code — so this is not about the sum but about the
 //!      attribution: a scope account no client and not banking owns is money nobody may
 //!      debit and nobody answers for. An alert, and part of [`ReconReport::clean`].
-//!   8. **Scope money stuck in flight** — `pending` scope transfers and payouts older than
+//!   7. **Scope money stuck in flight** — `pending` scope transfers and payouts older than
 //!      [`SCOPE_POSTING_STALL`] ([`scope_payouts::stale_postings`]): recorded, counted
 //!      against their source, and not on the ledger although the relay posts one within
 //!      seconds. A gauge ([`telemetry::note_stale_scope_postings`]) and a `warn!`, not part of
 //!      [`ReconReport::clean`]: the reaper replays a lost one after five minutes, so a
-//!      nonzero reading is a backlog or a relay that is down — the parked-row scan (4) and
+//!      nonzero reading is a backlog or a relay that is down — the parked-row scan (3) and
 //!      the relay's own alerts say which.
-//!   9. **Holds vs `hold_clearing`** — a hold is one pending transfer onto `hold_clearing`
+//!   8. **Holds vs `hold_clearing`** — a hold is one pending transfer onto `hold_clearing`
 //!      for exactly what it still holds, so the account's pending must equal Σ remaining of
 //!      the ACTIVE holds in Postgres, and nothing is ever posted to it
 //!      ([`scope_holds::hold_clearing_snapshot`]). Compared only on a pass with no hold event
@@ -74,19 +64,18 @@ use std::{
 	time::Duration,
 };
 
-use domain::balance::{LedgerAccountKey, Party, ServiceId};
+use domain::balance::{LedgerAccountKey, Party};
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{
-	application::ownership::{self as ownership_app, AllocationOwnership},
 	infrastructure::{
 		outbox,
 		scope_events::{self, StreamFreshness},
 		scope_holds, scope_ledger, scope_payouts, telemetry,
 	},
-	ports::{AllocationRegistry, ledger::Ledger},
+	ports::ledger::Ledger,
 };
 
 /// How often the reconciliation scan runs. Discrepancies are rare and operator-resolved,
@@ -119,27 +108,21 @@ pub struct ReconReport {
 	pub scope_accounts: u128,
 	pub clearing_reserved: u128,
 	pub clearing_expected: u128,
-	/// Allocations whose supply is not what their holders add up to, even on a second
-	/// look — an inconsistency, alerted.
-	pub units_drift: Vec<ServiceId>,
-	/// Allocations holding value while no unit of them is outstanding — reported, counted,
-	/// not alerted (see the module header).
-	pub unheld: Vec<ServiceId>,
 	pub parked_rows: usize,
 	pub uncompensated_parked: usize,
 	/// Σ debits standing on `scope_account:main:treasury` (posted + pending).
 	pub treasury_debits: u128,
-	/// Σ what the owners approved paying out of the treasury (see the module header, 5).
+	/// Σ what the owners approved paying out of the treasury (see the module header, 4).
 	pub treasury_debits_approved: u128,
 	/// The scope stream's standing this pass; `None` when it could not be read. Outside
-	/// [`Self::clean`] (see the module header, 6).
+	/// [`Self::clean`] (see the module header, 5).
 	pub scope_stream: Option<StreamFreshness>,
-	/// Scope accounts holding value with no owner on record, by logical key (module header, 7).
+	/// Scope accounts holding value with no owner on record, by logical key (module header, 6).
 	pub unowned_scope_accounts: Vec<String>,
-	/// Scope transfers and payouts stuck unposted (module header, 8); `None` when unread.
+	/// Scope transfers and payouts stuck unposted (module header, 7); `None` when unread.
 	/// Outside [`Self::clean`].
 	pub stale_scope_postings: Option<i64>,
-	/// `hold_clearing` against the active holds (module header, 9); `None` when not compared
+	/// `hold_clearing` against the active holds (module header, 8); `None` when not compared
 	/// this pass.
 	pub hold_clearing: Option<HoldClearingCheck>,
 }
@@ -161,13 +144,11 @@ impl HoldClearingCheck {
 }
 
 impl ReconReport {
-	/// Whether every checked invariant held (no operator action needed). Unheld value is
-	/// not an invariant: a clean report can still list allocations nobody holds yet.
+	/// Whether every checked invariant held (no operator action needed).
 	pub fn clean(&self) -> bool {
 		self.custody == self.claims
 			&& self.unclassified_claims == 0
 			&& self.clearing_reserved == self.clearing_expected
-			&& self.units_drift.is_empty()
 			&& self.parked_rows == 0
 			&& self.treasury_debits == self.treasury_debits_approved
 			&& self.unowned_scope_accounts.is_empty()
@@ -179,8 +160,7 @@ impl ReconReport {
 pub struct Reconciliation {
 	pool: PgPool,
 	ledger: Arc<dyn Ledger>,
-	allocations: Arc<dyn AllocationRegistry>,
-	/// Passes in a row that could not compare `hold_clearing` (module header, 9).
+	/// Passes in a row that could not compare `hold_clearing` (module header, 8).
 	hold_clearing_skips: AtomicU32,
 }
 
@@ -189,11 +169,10 @@ pub struct Reconciliation {
 pub const HOLD_CLEARING_MAX_SKIPS: u32 = 60;
 
 impl Reconciliation {
-	pub fn new(pool: PgPool, ledger: Arc<dyn Ledger>, allocations: Arc<dyn AllocationRegistry>) -> Self {
+	pub fn new(pool: PgPool, ledger: Arc<dyn Ledger>) -> Self {
 		Self {
 			pool,
 			ledger,
-			allocations,
 			hold_clearing_skips: AtomicU32::new(0),
 		}
 	}
@@ -277,18 +256,6 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: clearing balance read failed: {err}"),
 		}
 
-		// (3) Every unit at a holder, per allocation. The registry is the list — the
-		// platform's own picture of what it runs, hidden reserved rows included — and the
-		// ledger is the witness. A registry read failure skips the check this pass and says
-		// so, like a clearing read failure: the next pass retries.
-		match self.allocations.list_all().await {
-			Ok(allocations) =>
-				for allocation in allocations {
-					self.check_allocation(allocation.service().clone(), &mut report).await;
-				},
-			Err(err) => warn!("reconciliation: allocation registry read failed, per-allocation supply not verified this pass: {err}"),
-		}
-
 		// Treasury debits against what the owners approved. The two are read at different
 		// instants and the relay applies an approval's reserve after it commits, so a
 		// mismatch is re-read once before it is alerted.
@@ -312,7 +279,7 @@ impl Reconciliation {
 			);
 		}
 
-		// (4) Parked-row scan — every event the relay moved to the parked terminal state.
+		// (3) Parked-row scan — every event the relay moved to the parked terminal state.
 		let parked = outbox::parked_rows(&self.pool).await?;
 		report.parked_rows = parked.len();
 		report.uncompensated_parked = parked.iter().filter(|r| !r.compensated).count();
@@ -329,7 +296,7 @@ impl Reconciliation {
 			);
 		}
 
-		// (6) Scope stream freshness. A read failure skips it this pass, like the ledger reads.
+		// (5) Scope stream freshness. A read failure skips it this pass, like the ledger reads.
 		match scope_events::freshness(&self.pool, SCOPE_STREAM_STALL).await {
 			Ok(freshness) => {
 				report.scope_stream = Some(freshness);
@@ -348,7 +315,7 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope stream cursor read failed, freshness not verified this pass: {err}"),
 		}
 
-		// (7) Every scope account holding value has an owner. A read failure skips it this
+		// (6) Every scope account holding value has an owner. A read failure skips it this
 		// pass, like the other ledger reads.
 		match scope_ledger::unowned_scope_accounts(&self.pool).await {
 			Ok(keys) =>
@@ -358,7 +325,7 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope account owners read failed, attribution not verified this pass: {err}"),
 		}
 
-		// (8) Scope money stuck in flight. A read failure skips it this pass.
+		// (7) Scope money stuck in flight. A read failure skips it this pass.
 		match scope_payouts::stale_postings(&self.pool, SCOPE_POSTING_STALL).await {
 			Ok(stale) => {
 				report.stale_scope_postings = Some(stale);
@@ -367,11 +334,11 @@ impl Reconciliation {
 			Err(err) => warn!("reconciliation: scope postings in flight not read this pass: {err}"),
 		}
 
-		// (9) Holds against hold_clearing.
+		// (8) Holds against hold_clearing.
 		self.check_hold_clearing(&mut report).await;
 
 		if report.clean() {
-			info!(custody = %report.custody, unheld = report.unheld.len(), "reconciliation: clean — invariants hold, no parked rows");
+			info!(custody = %report.custody, "reconciliation: clean — invariants hold, no parked rows");
 		}
 		Ok(report)
 	}
@@ -403,7 +370,7 @@ impl Reconciliation {
 		}
 	}
 
-	/// (9) Holds vs `hold_clearing`: Postgres, then the ledger, then Postgres again, compared
+	/// (8) Holds vs `hold_clearing`: Postgres, then the ledger, then Postgres again, compared
 	/// only when nothing was in flight and no hold step landed between the two Postgres reads —
 	/// otherwise the ledger read may sit on either side of it. A pass that cannot compare is
 	/// skipped; [`HOLD_CLEARING_MAX_SKIPS`] of them in a row is an alert of its own, since a
@@ -474,51 +441,4 @@ impl Reconciliation {
 		}
 		Ok(())
 	}
-
-	/// One allocation's supply against its holders, and whether anyone holds what it
-	/// holds. Each account is read at its own instant, so a mint landing between the
-	/// holders' scan and the supply read tears the picture by exactly that mint; a
-	/// mismatch is therefore re-read once before it is alerted, which a real drift
-	/// survives and a race between two reads milliseconds apart does not. A ledger read
-	/// failure is a skip with a warning, never a finding.
-	async fn check_allocation(&self, service: ServiceId, report: &mut ReconReport) {
-		let mut ownership = match ownership_app::allocation_ownership(self.ledger.as_ref(), service.clone()).await {
-			Ok(ownership) => ownership,
-			Err(err) => {
-				warn!(%service, "reconciliation: allocation ownership read failed, not verified this pass: {err}");
-				return;
-			}
-		};
-		if !ownership.units_reconcile() {
-			ownership = match ownership_app::allocation_ownership(self.ledger.as_ref(), service.clone()).await {
-				Ok(ownership) => ownership,
-				Err(err) => {
-					warn!(%service, "reconciliation: allocation ownership re-read failed, not verified this pass: {err}");
-					return;
-				}
-			};
-		}
-		if !ownership.units_reconcile() {
-			report.units_drift.push(service.clone());
-			error!(
-				%service,
-				outstanding = %ownership.units_outstanding.to_decimal_string(),
-				held = %ownership.held_units().to_decimal_string(),
-				holders = ownership.holders.len(),
-				"reconciliation: SUPPLY DRIFT — units outstanding != sum of holders' units (a unit nobody holds, or held beyond the supply)"
-			);
-		}
-		if ownership.is_unheld() {
-			report.unheld.push(service.clone());
-			note_unheld(&ownership);
-		}
-	}
-}
-
-fn note_unheld(ownership: &AllocationOwnership) {
-	telemetry::note_unheld_allocation_value(
-		ownership.service.as_str(),
-		&ownership.claim.posted.to_decimal_string(),
-		ownership.product_units.iter().filter(|(_, units)| !units.is_zero()).count(),
-	);
 }

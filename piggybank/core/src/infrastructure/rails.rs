@@ -45,12 +45,6 @@ pub(super) fn now_unix_secs() -> u64 {
 	std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// [`now_unix_secs`] as a signed second count, for the call sites that hand the wall clock to
-/// the fee accrual (a Postgres `bigint`) rather than to a chain.
-pub(super) fn now_unix_i64() -> i64 {
-	now_unix_secs() as i64
-}
-
 /// The failure taxonomy every rail's deposit and withdrawal watcher shares. No single watcher
 /// constructs every variant — the TON deposit watcher, for one, never lets a per-owner RPC
 /// failure end a cycle, so it never builds [`Rpc`](WatcherError::Rpc) — but the `Display`

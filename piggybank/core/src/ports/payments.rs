@@ -37,7 +37,7 @@ pub const DIGEST_BYTES: usize = 32;
 /// [`domain::payments::PaymentTerms::requirement`], and a shape that could carry both or
 /// neither would let an unauthorizable order commit.
 pub enum ApprovalSeat {
-	/// The source is fund-owned and the owners decide over a concierge `bank:payment`
+	/// The source is the treasury and the owners decide over a concierge `bank:payment`
 	/// approval. Nothing to supply: the repository renders the approval's fields from the
 	/// order and stores what it sent, and the executor proposes it.
 	Concierge,
@@ -140,14 +140,12 @@ pub struct ConciergeSeatView {
 
 /// What a human recognises the receiving end BY, beside the canonical label. The label
 /// (`PaymentTerms::destination_label`) is what the digest binds and every surface shares; an
-/// investor's masked mailbox or a product's title is the detail that lets an approver tell
-/// "investor 8f3e…" from the person they meant. Never digested, and masked by the surface.
+/// investor's masked mailbox is the detail that lets an approver tell "investor 8f3e…" from
+/// the person they meant. Never digested, and masked by the surface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EndDetail {
 	/// The receiving investor's mirrored address, UNMASKED — every surface masks it.
 	Mailbox(String),
-	/// The receiving product's title from the allocation registry.
-	ProductTitle(String),
 }
 
 /// An order and the identity slice a surface needs beside it.
@@ -203,7 +201,7 @@ pub enum ExecutionOutcome {
 	/// as a failure whose reason is the cause, and — unlike any other failure — told to the
 	/// audience that cause allows, which is why the cause stays typed this far.
 	///
-	/// `withdrawal` is the L1 order's derived withdrawal id, `None` for an L2/L3 order. An
+	/// `withdrawal` is the L1 order's derived withdrawal id, `None` for an L3 order. An
 	/// earlier attempt may have created it and died before recording the effect; the void
 	/// cancels it while it is still `Queued`, as the L1 window does, and records the effect
 	/// that exists when it is already past voiding.
@@ -213,7 +211,7 @@ pub enum ExecutionOutcome {
 	},
 }
 
-/// Where an L2/L3 order's reservation stands in the relay — the Read-First the settlement
+/// Where an L3 order's reservation stands in the relay — the Read-First the settlement
 /// takes before it is recorded, because `Approved` commits the `Reserved` event and the
 /// relay applies it afterwards, in its own time.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,14 +230,13 @@ pub enum ReservationStatus {
 #[derive(Default)]
 pub struct PaymentFilter {
 	pub state: Option<PaymentState>,
-	/// Either end. Many payments have no user on either side (one product's claim to another),
-	/// which is why the admin screen cannot be served by the per-user operation feed.
+	/// Either end.
 	pub party: Option<Party>,
-	/// Only orders whose source is fund-owned (the governance surface), when true.
+	/// Only orders whose source is banking's treasury (the owners' surface), when true.
 	pub fund_owned_source: Option<bool>,
 }
 
-/// The refusal for a second open order against one fund-owned source claim — the partial
+/// The refusal for a second open order against the treasury — the partial
 /// unique index's answer, and the pre-check's, in the same words: which of the two spoke
 /// is an accident of timing the caller has no business telling apart.
 pub fn already_open() -> DomainError {
@@ -260,11 +257,11 @@ pub fn consent_not_found() -> DomainError {
 pub trait PaymentRepository: Send + Sync {
 	/// Persist a brand-new order together with its materialized approval requirement, in one
 	/// transaction. Takes the source claim's write lock ([`lock_claim`](crate::infrastructure::outbox::lock_claim))
-	/// first: a payment spends the same claims withdrawals and subscriptions do, and a
+	/// first: a payment spends the same claims withdrawals and moves do, and a
 	/// spender that skips the lock silently stops the serialization covering the others.
 	///
 	/// Refuses with [`DomainError::Conflict`] when another order is already open against the
-	/// same fund-owned source (the partial unique index is what actually enforces it).
+	/// same treasury source (the partial unique index is what actually enforces it).
 	///
 	/// For a session seat the notice asking the subject is queued in this same transaction.
 	/// Refused when the subject has no mirrored concierge id — they could not be told, and an
@@ -275,7 +272,7 @@ pub trait PaymentRepository: Send + Sync {
 	async fn find(&self, id: PaymentId) -> Result<Option<PaymentView>, DomainError>;
 
 	/// Whether an order is already open (`pending` or `approved`) against `source`. A read
-	/// the fund-owned open path takes before writing, so the ordinary refusal reads as one.
+	/// the treasury open path takes before writing, so the ordinary refusal reads as one.
 	/// Advisory, not the guard: the index is the guard.
 	async fn has_open_against(&self, source: &Party) -> Result<bool, DomainError>;
 
@@ -307,7 +304,7 @@ pub trait PaymentRepository: Send + Sync {
 	/// the caller re-read by the deterministic id and believe the row rather than the error.
 	///
 	/// An `Executed` outcome over a session seat whose pins have moved since open is NOT
-	/// recorded: the order is moved to `execution_failed` (releasing an L2/L3 reservation)
+	/// recorded: the order is moved to `execution_failed` (releasing an L3 reservation)
 	/// and the call returns [`DomainError::Conflict`] naming why. See
 	/// [`SessionConsentView::invalidated`] for the L1 path, which must check before the
 	/// withdrawal exists — and for the window between that check and this call, a withdrawal the

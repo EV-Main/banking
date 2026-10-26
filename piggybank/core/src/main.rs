@@ -11,7 +11,7 @@
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use color_eyre::eyre::{Context, ensure, eyre};
-use domain::{book::PriceTimeEngine, money::Network};
+use domain::money::Network;
 use ev::error_monitoring::{self, Config as SentryConfig};
 use evbanking_auth::{AuthConfig, AuthService, ServiceTokenSource, provisioner_channel};
 use evbanking_contracts::signer::v1::signer_service_client::SignerServiceClient;
@@ -19,15 +19,12 @@ use piggybank_core::{
 	AppState,
 	application::{
 		auth_sync,
-		book::BookFeed,
 		payment_approvals::PaymentProposer,
 		scope_operations::{ApprovalExecutor, CatalogGate},
 	},
 	config::{self, Rails},
 	infrastructure::{
-		allocations::PgAllocations,
 		approvals::ConciergeApprovals,
-		book::PgBook,
 		bridge::{
 			BridgeConsumer,
 			endpoint::{BridgeTlsFiles, bridge_endpoint},
@@ -38,25 +35,18 @@ use piggybank_core::{
 		deposit_watcher::DepositWatcher,
 		deposits::PgDeposits,
 		dispatcher::Dispatcher,
-		fee_sweeper::FeeSweeper,
-		fees::{PgFeeAssessments, PgFeePolicies, PgFeeSettlements, PgPositionAccruals},
-		issuance::PgUnitIssuances,
 		ledger::{self, TbLedger},
-		nav::PgNav,
 		operation_feed::PgOperationFeed,
 		outflow::PgOutflowPolicy,
 		payments::PgPayments,
 		payments_sweeper::PaymentsSweeper,
-		positions::PgFundPositions,
 		reaper::Reaper,
 		reconciliation::Reconciliation,
-		redemptions::PgRedemptions,
 		relay::Relay,
 		scope_events::ScopeEventsConsumer,
 		scope_ledger::PgScopeLedger,
 		scope_notifications::{ConciergeScopeNotifier, ScopeNotificationWorker},
 		signer_addresses::SignerDepositAddresses,
-		subscriptions::PgSubscriptions,
 		sweep::Sweep,
 		tigerbeetle::TigerBeetle,
 		ton_custody::TonCustody,
@@ -72,10 +62,7 @@ use piggybank_core::{
 		withdrawal_watcher::WithdrawalWatcher,
 		withdrawals::PgWithdrawals,
 	},
-	ports::{
-		AllocationRegistry, BookStore, CompartmentStore, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
-		PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
-	},
+	ports::{CompartmentStore, Custody, DepositAddresses, Deposits, OperationFeed, OutflowPolicy, PaymentFeed, PaymentRepository, UserRepository, WithdrawalRepository, ledger::Ledger},
 	services::{
 		self,
 		scope_ledger::{ScopeLedgerDeps, ScopeLedgerListener},
@@ -265,26 +252,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		catalog: Arc::new(CatalogGate::new()),
 	});
 	let payment_feed: Arc<dyn PaymentFeed> = pg_payments;
-	let allocations: Arc<dyn AllocationRegistry> = Arc::new(PgAllocations::new(pool.clone()));
-	let subscriptions: Arc<dyn SubscriptionRepository> = Arc::new(PgSubscriptions::new(pool.clone()));
-	let issuances: Arc<dyn UnitIssuanceRepository> = Arc::new(PgUnitIssuances::new(pool.clone()));
-	let redemptions: Arc<dyn RedemptionRepository> = Arc::new(PgRedemptions::new(pool.clone()));
-	// The allocation book: orders and fills in Postgres under one write lock per product,
-	// escrow and settlement through the relay. Price-time priority is the one matching
-	// rule today; it is a port so another can be wired here without touching the store.
-	let book: Arc<dyn BookStore> = Arc::new(PgBook::new(pool.clone()));
-	let book_feed = BookFeed::new();
 	let deposits: Arc<dyn Deposits> = Arc::new(PgDeposits::new(pool.clone()));
-	let nav: Arc<dyn NavMarks> = Arc::new(PgNav::new(pool.clone()));
-	let positions: Arc<dyn FundPositionReader> = Arc::new(PgFundPositions::new(pool.clone()));
-	// The fee plane. Charging moves units between holders on the Share ledger, so none of
-	// these touch cash; only `settlements` ever crosses into it, once per period per fund.
-	let fees = FeePorts {
-		policies: Arc::new(PgFeePolicies::new(pool.clone())),
-		accruals: Arc::new(PgPositionAccruals::new(pool.clone())),
-		assessments: Arc::new(PgFeeAssessments::new(pool.clone())),
-		settlements: Arc::new(PgFeeSettlements::new(pool.clone())),
-	};
 	let operations: Arc<dyn OperationFeed> = Arc::new(PgOperationFeed::new(pool.clone()));
 
 	// Deposit addresses are provisioned by the separate-process signer (it mints + seals
@@ -372,23 +340,11 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// Recovery jobs, on the relay's dedicated pool so their periodic scans don't compete
 	// with request traffic. Reconciliation watches the PG-vs-TB invariants and surfaces any
 	// parked outbox row (TB wins, alert-only); the reaper owns the timeout for abandoned
-	// sagas (alert on stuck `processing` withdrawals; auto-resolve the safe `queued` ones);
+	// sagas (alert on stuck `processing` withdrawals; auto-cancel the safe `queued` ones);
 	// the dispatcher drains the accept-and-queue backlog once a rail is topped up.
-	let reconciliation = Reconciliation::new(relay_pool.clone(), ledger.clone(), allocations.clone());
-	let reaper = Reaper::new(relay_pool.clone(), withdrawals.clone(), redemptions.clone(), relay_notify.clone());
+	let reconciliation = Reconciliation::new(relay_pool.clone(), ledger.clone());
+	let reaper = Reaper::new(relay_pool.clone(), withdrawals.clone(), relay_notify.clone());
 	let dispatcher = Dispatcher::new(relay_pool, withdrawals.clone(), ledger.clone(), custody.clone(), relay_notify.clone(), kyc_gate);
-	// The fee sweeper is the only job that *charges* rather than repairs: management fees
-	// accrue with the clock, so something has to wake up and collect them. It shares the
-	// recovery jobs' cadence and their per-item warn-and-continue discipline.
-	let fee_sweeper = FeeSweeper::new(
-		fees.policies.clone(),
-		fees.accruals.clone(),
-		fees.assessments.clone(),
-		ledger.clone(),
-		nav.clone(),
-		relay_notify.clone(),
-		Arc::new(PgOutflowPolicy::new(pool.clone())),
-	);
 	// The per-rail counterpart to `reconciliation`: that one relates two TigerBeetle accounts,
 	// so it stays green when the LEDGER and the CHAIN disagree. This compares `wallet:<net>`
 	// against the wallets it claims to describe, which is the only thing that notices USDT
@@ -512,7 +468,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		ledger: ledger.clone(),
 		custody: custody.clone(),
 		policy: outflow.clone(),
-		allocations: allocations.clone(),
 		notify: relay_notify.clone(),
 		configured: Arc::from(rails.configured_networks()),
 		kyc: kyc_gate,
@@ -533,17 +488,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		withdrawals.clone(),
 		payments,
 		payment_feed,
-		allocations,
-		subscriptions,
-		issuances,
-		redemptions,
-		book,
-		Arc::new(PriceTimeEngine),
-		book_feed,
 		deposits,
-		nav,
-		positions,
-		fees,
 		operations,
 		deposit_addresses,
 		custody,
@@ -624,7 +569,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		treasury_drift_done,
 		reaper_done,
 		dispatcher_done,
-		fee_sweeper_done,
 		bridge_done,
 		scope_events_done,
 		approval_executor_done,
@@ -663,7 +607,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		branch(&shutdown, "treasury drift watch", infallible(treasury_drift.run(shutdown.clone()))),
 		branch(&shutdown, "reaper", infallible(reaper.run(shutdown.clone()))),
 		branch(&shutdown, "dispatcher", infallible(dispatcher.run(shutdown.clone()))),
-		branch(&shutdown, "fee sweeper", infallible(fee_sweeper.run(shutdown.clone()))),
 		branch(
 			&shutdown,
 			"bridge",
@@ -759,7 +702,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		.and(treasury_drift_done)
 		.and(reaper_done)
 		.and(dispatcher_done)
-		.and(fee_sweeper_done)
 		.and(bridge_done)
 		.and(scope_events_done)
 		.and(approval_executor_done)

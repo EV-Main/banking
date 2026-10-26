@@ -239,10 +239,6 @@
     "en": "You don't have access to this.",
     "t": "Vous n’y avez pas accès."
   },
-  "err.fundServiceRequired": {
-    "en": "Select a fund to continue.",
-    "t": "Sélectionnez un fonds pour continuer."
-  },
   "err.kycStartFailed": {
     "en": "We couldn't start verification. Please try again.",
     "t": "Impossible de démarrer la vérification. Veuillez réessayer."
@@ -403,18 +399,6 @@
     "en": "Deposit",
     "t": "Dépôt"
   },
-  "ops.kind.fee": {
-    "en": "Fee",
-    "t": "Frais"
-  },
-  "ops.kind.redemption": {
-    "en": "Redemption",
-    "t": "Rachat"
-  },
-  "ops.kind.subscription": {
-    "en": "Subscription",
-    "t": "Souscription"
-  },
   "ops.kind.unknown": {
     "en": "Operation",
     "t": "Opération"
@@ -427,10 +411,6 @@
     "en": "Cancelled",
     "t": "Annulé"
   },
-  "ops.state.charged": {
-    "en": "Charged",
-    "t": "Prélevé"
-  },
   "ops.state.completed": {
     "en": "Completed",
     "t": "Terminé"
@@ -442,10 +422,6 @@
   "ops.state.failed": {
     "en": "Failed",
     "t": "Échec"
-  },
-  "ops.state.partlyDeferred": {
-    "en": "Partly deferred",
-    "t": "Reporté"
   },
   "ops.state.processing": {
     "en": "Processing",
@@ -466,10 +442,6 @@
   "payment.tier.hint.internal": {
     "en": "Between two claims inside the fund. No money leaves the ledger.",
     "t": "Entre deux créances au sein du fonds. Aucun argent ne quitte le registre."
-  },
-  "payment.tier.hint.service": {
-    "en": "Into one of the fund's products, as its pooled claim.",
-    "t": "Vers l'un des produits du fonds, sur sa créance commune."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",
@@ -1490,14 +1462,6 @@
   "walletMfe.historyEmptyDesc": {
     "en": "Deposits, withdrawals and moves between compartments will show up here.",
     "t": "Les dépôts, retraits et transferts entre compartiments apparaîtront ici."
-  },
-  "walletMfe.inOrders": {
-    "en": "In orders",
-    "t": "En ordres"
-  },
-  "walletMfe.invested": {
-    "en": "Invested",
-    "t": "Investi"
   },
   "walletMfe.main": {
     "en": "Main account",

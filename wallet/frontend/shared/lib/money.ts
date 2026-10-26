@@ -9,9 +9,6 @@
 //   summary money (USD)   exactly 2 dp  — a fund that rounds a P&L to the dollar reads
 //                                         as an estimate rather than a statement
 //   ledger money (USDT)   2–6 dp        — a wallet row has to show what actually moved
-//   fund units (shares)   2–8 dp        — fractional shares read clearly
-//   NAV per share         exactly 4 dp  — a NAV is a price; the day's move lives in the
-//                                         fourth decimal
 //
 // Separators follow the reader's locale; the precision policy does not. A German reader
 // sees "1.234,50" for the balance an English one sees as "1,234.50" — the same figure,
@@ -86,12 +83,6 @@ export function formatSignedUsd(value: string | number | undefined, locale: Loca
   const n = typeof value === "number" ? value : num(value);
   const sign = n < 0 ? "−" : n > 0 ? "+" : "";
   return `${sign}${formatUsd(Math.abs(n), locale)}`;
-}
-
-/** NAV per share: "$1.0423" (Figma `cabinet/invest`). */
-export function formatNav(value: string | number | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = typeof value === "number" ? value : num(value);
-  return numberFormat(locale, "nav", { style: "currency", currency: "USD", currencyDisplay: "narrowSymbol", minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(n);
 }
 
 /**
@@ -169,14 +160,6 @@ export function valenceClass(value: number | bigint | string | undefined): strin
   return VALENCE_CLASS[valence(value)];
 }
 
-// Fund units (shares) — same dimension as USDT for display, but no currency suffix and a
-// touch more precision so fractional shares read clearly.
-export function formatUnits(value: string | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = Number(value ?? "0");
-  if (!Number.isFinite(n)) return value ?? "0";
-  return numberFormat(locale, "units", { minimumFractionDigits: 2, maximumFractionDigits: 8 }).format(n);
-}
-
 /** Signed percentage: "+4.2%" / "−1.8%" / "0.0%", same Unicode minus as the signed money
  *  and, like it, no sign on zero. The "%" is appended rather than left to `Intl`'s percent
  *  style, which pads it with a locale space ("4,2 %") that the figures beside it do not use. */
@@ -250,55 +233,6 @@ export function fromBaseUnits(units: bigint): string {
 export function subUsdt(a: string | undefined, b: string | undefined): string {
   const r = toBaseUnits(a) - toBaseUnits(b);
   return fromBaseUnits(r < 0n ? 0n : r);
-}
-
-// Unit counts get large — a hundred-million-unit cap is unreadable written out, and the
-// figure it is compared against has to be readable at the same glance. Compacts to 3
-// significant figures ("21.0M", "940K", "1.5B") and only above a thousand, so a fund
-// sized to 500 units still reads as "500".
-export function compactUnits(value: string | undefined, locale: Locale = DEFAULT_MONEY_LOCALE): string {
-  const n = num(value);
-  if (!Number.isFinite(n) || n < 1000) return formatUnits(value, locale);
-  for (const [scale, suffix] of [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]] as const) {
-    if (n >= scale) {
-      const scaled = n / scale;
-      const rounded = scaled >= 100 ? Math.round(scaled) : Number(scaled.toFixed(scaled >= 10 ? 1 : 2));
-      // Up to two decimals with trailing zeros dropped — the `Number(toFixed)` above already
-      // did the rounding; the formatter only writes the locale's separator.
-      return `${numberFormat(locale, "compact", { maximumFractionDigits: 2 }).format(rounded)}${suffix}`;
-    }
-  }
-  return formatUnits(value, locale);
-}
-
-// What fraction of `cap` is taken by `issued`, 0–1, for a progress bar. Exact bigint
-// division — a 1e26 cap overflows a float's integer precision, so
-// `Number(issued) / Number(cap)` would quietly lie at the sizes this feature is for.
-//
-// The scale is 1e12 rather than basis points because these caps are large: one unit of a
-// hundred-million-unit fund is 1e-8, which basis-point division floors to a flat zero.
-// That is fine for a bar (it is invisible either way) and wrong for anything that asks
-// this function a question about a small holding.
-const CAP_FRACTION_SCALE = 1_000_000_000_000n;
-
-export function fractionOfCap(issued: string | undefined, cap: string | undefined): number {
-  const a = toBaseUnits(issued);
-  const b = toBaseUnits(cap);
-  if (b <= 0n) return 0;
-  if (a >= b) return 1;
-  return Number((a * CAP_FRACTION_SCALE) / b) / Number(CAP_FRACTION_SCALE);
-}
-
-// One holder class's share of a supply, in the basis points `pct()` (`./rate`) renders —
-// "Company stake 12.5%" on the product card, the holders split on the admin panel. Exact
-// bigint division for the same reason `fractionOfCap` is; the floor to a whole basis
-// point is deliberate, since a stake under 0.01% of the fund reads as 0% and should.
-export function shareBps(part: string | undefined, whole: string | undefined): number {
-  const a = toBaseUnits(part);
-  const b = toBaseUnits(whole);
-  if (a <= 0n || b <= 0n) return 0;
-  if (a >= b) return 10_000;
-  return Number((a * 10_000n) / b);
 }
 
 // How much of an address survives truncation. The wallet (the default) keeps enough of a

@@ -7,8 +7,6 @@
 /** Decimal USDT strings, exactly as the wire sent them — display only. */
 export interface WalletBalance {
   available: string;
-  inOrders: string;
-  invested: string;
   pendingWithdrawal: string;
   inCompartments: string;
   total: string;
@@ -20,7 +18,7 @@ export interface WalletOperation {
   state: string;
   /** Unix seconds; 0 when the hub never stamped one. */
   createdAt: number;
-  /** A magnitude; the sign is the kind's. Empty for an unsettled redemption. */
+  /** A magnitude; the sign is the kind's. */
   amount: string;
 }
 
@@ -60,8 +58,6 @@ export function parseWalletBalance(body: unknown): WalletBalance | null {
   if (typeof balance !== "object" || balance === null) return null;
   return {
     available: decimal(field(balance, "available")),
-    inOrders: decimal(field(balance, "in_orders")),
-    invested: decimal(field(balance, "invested")),
     pendingWithdrawal: decimal(field(balance, "pending_withdrawal")),
     inCompartments: decimal(field(balance, "in_compartments")),
     total: decimal(field(balance, "total")),

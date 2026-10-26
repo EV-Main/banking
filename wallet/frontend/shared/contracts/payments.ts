@@ -7,8 +7,7 @@
 // the proto, this file is what `./gen` replaces.
 //
 // `tier` is a fact the money plane derives from the destination (`external` for an address,
-// `service` for a product's pooled claim, `internal` for everything else) and is carried
-// here READ-ONLY.
+// `internal` otherwise) and is carried here READ-ONLY.
 //
 // Lifecycle states travel as plain strings, for the reason `./governance` gives: the state
 // machine lives in the money plane, and a closed union here would turn a backend addition
@@ -19,13 +18,13 @@ import type { Decimal, Timestamp } from "./governance";
 
 // ── An end as the plane renders it back ────────────────────────────────────────
 
-export type PaymentEndKind = "service" | "user" | "external" | "piggybank" | "revenue";
+export type PaymentEndKind = "user" | "treasury" | "external";
 
 /**
  * One end of an order, resolved for a reader.
  *
  * `label` is the canonical name the digest binds; `detail` is what a PERSON recognises the
- * end by — the receiving investor's masked mailbox, the product's title — so "investor
+ * end by — the receiving investor's masked mailbox — so "investor
  * 8f3e…" is not approved for the wrong person. The BFF sends EMPTY STRINGS, not null, for
  * the fields a kind does not carry (`network`/`address` on an internal end, `detail` when
  * there is nothing to add).
@@ -40,7 +39,7 @@ export interface PaymentEnd {
 }
 
 /** Where the money lands, by what it takes to get it there. */
-export type PaymentTier = "internal" | "service" | "external";
+export type PaymentTier = "internal" | "external";
 
 export type ConsentDecision = "approve" | "reject";
 

@@ -9,12 +9,10 @@ import { parseWalletBalance, parseWalletHistory, parseWithdrawNetworks } from ".
 
 test("balance fields that are not wire decimals read as zero", () => {
   const balance = parseWalletBalance({
-    balance: { available: "12.50", in_orders: "1e3", invested: "abc", pending_withdrawal: 7, in_compartments: "1.", total: "-3.25" },
+    balance: { available: "12.50", pending_withdrawal: 7, in_compartments: "1.", total: "-3.25" },
   });
   assert.deepEqual(balance, {
     available: "12.50",
-    inOrders: "0",
-    invested: "0",
     pendingWithdrawal: "0",
     inCompartments: "0",
     total: "-3.25",

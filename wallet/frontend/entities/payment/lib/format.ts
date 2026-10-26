@@ -12,7 +12,6 @@ import { wordFor } from "@/shared/lib/wire-words";
 
 const tierHints = (t: Translate): Readonly<Record<string, string>> => ({
   internal: t("payment.tier.hint.internal", "Between two claims inside the fund. No money leaves the ledger."),
-  service: t("payment.tier.hint.service", "Into one of the fund's products, as its pooled claim."),
   external: t("payment.tier.hint.external", "Out to an on-chain address. Ships as a withdrawal once approved."),
 });
 

@@ -4,16 +4,16 @@
 //!
 //! The order is the INTENT plus its one approval plus its outcome; the money moves either
 //! through the ordinary withdrawal saga (L1) or through the relay from the two events the
-//! order drains (L2/L3). Which approval an order needs is read off its source —
+//! order drains (L3). Which approval an order needs is read off its source —
 //! [`PaymentTerms::requirement`] — and this module is where each requirement is actually
-//! seated: a concierge `bank:payment` approval for fund-owned money (proposed by
+//! seated: a concierge `bank:payment` approval for banking's treasury (proposed by
 //! [`payment_approvals`](super::payment_approvals)), a session seat for the investor whose
 //! claim is spent.
 //!
 //! Execution is driven from three places — the investor's answer, the approval round, and
 //! the sweeper — and is safe to reach more than once from each: only an `approved` order executes, the
 //! payload hash and the consent pins are re-read first, an L1 withdrawal's id is a pure
-//! function of the order so a retry re-creates the same row, and an L2/L3 settlement is
+//! function of the order so a retry re-creates the same row, and an L3 settlement is
 //! recorded only once the relay has actually applied the reservation it posts.
 
 use domain::{
@@ -32,7 +32,7 @@ use crate::{
 	config::KycGate,
 	infrastructure::{payments::digest, relay::payment_reserve_id},
 	ports::{
-		AllocationRegistry, Custody, OutflowPolicy, UserRepository, WithdrawalRepository,
+		Custody, OutflowPolicy, UserRepository, WithdrawalRepository,
 		ledger::Ledger,
 		payments::{
 			ApprovalSeat, ConsentAudit, ConsentDecision, ConsentOutcome, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, PaymentView, ReservationStatus, SeatView,
@@ -55,9 +55,6 @@ pub struct PaymentPorts<'a> {
 	/// The read-only kill-switch, re-read at execution: an approved order is still money
 	/// leaving, and an operator pause must hold it exactly as it holds a queued withdrawal.
 	pub policy: &'a dyn OutflowPolicy,
-	/// The product registry a `service:<slug>` destination is checked against at open: a
-	/// claim no product owns is money nobody can reach.
-	pub allocations: &'a dyn AllocationRegistry,
 	pub relay: &'a Notify,
 	pub configured: &'a [Network],
 	pub kyc: KycGate,
@@ -146,32 +143,13 @@ pub const TREASURY_SPENDING_CLOSED: &str = "treasury spending waits for scope ap
 fn spending_closed(from: &Party) -> bool {
 	match from {
 		Party::Treasury => true,
-		Party::User(_) | Party::Service(_) => false,
+		Party::User(_) => false,
 	}
 }
 
 /// Everything the order's eventual execution will check, checked now.
 async fn check_executable(ports: &PaymentPorts<'_>, terms: &PaymentTerms) -> Result<(), DomainError> {
-	// A product's pooled claim exists in the ledger the moment something is posted to it,
-	// registered or not — so the registry, not the ledger, is what says the slug names a
-	// product. Money paid into a claim no product owns is reachable by nobody.
-	if let PaymentDestination::Internal(Party::Service(service)) = terms.to()
-		&& ports.allocations.find(service).await?.is_none()
-	{
-		return Err(DomainError::Validation(format!("no product is registered as service {service}")));
-	}
 	match (terms.to(), terms.from()) {
-		(PaymentDestination::External { .. }, Party::Service(_)) => {
-			// The withdrawal saga pays out of an investor's claim and of nothing else: an
-			// allocation's pooled money — a product's or the platform's own `fee`/`fund` —
-			// has no `WithdrawalSource` (#237). The one way cash leaves a reserved allocation
-			// is a holder redeeming onto their own claim and withdrawing from there, so the
-			// order is refused with that route rather than the saga taught a source nobody
-			// holds.
-			Err(DomainError::Validation(
-				"an external payment can leave only from an investor's claim; an allocation's cash reaches the chain through a holder's redemption and their own withdrawal".into(),
-			))
-		}
 		(PaymentDestination::External { network, address }, Party::User(user)) =>
 			withdrawal_app::check_user_withdrawal(ports.ledger, &ports.admission_gates(), *user, *network, address.clone(), terms.amount()).await,
 		// banking's treasury (D17) has a withdrawal source of its own. `open` refuses the
@@ -283,7 +261,7 @@ pub async fn answer_consent(ports: &PaymentPorts<'_>, subject: UserId, id: Payme
 /// 4. a session seat whose pins have moved fails the order closed BEFORE anything is
 ///    created — and `record_execution` re-checks under the lock, voiding a still-queued
 ///    withdrawal if a revocation landed in between;
-/// 5. an L2/L3 settlement is recorded only once the relay has applied the reservation the
+/// 5. an L3 settlement is recorded only once the relay has applied the reservation the
 ///    approval raised; until then nothing is recorded and the sweeper comes back, and a
 ///    reservation the ledger refused (parked) fails the order rather than waiting forever;
 /// 6. an L1 withdrawal's id is derived from the order, and a refusal from the withdrawal
@@ -322,7 +300,7 @@ pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Resul
 		return ports.payments.record_execution(id, ExecutionOutcome::ConsentVoid { cause, withdrawal }, now).await;
 	}
 	let outcome = match order.tier() {
-		PaymentTier::Internal | PaymentTier::Service => match settle_on_the_ledger(ports, id).await? {
+		PaymentTier::Internal => match settle_on_the_ledger(ports, id).await? {
 			Some(outcome) => outcome,
 			None => return Ok(view),
 		},
@@ -331,7 +309,7 @@ pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Resul
 	ports.payments.record_execution(id, outcome, now).await
 }
 
-/// The L2/L3 effect: the settlement is recorded once — and only once — the reservation the
+/// The L3 effect: the settlement is recorded once — and only once — the reservation the
 /// approval raised has actually landed. `None` means "not yet": nothing is recorded and the
 /// next sweep asks again. The ledger is asked as well as the relay's own record, so a
 /// `saga_steps` row can never stand in for a transfer TigerBeetle does not hold.
@@ -386,10 +364,6 @@ async fn create_withdrawal(ports: &PaymentPorts<'_>, order: &PaymentOrder) -> Re
 				order.terms().amount(),
 			)
 			.await,
-		// Refused at open; stated here too so the match is total and a row that somehow
-		// carries this shape fails visibly rather than paying from a source the saga does not
-		// open a withdrawal for.
-		Party::Service(_) => return Ok(ExecutionOutcome::Failed("an external payment cannot leave from this source".to_owned())),
 	};
 	Ok(match requested {
 		Ok(created) => ExecutionOutcome::Executed(PaymentEffect::Withdrawal(created.id())),

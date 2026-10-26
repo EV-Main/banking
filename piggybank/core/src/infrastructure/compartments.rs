@@ -253,7 +253,7 @@ impl CompartmentStore for PgCompartments {
 			return Err(MoveError::Refused(MoveRefusal::RateLimited));
 		}
 		// The source's lock is the one every writer that spends that claim takes (withdraw,
-		// subscribe), so their writes serialize with this one. A move in also takes the
+		// payment), so their writes serialize with this one. A move in also takes the
 		// target's, always second: only a move in ever holds two, and it takes them in one
 		// order, so two moves cannot wait on each other.
 		outbox::lock_claim(&mut tx, &movement.from().claim_key(user)).await?;

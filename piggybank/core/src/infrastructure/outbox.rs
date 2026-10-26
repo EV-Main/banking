@@ -19,12 +19,10 @@ use uuid::Uuid;
 
 /// Take the per-user write lock — a transaction-scoped `pg_advisory_xact_lock` keyed on the
 /// user id — inside an open command transaction, held until commit. Every flow that spends a
-/// user's unified `UserClaim` (withdraw, subscribe) takes this *same* target before its
-/// Read-First so the optimistic solvency checks serialize across flows: without it a
-/// concurrent withdraw + subscribe on one claim both read the same stale `available()`, both
-/// commit `Queued`, and the second reserve then parks in the relay, silently diverging PG
-/// from TB. (Redemptions serialize on their `fund_positions` row instead — a different
-/// account, the units, not the claim.) An advisory lock (over a `users`-row `FOR UPDATE`)
+/// user's unified `UserClaim` (withdraw, move, payment) takes this *same* target before its
+/// Read-First so the optimistic solvency checks serialize across flows: without it two
+/// concurrent spends of one claim both read the same stale `available()`, both commit, and
+/// the second reserve then parks in the relay, silently diverging PG from TB. An advisory lock (over a `users`-row `FOR UPDATE`)
 /// engages even before the user row is materialized and needs no FK, so the serialization is
 /// unconditional. TigerBeetle's non-negative flag remains the actual money backstop.
 pub async fn lock_user(conn: &mut PgConnection, user_id: Uuid) -> Result<(), DomainError> {
@@ -35,8 +33,8 @@ pub async fn lock_user(conn: &mut PgConnection, user_id: Uuid) -> Result<(), Dom
 ///
 /// Every writer that spends a claim must take this same target before its optimistic
 /// Read-First, or the serialization silently stops covering whoever was added last. Keying
-/// it on the claim rather than on a user id is what lets a spender of `fee`, `fund` or a
-/// service claim join that discipline without inventing a second lock space.
+/// it on the claim rather than on a user id is what lets a spender of a scope account or the
+/// treasury join that discipline without inventing a second lock space.
 pub async fn lock_claim(conn: &mut PgConnection, claim: &LedgerAccountKey) -> Result<(), DomainError> {
 	sqlx::query("SELECT pg_advisory_xact_lock($1)")
 		.bind(claim_lock_key(claim))
@@ -67,13 +65,12 @@ pub async fn lock_named_on(conn: &mut PgConnection, name: &str) -> Result<(), sq
 ///
 /// THE NAMED ARM IS FROZEN, NOT STYLE. A rolling deploy runs the old binary and the new one
 /// against one database; if the new one derived a different name for the user claim, a
-/// withdraw on the old binary and a subscribe on the new one would take two DIFFERENT locks
+/// withdraw on the old binary and a move on the new one would take two DIFFERENT locks
 /// and stop serializing — the exact divergence this lock exists to prevent, arriving
 /// silently and only during a deploy. So the name every released binary has been taking is
 /// reproduced here verbatim, and the general formula covers every other claim.
 /// `the_generalized_claim_lock_keeps_the_keys_the_old_helpers_computed` pins it against a
-/// rewrite. (The retired `fee` claim had a frozen name of its own until #245 retired the
-/// revenue payout that took it; nothing spends that claim any more.)
+/// rewrite.
 ///
 /// A `_` arm is right here (unlike the exhaustive matches elsewhere in the domain): a new
 /// account key needs no decision, because the general formula already names it correctly and
@@ -91,7 +88,7 @@ fn claim_lock_key(claim: &LedgerAccountKey) -> i64 {
 
 /// Insert one event into the `event_log` (always) and the `outbox` (when `relay`),
 /// under a caller-supplied `event_id` so the two rows share the idempotency key.
-/// Used directly for standalone ledger facts (deposits/seeding) that have no
+/// Used directly for standalone ledger facts (deposits) that have no
 /// aggregate to drain.
 pub async fn insert_event(conn: &mut PgConnection, event_id: Uuid, aggregate: &str, aggregate_id: Uuid, kind: &str, payload: &str, relay: bool) -> Result<(), DomainError> {
 	sqlx::query("INSERT INTO event_log (event_id, aggregate, aggregate_id, kind, payload) VALUES ($1, $2, $3, $4, $5::jsonb)")
@@ -331,16 +328,13 @@ mod tests {
 			"lock_user keyed the raw user id"
 		);
 		assert_eq!(
-			claim_lock_key(&LedgerAccountKey::ServiceClaim(domain::balance::ServiceId::fee())),
-			advisory_key(Uuid::new_v5(&Uuid::NAMESPACE_OID, b"service:fee")),
+			claim_lock_key(&LedgerAccountKey::WithdrawalClearing),
+			advisory_key(Uuid::new_v5(&Uuid::NAMESPACE_OID, b"clearing")),
 			"every other claim is a v5 over its logical key"
 		);
 		// And distinct claims still get distinct targets, or the generalization would have
 		// serialized unrelated writers against each other.
-		assert_ne!(
-			claim_lock_key(&LedgerAccountKey::ServiceClaim(domain::balance::ServiceId::fee())),
-			claim_lock_key(&LedgerAccountKey::ServiceClaim(domain::balance::ServiceId::fund()))
-		);
+		assert_ne!(claim_lock_key(&LedgerAccountKey::WithdrawalClearing), claim_lock_key(&LedgerAccountKey::HoldClearing));
 		assert_ne!(
 			claim_lock_key(&LedgerAccountKey::UserClaim(UserId::from_raw(user))),
 			claim_lock_key(&LedgerAccountKey::UserClaim(UserId::from_raw(Uuid::new_v4())))

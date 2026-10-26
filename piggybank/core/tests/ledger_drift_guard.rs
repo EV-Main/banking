@@ -12,11 +12,8 @@
 
 use std::sync::Arc;
 
-use domain::{
-	balance::{AccountCode, LedgerAccountKey, ServiceId},
-	users::UserId,
-};
-use piggybank_core::ports::ledger::{HoldingScope, Ledger, LedgerError};
+use domain::{balance::LedgerAccountKey, users::UserId};
+use piggybank_core::ports::ledger::{Ledger, LedgerError};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -93,47 +90,4 @@ async fn a_matching_derivation_passes_the_guard() {
 	if let Err(LedgerError::Conflict(msg)) = ledger.ensure_account(&key).await {
 		panic!("a matching derivation must not trip the drift guard: {msg}");
 	}
-}
-
-/// The rows #245 retired — `fund` (code 1), `fee` (code 40) and the company stake
-/// `shares_company:<svc>` (code 63) — stay in production's `tb_accounts` for good (a
-/// TigerBeetle account cannot be deleted), at zero, and no live key names them any more.
-/// A scan of the map must step over them by their code, not fail parsing them: the cap
-/// table of a product whose company stake once existed (production's `service_arb`) is
-/// read through exactly this scan.
-#[tokio::test]
-async fn the_retired_rows_in_the_map_are_skipped_by_code_not_parsed() {
-	let Some(pool) = pool().await else {
-		eprintln!("DATABASE_URL unset — skipping ledger drift-guard test");
-		return;
-	};
-	let service = ServiceId::parse(&format!("drift_{}", &Uuid::new_v4().simple().to_string()[..12])).unwrap();
-	// The rows as production has them: the two claims credit-normal (flags 2) on the USDT
-	// ledger, the company stake debit-normal (flags 4) on the Share ledger.
-	for (logical_key, ledger, code, flags) in [
-		("fund".to_owned(), 1_i32, AccountCode::RetiredFundClaim, 2_i32),
-		("fee".to_owned(), 1, AccountCode::RetiredFeeClaim, 2),
-		(format!("shares_company:{service}"), 3, AccountCode::RetiredCompanyStake, 4),
-	] {
-		let id = Uuid::new_v4().as_u128().to_be_bytes();
-		sqlx::query("INSERT INTO tb_accounts (logical_key, tb_account_id, ledger, code, network, flags) VALUES ($1, $2, $3, $4, NULL, $5) ON CONFLICT (logical_key) DO NOTHING")
-			.bind(&logical_key)
-			.bind(&id[..])
-			.bind(ledger)
-			.bind(i32::from(code.code()))
-			.bind(flags)
-			.execute(&pool)
-			.await
-			.expect("seed the retired id-map row");
-		assert!(code.is_retired());
-		assert!(LedgerAccountKey::parse_logical_key(&logical_key).is_err(), "{logical_key} names no live account");
-	}
-
-	// Only the retired row is on the Share ledger for this product, so the scan reaches no
-	// TigerBeetle call: it must return an empty cap table, not a parse error.
-	let holdings = ledger(pool)
-		.share_holdings(&HoldingScope::Product(service.clone()))
-		.await
-		.expect("the scan steps over the retired row");
-	assert!(holdings.is_empty(), "the retired company stake is not a holder of {service}: {holdings:?}");
 }

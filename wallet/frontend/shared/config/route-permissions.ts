@@ -7,7 +7,6 @@ const OWN = {
   notifications: "concierge:self:notifications",
   sessions: "concierge:self:sessions",
   wallet: "bank:self:wallet",
-  invest: "bank:self:invest",
   operations: "bank:self:operations",
 } as const;
 
@@ -17,7 +16,6 @@ const STAFF = "concierge:user:read";
 /** Zone-relative section prefix → permission. Matched on whole segments; `/` is Home alone. */
 const SECTIONS: readonly (readonly [prefix: `/${string}`, permission: string])[] = [
   ["/admin", STAFF],
-  ["/invest", OWN.invest],
   ["/wallet", OWN.wallet],
   ["/operations", OWN.operations],
   ["/notifications", OWN.notifications],

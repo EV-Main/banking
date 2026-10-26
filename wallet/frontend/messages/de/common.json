@@ -239,10 +239,6 @@
     "en": "You don't have access to this.",
     "t": "Sie haben darauf keinen Zugriff."
   },
-  "err.fundServiceRequired": {
-    "en": "Select a fund to continue.",
-    "t": "Wählen Sie einen Fonds, um fortzufahren."
-  },
   "err.kycStartFailed": {
     "en": "We couldn't start verification. Please try again.",
     "t": "Die Verifizierung konnte nicht gestartet werden. Bitte versuchen Sie es erneut."
@@ -403,18 +399,6 @@
     "en": "Deposit",
     "t": "Einzahlung"
   },
-  "ops.kind.fee": {
-    "en": "Fee",
-    "t": "Gebühr"
-  },
-  "ops.kind.redemption": {
-    "en": "Redemption",
-    "t": "Rücknahme"
-  },
-  "ops.kind.subscription": {
-    "en": "Subscription",
-    "t": "Zeichnung"
-  },
   "ops.kind.unknown": {
     "en": "Operation",
     "t": "Vorgang"
@@ -427,10 +411,6 @@
     "en": "Cancelled",
     "t": "Storniert"
   },
-  "ops.state.charged": {
-    "en": "Charged",
-    "t": "Belastet"
-  },
   "ops.state.completed": {
     "en": "Completed",
     "t": "Ausgeführt"
@@ -442,10 +422,6 @@
   "ops.state.failed": {
     "en": "Failed",
     "t": "Gescheitert"
-  },
-  "ops.state.partlyDeferred": {
-    "en": "Partly deferred",
-    "t": "Teils offen"
   },
   "ops.state.processing": {
     "en": "Processing",
@@ -466,10 +442,6 @@
   "payment.tier.hint.internal": {
     "en": "Between two claims inside the fund. No money leaves the ledger.",
     "t": "Zwischen zwei Ansprüchen innerhalb des Fonds. Kein Geld verlässt das Hauptbuch."
-  },
-  "payment.tier.hint.service": {
-    "en": "Into one of the fund's products, as its pooled claim.",
-    "t": "In eines der Produkte des Fonds, als dessen gepoolter Anspruch."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",
@@ -1490,14 +1462,6 @@
   "walletMfe.historyEmptyDesc": {
     "en": "Deposits, withdrawals and moves between compartments will show up here.",
     "t": "Einzahlungen, Auszahlungen und Verschiebungen zwischen Unterkonten erscheinen hier."
-  },
-  "walletMfe.inOrders": {
-    "en": "In orders",
-    "t": "In Orders"
-  },
-  "walletMfe.invested": {
-    "en": "Invested",
-    "t": "Investiert"
   },
   "walletMfe.main": {
     "en": "Main account",

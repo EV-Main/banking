@@ -11,9 +11,6 @@
 //!     landed; auto-voiding would double-pay. Recovery needs a positive not-broadcast /
 //!     dropped chain signal (an operator/watcher action), so the reaper only raises a
 //!     Sentry-shipped `error!` for a human.
-//!   - **`queued` redemptions past the max age → AUTO-FAIL.** A redemption is internal
-//!     (claim→claim, nothing leaves the chain), so voiding the pending burn and returning
-//!     the units is always safe.
 //!   - **`queued` withdrawals past the max age → AUTO-CANCEL.** A queued withdrawal was
 //!     never broadcast, so voiding the clearing reservation (full refund) is always safe;
 //!     this is the backstop for a treasury worker that never dispatches.
@@ -24,12 +21,12 @@
 //!     because the move's ledger transfer id derives from the move id. A `pending` scope
 //!     transfer or payout is replayed the same way, for the same reason.
 //!
-//! The auto-fail/cancel paths go through the same row-locked repository commands a user
+//! The auto-cancel path goes through the same row-locked repository commands a user
 //! would (idempotent, drain the void event), so the relay reverses the money exactly once.
 
 use std::{sync::Arc, time::Duration};
 
-use domain::{redemptions::RedemptionId, withdrawals::WithdrawalId};
+use domain::withdrawals::WithdrawalId;
 use sqlx::PgPool;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -38,7 +35,7 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{compartments, scope_charges, scope_holds, scope_invoices, scope_ledger, scope_payouts},
-	ports::{RedemptionRepository, WithdrawalRepository},
+	ports::WithdrawalRepository,
 };
 
 /// How often the reaper sweeps for stuck sagas.
@@ -46,8 +43,7 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// A saga older than this (since its last transition) is abandoned. Conservative — well
 /// past any legitimate operator/watcher settle window — because the safe paths void real
-/// reservations and the `processing` path pages a human. 24h for v1, matching the NAV
-/// staleness horizon.
+/// reservations and the `processing` path pages a human.
 const MAX_SAGA_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// A `pending` compartment move (or scope transfer) untouched this long, with nothing left in
@@ -63,8 +59,6 @@ pub struct ReaperReport {
 	pub stuck_processing_withdrawals: usize,
 	/// `queued` withdrawals auto-cancelled (refunded).
 	pub reaped_queued_withdrawals: usize,
-	/// `queued` redemptions auto-failed (units returned).
-	pub reaped_queued_redemptions: usize,
 	/// `pending` compartment moves whose lost event was put back on the outbox.
 	pub redriven_compartment_moves: usize,
 	/// `pending` scope transfers whose lost event was put back on the outbox.
@@ -87,18 +81,16 @@ pub struct ReaperReport {
 pub struct Reaper {
 	pool: PgPool,
 	withdrawals: Arc<dyn WithdrawalRepository>,
-	redemptions: Arc<dyn RedemptionRepository>,
 	notify: Arc<Notify>,
 	max_age: Duration,
 	move_redrive_after: Duration,
 }
 
 impl Reaper {
-	pub fn new(pool: PgPool, withdrawals: Arc<dyn WithdrawalRepository>, redemptions: Arc<dyn RedemptionRepository>, notify: Arc<Notify>) -> Self {
+	pub fn new(pool: PgPool, withdrawals: Arc<dyn WithdrawalRepository>, notify: Arc<Notify>) -> Self {
 		Self {
 			pool,
 			withdrawals,
-			redemptions,
 			notify,
 			max_age: MAX_SAGA_AGE,
 			move_redrive_after: MOVE_REDRIVE_AFTER,
@@ -172,21 +164,6 @@ impl Reaper {
 			}
 		}
 
-		// (3) `queued` redemptions past the cutoff — AUTO-FAIL (internal claim→claim → safe).
-		let stale_redemptions: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM redemptions WHERE state = 'queued' AND updated_at < now() - make_interval(secs => $1)")
-			.bind(cutoff_secs)
-			.fetch_all(&self.pool)
-			.await?;
-		for id in stale_redemptions {
-			match self.redemptions.fail(RedemptionId::from_raw(id)).await {
-				Ok(_) => {
-					report.reaped_queued_redemptions += 1;
-					warn!(redemption_id = %id, "reaper: auto-failed abandoned queued redemption (units returned)");
-				}
-				Err(err) => warn!(redemption_id = %id, "reaper: could not auto-fail queued redemption: {err}"),
-			}
-		}
-
 		// `pending` compartment moves whose event is gone — RE-ENQUEUE: the ledger transfer
 		// id is the move's, so a replay cannot post twice.
 		report.redriven_compartment_moves = compartments::redrive_stale_moves(&self.pool, self.move_redrive_after).await?;
@@ -250,7 +227,6 @@ impl Reaper {
 		}
 
 		if report.reaped_queued_withdrawals > 0
-			|| report.reaped_queued_redemptions > 0
 			|| report.redriven_compartment_moves > 0
 			|| report.redriven_scope_transfers > 0
 			|| report.redriven_scope_payouts > 0

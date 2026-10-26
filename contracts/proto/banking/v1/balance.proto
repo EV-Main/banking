@@ -2,23 +2,14 @@ syntax = "proto3";
 
 package banking.v1;
 
-import "banking/v1/allocations.proto";
-import "banking/v1/funds.proto";
-
-// BalanceService — the bank's treasury and the platform's own allocations (operator
-// surface).
+// BalanceService — the bank's treasury and the money plane's operator surface.
 //
 // Reads authoritative balances from the TigerBeetle ledger; metadata and events from
 // Postgres. Every amount is a decimal USDT STRING (proto3 has no u128; a string is
 // lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated
 // (allowlist) at the boundary. See docs/ARCHITECTURE.md.
 //
-// The allocations hold no company money (#245): what they earn is the `fee` allocation's
-// and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE
-// through units — so the treasury lists every allocation with its holders, and nothing
-// here pays "the fund" out. Cash leaves a reserved allocation by a holder's redemption
-// or by a payment the owners approved (`PaymentsService`). banking's own money
-// is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which
+// banking's own money is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which
 // nothing pays out until concierge's scope approvals decide its spending
 // (`bank:treasury_surplus`, D24).
 service BalanceService {
@@ -44,25 +35,6 @@ service BalanceService {
   // on-chain — that would double-pay. Idempotent.
   rpc FailWithdrawal(FailWithdrawalRequest) returns (FailWithdrawalResponse);
 
-  // Post a fund's total AUM; NAV is derived = AUM / units_outstanding (units read live
-  // from TigerBeetle). Rejects zero units and a NAV move beyond the safety threshold —
-  // measured against BOTH the previous mark and the mark that anchored the rolling
-  // window, so the cap cannot be walked past in steps. There is NO override.
-  rpc PostFundValuation(PostFundValuationRequest) returns (FundNav);
-
-  // Settle a queued fund redemption once the fund's claim is liquid (the treasury
-  // worker): prices at the settle-time NAV and pays the cash. Idempotent.
-  rpc SettleRedemption(SettleRedemptionRequest) returns (Redemption);
-
-  // Fail a queued fund redemption (operator): voids the reserved burn, returning the
-  // user's units. Idempotent.
-  rpc FailRedemption(FailRedemptionRequest) returns (Redemption);
-
-  // Operator (RedemptionSettle): the cross-user queue of redemptions awaiting settle,
-  // oldest first — the "Valuation & redemptions" screen's clear-the-queue surface.
-  // (Est. cash = units × current NAV is computed client-side from the posted NAV.)
-  rpc ListRedemptionQueue(ListRedemptionQueueRequest) returns (RedemptionQueue);
-
   // Admin (WithdrawalSettle): the cross-user queue of withdrawals awaiting operator
   // action, oldest first — `queued` (awaiting liquidity/dispatch) and `processing`
   // (broadcast in flight: settle with the mined tx ref, or fail ONLY if nothing
@@ -73,7 +45,7 @@ service BalanceService {
   rpc GetOperationsMode(GetOperationsModeRequest) returns (OperationsMode);
 
   // Admin (OperationsManage): toggle read-only mode. When on, every user money mutation
-  // (withdraw / subscribe / redeem) is rejected — "pause deposits & withdrawals".
+  // (withdraw, payment, compartment move, invoice payment) is rejected — "pause deposits & withdrawals".
   rpc SetOperationsMode(SetOperationsModeRequest) returns (OperationsMode);
 
   // Operator (TreasuryRead): every rail, whether this deployment runs it, and whether an
@@ -110,15 +82,6 @@ service BalanceService {
   // an address other than the one this hub cleared.
   rpc MigrateDepositAddressToCustodian(MigrateDepositAddressToCustodianRequest) returns (MigrateDepositAddressToCustodianResponse);
 
-  // What the platform has EARNED: the `fee` allocation, in the same shape the treasury
-  // lists every allocation in — its cash (settled / reserved / available), its supply,
-  // its price and who holds it. Admin/Owner. Nothing pays it out from here: a holder is
-  // paid by redeeming their units, and a payment out of its claim is an order the owners
-  // approve (`PaymentsService.OpenPayment` with source `{kind: "service", id: "fee"}`).
-  // `banking_treasury` is banking's own treasury beside it (D17); nothing pays out of it
-  // until concierge's scope approvals decide its spending (D24).
-  rpc GetFundRevenue(GetFundRevenueRequest) returns (AllocationTreasury);
-
   // The cancel and list RPCs of the revenue payout #245 retired lived here;
   // none ever reached production (`withdrawals.source = 'revenue'`: 0 rows), and both RPCs
   // went with the contract step (C-9).
@@ -149,23 +112,6 @@ message UnparkEventRequest {
 }
 
 message UnparkEventResponse {}
-
-message ListRedemptionQueueRequest {}
-
-// One queued redemption for the operator queue. `email` is the mirrored identity email
-// (may be empty if the bridge hasn't populated it). `created_at` is unix seconds.
-message RedemptionQueueItem {
-  string redemption_id = 1;
-  string user_id = 2;
-  string email = 3;
-  string service = 4;
-  string units = 5;
-  int64 created_at = 6;
-}
-
-message RedemptionQueue {
-  repeated RedemptionQueueItem items = 1;
-}
 
 message ListWithdrawalQueueRequest {}
 
@@ -238,44 +184,21 @@ message RailLiquidity {
   bool is_testnet = 8;
 }
 
-// An allocation's cash claim (`service:<id>`), split the way every reader needs it and
-// read off ONE ledger balance, so the three can never disagree: `posted` is settled,
-// `reserved` is spoken for by approved payments out of it that have not settled, and
-// `available = posted − reserved` is what a redemption or a new payment may take.
-message AllocationClaim {
+// A claim's cash, split the way every reader needs it and read off ONE ledger balance, so
+// the three can never disagree: `posted` is settled, `reserved` is spoken for by approved
+// payments out of it that have not settled, and `available = posted − reserved` is what a
+// new payment may take.
+message ClaimBalance {
   string posted = 1;
   string available = 2;
   string reserved = 3;
 }
 
-// One allocation as the treasury shows it (#245): the registry's name for it, its cash,
-// its supply, its price and who holds it — the same shape for a product and for the
-// reserved `fee` / `fund` allocations, whose `access` is `hidden`. `nav` is a product's
-// posted mark, or the computed value of a reserved allocation (its cash plus every fee
-// class it holds at that product's NAV) over its supply; `nav_posted_at_unix` is 0
-// while nothing under it has been marked (seed-priced). `holders` are largest first —
-// people, or the `fee` allocation holding a product's fee class.
-message AllocationTreasury {
-  string service = 1;
-  string title = 2;
-  string access = 3;              // hidden | view | invest
-  AllocationClaim claim = 4;
-  string units_outstanding = 5;   // decimal units
-  string nav = 6;                 // decimal USDT per unit
-  int64 nav_posted_at_unix = 7;
-  repeated UnitHolding holders = 8;
-  // Set by `GetFundRevenue` only: banking's own treasury beside the `fee` allocation, a
-  // separate line because it is not the allocation's (D17) — the withdrawal fees land
-  // there. Absent on every allocation line of `GetTreasury`, which carries it once.
-  AllocationClaim banking_treasury = 9;
-}
-
 // The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong to
 // (Layer 1). Under the unified-claim model the invariant is GLOBAL — `total_custody`
 // (the asset side) equals the sum of all claims — and every claim is somebody's (#245):
-// a person's directly (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`,
-// Σ their scope compartments), an allocation's, whose units people hold (`allocations`,
-// the hidden `fee` and `fund` included), or banking's own (`banking_treasury`). Nothing here
+// a person's (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`, Σ their scope
+// compartments), or banking's own (`banking_treasury`). Nothing here
 // is a remainder: each figure is read off its own accounts, and whether they add up to
 // the custody is the reconciliation's finding, not this view's arithmetic.
 message Treasury {
@@ -289,10 +212,13 @@ message Treasury {
   reserved "fund_capital", "fee_revenue", "held_for_clients";
   string reserved_for_withdrawals = 7;  // locked by in-flight withdrawals and approved payments
   string held_by_users = 8;             // Σ user claims — what people hold directly
-  repeated AllocationTreasury allocations = 9;
+  // Field 9 was `allocations`, every allocation's cash, supply and holders — units left
+  // banking with v2.21.
+  reserved 9;
+  reserved "allocations";
   // banking's own treasury, `scope_account:main:treasury` (D17): the withdrawal fees it
   // retained, less what the owners approved paying out of it.
-  AllocationClaim banking_treasury = 10;
+  ClaimBalance banking_treasury = 10;
   string held_in_compartments = 11;     // Σ users' scope compartments — still people's
 }
 
@@ -345,16 +271,6 @@ message FailWithdrawalRequest {
 
 message FailWithdrawalResponse {}
 
-message PostFundValuationRequest {
-  string service = 1;   // the fund/service id
-  string aum = 2;       // decimal USDT — the fund's total assets under management
-  // Field 3 was `bool override`, the flag that let the poster lift their own guard
-  // (banking#232). Reserved so no later field can inherit its number and be read by an
-  // old client as "bypass the guard".
-  reserved 3;
-  reserved "override";
-}
-
 message RotateDepositAddressRequest {
   string user_id = 1;  // the affected user (UUID)
   string network = 2;  // bep20 | polygon | trc20 | ton
@@ -372,14 +288,4 @@ message MigrateDepositAddressToCustodianRequest {
 message MigrateDepositAddressToCustodianResponse {
   string old_address = 1;  // the retired address — kept so the operator can watch it
   string new_address = 2;  // the NEW fundable, custody-held deposit address
-}
-
-message GetFundRevenueRequest {}
-
-message SettleRedemptionRequest {
-  string redemption_id = 1;
-}
-
-message FailRedemptionRequest {
-  string redemption_id = 1;
 }

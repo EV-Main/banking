@@ -47,19 +47,9 @@ impl LockedReads for TxReads<'_> {
 /// rest of the backlog; `None` scans all of it.
 fn owner(key: &LedgerAccountKey) -> Option<UserId> {
 	match key {
-		LedgerAccountKey::UserClaim(user)
-		| LedgerAccountKey::ScopeClaim(user, _)
-		| LedgerAccountKey::BookCash(user)
-		| LedgerAccountKey::UserShares(_, user)
-		| LedgerAccountKey::BookShares(_, user) => Some(*user),
-		LedgerAccountKey::CryptoWallet(_)
-		| LedgerAccountKey::ServiceClaim(_)
-		| LedgerAccountKey::WithdrawalClearing
-		| LedgerAccountKey::BankCustody
-		| LedgerAccountKey::SharesOutstanding(_)
-		| LedgerAccountKey::FeeShares(_)
-		| LedgerAccountKey::ScopeAccount(..)
-		| LedgerAccountKey::HoldClearing => None,
+		LedgerAccountKey::UserClaim(user) | LedgerAccountKey::ScopeClaim(user, _) => Some(*user),
+		LedgerAccountKey::CryptoWallet(_) | LedgerAccountKey::WithdrawalClearing | LedgerAccountKey::BankCustody | LedgerAccountKey::ScopeAccount(..) | LedgerAccountKey::HoldClearing =>
+			None,
 	}
 }
 

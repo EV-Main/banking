@@ -3,8 +3,7 @@
 // One end of a payment order, as a reader recognises it.
 //
 // The label is what the digest binds and every approval surface shares; the detail is
-// what a PERSON tells the end by — the receiving investor's masked mailbox, the product's
-// title. Both are always shown together so "investor 8f3e…" is never approved for the
+// what a PERSON tells the end by — the receiving investor's masked mailbox. Both are always shown together so "investor 8f3e…" is never approved for the
 // wrong person. An external end shows its rail and a shortened address here, with the
 // whole one a tap away in a toggletip — never only in a `title`, which a keyboard or a
 // touch screen cannot open; the surfaces where the address is the thing being approved
@@ -42,7 +41,7 @@ export function PaymentEndSummary({ end, className }: { end: PaymentEnd; classNa
   );
 }
 
-/** The two ends in one line, for a sentence-shaped summary: "Fund revenue → Investor …". */
+/** The two ends in one line, for a sentence-shaped summary: "Treasury → Investor …". */
 export function endWords(end: PaymentEnd): string {
   if (end.kind === "external") return `${end.label || networkLabel(end.network)} · ${end.address}`;
   return end.detail ? `${end.label} · ${end.detail}` : end.label;

@@ -2,7 +2,7 @@
 //!
 //! The one job beyond delegating to the query use case is flattening the
 //! [`Operation`] sum type onto the wire's discriminated message: the port models the
-//! four kinds as variants so an impossible row cannot be constructed, while the wire
+//! kinds as variants so an impossible row cannot be constructed, while the wire
 //! keeps one flat shape so the generated TypeScript stays a single type. The mapping
 //! below is the seam where that trade is paid, once.
 //!
@@ -88,55 +88,6 @@ fn operation_to_proto(operation: &Operation) -> pb::Operation {
 			network: network.as_str().to_owned(),
 			address: address.clone(),
 			tx_ref: tx_ref.as_ref().map(|tx_ref| tx_ref.as_str().to_owned()).unwrap_or_default(),
-			..base
-		},
-		Operation::Subscription { id, service, cash, nav, units, .. } => pb::Operation {
-			id: id.to_string(),
-			state: "completed".to_owned(),
-			amount: cash.to_decimal_string(),
-			units: units.to_decimal_string(),
-			nav: nav.to_decimal_string(),
-			service: service.as_str().to_owned(),
-			..base
-		},
-		Operation::Redemption {
-			id,
-			service,
-			units,
-			nav,
-			cash,
-			state,
-			..
-		} => pb::Operation {
-			id: id.to_string(),
-			state: state.as_str().to_owned(),
-			// Empty until settle — the client renders the units, not a phantom zero.
-			amount: cash.map(|cash| cash.to_decimal_string()).unwrap_or_default(),
-			units: units.to_decimal_string(),
-			nav: nav.map(|nav| nav.to_decimal_string()).unwrap_or_default(),
-			service: service.as_str().to_owned(),
-			..base
-		},
-		Operation::FeeCharge {
-			id,
-			service,
-			units,
-			nav,
-			cash,
-			management,
-			performance,
-			deferred,
-			..
-		} => pb::Operation {
-			id: id.to_string(),
-			state: if *deferred { "partly_deferred" } else { "charged" }.to_owned(),
-			// What the clawed-back units were worth, not a cash transfer — no cash moved.
-			amount: cash.to_decimal_string(),
-			units: units.to_decimal_string(),
-			nav: nav.to_decimal_string(),
-			service: service.as_str().to_owned(),
-			management: management.to_decimal_string(),
-			performance: performance.to_decimal_string(),
 			..base
 		},
 	}

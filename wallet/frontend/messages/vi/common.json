@@ -239,10 +239,6 @@
     "en": "You don't have access to this.",
     "t": "Bạn không có quyền truy cập mục này."
   },
-  "err.fundServiceRequired": {
-    "en": "Select a fund to continue.",
-    "t": "Hãy chọn một quỹ để tiếp tục."
-  },
   "err.kycStartFailed": {
     "en": "We couldn't start verification. Please try again.",
     "t": "Không thể bắt đầu xác minh. Vui lòng thử lại."
@@ -403,18 +399,6 @@
     "en": "Deposit",
     "t": "Nạp tiền"
   },
-  "ops.kind.fee": {
-    "en": "Fee",
-    "t": "Phí"
-  },
-  "ops.kind.redemption": {
-    "en": "Redemption",
-    "t": "Hoàn vốn"
-  },
-  "ops.kind.subscription": {
-    "en": "Subscription",
-    "t": "Đăng ký mua"
-  },
   "ops.kind.unknown": {
     "en": "Operation",
     "t": "Giao dịch"
@@ -427,10 +411,6 @@
     "en": "Cancelled",
     "t": "Đã hủy"
   },
-  "ops.state.charged": {
-    "en": "Charged",
-    "t": "Đã thu phí"
-  },
   "ops.state.completed": {
     "en": "Completed",
     "t": "Hoàn tất"
@@ -442,10 +422,6 @@
   "ops.state.failed": {
     "en": "Failed",
     "t": "Thất bại"
-  },
-  "ops.state.partlyDeferred": {
-    "en": "Partly deferred",
-    "t": "Thu một phần"
   },
   "ops.state.processing": {
     "en": "Processing",
@@ -466,10 +442,6 @@
   "payment.tier.hint.internal": {
     "en": "Between two claims inside the fund. No money leaves the ledger.",
     "t": "Giữa hai tài khoản trong quỹ. Không có tiền rời khỏi sổ cái."
-  },
-  "payment.tier.hint.service": {
-    "en": "Into one of the fund's products, as its pooled claim.",
-    "t": "Vào một sản phẩm của quỹ, dưới dạng tài khoản gộp của nó."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",
@@ -1490,14 +1462,6 @@
   "walletMfe.historyEmptyDesc": {
     "en": "Deposits, withdrawals and moves between compartments will show up here.",
     "t": "Các khoản nạp, rút và chuyển giữa các ngăn sẽ hiển thị tại đây."
-  },
-  "walletMfe.inOrders": {
-    "en": "In orders",
-    "t": "Trong lệnh"
-  },
-  "walletMfe.invested": {
-    "en": "Invested",
-    "t": "Đã đầu tư"
   },
   "walletMfe.main": {
     "en": "Main account",

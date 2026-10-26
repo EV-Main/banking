@@ -16,8 +16,7 @@ use std::{future::Future, net::SocketAddr};
 
 use evbanking_auth::{TokenClass, grpc_auth_layer};
 use evbanking_contracts::banking::v1::{
-	allocations_service_server::AllocationsServiceServer, balance_service_server::BalanceServiceServer, book_service_server::BookServiceServer,
-	compartment_service_server::CompartmentServiceServer, fees_service_server::FeesServiceServer, funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer,
+	balance_service_server::BalanceServiceServer, compartment_service_server::CompartmentServiceServer, health_service_server::HealthServiceServer,
 	invoice_payment_service_server::InvoicePaymentServiceServer, operations_service_server::OperationsServiceServer, payment_confirmation_service_server::PaymentConfirmationServiceServer,
 	payments_service_server::PaymentsServiceServer, payout_review_service_server::PayoutReviewServiceServer, users_service_server::UsersServiceServer,
 	wallet_service_server::WalletServiceServer,
@@ -30,12 +29,8 @@ use tower_http::trace::{DefaultOnFailure, TraceLayer};
 use crate::{
 	AppState,
 	services::{
-		allocations::AllocationsSvc,
 		balance::BalanceSvc,
-		book::BookSvc,
 		compartments::CompartmentSvc,
-		fees::FeesSvc,
-		funds::FundsSvc,
 		health::Health,
 		invoices::InvoicePaymentSvc,
 		operations::OperationsSvc,
@@ -46,12 +41,8 @@ use crate::{
 	},
 };
 
-pub mod allocations;
 pub mod balance;
-pub mod book;
 pub mod compartments;
-pub mod fees;
-pub mod funds;
 pub mod health;
 pub mod invoices;
 pub mod operations;
@@ -97,10 +88,6 @@ pub async fn serve(addr: SocketAddr, state: AppState, shutdown: impl Future<Outp
 		.add_service(HealthServiceServer::new(health))
 		.add_service(auth.layer(UsersServiceServer::new(UsersSvc::new(state.clone()))))
 		.add_service(auth.layer(BalanceServiceServer::new(BalanceSvc::new(state.clone()))))
-		.add_service(auth.layer(FundsServiceServer::new(FundsSvc::new(state.clone()))))
-		.add_service(auth.layer(AllocationsServiceServer::new(AllocationsSvc::new(state.clone()))))
-			.add_service(auth.layer(BookServiceServer::new(BookSvc::new(state.clone()))))
-		.add_service(auth.layer(FeesServiceServer::new(FeesSvc::new(state.clone()))))
 		.add_service(auth.layer(OperationsServiceServer::new(OperationsSvc::new(state.clone()))))
 		.add_service(auth.layer(PaymentsServiceServer::new(PaymentsSvc::new(state.clone()))))
 		.add_service(auth.layer(PaymentConfirmationServiceServer::new(PaymentConfirmationSvc::new(state.clone()))))

@@ -20,9 +20,7 @@ use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
 use domain::{
-	balance::ServiceId,
 	error::DomainError,
-	fees::FeePolicy,
 	money::{Network, WalletAddress},
 	users::UserId,
 };
@@ -33,7 +31,10 @@ use piggybank_core::{
 		relay::Relay,
 		tigerbeetle::TigerBeetle,
 	},
-	ports::{deposit_addresses::DepositAddresses, ledger::Ledger},
+	ports::{
+		deposit_addresses::DepositAddresses,
+		ledger::{Ledger, LockedReads, SpendGuard},
+	},
 };
 use sqlx::{AssertSqlSafe, Connection, PgConnection, PgPool, migrate::MigrateError, postgres::PgPoolOptions};
 use tokio::sync::OnceCell;
@@ -403,20 +404,13 @@ pub async fn set_kyc_level(pool: &PgPool, user: UserId, level: i32) {
 	assert_eq!(affected, 1, "no user row to mirror the KYC tier onto");
 }
 
-/// Write a product's live fee terms straight into `fee_policies` — no code path writes them.
-pub async fn install_fee_policy(pool: &PgPool, service: &ServiceId, policy: FeePolicy) {
-	sqlx::query(
-		"INSERT INTO fee_policies (service, management_bps, performance_bps, hurdle_bps, basis, crystallization, updated_by) VALUES ($1, $2, $3, $4, $5, $6, 'itest') \
-		 ON CONFLICT (service) DO UPDATE SET management_bps = EXCLUDED.management_bps, performance_bps = EXCLUDED.performance_bps, hurdle_bps = EXCLUDED.hurdle_bps, \
-		   basis = EXCLUDED.basis, crystallization = EXCLUDED.crystallization, version = fee_policies.version + 1, effective_from = now()",
-	)
-	.bind(service.as_str())
-	.bind(i32::try_from(policy.management_bps()).expect("capped by FeePolicy::new"))
-	.bind(i32::try_from(policy.performance_bps()).expect("capped by FeePolicy::new"))
-	.bind(i32::try_from(policy.hurdle_bps()).expect("capped by FeePolicy::new"))
-	.bind(policy.basis().as_str())
-	.bind(policy.crystallization().as_str())
-	.execute(pool)
-	.await
-	.expect("install the fee policy");
+/// A spend guard that checks nothing — for a test that opens a spend whose cover it is not
+/// testing.
+pub struct NoSpendCheck;
+
+#[async_trait]
+impl SpendGuard for NoSpendCheck {
+	async fn check(&self, _: &mut dyn LockedReads) -> Result<(), DomainError> {
+		Ok(())
+	}
 }

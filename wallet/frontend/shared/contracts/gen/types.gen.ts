@@ -5,52 +5,6 @@ export type ClientOptions = {
 };
 
 /**
- * AccruedFees
- *
- * What a holding owes right now. `configured` is false when the fund charges no fee.
- */
-export type BankingV1AccruedFees = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * configured
-     */
-    configured?: boolean;
-    /**
-     * management
-     *
-     * accrued since the last charge
-     */
-    management?: string;
-    /**
-     * performance
-     *
-     * what would crystallize at today's NAV
-     */
-    performance?: string;
-    /**
-     * debt
-     *
-     * carried from earlier charges
-     */
-    debt?: string;
-    /**
-     * total
-     *
-     * management + performance + debt
-     */
-    total?: string;
-    /**
-     * high_water_mark
-     *
-     * the investor's own mark — why their fee differs
-     */
-    high_water_mark?: string;
-};
-
-/**
  * AdminBalanceRequest
  */
 export type BankingV1AdminBalanceRequest = {
@@ -64,233 +18,6 @@ export type BankingV1AdminBalanceRequest = {
      * neither returns NOT_FOUND — never an authoritative zero.
      */
     user_id?: string;
-};
-
-/**
- * Allocation
- *
- * One registered investable product. Carries no money: units, NAV and positions are
- * read from FundsService against the same `service` id.
- */
-export type BankingV1Allocation = {
-    /**
-     * service
-     *
-     * the slug — the id used by every FundsService RPC
-     */
-    service?: string;
-    /**
-     * title
-     *
-     * display name ("EV Trading")
-     */
-    title?: string;
-    /**
-     * summary
-     *
-     * one-line description for the catalog card
-     */
-    summary?: string;
-    /**
-     * state
-     *
-     * draft | open | closed
-     */
-    state?: string;
-    /**
-     * created_at
-     *
-     * unix seconds
-     */
-    created_at?: number | string;
-    /**
-     * updated_at
-     *
-     * unix seconds
-     */
-    updated_at?: number | string;
-    /**
-     * unit_cap
-     *
-     * authorised unit supply, decimal (default 100000000)
-     */
-    unit_cap?: string;
-    /**
-     * icon
-     *
-     * Catalog glyph the client maps onto one of its SVGs. Presentation only. One of:
-     * fund | real_estate | trading | yield | venture | treasury | commodity | credit |
-     * index | arbitrage. Always populated on a response — `fund` is the default.
-     */
-    icon?: string;
-    /**
-     * access
-     *
-     * The product's default access level: hidden | view | invest. What an investor
-     * with no grant holds. A registration lands on `view`.
-     */
-    access?: string;
-    /**
-     * caller_access
-     *
-     * The level the CALLER effectively holds — the higher of `access` and the caller's
-     * own grant, if any. Populated honestly for everyone, an `AllocationManage` holder
-     * included: their permission lets them read and administer the product, it does not
-     * make them an investor in it, so a manager's `caller_access` says what they would
-     * get as one. A client renders the card off `access` and the subscribe control off
-     * this — never off `state` alone.
-     */
-    caller_access?: string;
-    /**
-     * backing
-     *
-     * What stands behind the units: `cash` | `in_kind`. `cash` — the units were paid for
-     * into the fund's claim and a redemption pays out of it. `in_kind` — the units stand
-     * for an asset the holders own; the fund holds no cash for them, so `Redeem` is
-     * refused (FAILED_PRECONDITION) and holders exit through the book. Set to `in_kind`
-     * automatically by the first IssueUnits on the product; only SetAllocationBacking
-     * takes it back to `cash`. A registration lands on `cash`.
-     */
-    backing?: string;
-};
-
-/**
- * AllocationAccessGrant
- *
- * One investor raised above an allocation's default level.
- */
-export type BankingV1AllocationAccessGrant = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     *
-     * the investor (banking user id)
-     */
-    user_id?: string;
-    /**
-     * level
-     *
-     * view | invest
-     */
-    level?: string;
-    /**
-     * granted_by
-     *
-     * the AllocationManage holder who granted it
-     */
-    granted_by?: string;
-    /**
-     * granted_at
-     *
-     * unix seconds
-     */
-    granted_at?: number | string;
-};
-
-/**
- * AllocationAccessGrantList
- */
-export type BankingV1AllocationAccessGrantList = {
-    /**
-     * grants
-     */
-    grants?: Array<BankingV1AllocationAccessGrant>;
-};
-
-/**
- * AllocationClaim
- *
- * An allocation's cash claim (`service:<id>`), split the way every reader needs it and
- * read off ONE ledger balance, so the three can never disagree: `posted` is settled,
- * `reserved` is spoken for by approved payments out of it that have not settled, and
- * `available = posted − reserved` is what a redemption or a new payment may take.
- */
-export type BankingV1AllocationClaim = {
-    /**
-     * posted
-     */
-    posted?: string;
-    /**
-     * available
-     */
-    available?: string;
-    /**
-     * reserved
-     */
-    reserved?: string;
-};
-
-/**
- * AllocationList
- */
-export type BankingV1AllocationList = {
-    /**
-     * allocations
-     */
-    allocations?: Array<BankingV1Allocation>;
-};
-
-/**
- * AllocationTreasury
- *
- * One allocation as the treasury shows it (#245): the registry's name for it, its cash,
- * its supply, its price and who holds it — the same shape for a product and for the
- * reserved `fee` / `fund` allocations, whose `access` is `hidden`. `nav` is a product's
- * posted mark, or the computed value of a reserved allocation (its cash plus every fee
- * class it holds at that product's NAV) over its supply; `nav_posted_at_unix` is 0
- * while nothing under it has been marked (seed-priced). `holders` are largest first —
- * people, or the `fee` allocation holding a product's fee class.
- */
-export type BankingV1AllocationTreasury = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * title
-     */
-    title?: string;
-    /**
-     * access
-     *
-     * hidden | view | invest
-     */
-    access?: string;
-    /**
-     * claim
-     */
-    claim?: BankingV1AllocationClaim;
-    /**
-     * units_outstanding
-     *
-     * decimal units
-     */
-    units_outstanding?: string;
-    /**
-     * nav
-     *
-     * decimal USDT per unit
-     */
-    nav?: string;
-    /**
-     * nav_posted_at_unix
-     */
-    nav_posted_at_unix?: number | string;
-    /**
-     * holders
-     */
-    holders?: Array<BankingV1UnitHolding>;
-    /**
-     * banking_treasury
-     *
-     * Set by `GetFundRevenue` only: banking's own treasury beside the `fee` allocation, a
-     * separate line because it is not the allocation's (D17) — the withdrawal fees land
-     * there. Absent on every allocation line of `GetTreasury`, which carries it once.
-     */
-    banking_treasury?: BankingV1AllocationClaim;
 };
 
 /**
@@ -366,8 +93,8 @@ export type BankingV1AuditContext = {
  * Balance
  *
  * The user's single, network-agnostic balance, segmented by lifecycle. Every figure is
- * a TigerBeetle-authoritative decimal USDT string; total = available + in_orders +
- * invested + pending_withdrawal + in_compartments.
+ * a TigerBeetle-authoritative decimal USDT string; total = available + pending_withdrawal
+ * + in_compartments.
  */
 export type BankingV1Balance = {
     /**
@@ -377,12 +104,6 @@ export type BankingV1Balance = {
      */
     available?: string;
     /**
-     * invested
-     *
-     * held in fund units at NAV, the units escrowed by resting sell orders included
-     */
-    invested?: string;
-    /**
      * pending_withdrawal
      *
      * locked by queued/in-flight withdrawals
@@ -391,199 +112,15 @@ export type BankingV1Balance = {
     /**
      * total
      *
-     * available + in_orders + invested + pending_withdrawal + in_compartments
+     * available + pending_withdrawal + in_compartments
      */
     total?: string;
-    /**
-     * in_orders
-     *
-     * cash escrowed by the caller's resting buy orders on the book (still theirs)
-     */
-    in_orders?: string;
     /**
      * in_compartments
      *
      * the caller's money in scope compartments (CompartmentService), still theirs
      */
     in_compartments?: string;
-};
-
-/**
- * BookEvent
- *
- * One frame of WatchBook. `orders_revision` is the book revision at which the caller's
- * own orders on this allocation last changed (0 = never) — compare it with the previous
- * frame's to know whether to refetch ListOpenOrders.
- */
-export type BankingV1BookEvent = {
-    /**
-     * snapshot
-     */
-    snapshot?: BankingV1BookSnapshot;
-    /**
-     * trades
-     *
-     * the latest public trades, newest first
-     */
-    trades?: Array<BankingV1Trade>;
-    /**
-     * orders_revision
-     */
-    orders_revision?: number | string;
-};
-
-/**
- * BookLevel
- *
- * One aggregated price level of one side.
- */
-export type BankingV1BookLevel = {
-    /**
-     * price
-     *
-     * decimal USDT per unit
-     */
-    price?: string;
-    /**
-     * size
-     *
-     * decimal units resting at this price
-     */
-    size?: string;
-    /**
-     * orders
-     *
-     * how many orders make it up
-     */
-    orders?: number;
-};
-
-/**
- * BookPolicy
- *
- * One allocation's trading terms.
- */
-export type BankingV1BookPolicy = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * book_open
-     */
-    book_open?: boolean;
-    /**
-     * taker_fee_bps
-     */
-    taker_fee_bps?: number;
-    /**
-     * price_tick
-     *
-     * decimal USDT
-     */
-    price_tick?: string;
-    /**
-     * lot_size
-     *
-     * decimal units
-     */
-    lot_size?: string;
-    /**
-     * market_slippage_bps
-     */
-    market_slippage_bps?: number;
-    /**
-     * updated_at
-     *
-     * unix seconds; 0 when the product has no policy row (the defaults)
-     */
-    updated_at?: number | string;
-    /**
-     * allow_unbacked_trading
-     *
-     * See SetBookPolicyRequest.allow_unbacked_trading. When true the terminal tells buyers the
-     * units are not backed by fund cash and cannot be redeemed — the book is their only exit.
-     */
-    allow_unbacked_trading?: boolean;
-};
-
-/**
- * BookSnapshot
- *
- * The book as of `revision`. `bids` are best (highest) first, `asks` best (lowest)
- * first. `last_price` / `last_side` describe the latest trade (empty before the first);
- * `mid` and `spread` are empty unless both sides have a level. `volume_24h` is the units
- * traded in the trailing day and `change_24h` the signed percent move of the last price
- * against the last trade at or before 24h ago (empty when there is none). `nav` is the
- * fund's current mark, carried so a ticker can show the two prices side by side.
- */
-export type BankingV1BookSnapshot = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * revision
-     */
-    revision?: number | string;
-    /**
-     * bids
-     */
-    bids?: Array<BankingV1BookLevel>;
-    /**
-     * asks
-     */
-    asks?: Array<BankingV1BookLevel>;
-    /**
-     * last_price
-     */
-    last_price?: string;
-    /**
-     * last_side
-     *
-     * buy | sell — the taker's side of the last trade
-     */
-    last_side?: string;
-    /**
-     * mid
-     */
-    mid?: string;
-    /**
-     * spread
-     */
-    spread?: string;
-    /**
-     * nav
-     */
-    nav?: string;
-    /**
-     * volume_24h
-     *
-     * decimal units
-     */
-    volume_24h?: string;
-    /**
-     * change_24h
-     *
-     * signed decimal percent, e.g. "-2.5"
-     */
-    change_24h?: string;
-    /**
-     * as_of
-     *
-     * unix seconds the snapshot was taken
-     */
-    as_of?: number | string;
-};
-
-/**
- * CancelOrderRequest
- */
-export type BankingV1CancelOrderRequest = {
-    /**
-     * order_id
-     */
-    order_id?: string;
 };
 
 /**
@@ -597,16 +134,6 @@ export type BankingV1CancelPaymentRequest = {
 };
 
 /**
- * CancelRedemptionRequest
- */
-export type BankingV1CancelRedemptionRequest = {
-    /**
-     * redemption_id
-     */
-    redemption_id?: string;
-};
-
-/**
  * CancelWithdrawalRequest
  */
 export type BankingV1CancelWithdrawalRequest = {
@@ -614,58 +141,6 @@ export type BankingV1CancelWithdrawalRequest = {
      * withdrawal_id
      */
     withdrawal_id?: string;
-};
-
-/**
- * Candle
- *
- * One OHLCV bucket. `time` is the bucket's start, unix seconds.
- */
-export type BankingV1Candle = {
-    /**
-     * time
-     */
-    time?: number | string;
-    /**
-     * open
-     */
-    open?: string;
-    /**
-     * high
-     */
-    high?: string;
-    /**
-     * low
-     */
-    low?: string;
-    /**
-     * close
-     */
-    close?: string;
-    /**
-     * volume
-     *
-     * decimal units
-     */
-    volume?: string;
-};
-
-/**
- * CandleList
- */
-export type BankingV1CandleList = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * resolution
-     */
-    resolution?: string;
-    /**
-     * candles
-     */
-    candles?: Array<BankingV1Candle>;
 };
 
 /**
@@ -683,6 +158,29 @@ export type BankingV1CheckResponse = {
      * status
      */
     status?: string;
+};
+
+/**
+ * ClaimBalance
+ *
+ * A claim's cash, split the way every reader needs it and read off ONE ledger balance, so
+ * the three can never disagree: `posted` is settled, `reserved` is spoken for by approved
+ * payments out of it that have not settled, and `available = posted − reserved` is what a
+ * new payment may take.
+ */
+export type BankingV1ClaimBalance = {
+    /**
+     * posted
+     */
+    posted?: string;
+    /**
+     * available
+     */
+    available?: string;
+    /**
+     * reserved
+     */
+    reserved?: string;
 };
 
 /**
@@ -925,16 +423,6 @@ export type BankingV1ExternalDestination = {
 };
 
 /**
- * FailRedemptionRequest
- */
-export type BankingV1FailRedemptionRequest = {
-    /**
-     * redemption_id
-     */
-    redemption_id?: string;
-};
-
-/**
  * FailWithdrawalRequest
  */
 export type BankingV1FailWithdrawalRequest = {
@@ -955,342 +443,6 @@ export type BankingV1FailWithdrawalRequest = {
  */
 export type BankingV1FailWithdrawalResponse = {
     [key: string]: never;
-};
-
-/**
- * FeeAssessment
- *
- * One charge against one holding. `due` and `charged_cash` differ exactly when the
- * holding could not cover the charge and the rest deferred into `debt_carried`.
- */
-export type BankingV1FeeAssessment = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * trigger
-     *
-     * period | redemption
-     */
-    trigger?: string;
-    /**
-     * nav
-     *
-     * the price the charge was measured and taken at
-     */
-    nav?: string;
-    /**
-     * management
-     */
-    management?: string;
-    /**
-     * performance
-     */
-    performance?: string;
-    /**
-     * debt_opening
-     *
-     * uncollected fee carried INTO this charge
-     */
-    debt_opening?: string;
-    /**
-     * charged_units
-     *
-     * units clawed back
-     */
-    charged_units?: string;
-    /**
-     * charged_cash
-     *
-     * their value at `nav`
-     */
-    charged_cash?: string;
-    /**
-     * debt_carried
-     *
-     * what deferred to the next charge
-     */
-    debt_carried?: string;
-    /**
-     * high_water_mark
-     *
-     * the investor's mark AFTER this charge
-     */
-    high_water_mark?: string;
-    /**
-     * assessed_at
-     *
-     * unix seconds
-     */
-    assessed_at?: number | string;
-};
-
-/**
- * FeeAssessmentList
- */
-export type BankingV1FeeAssessmentList = {
-    /**
-     * assessments
-     */
-    assessments?: Array<BankingV1FeeAssessment>;
-};
-
-/**
- * FeePolicy
- *
- * One fund's fee terms. `configured` is false when the product has no policy at all,
- * which is different from a policy whose rates happen to be zero.
- */
-export type BankingV1FeePolicy = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * configured
-     */
-    configured?: boolean;
-    /**
-     * management_bps
-     *
-     * 200 = 2% p.a.
-     */
-    management_bps?: number;
-    /**
-     * performance_bps
-     *
-     * 2000 = 20% of the gain above the mark
-     */
-    performance_bps?: number;
-    /**
-     * hurdle_bps
-     *
-     * 0 = no hurdle; else the p.a. rate the gain must clear first
-     */
-    hurdle_bps?: number;
-    /**
-     * basis
-     *
-     * invested_capital | market_value — what the management fee is charged on.
-     * `invested_capital` (the default) is the cash the investor actually put in: it does
-     * not swell with a mark the operator posted, which keeps the fee the operator earns
-     * independent of the input the operator supplies.
-     */
-    basis?: string;
-    /**
-     * crystallization
-     *
-     * monthly | quarterly | semi_annual | annual — how often the performance fee
-     * crystallizes and the mark ratchets. This is a price, not a detail: crystallizing
-     * more often measurably raises what an investor pays over a fund's life, because
-     * each reset locks in gains a later loss can no longer claw back.
-     */
-    crystallization?: string;
-    /**
-     * updated_at
-     *
-     * unix seconds; 0 when unconfigured
-     */
-    updated_at?: number | string;
-    /**
-     * version
-     *
-     * Which version of the fund's history these terms are; 0 when unconfigured.
-     */
-    version?: number;
-    /**
-     * effective_from
-     *
-     * Unix seconds since which these terms bind; 0 when unconfigured.
-     */
-    effective_from?: number | string;
-};
-
-/**
- * FeePolicyList
- */
-export type BankingV1FeePolicyList = {
-    /**
-     * policies
-     */
-    policies?: Array<BankingV1FeePolicy>;
-};
-
-/**
- * FeeSettlement
- */
-export type BankingV1FeeSettlement = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     */
-    units?: string;
-    /**
-     * nav
-     */
-    nav?: string;
-    /**
-     * cash
-     */
-    cash?: string;
-};
-
-/**
- * FeeShares
- *
- * The `fee` allocation's uncollected fee units in one fund — the product's fee class.
- */
-export type BankingV1FeeShares = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     */
-    units?: string;
-    /**
-     * value
-     *
-     * units × current NAV
-     */
-    value?: string;
-};
-
-/**
- * FundNav
- *
- * The current price of a fund's share, derived (AUM / units_outstanding) and frozen
- * between operator marks. `posted_at` is 0 when the fund has never been marked (seed
- * NAV 1.0); `stale` is true when the latest mark is older than the dealing window.
- */
-export type BankingV1FundNav = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * nav
-     *
-     * decimal USDT per share
-     */
-    nav?: string;
-    /**
-     * aum
-     *
-     * last posted AUM (decimal USDT; empty if seed)
-     */
-    aum?: string;
-    /**
-     * units_outstanding
-     *
-     * decimal units in circulation (the NAV denominator)
-     */
-    units_outstanding?: string;
-    /**
-     * posted_at
-     *
-     * unix seconds of the mark (0 = seed)
-     */
-    posted_at?: number | string;
-    /**
-     * stale
-     */
-    stale?: boolean;
-    /**
-     * unit_cap
-     *
-     * The allocation's authorised unit supply and what is left of it. `remaining_capacity`
-     * counts in-flight mints as issued, so a client that offers it can never offer more
-     * than Subscribe will accept. decimal units
-     */
-    unit_cap?: string;
-    /**
-     * remaining_capacity
-     *
-     * decimal units still issuable (0 once at the cap)
-     */
-    remaining_capacity?: string;
-};
-
-/**
- * FundNavHistory
- *
- * A fund's valuation log over the requested window (oldest first), and the caller's
- * participation through it. `participation` steps at every mark and every change to the
- * caller's units (subscribe, redeem, fee charge, in-kind issuance, book fill) and always
- * ends at the window's end — "now" unless `to` was given — priced off the live holding,
- * so the last point equals the position card. Empty `marks` means the fund is still on
- * the seed NAV (or no mark fell in the window); it is not an error. `truncated` is true
- * when more marks fell in the window than the cap allows and the OLDEST were dropped.
- */
-export type BankingV1FundNavHistory = {
-    /**
-     * allocation
-     */
-    allocation?: string;
-    /**
-     * marks
-     */
-    marks?: Array<BankingV1NavMark>;
-    /**
-     * participation
-     */
-    participation?: Array<BankingV1ParticipationPoint>;
-    /**
-     * truncated
-     */
-    truncated?: boolean;
-};
-
-/**
- * GetAccruedFeesRequest
- */
-export type BankingV1GetAccruedFeesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetAllocationRequest
- */
-export type BankingV1GetAllocationRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetBookPolicyRequest
- */
-export type BankingV1GetBookPolicyRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetBookRequest
- */
-export type BankingV1GetBookRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * depth
-     *
-     * price levels a side; 0 = the server default (20); capped at 50
-     */
-    depth?: number;
 };
 
 /**
@@ -1315,43 +467,6 @@ export type BankingV1GetDepositAddressRequest = {
      * bep20 | polygon | trc20 | ton
      */
     network?: string;
-};
-
-/**
- * GetFeePolicyRequest
- */
-export type BankingV1GetFeePolicyRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetFeeSharesRequest
- */
-export type BankingV1GetFeeSharesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetFundNavRequest
- */
-export type BankingV1GetFundNavRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * GetFundRevenueRequest
- */
-export type BankingV1GetFundRevenueRequest = {
-    [key: string]: never;
 };
 
 /**
@@ -1421,16 +536,6 @@ export type BankingV1GetPayoutApprovalRequest = {
 };
 
 /**
- * GetPositionRequest
- */
-export type BankingV1GetPositionRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
  * GetScopePolicyRequest
  */
 export type BankingV1GetScopePolicyRequest = {
@@ -1462,28 +567,6 @@ export type BankingV1GetWalletRequest = {
 };
 
 /**
- * GrantAllocationAccessRequest
- */
-export type BankingV1GrantAllocationAccessRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     *
-     * the investor's banking user id
-     */
-    user_id?: string;
-    /**
-     * level
-     *
-     * view | invest (never hidden — a grant only ever adds)
-     */
-    level?: string;
-};
-
-/**
  * GrantMandateRequest
  *
  * The caps are decimal USDT. What counts against them is the client's draws on the caller's
@@ -1509,48 +592,6 @@ export type BankingV1GrantMandateRequest = {
      * audit
      */
     audit?: BankingV1AuditContext;
-};
-
-/**
- * IssueUnitsRequest
- */
-export type BankingV1IssueUnitsRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     *
-     * Who receives the units: a banking (or concierge) user id, resolved the way every
-     * admin RPC resolves a target. Required — a mint to nobody is a malformed request.
-     * Only a person: the company is not a holder (#245), and a reserved allocation is
-     * seated by the fee accrual, never by an operator's mint — so there is deliberately no
-     * arm for either.
-     */
-    user_id?: string;
-    /**
-     * units
-     *
-     * decimal units, > 0
-     */
-    units?: string;
-    /**
-     * cost_basis
-     *
-     * Decimal USDT the holder is deemed to have paid. Empty means `units × NAV` at the
-     * dealing mark — what a subscription for these units would have cost right now. An
-     * explicit value may be anything, zero included: a stake in an asset the holder
-     * already owned cost them no cash. This is what lands in their position's cost basis,
-     * and so what their P&L and management fee are measured from.
-     */
-    cost_basis?: string;
-    /**
-     * idempotency_key
-     *
-     * required, 1..64 chars, unique per service
-     */
-    idempotency_key?: string;
 };
 
 /**
@@ -1630,57 +671,6 @@ export type BankingV1JwksResponse = {
 };
 
 /**
- * ListAllocationAccessGrantsRequest
- */
-export type BankingV1ListAllocationAccessGrantsRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * ListAllocationsRequest
- */
-export type BankingV1ListAllocationsRequest = {
-    /**
-     * include_unlisted
-     *
-     * Include `draft`, `closed` and `hidden` allocations. Requires AllocationManage; a
-     * caller without it is refused rather than silently downgraded to the visible list.
-     */
-    include_unlisted?: boolean;
-};
-
-/**
- * ListCandlesRequest
- */
-export type BankingV1ListCandlesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * resolution
-     *
-     * 1m | 5m | 15m | 1h | 4h | 1d
-     */
-    resolution?: string;
-    /**
-     * from
-     *
-     * unix seconds, inclusive
-     */
-    from?: number | string;
-    /**
-     * to
-     *
-     * unix seconds, exclusive; 0 = now
-     */
-    to?: number | string;
-};
-
-/**
  * ListCompartmentsRequest
  */
 export type BankingV1ListCompartmentsRequest = {
@@ -1695,69 +685,10 @@ export type BankingV1ListDepositsRequest = {
 };
 
 /**
- * ListFeeAssessmentsRequest
- */
-export type BankingV1ListFeeAssessmentsRequest = {
-    [key: string]: never;
-};
-
-/**
- * ListFeePoliciesRequest
- */
-export type BankingV1ListFeePoliciesRequest = {
-    [key: string]: never;
-};
-
-/**
- * ListFundFeeAssessmentsRequest
- */
-export type BankingV1ListFundFeeAssessmentsRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * ListFundNavHistoryRequest
- *
- * Keyed by the ALLOCATION (the product's registry key — today equal to the service id)
- * rather than the service, so a hidden allocation such as the fee fund can serve its
- * holders' history later without a second route. `from`/`to` are unix seconds,
- * inclusive; 0 means "from the first mark" / "up to now".
- */
-export type BankingV1ListFundNavHistoryRequest = {
-    /**
-     * allocation
-     */
-    allocation?: string;
-    /**
-     * from
-     */
-    from?: number | string;
-    /**
-     * to
-     */
-    to?: number | string;
-};
-
-/**
  * ListMandatesRequest
  */
 export type BankingV1ListMandatesRequest = {
     [key: string]: never;
-};
-
-/**
- * ListOpenOrdersRequest
- */
-export type BankingV1ListOpenOrdersRequest = {
-    /**
-     * service
-     *
-     * empty = every allocation
-     */
-    service?: string;
 };
 
 /**
@@ -1768,24 +699,6 @@ export type BankingV1ListOperationsRequest = {
      * limit
      *
      * Rows to return. 0 means the server default (100); the server caps it at 200.
-     */
-    limit?: number;
-};
-
-/**
- * ListOrderHistoryRequest
- */
-export type BankingV1ListOrderHistoryRequest = {
-    /**
-     * service
-     *
-     * empty = every allocation
-     */
-    service?: string;
-    /**
-     * limit
-     *
-     * 0 = the server default (100); capped at 200
      */
     limit?: number;
 };
@@ -1829,8 +742,7 @@ export type BankingV1ListPaymentsRequest = {
     /**
      * fund_owned_only
      *
-     * Only orders whose source is an allocation's claim (`service:<id>`) or banking's
-     * treasury — the ones the owners gate, i.e. the governance surface.
+     * Only orders whose source is banking's treasury — the ones the owners gate.
      */
     fund_owned_only?: boolean;
 };
@@ -1862,30 +774,9 @@ export type BankingV1ListPayoutLinesRequest = {
 };
 
 /**
- * ListPositionsRequest
- */
-export type BankingV1ListPositionsRequest = {
-    [key: string]: never;
-};
-
-/**
  * ListRailsRequest
  */
 export type BankingV1ListRailsRequest = {
-    [key: string]: never;
-};
-
-/**
- * ListRedemptionQueueRequest
- */
-export type BankingV1ListRedemptionQueueRequest = {
-    [key: string]: never;
-};
-
-/**
- * ListRedemptionsRequest
- */
-export type BankingV1ListRedemptionsRequest = {
     [key: string]: never;
 };
 
@@ -1909,50 +800,6 @@ export type BankingV1ListSessionsResponse = {
      * sessions
      */
     sessions?: Array<BankingV1Session>;
-};
-
-/**
- * ListTradesRequest
- */
-export type BankingV1ListTradesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * limit
-     *
-     * 0 = the server default (50); capped at 200
-     */
-    limit?: number;
-};
-
-/**
- * ListUnitHoldersRequest
- */
-export type BankingV1ListUnitHoldersRequest = {
-    /**
-     * service
-     */
-    service?: string;
-};
-
-/**
- * ListUserTradesRequest
- */
-export type BankingV1ListUserTradesRequest = {
-    /**
-     * service
-     *
-     * empty = every allocation
-     */
-    service?: string;
-    /**
-     * limit
-     *
-     * 0 = the server default (100); capped at 200
-     */
-    limit?: number;
 };
 
 /**
@@ -2221,33 +1068,6 @@ export type BankingV1MoveFundsRequest = {
 };
 
 /**
- * NavMark
- *
- * One operator valuation mark, as posted. Same figures as FundNav, without the live
- * supply/capacity fields that only make sense for the current mark.
- */
-export type BankingV1NavMark = {
-    /**
-     * nav
-     *
-     * decimal USDT per share
-     */
-    nav?: string;
-    /**
-     * aum
-     *
-     * the posted AUM (decimal USDT)
-     */
-    aum?: string;
-    /**
-     * posted_at
-     *
-     * unix seconds
-     */
-    posted_at?: number | string;
-};
-
-/**
  * NetworkWithdrawable
  *
  * Per-rail withdrawal options (the accept-and-queue UX). `withdrawable` is the whole
@@ -2322,48 +1142,35 @@ export type BankingV1OpenPaymentRequest = {
  * oneof: the whole surface is projected to TypeScript through OpenAPI, where a flat
  * message with a documented discriminator survives the pipeline unambiguously.
  *
- * | field        | deposit | withdrawal | subscription | redemption | fee        |
- * | ------------ | ------- | ---------- | ------------ | ---------- | ---------- |
- * | amount       | ✓       | ✓ (gross)  | ✓ (cash in)  | ✓ at settle| ✓ (taken)  |
- * | fee          |         | ✓          |              |            |            |
- * | net_amount   |         | ✓          |              |            |            |
- * | units / nav  |         |            | ✓            | ✓ at settle| ✓          |
- * | service      |         |            | ✓            | ✓          | ✓          |
- * | network      | ✓       | ✓          |              |            |            |
- * | address      |         | ✓          |              |            |            |
- * | tx_ref       | ✓       | ✓ at settle|              |            |            |
- * | management   |         |            |              |            | ✓          |
- * | performance  |         |            |              |            | ✓          |
- *
- * The `fee` row is the one the investor did not initiate: the fund charging its own
- * management and performance fee against the holding. It moves no cash and touches no
- * chain — units are clawed back to the manager on the share ledger — so `amount` is what
- * those units were WORTH at `nav`, not a transfer. Without this row an investor's units
- * would simply shrink with nothing on the timeline to explain it.
+ * | field        | deposit | withdrawal |
+ * | ------------ | ------- | ---------- |
+ * | amount       | ✓       | ✓ (gross)  |
+ * | fee          |         | ✓          |
+ * | net_amount   |         | ✓          |
+ * | network      | ✓       | ✓          |
+ * | address      |         | ✓          |
+ * | tx_ref       | ✓       | ✓ at settle|
  */
 export type BankingV1Operation = {
     /**
      * id
      *
-     * Unique within the feed: the aggregate UUID for a withdrawal / subscription /
-     * redemption, the on-chain `tx_ref` for a deposit (which has no surrogate id).
+     * Unique within the feed: the aggregate UUID for a withdrawal, the on-chain `tx_ref`
+     * for a deposit (which has no surrogate id).
      */
     id?: string;
     /**
      * kind
      *
-     * deposit | withdrawal | subscription | redemption | fee
+     * deposit | withdrawal
      */
     kind?: string;
     /**
      * state
      *
      * Lifecycle, per kind. deposit: always `credited` (the row exists only once the
-     * watcher has confirmed it). subscription: always `completed` (an immutable mint).
-     * withdrawal: queued | processing | completed | failed | cancelled.
-     * redemption: queued | completed | failed | cancelled.
-     * fee: `charged` when the whole charge was collected, `partly_deferred` when the
-     * holding could not cover it and the rest was carried as debt to the next charge.
+     * watcher has confirmed it). withdrawal: queued | processing | completed | failed |
+     * cancelled.
      */
     state?: string;
     /**
@@ -2376,7 +1183,6 @@ export type BankingV1Operation = {
      * amount
      *
      * Cash moved, as a magnitude — the sign is implied by `kind`, never encoded here.
-     * Empty for a redemption that has not settled yet (settle-time pricing).
      */
     amount?: string;
     /**
@@ -2392,27 +1198,9 @@ export type BankingV1Operation = {
      */
     net_amount?: string;
     /**
-     * units
-     *
-     * fund kinds — units minted (subscription) or burned (redemption)
-     */
-    units?: string;
-    /**
-     * nav
-     *
-     * fund kinds — price dealt at (empty until a redemption settles)
-     */
-    nav?: string;
-    /**
-     * service
-     *
-     * fund kinds — the fund/service id
-     */
-    service?: string;
-    /**
      * network
      *
-     * rail kinds — bep20 | polygon | trc20 | ton
+     * bep20 | polygon | trc20 | ton
      */
     network?: string;
     /**
@@ -2424,29 +1212,15 @@ export type BankingV1Operation = {
     /**
      * tx_ref
      *
-     * rail kinds — the on-chain reference (empty until settled)
+     * the on-chain reference (empty until settled)
      */
     tx_ref?: string;
-    /**
-     * management
-     *
-     * fee only — the two legs of the charge, so the row can say WHY it was taken rather
-     * than only how much. `management` is rent on parked capital and is charged whether
-     * the fund gained or not; `performance` is the share of the gain above this
-     * investor's own high-water mark, and is zero except at a crystallization.
-     */
-    management?: string;
-    /**
-     * performance
-     */
-    performance?: string;
     /**
      * scope
      *
      * The wallet compartment the row belongs to: `main` for every kind this feed carries
-     * today (deposits and withdrawals are main's; fund subscriptions, redemptions and fees
-     * settle against main's balance). A client in scope mode keeps only the rows whose
-     * `scope` is its own; compartment moves and scope payouts are not in this feed yet.
+     * (deposits and withdrawals are main's). A client in scope mode keeps only the rows
+     * whose `scope` is its own; compartment moves and scope payouts are not in this feed.
      */
     scope?: string;
 };
@@ -2476,132 +1250,6 @@ export type BankingV1OperationsMode = {
      * read_only
      */
     read_only?: boolean;
-};
-
-/**
- * Order
- *
- * One order. `price` is the limit — for a market order, the limit the hub derived from
- * the quote at placement. `filled`, `remaining`, `avg_fill_price` and `fee_paid` grow as
- * fills land; `state` ends in `filled`, `cancelled` or `rejected` (`reject_reason` set —
- * the ledger refused the escrow after the order was recorded, a raced over-spend the
- * optimistic balance check could not see). `user_id` is populated only on the caller's
- * own orders.
- */
-export type BankingV1Order = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     */
-    user_id?: string;
-    /**
-     * side
-     *
-     * buy | sell
-     */
-    side?: string;
-    /**
-     * kind
-     *
-     * limit | market
-     */
-    kind?: string;
-    /**
-     * tif
-     *
-     * gtc | ioc | alo
-     */
-    tif?: string;
-    /**
-     * price
-     *
-     * decimal USDT per unit
-     */
-    price?: string;
-    /**
-     * size
-     *
-     * decimal units
-     */
-    size?: string;
-    /**
-     * filled
-     *
-     * decimal units
-     */
-    filled?: string;
-    /**
-     * remaining
-     *
-     * decimal units (size − filled)
-     */
-    remaining?: string;
-    /**
-     * avg_fill_price
-     *
-     * decimal USDT per unit; empty until the first fill
-     */
-    avg_fill_price?: string;
-    /**
-     * fee_paid
-     *
-     * decimal USDT the caller paid as taker on this order
-     */
-    fee_paid?: string;
-    /**
-     * state
-     *
-     * open | partially_filled | filled | cancelled | rejected
-     */
-    state?: string;
-    /**
-     * reject_reason
-     *
-     * free text; set exactly when state = rejected
-     */
-    reject_reason?: string;
-    /**
-     * client_order_id
-     */
-    client_order_id?: string;
-    /**
-     * created_at
-     *
-     * unix seconds
-     */
-    created_at?: number | string;
-    /**
-     * updated_at
-     *
-     * unix seconds
-     */
-    updated_at?: number | string;
-    /**
-     * cancel_reason
-     *
-     * Set exactly when state = cancelled: "" | user | ioc_remainder | market_remainder.
-     * `user` is the owner's own cancel; the other two are the hub cancelling what an IOC
-     * limit / a market order could not fill at once — such an order may still show
-     * `filled > 0`, which is what makes the reason worth carrying.
-     */
-    cancel_reason?: string;
-};
-
-/**
- * OrderList
- */
-export type BankingV1OrderList = {
-    /**
-     * orders
-     */
-    orders?: Array<BankingV1Order>;
 };
 
 /**
@@ -2657,27 +1305,6 @@ export type BankingV1ParkedEventList = {
 };
 
 /**
- * ParticipationPoint
- *
- * The value of the caller's holding at one instant: the units they held then × the
- * NAV in force then (the seed NAV 1.0 before the first mark).
- */
-export type BankingV1ParticipationPoint = {
-    /**
-     * at
-     *
-     * unix seconds
-     */
-    at?: number | string;
-    /**
-     * value
-     *
-     * decimal USDT
-     */
-    value?: string;
-};
-
-/**
  * Party
  *
  * One end of a payment, as a REQUEST names it.
@@ -2686,18 +1313,15 @@ export type BankingV1Party = {
     /**
      * kind
      *
-     * user | service | treasury. (`piggybank` and `revenue` are retired, #245 — the platform's
-     * money is the `fee` and `fund` allocations: `{kind: "service", id: "fee" | "fund"}`.)
-     * `treasury` is banking's own (D17), never a destination, and closed as a source until
-     * concierge's scope approvals decide its spending (D24); its id is empty or
-     * `main:treasury`.
+     * user | treasury. `treasury` is banking's own (D17), never a destination, and closed as
+     * a source until concierge's scope approvals decide its spending (D24); its id is empty
+     * or `main:treasury`.
      */
     kind?: string;
     /**
      * id
      *
-     * A service slug for `service` (`fee` and `fund` included). For `user`, the CONCIERGE
-     * user id the console carries (resolved to the money-plane id here; a banking id is
+     * For `user`, the CONCIERGE user id the console carries (resolved to the money-plane id here; a banking id is
      * accepted as a fallback, the way UsersService.GetUserBalance resolves one).
      */
     id?: string;
@@ -2814,7 +1438,7 @@ export type BankingV1Payment = {
     /**
      * tier
      *
-     * internal | service | external — DERIVED from the destination, never supplied.
+     * internal | external — DERIVED from the destination, never supplied.
      */
     tier?: string;
     /**
@@ -3019,13 +1643,13 @@ export type BankingV1PaymentEnd = {
     /**
      * kind
      *
-     * service | user | treasury, or `external` for an address.
+     * user | treasury, or `external` for an address.
      */
     kind?: string;
     /**
      * id
      *
-     * The service slug, or the MONEY-PLANE user id (the request accepts a concierge id; the
+     * The MONEY-PLANE user id (the request accepts a concierge id; the
      * response carries what the order stored). Empty for addresses.
      */
     id?: string;
@@ -3043,7 +1667,7 @@ export type BankingV1PaymentEnd = {
      * detail
      *
      * What a person recognises this end BY, beside the label: the receiving investor's
-     * MASKED mailbox for `user`, the product's title for `service`. Empty otherwise. Never
+     * MASKED mailbox for `user`. Empty otherwise. Never
      * part of the digest — the label is what an approval binds.
      */
     detail?: string;
@@ -3180,140 +1804,6 @@ export type BankingV1PayoutReviewLine = {
      * payouts (redemption, book, fee rebate) or this operation's own.
      */
     no_history?: boolean;
-};
-
-/**
- * PlaceOrderRequest
- */
-export type BankingV1PlaceOrderRequest = {
-    /**
-     * service
-     *
-     * the allocation
-     */
-    service?: string;
-    /**
-     * side
-     *
-     * buy | sell
-     */
-    side?: string;
-    /**
-     * kind
-     *
-     * limit | market
-     */
-    kind?: string;
-    /**
-     * tif
-     *
-     * gtc | ioc | alo (post-only); market orders are always ioc
-     */
-    tif?: string;
-    /**
-     * price
-     *
-     * decimal USDT per unit, on the tick; EMPTY for market
-     */
-    price?: string;
-    /**
-     * size
-     *
-     * decimal units, on the lot, > 0
-     */
-    size?: string;
-    /**
-     * client_order_id
-     *
-     * required, 1..64 chars, unique per caller (the retry key)
-     */
-    client_order_id?: string;
-};
-
-/**
- * Position
- *
- * A user's holding in one fund. `value = (units + units_in_orders) × nav`; `pnl = value − cost_basis`
- * (a signed decimal — losses are negative). `nav_as_of` is the unix-seconds timestamp
- * of the NAV mark used (0 when the fund is on the bootstrap seed NAV).
- */
-export type BankingV1Position = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     *
-     * units held free in the holding (decimal)
-     */
-    units?: string;
-    /**
-     * nav
-     *
-     * current NAV per share (decimal USDT)
-     */
-    nav?: string;
-    /**
-     * value
-     *
-     * units × nav (decimal USDT)
-     */
-    value?: string;
-    /**
-     * cost_basis
-     *
-     * net cash invested, average cost (decimal USDT)
-     */
-    cost_basis?: string;
-    /**
-     * pnl
-     *
-     * value − cost_basis (signed decimal USDT)
-     */
-    pnl?: string;
-    /**
-     * nav_as_of
-     *
-     * unix seconds of the NAV mark (0 = seed NAV)
-     */
-    nav_as_of?: number | string;
-    /**
-     * units_in_orders
-     *
-     * Units committed to the holder's resting sell orders on the book (BookService).
-     * Still theirs — `value` and `pnl` price `units + units_in_orders` — but not free to
-     * redeem or sell again until the order fills or is cancelled.
-     */
-    units_in_orders?: string;
-};
-
-/**
- * PositionList
- */
-export type BankingV1PositionList = {
-    /**
-     * positions
-     */
-    positions?: Array<BankingV1Position>;
-};
-
-/**
- * PostFundValuationRequest
- */
-export type BankingV1PostFundValuationRequest = {
-    /**
-     * service
-     *
-     * the fund/service id
-     */
-    service?: string;
-    /**
-     * aum
-     *
-     * decimal USDT — the fund's total assets under management
-     */
-    aum?: string;
 };
 
 /**
@@ -3538,115 +2028,6 @@ export type BankingV1RecordDepositResponse = {
 };
 
 /**
- * RedeemRequest
- */
-export type BankingV1RedeemRequest = {
-    /**
-     * service
-     *
-     * the fund/service id
-     */
-    service?: string;
-    /**
-     * units
-     *
-     * decimal units to redeem
-     */
-    units?: string;
-};
-
-/**
- * Redemption
- *
- * A redemption in the accept-and-queue saga. `units` are fixed at request; `nav`/`cash`
- * are empty until settle (settle-time pricing). State ∈ {queued, completed, failed,
- * cancelled}.
- */
-export type BankingV1Redemption = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     */
-    units?: string;
-    /**
-     * nav
-     *
-     * settle NAV (empty until settled)
-     */
-    nav?: string;
-    /**
-     * cash
-     *
-     * cash paid out (empty until settled)
-     */
-    cash?: string;
-    /**
-     * state
-     */
-    state?: string;
-};
-
-/**
- * RedemptionList
- */
-export type BankingV1RedemptionList = {
-    /**
-     * redemptions
-     */
-    redemptions?: Array<BankingV1Redemption>;
-};
-
-/**
- * RedemptionQueue
- */
-export type BankingV1RedemptionQueue = {
-    /**
-     * items
-     */
-    items?: Array<BankingV1RedemptionQueueItem>;
-};
-
-/**
- * RedemptionQueueItem
- *
- * One queued redemption for the operator queue. `email` is the mirrored identity email
- * (may be empty if the bridge hasn't populated it). `created_at` is unix seconds.
- */
-export type BankingV1RedemptionQueueItem = {
-    /**
-     * redemption_id
-     */
-    redemption_id?: string;
-    /**
-     * user_id
-     */
-    user_id?: string;
-    /**
-     * email
-     */
-    email?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     */
-    units?: string;
-    /**
-     * created_at
-     */
-    created_at?: number | string;
-};
-
-/**
  * RefreshRequest
  */
 export type BankingV1RefreshRequest = {
@@ -3654,34 +2035,6 @@ export type BankingV1RefreshRequest = {
      * refresh_token
      */
     refresh_token?: string;
-};
-
-/**
- * RegisterAllocationRequest
- */
-export type BankingV1RegisterAllocationRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * title
-     */
-    title?: string;
-    /**
-     * summary
-     */
-    summary?: string;
-    /**
-     * icon
-     *
-     * See `Allocation.icon`. Empty means "not chosen" and lands on `fund`; a value
-     * outside the set is refused rather than silently defaulted. Deliberately NOT
-     * `optional`, unlike the update request: a registration creates the row, so there is
-     * no earlier pick that "unset" could destroy — absent and empty both legitimately
-     * mean "the operator chose nothing yet", which is what the default is for.
-     */
-    icon?: string;
 };
 
 /**
@@ -3719,71 +2072,6 @@ export type BankingV1RequestWithdrawalRequest = {
      * audit
      */
     audit?: BankingV1AuditContext;
-};
-
-/**
- * RetireUnitsRequest
- */
-export type BankingV1RetireUnitsRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     *
-     * Whose units are burnt: a banking (or concierge) user id, shaped as IssueUnits'
-     * holder is and for the same reason. Required — a burn of nobody's units is a
-     * malformed request.
-     */
-    user_id?: string;
-    /**
-     * units
-     *
-     * decimal units, > 0, at most what the holder has available
-     */
-    units?: string;
-    /**
-     * cost_basis
-     *
-     * Decimal USDT of book value written off, recorded on the row. Empty means
-     * `units × NAV` at the dealing mark, like IssueUnits. No cash moves either way.
-     */
-    cost_basis?: string;
-    /**
-     * idempotency_key
-     *
-     * required, 1..64 chars, unique per service (shared with IssueUnits)
-     */
-    idempotency_key?: string;
-    /**
-     * force
-     *
-     * Retiring is allowed on a `closed` allocation only; `force = true` is the operator's
-     * explicit override to burn units out of a live (draft or open) product.
-     */
-    force?: boolean;
-};
-
-/**
- * RevokeAllocationAccessRequest
- */
-export type BankingV1RevokeAllocationAccessRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * user_id
-     */
-    user_id?: string;
-};
-
-/**
- * RevokeAllocationAccessResponse
- */
-export type BankingV1RevokeAllocationAccessResponse = {
-    [key: string]: never;
 };
 
 /**
@@ -3980,118 +2268,6 @@ export type BankingV1Session = {
 };
 
 /**
- * SetAllocationAccessRequest
- */
-export type BankingV1SetAllocationAccessRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * access
-     *
-     * hidden | view | invest
-     */
-    access?: string;
-};
-
-/**
- * SetAllocationBackingRequest
- */
-export type BankingV1SetAllocationBackingRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * backing
-     *
-     * cash | in_kind
-     */
-    backing?: string;
-};
-
-/**
- * SetAllocationStateRequest
- */
-export type BankingV1SetAllocationStateRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * state
-     *
-     * open | closed  (draft is entered only by RegisterAllocation)
-     */
-    state?: string;
-};
-
-/**
- * SetAllocationUnitCapRequest
- */
-export type BankingV1SetAllocationUnitCapRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * unit_cap
-     *
-     * decimal units, > 0 (e.g. "1000" or "100000000")
-     */
-    unit_cap?: string;
-};
-
-/**
- * SetBookPolicyRequest
- */
-export type BankingV1SetBookPolicyRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * book_open
-     */
-    book_open?: boolean;
-    /**
-     * taker_fee_bps
-     *
-     * 0..10000
-     */
-    taker_fee_bps?: number;
-    /**
-     * price_tick
-     *
-     * decimal USDT, > 0; empty = 0.01
-     */
-    price_tick?: string;
-    /**
-     * lot_size
-     *
-     * decimal units, > 0; empty = 0.0001
-     */
-    lot_size?: string;
-    /**
-     * market_slippage_bps
-     *
-     * 0..10000; how far past the best quote a market order may fill
-     */
-    market_slippage_bps?: number;
-    /**
-     * allow_unbacked_trading
-     *
-     * The operator's acknowledgement that the book may trade units the fund holds no cash
-     * for (`Allocation.backing = in_kind`): a buyer pays cash for a claim on an asset held in
-     * kind and cannot redeem it. Required to open the book on an in_kind product, and
-     * checked again on every order — the backing can flip after the book opened (the first
-     * in-kind mint). Harmless on a cash product. The terminal shows buyers a notice when set.
-     */
-    allow_unbacked_trading?: boolean;
-};
-
-/**
  * SetOperationsModeRequest
  */
 export type BankingV1SetOperationsModeRequest = {
@@ -4116,32 +2292,6 @@ export type BankingV1SetRailFrozenRequest = {
 };
 
 /**
- * SettleFeeSharesRequest
- */
-export type BankingV1SettleFeeSharesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units
-     *
-     * decimal units; empty settles the whole accumulated balance
-     */
-    units?: string;
-};
-
-/**
- * SettleRedemptionRequest
- */
-export type BankingV1SettleRedemptionRequest = {
-    /**
-     * redemption_id
-     */
-    redemption_id?: string;
-};
-
-/**
  * SettleWithdrawalRequest
  */
 export type BankingV1SettleWithdrawalRequest = {
@@ -4162,53 +2312,6 @@ export type BankingV1SettleWithdrawalRequest = {
  */
 export type BankingV1SettleWithdrawalResponse = {
     [key: string]: never;
-};
-
-/**
- * SubscribeRequest
- */
-export type BankingV1SubscribeRequest = {
-    /**
-     * service
-     *
-     * the fund/service id
-     */
-    service?: string;
-    /**
-     * amount
-     *
-     * decimal USDT to subscribe (cash in)
-     */
-    amount?: string;
-};
-
-/**
- * Subscription
- *
- * The receipt for one subscription (mint): `cash` of the user's balance bought `units`
- * at `nav`. The position itself is read via GetPosition once the relay has applied it.
- */
-export type BankingV1Subscription = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * cash
-     */
-    cash?: string;
-    /**
-     * nav
-     */
-    nav?: string;
-    /**
-     * units
-     */
-    units?: string;
 };
 
 /**
@@ -4242,85 +2345,13 @@ export type BankingV1TokenResponse = {
 };
 
 /**
- * Trade
- *
- * One fill. On the public tape only `id`, `service`, `price`, `size`, `taker_side` and
- * `executed_at` are populated. On the caller's own tape (ListUserTrades) `user_side` is
- * the caller's side, `order_id` their order on it and `fee` what they paid (empty when
- * they were the maker); the counterparty is never disclosed.
- */
-export type BankingV1Trade = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * price
-     *
-     * decimal USDT per unit
-     */
-    price?: string;
-    /**
-     * size
-     *
-     * decimal units
-     */
-    size?: string;
-    /**
-     * taker_side
-     *
-     * buy | sell — the side that crossed the spread
-     */
-    taker_side?: string;
-    /**
-     * executed_at
-     *
-     * unix seconds
-     */
-    executed_at?: number | string;
-    /**
-     * user_side
-     *
-     * the caller's side; empty on the public tape
-     */
-    user_side?: string;
-    /**
-     * order_id
-     *
-     * the caller's order; empty on the public tape
-     */
-    order_id?: string;
-    /**
-     * fee
-     *
-     * decimal USDT the caller paid; empty on the public tape
-     */
-    fee?: string;
-};
-
-/**
- * TradeList
- */
-export type BankingV1TradeList = {
-    /**
-     * trades
-     */
-    trades?: Array<BankingV1Trade>;
-};
-
-/**
  * Treasury
  *
  * The treasury picture: per-rail liquidity (Layer 2) and who the claims on it belong to
  * (Layer 1). Under the unified-claim model the invariant is GLOBAL — `total_custody`
  * (the asset side) equals the sum of all claims — and every claim is somebody's (#245):
- * a person's directly (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`,
- * Σ their scope compartments), an allocation's, whose units people hold (`allocations`,
- * the hidden `fee` and `fund` included), or banking's own (`banking_treasury`). Nothing here
+ * a person's (`held_by_users`, Σ `user:<id>` claims; `held_in_compartments`, Σ their scope
+ * compartments), or banking's own (`banking_treasury`). Nothing here
  * is a remainder: each figure is read off its own accounts, and whether they add up to
  * the custody is the reconciliation's finding, not this view's arithmetic.
  */
@@ -4356,167 +2387,18 @@ export type BankingV1Treasury = {
      */
     held_by_users?: string;
     /**
-     * allocations
-     */
-    allocations?: Array<BankingV1AllocationTreasury>;
-    /**
      * banking_treasury
      *
      * banking's own treasury, `scope_account:main:treasury` (D17): the withdrawal fees it
      * retained, less what the owners approved paying out of it.
      */
-    banking_treasury?: BankingV1AllocationClaim;
+    banking_treasury?: BankingV1ClaimBalance;
     /**
      * held_in_compartments
      *
      * Σ users' scope compartments — still people's
      */
     held_in_compartments?: string;
-};
-
-/**
- * UnitHolderRef
- *
- * One holder of an allocation's units, as the cap table and the treasury name them.
- * `kind` is `user` (`id` is the banking user id) or `allocation` (`id` is the holding
- * allocation's slug — the reserved `fee` allocation holding a product's fee class). The
- * reserved allocations' own holders are always people.
- */
-export type BankingV1UnitHolderRef = {
-    /**
-     * kind
-     *
-     * user | allocation
-     */
-    kind?: string;
-    /**
-     * id
-     */
-    id?: string;
-};
-
-/**
- * UnitHolders
- *
- * The cap table of one product: the settled supply and every holder of it, largest
- * first (ties by the holder's stored identity, so the table reads the same on every
- * refresh). Σ `holders[].units` = `units_outstanding` is the supply invariant the
- * reconciliation checks — it is read, never derived, here. All units decimal.
- */
-export type BankingV1UnitHolders = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * units_outstanding
-     */
-    units_outstanding?: string;
-    /**
-     * queued_units
-     *
-     * Decimal units of `mint` issuances still `queued` — recorded, not yet posted by the
-     * relay. Once they land, `units_outstanding` grows by this much, so an operator
-     * pinning the cap to what is issued must wait for it to read zero: a cap pinned to
-     * the settled figure alone leaves the queued mint to land above it.
-     * TODO(#271): retire (PR #278) shrinks supply — subtract queued retires once it lands.
-     */
-    queued_units?: string;
-    /**
-     * holders
-     */
-    holders?: Array<BankingV1UnitHolding>;
-};
-
-/**
- * UnitHolding
- *
- * One line of a cap table: who, and how many units (decimal). Holdings of zero are not
- * listed.
- */
-export type BankingV1UnitHolding = {
-    /**
-     * holder
-     */
-    holder?: BankingV1UnitHolderRef;
-    /**
-     * units
-     */
-    units?: string;
-};
-
-/**
- * UnitIssuance
- *
- * One in-kind issuance: a mint or a retirement (`source`).
- * The holder is a flattened `UnitHolderRef`: a person, or the reserved allocation the
- * fee accrual minted a product's fee class to.
- */
-export type BankingV1UnitIssuance = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * holder_kind
-     *
-     * `user` | `allocation`. (The company stake's two historical rows never cross the
-     * wire: a lookup that lands on one is refused as a conflict, #245.)
-     */
-    holder_kind?: string;
-    /**
-     * holder_id
-     *
-     * The banking user id for `user`; the holding allocation's slug (`fee`) for
-     * `allocation`. A client must never resolve an `allocation` holder as a user.
-     */
-    holder_id?: string;
-    /**
-     * units
-     *
-     * decimal units minted or retired (always positive)
-     */
-    units?: string;
-    /**
-     * nav
-     *
-     * decimal USDT per unit the issuance was recorded at
-     */
-    nav?: string;
-    /**
-     * cost_basis
-     *
-     * decimal USDT
-     */
-    cost_basis?: string;
-    /**
-     * state
-     *
-     * `queued` until the relay posts the leg, then `applied`. A client that needs the
-     * units to be visible on the ledger polls for `applied`; a `queued` row is one the
-     * relay has not reached yet (or one it parked — see BalanceService.ListParkedEvents).
-     */
-    state?: string;
-    /**
-     * created_at
-     *
-     * unix seconds
-     */
-    created_at?: number | string;
-    /**
-     * source
-     *
-     * Where the units came from — or went: `mint` (IssueUnits or an executed holder
-     * grant — supply grew by `units`) or `retire` (RetireUnits — burnt out of the
-     * holder's account, supply shrank by `units`). `units` is always the magnitude; the
-     * source is the direction.
-     * Always populated; a row that predates the field reads as `mint`.
-     */
-    source?: string;
 };
 
 /**
@@ -4534,40 +2416,6 @@ export type BankingV1UnparkEventRequest = {
  */
 export type BankingV1UnparkEventResponse = {
     [key: string]: never;
-};
-
-/**
- * UpdateAllocationRequest
- */
-export type BankingV1UpdateAllocationRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * title
-     */
-    title?: string;
-    /**
-     * summary
-     */
-    summary?: string;
-    /**
-     * icon
-     *
-     * See `Allocation.icon`. `optional` — and it is the ONLY field here that is, because
-     * it is the only one where "the caller did not mention it" has to be distinguishable
-     * from "the caller cleared it". Unset means LEAVE THE STORED ICON ALONE; empty string
-     * means reset to `fund`; an unknown value is refused.
-     *
-     * Without presence a scalar `string` cannot tell those apart, and every caller built
-     * before this field existed — a consumer repo on an older `contracts` pin, a browser
-     * tab holding a stale bundle, a pod mid-rolling-deploy — would silently wipe the
-     * operator's pick on the next title edit. `title` and `summary` need no such escape:
-     * they predate every live caller, so an omitted title is a client bug the boundary
-     * refuses outright rather than a field it has to guess about.
-     */
-    icon?: string | null;
 };
 
 /**
@@ -4868,22 +2716,6 @@ export type BankingV1Wallet = {
      * per-rail withdraw options
      */
     withdrawable?: Array<BankingV1NetworkWithdrawable>;
-};
-
-/**
- * WatchBookRequest
- */
-export type BankingV1WatchBookRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * depth
-     *
-     * as GetBook
-     */
-    depth?: number;
 };
 
 /**
@@ -6105,412 +3937,6 @@ export type ConnectErrorDetailsAny = {
     [key: string]: unknown;
 };
 
-export type BankingV1AllocationsServiceGetAllocationData = {
-    body: BankingV1GetAllocationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/GetAllocation';
-};
-
-export type BankingV1AllocationsServiceGetAllocationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceGetAllocationError = BankingV1AllocationsServiceGetAllocationErrors[keyof BankingV1AllocationsServiceGetAllocationErrors];
-
-export type BankingV1AllocationsServiceGetAllocationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceGetAllocationResponse = BankingV1AllocationsServiceGetAllocationResponses[keyof BankingV1AllocationsServiceGetAllocationResponses];
-
-export type BankingV1AllocationsServiceGrantAllocationAccessData = {
-    body: BankingV1GrantAllocationAccessRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/GrantAllocationAccess';
-};
-
-export type BankingV1AllocationsServiceGrantAllocationAccessErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceGrantAllocationAccessError = BankingV1AllocationsServiceGrantAllocationAccessErrors[keyof BankingV1AllocationsServiceGrantAllocationAccessErrors];
-
-export type BankingV1AllocationsServiceGrantAllocationAccessResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1AllocationAccessGrant;
-};
-
-export type BankingV1AllocationsServiceGrantAllocationAccessResponse = BankingV1AllocationsServiceGrantAllocationAccessResponses[keyof BankingV1AllocationsServiceGrantAllocationAccessResponses];
-
-export type BankingV1AllocationsServiceIssueUnitsData = {
-    body: BankingV1IssueUnitsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/IssueUnits';
-};
-
-export type BankingV1AllocationsServiceIssueUnitsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceIssueUnitsError = BankingV1AllocationsServiceIssueUnitsErrors[keyof BankingV1AllocationsServiceIssueUnitsErrors];
-
-export type BankingV1AllocationsServiceIssueUnitsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1UnitIssuance;
-};
-
-export type BankingV1AllocationsServiceIssueUnitsResponse = BankingV1AllocationsServiceIssueUnitsResponses[keyof BankingV1AllocationsServiceIssueUnitsResponses];
-
-export type BankingV1AllocationsServiceListAllocationAccessGrantsData = {
-    body: BankingV1ListAllocationAccessGrantsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/ListAllocationAccessGrants';
-};
-
-export type BankingV1AllocationsServiceListAllocationAccessGrantsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceListAllocationAccessGrantsError = BankingV1AllocationsServiceListAllocationAccessGrantsErrors[keyof BankingV1AllocationsServiceListAllocationAccessGrantsErrors];
-
-export type BankingV1AllocationsServiceListAllocationAccessGrantsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1AllocationAccessGrantList;
-};
-
-export type BankingV1AllocationsServiceListAllocationAccessGrantsResponse = BankingV1AllocationsServiceListAllocationAccessGrantsResponses[keyof BankingV1AllocationsServiceListAllocationAccessGrantsResponses];
-
-export type BankingV1AllocationsServiceListAllocationsData = {
-    body: BankingV1ListAllocationsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/ListAllocations';
-};
-
-export type BankingV1AllocationsServiceListAllocationsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceListAllocationsError = BankingV1AllocationsServiceListAllocationsErrors[keyof BankingV1AllocationsServiceListAllocationsErrors];
-
-export type BankingV1AllocationsServiceListAllocationsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1AllocationList;
-};
-
-export type BankingV1AllocationsServiceListAllocationsResponse = BankingV1AllocationsServiceListAllocationsResponses[keyof BankingV1AllocationsServiceListAllocationsResponses];
-
-export type BankingV1AllocationsServiceListUnitHoldersData = {
-    body: BankingV1ListUnitHoldersRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/ListUnitHolders';
-};
-
-export type BankingV1AllocationsServiceListUnitHoldersErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceListUnitHoldersError = BankingV1AllocationsServiceListUnitHoldersErrors[keyof BankingV1AllocationsServiceListUnitHoldersErrors];
-
-export type BankingV1AllocationsServiceListUnitHoldersResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1UnitHolders;
-};
-
-export type BankingV1AllocationsServiceListUnitHoldersResponse = BankingV1AllocationsServiceListUnitHoldersResponses[keyof BankingV1AllocationsServiceListUnitHoldersResponses];
-
-export type BankingV1AllocationsServiceRegisterAllocationData = {
-    body: BankingV1RegisterAllocationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/RegisterAllocation';
-};
-
-export type BankingV1AllocationsServiceRegisterAllocationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceRegisterAllocationError = BankingV1AllocationsServiceRegisterAllocationErrors[keyof BankingV1AllocationsServiceRegisterAllocationErrors];
-
-export type BankingV1AllocationsServiceRegisterAllocationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceRegisterAllocationResponse = BankingV1AllocationsServiceRegisterAllocationResponses[keyof BankingV1AllocationsServiceRegisterAllocationResponses];
-
-export type BankingV1AllocationsServiceRetireUnitsData = {
-    body: BankingV1RetireUnitsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/RetireUnits';
-};
-
-export type BankingV1AllocationsServiceRetireUnitsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceRetireUnitsError = BankingV1AllocationsServiceRetireUnitsErrors[keyof BankingV1AllocationsServiceRetireUnitsErrors];
-
-export type BankingV1AllocationsServiceRetireUnitsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1UnitIssuance;
-};
-
-export type BankingV1AllocationsServiceRetireUnitsResponse = BankingV1AllocationsServiceRetireUnitsResponses[keyof BankingV1AllocationsServiceRetireUnitsResponses];
-
-export type BankingV1AllocationsServiceRevokeAllocationAccessData = {
-    body: BankingV1RevokeAllocationAccessRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/RevokeAllocationAccess';
-};
-
-export type BankingV1AllocationsServiceRevokeAllocationAccessErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceRevokeAllocationAccessError = BankingV1AllocationsServiceRevokeAllocationAccessErrors[keyof BankingV1AllocationsServiceRevokeAllocationAccessErrors];
-
-export type BankingV1AllocationsServiceRevokeAllocationAccessResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1RevokeAllocationAccessResponse;
-};
-
-export type BankingV1AllocationsServiceRevokeAllocationAccessResponse = BankingV1AllocationsServiceRevokeAllocationAccessResponses[keyof BankingV1AllocationsServiceRevokeAllocationAccessResponses];
-
-export type BankingV1AllocationsServiceSetAllocationAccessData = {
-    body: BankingV1SetAllocationAccessRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/SetAllocationAccess';
-};
-
-export type BankingV1AllocationsServiceSetAllocationAccessErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceSetAllocationAccessError = BankingV1AllocationsServiceSetAllocationAccessErrors[keyof BankingV1AllocationsServiceSetAllocationAccessErrors];
-
-export type BankingV1AllocationsServiceSetAllocationAccessResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceSetAllocationAccessResponse = BankingV1AllocationsServiceSetAllocationAccessResponses[keyof BankingV1AllocationsServiceSetAllocationAccessResponses];
-
-export type BankingV1AllocationsServiceSetAllocationBackingData = {
-    body: BankingV1SetAllocationBackingRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/SetAllocationBacking';
-};
-
-export type BankingV1AllocationsServiceSetAllocationBackingErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceSetAllocationBackingError = BankingV1AllocationsServiceSetAllocationBackingErrors[keyof BankingV1AllocationsServiceSetAllocationBackingErrors];
-
-export type BankingV1AllocationsServiceSetAllocationBackingResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceSetAllocationBackingResponse = BankingV1AllocationsServiceSetAllocationBackingResponses[keyof BankingV1AllocationsServiceSetAllocationBackingResponses];
-
-export type BankingV1AllocationsServiceSetAllocationStateData = {
-    body: BankingV1SetAllocationStateRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/SetAllocationState';
-};
-
-export type BankingV1AllocationsServiceSetAllocationStateErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceSetAllocationStateError = BankingV1AllocationsServiceSetAllocationStateErrors[keyof BankingV1AllocationsServiceSetAllocationStateErrors];
-
-export type BankingV1AllocationsServiceSetAllocationStateResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceSetAllocationStateResponse = BankingV1AllocationsServiceSetAllocationStateResponses[keyof BankingV1AllocationsServiceSetAllocationStateResponses];
-
-export type BankingV1AllocationsServiceSetAllocationUnitCapData = {
-    body: BankingV1SetAllocationUnitCapRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/SetAllocationUnitCap';
-};
-
-export type BankingV1AllocationsServiceSetAllocationUnitCapErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceSetAllocationUnitCapError = BankingV1AllocationsServiceSetAllocationUnitCapErrors[keyof BankingV1AllocationsServiceSetAllocationUnitCapErrors];
-
-export type BankingV1AllocationsServiceSetAllocationUnitCapResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceSetAllocationUnitCapResponse = BankingV1AllocationsServiceSetAllocationUnitCapResponses[keyof BankingV1AllocationsServiceSetAllocationUnitCapResponses];
-
-export type BankingV1AllocationsServiceUpdateAllocationData = {
-    body: BankingV1UpdateAllocationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.AllocationsService/UpdateAllocation';
-};
-
-export type BankingV1AllocationsServiceUpdateAllocationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1AllocationsServiceUpdateAllocationError = BankingV1AllocationsServiceUpdateAllocationErrors[keyof BankingV1AllocationsServiceUpdateAllocationErrors];
-
-export type BankingV1AllocationsServiceUpdateAllocationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Allocation;
-};
-
-export type BankingV1AllocationsServiceUpdateAllocationResponse = BankingV1AllocationsServiceUpdateAllocationResponses[keyof BankingV1AllocationsServiceUpdateAllocationResponses];
-
 export type BankingV1AuthServiceIssueUserTokenData = {
     body: BankingV1IssueUserTokenRequest;
     headers: {
@@ -6714,35 +4140,6 @@ export type BankingV1BalanceServiceDispatchWithdrawalResponses = {
 
 export type BankingV1BalanceServiceDispatchWithdrawalResponse = BankingV1BalanceServiceDispatchWithdrawalResponses[keyof BankingV1BalanceServiceDispatchWithdrawalResponses];
 
-export type BankingV1BalanceServiceFailRedemptionData = {
-    body: BankingV1FailRedemptionRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/FailRedemption';
-};
-
-export type BankingV1BalanceServiceFailRedemptionErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServiceFailRedemptionError = BankingV1BalanceServiceFailRedemptionErrors[keyof BankingV1BalanceServiceFailRedemptionErrors];
-
-export type BankingV1BalanceServiceFailRedemptionResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Redemption;
-};
-
-export type BankingV1BalanceServiceFailRedemptionResponse = BankingV1BalanceServiceFailRedemptionResponses[keyof BankingV1BalanceServiceFailRedemptionResponses];
-
 export type BankingV1BalanceServiceFailWithdrawalData = {
     body: BankingV1FailWithdrawalRequest;
     headers: {
@@ -6771,35 +4168,6 @@ export type BankingV1BalanceServiceFailWithdrawalResponses = {
 };
 
 export type BankingV1BalanceServiceFailWithdrawalResponse = BankingV1BalanceServiceFailWithdrawalResponses[keyof BankingV1BalanceServiceFailWithdrawalResponses];
-
-export type BankingV1BalanceServiceGetFundRevenueData = {
-    body: BankingV1GetFundRevenueRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/GetFundRevenue';
-};
-
-export type BankingV1BalanceServiceGetFundRevenueErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServiceGetFundRevenueError = BankingV1BalanceServiceGetFundRevenueErrors[keyof BankingV1BalanceServiceGetFundRevenueErrors];
-
-export type BankingV1BalanceServiceGetFundRevenueResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1AllocationTreasury;
-};
-
-export type BankingV1BalanceServiceGetFundRevenueResponse = BankingV1BalanceServiceGetFundRevenueResponses[keyof BankingV1BalanceServiceGetFundRevenueResponses];
 
 export type BankingV1BalanceServiceGetOperationsModeData = {
     body: BankingV1GetOperationsModeRequest;
@@ -6917,35 +4285,6 @@ export type BankingV1BalanceServiceListRailsResponses = {
 
 export type BankingV1BalanceServiceListRailsResponse = BankingV1BalanceServiceListRailsResponses[keyof BankingV1BalanceServiceListRailsResponses];
 
-export type BankingV1BalanceServiceListRedemptionQueueData = {
-    body: BankingV1ListRedemptionQueueRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/ListRedemptionQueue';
-};
-
-export type BankingV1BalanceServiceListRedemptionQueueErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServiceListRedemptionQueueError = BankingV1BalanceServiceListRedemptionQueueErrors[keyof BankingV1BalanceServiceListRedemptionQueueErrors];
-
-export type BankingV1BalanceServiceListRedemptionQueueResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1RedemptionQueue;
-};
-
-export type BankingV1BalanceServiceListRedemptionQueueResponse = BankingV1BalanceServiceListRedemptionQueueResponses[keyof BankingV1BalanceServiceListRedemptionQueueResponses];
-
 export type BankingV1BalanceServiceListWithdrawalQueueData = {
     body: BankingV1ListWithdrawalQueueRequest;
     headers: {
@@ -7003,35 +4342,6 @@ export type BankingV1BalanceServiceMigrateDepositAddressToCustodianResponses = {
 };
 
 export type BankingV1BalanceServiceMigrateDepositAddressToCustodianResponse = BankingV1BalanceServiceMigrateDepositAddressToCustodianResponses[keyof BankingV1BalanceServiceMigrateDepositAddressToCustodianResponses];
-
-export type BankingV1BalanceServicePostFundValuationData = {
-    body: BankingV1PostFundValuationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/PostFundValuation';
-};
-
-export type BankingV1BalanceServicePostFundValuationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServicePostFundValuationError = BankingV1BalanceServicePostFundValuationErrors[keyof BankingV1BalanceServicePostFundValuationErrors];
-
-export type BankingV1BalanceServicePostFundValuationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FundNav;
-};
-
-export type BankingV1BalanceServicePostFundValuationResponse = BankingV1BalanceServicePostFundValuationResponses[keyof BankingV1BalanceServicePostFundValuationResponses];
 
 export type BankingV1BalanceServiceRecordDepositData = {
     body: BankingV1RecordDepositRequest;
@@ -7149,35 +4459,6 @@ export type BankingV1BalanceServiceSetRailFrozenResponses = {
 
 export type BankingV1BalanceServiceSetRailFrozenResponse = BankingV1BalanceServiceSetRailFrozenResponses[keyof BankingV1BalanceServiceSetRailFrozenResponses];
 
-export type BankingV1BalanceServiceSettleRedemptionData = {
-    body: BankingV1SettleRedemptionRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/SettleRedemption';
-};
-
-export type BankingV1BalanceServiceSettleRedemptionErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServiceSettleRedemptionError = BankingV1BalanceServiceSettleRedemptionErrors[keyof BankingV1BalanceServiceSettleRedemptionErrors];
-
-export type BankingV1BalanceServiceSettleRedemptionResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Redemption;
-};
-
-export type BankingV1BalanceServiceSettleRedemptionResponse = BankingV1BalanceServiceSettleRedemptionResponses[keyof BankingV1BalanceServiceSettleRedemptionResponses];
-
 export type BankingV1BalanceServiceSettleWithdrawalData = {
     body: BankingV1SettleWithdrawalRequest;
     headers: {
@@ -7235,296 +4516,6 @@ export type BankingV1BalanceServiceUnparkEventResponses = {
 };
 
 export type BankingV1BalanceServiceUnparkEventResponse = BankingV1BalanceServiceUnparkEventResponses[keyof BankingV1BalanceServiceUnparkEventResponses];
-
-export type BankingV1BookServiceCancelOrderData = {
-    body: BankingV1CancelOrderRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/CancelOrder';
-};
-
-export type BankingV1BookServiceCancelOrderErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceCancelOrderError = BankingV1BookServiceCancelOrderErrors[keyof BankingV1BookServiceCancelOrderErrors];
-
-export type BankingV1BookServiceCancelOrderResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Order;
-};
-
-export type BankingV1BookServiceCancelOrderResponse = BankingV1BookServiceCancelOrderResponses[keyof BankingV1BookServiceCancelOrderResponses];
-
-export type BankingV1BookServiceGetBookData = {
-    body: BankingV1GetBookRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/GetBook';
-};
-
-export type BankingV1BookServiceGetBookErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceGetBookError = BankingV1BookServiceGetBookErrors[keyof BankingV1BookServiceGetBookErrors];
-
-export type BankingV1BookServiceGetBookResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1BookSnapshot;
-};
-
-export type BankingV1BookServiceGetBookResponse = BankingV1BookServiceGetBookResponses[keyof BankingV1BookServiceGetBookResponses];
-
-export type BankingV1BookServiceGetBookPolicyData = {
-    body: BankingV1GetBookPolicyRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/GetBookPolicy';
-};
-
-export type BankingV1BookServiceGetBookPolicyErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceGetBookPolicyError = BankingV1BookServiceGetBookPolicyErrors[keyof BankingV1BookServiceGetBookPolicyErrors];
-
-export type BankingV1BookServiceGetBookPolicyResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1BookPolicy;
-};
-
-export type BankingV1BookServiceGetBookPolicyResponse = BankingV1BookServiceGetBookPolicyResponses[keyof BankingV1BookServiceGetBookPolicyResponses];
-
-export type BankingV1BookServiceListCandlesData = {
-    body: BankingV1ListCandlesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/ListCandles';
-};
-
-export type BankingV1BookServiceListCandlesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceListCandlesError = BankingV1BookServiceListCandlesErrors[keyof BankingV1BookServiceListCandlesErrors];
-
-export type BankingV1BookServiceListCandlesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1CandleList;
-};
-
-export type BankingV1BookServiceListCandlesResponse = BankingV1BookServiceListCandlesResponses[keyof BankingV1BookServiceListCandlesResponses];
-
-export type BankingV1BookServiceListOpenOrdersData = {
-    body: BankingV1ListOpenOrdersRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/ListOpenOrders';
-};
-
-export type BankingV1BookServiceListOpenOrdersErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceListOpenOrdersError = BankingV1BookServiceListOpenOrdersErrors[keyof BankingV1BookServiceListOpenOrdersErrors];
-
-export type BankingV1BookServiceListOpenOrdersResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1OrderList;
-};
-
-export type BankingV1BookServiceListOpenOrdersResponse = BankingV1BookServiceListOpenOrdersResponses[keyof BankingV1BookServiceListOpenOrdersResponses];
-
-export type BankingV1BookServiceListOrderHistoryData = {
-    body: BankingV1ListOrderHistoryRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/ListOrderHistory';
-};
-
-export type BankingV1BookServiceListOrderHistoryErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceListOrderHistoryError = BankingV1BookServiceListOrderHistoryErrors[keyof BankingV1BookServiceListOrderHistoryErrors];
-
-export type BankingV1BookServiceListOrderHistoryResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1OrderList;
-};
-
-export type BankingV1BookServiceListOrderHistoryResponse = BankingV1BookServiceListOrderHistoryResponses[keyof BankingV1BookServiceListOrderHistoryResponses];
-
-export type BankingV1BookServiceListTradesData = {
-    body: BankingV1ListTradesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/ListTrades';
-};
-
-export type BankingV1BookServiceListTradesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceListTradesError = BankingV1BookServiceListTradesErrors[keyof BankingV1BookServiceListTradesErrors];
-
-export type BankingV1BookServiceListTradesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1TradeList;
-};
-
-export type BankingV1BookServiceListTradesResponse = BankingV1BookServiceListTradesResponses[keyof BankingV1BookServiceListTradesResponses];
-
-export type BankingV1BookServiceListUserTradesData = {
-    body: BankingV1ListUserTradesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/ListUserTrades';
-};
-
-export type BankingV1BookServiceListUserTradesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceListUserTradesError = BankingV1BookServiceListUserTradesErrors[keyof BankingV1BookServiceListUserTradesErrors];
-
-export type BankingV1BookServiceListUserTradesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1TradeList;
-};
-
-export type BankingV1BookServiceListUserTradesResponse = BankingV1BookServiceListUserTradesResponses[keyof BankingV1BookServiceListUserTradesResponses];
-
-export type BankingV1BookServicePlaceOrderData = {
-    body: BankingV1PlaceOrderRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/PlaceOrder';
-};
-
-export type BankingV1BookServicePlaceOrderErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServicePlaceOrderError = BankingV1BookServicePlaceOrderErrors[keyof BankingV1BookServicePlaceOrderErrors];
-
-export type BankingV1BookServicePlaceOrderResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Order;
-};
-
-export type BankingV1BookServicePlaceOrderResponse = BankingV1BookServicePlaceOrderResponses[keyof BankingV1BookServicePlaceOrderResponses];
-
-export type BankingV1BookServiceSetBookPolicyData = {
-    body: BankingV1SetBookPolicyRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BookService/SetBookPolicy';
-};
-
-export type BankingV1BookServiceSetBookPolicyErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BookServiceSetBookPolicyError = BankingV1BookServiceSetBookPolicyErrors[keyof BankingV1BookServiceSetBookPolicyErrors];
-
-export type BankingV1BookServiceSetBookPolicyResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1BookPolicy;
-};
-
-export type BankingV1BookServiceSetBookPolicyResponse = BankingV1BookServiceSetBookPolicyResponses[keyof BankingV1BookServiceSetBookPolicyResponses];
 
 export type BankingV1CompartmentServiceGetCompartmentData = {
     body: BankingV1GetCompartmentRequest;
@@ -7757,441 +4748,6 @@ export type BankingV1CompartmentServiceRevokeMandateResponses = {
 };
 
 export type BankingV1CompartmentServiceRevokeMandateResponse = BankingV1CompartmentServiceRevokeMandateResponses[keyof BankingV1CompartmentServiceRevokeMandateResponses];
-
-export type BankingV1FeesServiceGetAccruedFeesData = {
-    body: BankingV1GetAccruedFeesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/GetAccruedFees';
-};
-
-export type BankingV1FeesServiceGetAccruedFeesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceGetAccruedFeesError = BankingV1FeesServiceGetAccruedFeesErrors[keyof BankingV1FeesServiceGetAccruedFeesErrors];
-
-export type BankingV1FeesServiceGetAccruedFeesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1AccruedFees;
-};
-
-export type BankingV1FeesServiceGetAccruedFeesResponse = BankingV1FeesServiceGetAccruedFeesResponses[keyof BankingV1FeesServiceGetAccruedFeesResponses];
-
-export type BankingV1FeesServiceGetFeePolicyData = {
-    body: BankingV1GetFeePolicyRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/GetFeePolicy';
-};
-
-export type BankingV1FeesServiceGetFeePolicyErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceGetFeePolicyError = BankingV1FeesServiceGetFeePolicyErrors[keyof BankingV1FeesServiceGetFeePolicyErrors];
-
-export type BankingV1FeesServiceGetFeePolicyResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicy;
-};
-
-export type BankingV1FeesServiceGetFeePolicyResponse = BankingV1FeesServiceGetFeePolicyResponses[keyof BankingV1FeesServiceGetFeePolicyResponses];
-
-export type BankingV1FeesServiceGetFeeSharesData = {
-    body: BankingV1GetFeeSharesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/GetFeeShares';
-};
-
-export type BankingV1FeesServiceGetFeeSharesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceGetFeeSharesError = BankingV1FeesServiceGetFeeSharesErrors[keyof BankingV1FeesServiceGetFeeSharesErrors];
-
-export type BankingV1FeesServiceGetFeeSharesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeeShares;
-};
-
-export type BankingV1FeesServiceGetFeeSharesResponse = BankingV1FeesServiceGetFeeSharesResponses[keyof BankingV1FeesServiceGetFeeSharesResponses];
-
-export type BankingV1FeesServiceListFeeAssessmentsData = {
-    body: BankingV1ListFeeAssessmentsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/ListFeeAssessments';
-};
-
-export type BankingV1FeesServiceListFeeAssessmentsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceListFeeAssessmentsError = BankingV1FeesServiceListFeeAssessmentsErrors[keyof BankingV1FeesServiceListFeeAssessmentsErrors];
-
-export type BankingV1FeesServiceListFeeAssessmentsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeeAssessmentList;
-};
-
-export type BankingV1FeesServiceListFeeAssessmentsResponse = BankingV1FeesServiceListFeeAssessmentsResponses[keyof BankingV1FeesServiceListFeeAssessmentsResponses];
-
-export type BankingV1FeesServiceListFeePoliciesData = {
-    body: BankingV1ListFeePoliciesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/ListFeePolicies';
-};
-
-export type BankingV1FeesServiceListFeePoliciesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceListFeePoliciesError = BankingV1FeesServiceListFeePoliciesErrors[keyof BankingV1FeesServiceListFeePoliciesErrors];
-
-export type BankingV1FeesServiceListFeePoliciesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicyList;
-};
-
-export type BankingV1FeesServiceListFeePoliciesResponse = BankingV1FeesServiceListFeePoliciesResponses[keyof BankingV1FeesServiceListFeePoliciesResponses];
-
-export type BankingV1FeesServiceListFundFeeAssessmentsData = {
-    body: BankingV1ListFundFeeAssessmentsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/ListFundFeeAssessments';
-};
-
-export type BankingV1FeesServiceListFundFeeAssessmentsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceListFundFeeAssessmentsError = BankingV1FeesServiceListFundFeeAssessmentsErrors[keyof BankingV1FeesServiceListFundFeeAssessmentsErrors];
-
-export type BankingV1FeesServiceListFundFeeAssessmentsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeeAssessmentList;
-};
-
-export type BankingV1FeesServiceListFundFeeAssessmentsResponse = BankingV1FeesServiceListFundFeeAssessmentsResponses[keyof BankingV1FeesServiceListFundFeeAssessmentsResponses];
-
-export type BankingV1FeesServiceSettleFeeSharesData = {
-    body: BankingV1SettleFeeSharesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/SettleFeeShares';
-};
-
-export type BankingV1FeesServiceSettleFeeSharesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceSettleFeeSharesError = BankingV1FeesServiceSettleFeeSharesErrors[keyof BankingV1FeesServiceSettleFeeSharesErrors];
-
-export type BankingV1FeesServiceSettleFeeSharesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeeSettlement;
-};
-
-export type BankingV1FeesServiceSettleFeeSharesResponse = BankingV1FeesServiceSettleFeeSharesResponses[keyof BankingV1FeesServiceSettleFeeSharesResponses];
-
-export type BankingV1FundsServiceCancelRedemptionData = {
-    body: BankingV1CancelRedemptionRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/CancelRedemption';
-};
-
-export type BankingV1FundsServiceCancelRedemptionErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceCancelRedemptionError = BankingV1FundsServiceCancelRedemptionErrors[keyof BankingV1FundsServiceCancelRedemptionErrors];
-
-export type BankingV1FundsServiceCancelRedemptionResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Redemption;
-};
-
-export type BankingV1FundsServiceCancelRedemptionResponse = BankingV1FundsServiceCancelRedemptionResponses[keyof BankingV1FundsServiceCancelRedemptionResponses];
-
-export type BankingV1FundsServiceGetFundNavData = {
-    body: BankingV1GetFundNavRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/GetFundNav';
-};
-
-export type BankingV1FundsServiceGetFundNavErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceGetFundNavError = BankingV1FundsServiceGetFundNavErrors[keyof BankingV1FundsServiceGetFundNavErrors];
-
-export type BankingV1FundsServiceGetFundNavResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FundNav;
-};
-
-export type BankingV1FundsServiceGetFundNavResponse = BankingV1FundsServiceGetFundNavResponses[keyof BankingV1FundsServiceGetFundNavResponses];
-
-export type BankingV1FundsServiceGetPositionData = {
-    body: BankingV1GetPositionRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/GetPosition';
-};
-
-export type BankingV1FundsServiceGetPositionErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceGetPositionError = BankingV1FundsServiceGetPositionErrors[keyof BankingV1FundsServiceGetPositionErrors];
-
-export type BankingV1FundsServiceGetPositionResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Position;
-};
-
-export type BankingV1FundsServiceGetPositionResponse = BankingV1FundsServiceGetPositionResponses[keyof BankingV1FundsServiceGetPositionResponses];
-
-export type BankingV1FundsServiceListFundNavHistoryData = {
-    body: BankingV1ListFundNavHistoryRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/ListFundNavHistory';
-};
-
-export type BankingV1FundsServiceListFundNavHistoryErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceListFundNavHistoryError = BankingV1FundsServiceListFundNavHistoryErrors[keyof BankingV1FundsServiceListFundNavHistoryErrors];
-
-export type BankingV1FundsServiceListFundNavHistoryResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FundNavHistory;
-};
-
-export type BankingV1FundsServiceListFundNavHistoryResponse = BankingV1FundsServiceListFundNavHistoryResponses[keyof BankingV1FundsServiceListFundNavHistoryResponses];
-
-export type BankingV1FundsServiceListPositionsData = {
-    body: BankingV1ListPositionsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/ListPositions';
-};
-
-export type BankingV1FundsServiceListPositionsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceListPositionsError = BankingV1FundsServiceListPositionsErrors[keyof BankingV1FundsServiceListPositionsErrors];
-
-export type BankingV1FundsServiceListPositionsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1PositionList;
-};
-
-export type BankingV1FundsServiceListPositionsResponse = BankingV1FundsServiceListPositionsResponses[keyof BankingV1FundsServiceListPositionsResponses];
-
-export type BankingV1FundsServiceListRedemptionsData = {
-    body: BankingV1ListRedemptionsRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/ListRedemptions';
-};
-
-export type BankingV1FundsServiceListRedemptionsErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceListRedemptionsError = BankingV1FundsServiceListRedemptionsErrors[keyof BankingV1FundsServiceListRedemptionsErrors];
-
-export type BankingV1FundsServiceListRedemptionsResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1RedemptionList;
-};
-
-export type BankingV1FundsServiceListRedemptionsResponse = BankingV1FundsServiceListRedemptionsResponses[keyof BankingV1FundsServiceListRedemptionsResponses];
-
-export type BankingV1FundsServiceRedeemData = {
-    body: BankingV1RedeemRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/Redeem';
-};
-
-export type BankingV1FundsServiceRedeemErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceRedeemError = BankingV1FundsServiceRedeemErrors[keyof BankingV1FundsServiceRedeemErrors];
-
-export type BankingV1FundsServiceRedeemResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Redemption;
-};
-
-export type BankingV1FundsServiceRedeemResponse = BankingV1FundsServiceRedeemResponses[keyof BankingV1FundsServiceRedeemResponses];
-
-export type BankingV1FundsServiceSubscribeData = {
-    body: BankingV1SubscribeRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FundsService/Subscribe';
-};
-
-export type BankingV1FundsServiceSubscribeErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FundsServiceSubscribeError = BankingV1FundsServiceSubscribeErrors[keyof BankingV1FundsServiceSubscribeErrors];
-
-export type BankingV1FundsServiceSubscribeResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Subscription;
-};
-
-export type BankingV1FundsServiceSubscribeResponse = BankingV1FundsServiceSubscribeResponses[keyof BankingV1FundsServiceSubscribeResponses];
 
 export type BankingV1HealthServiceCheckData = {
     body: BankingV1CheckRequest;

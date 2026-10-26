@@ -17,9 +17,8 @@
 use async_trait::async_trait;
 use domain::{
 	architecture::Gateway,
-	balance::{AccountCode, LedgerAccountKey, ServiceId, TransferCode},
+	balance::{AccountCode, LedgerAccountKey, TransferCode},
 	error::DomainError,
-	issuance::UnitHolder,
 };
 use thiserror::Error;
 
@@ -41,8 +40,7 @@ pub trait Ledger: Gateway {
 	/// What a new spend out of `key` may take right now, in raw base units: the ledger's
 	/// [`LedgerBalance::available`] less every debit of it the control plane has recorded
 	/// and the relay not yet applied ([`LockedReads::unapplied_debits`]). THE ONE ANSWER
-	/// every Read-First on a user's money asks — a withdrawal, a subscription, a buy order,
-	/// a payment, a move — so a spend recorded a moment ago is never spent twice. Read on a
+	/// every Read-First on a user's money asks — a withdrawal, a payment, a move — so a spend recorded a moment ago is never spent twice. Read on a
 	/// pooled connection: for a first answer before any lock is taken. Under a claim's lock
 	/// ask [`Self::spendable_locked`]. This default — for wrappers that only intercept
 	/// other calls — knows of nothing unapplied.
@@ -85,13 +83,6 @@ pub trait Ledger: Gateway {
 	/// guard must be skipped, not re-checked against the post-outflow balance.
 	async fn transfer_exists(&self, id: u128) -> Result<bool, LedgerError>;
 
-	/// The amount the transfer with this (deterministic, caller-assigned) id moved, or
-	/// `None` when no such transfer exists. What the ownership data migration reads back
-	/// to record a mint it posted but did not get to write the row for: the ledger is the
-	/// authoritative store, so the row says what the ledger says, never what a re-run
-	/// would have computed.
-	async fn transfer_amount(&self, id: u128) -> Result<Option<u128>, LedgerError>;
-
 	/// Apply a posted transfer with an explicit amount. Ensures both accounts exist
 	/// first. Idempotent on the transfer `id` (a re-submit returns `Exists` ⇒ ok).
 	async fn post(&self, transfer: &LedgerTransfer) -> Result<(), LedgerError>;
@@ -101,7 +92,7 @@ pub trait Ledger: Gateway {
 	/// can credit an account and debit it again in the same breath. Empty is a no-op.
 	/// Idempotent on the FIRST leg's id: a chain applies atomically, so its first id
 	/// existing means the whole chain already did, and a re-submit is `Ok(())` without
-	/// touching the ledger. The book's delivery-versus-payment fill is the caller.
+	/// touching the ledger.
 	async fn post_linked(&self, transfers: &[LedgerTransfer]) -> Result<(), LedgerError>;
 
 	/// Apply a pending (two-phase) transfer with `timeout = 0` — the saga owns the
@@ -118,16 +109,6 @@ pub trait Ledger: Gateway {
 	/// user's money never free in between. Idempotent on the FIRST leg's id, like
 	/// [`Self::post_linked`]. Empty is a no-op.
 	async fn apply_linked(&self, legs: &[LinkedLeg]) -> Result<(), LedgerError>;
-
-	/// Every unit holding on the Share ledger inside `scope`, with its **posted** balance
-	/// in raw base units — the accounts a product's supply is held on, or the accounts
-	/// one holder's units sit in across every product. Read straight from TigerBeetle
-	/// (the authoritative store) over the `tb_accounts` map, so a cap table and the
-	/// `fee` allocation's price are sums of what is, never of what a projection thinks.
-	/// Zero-balance holdings are included; the caller decides whether an emptied
-	/// account still counts as a holder. Rows of a retired kind
-	/// ([`AccountCode::is_retired`]) are skipped by their code, before any parsing.
-	async fn share_holdings(&self, scope: &HoldingScope) -> Result<Vec<(LedgerAccountKey, u128)>, LedgerError>;
 
 	/// The cash plane's global posted invariant, summed straight from TigerBeetle (the
 	/// authoritative store): total custody (`wallet:<net>` debit-normal assets) vs total
@@ -149,8 +130,8 @@ pub trait Ledger: Gateway {
 pub trait LockedReads: Send {
 	/// Σ the debits of `key` the control plane recorded and the ledger has not applied yet:
 	/// compartment moves still `pending`, and every outbox event neither dispatched nor
-	/// parked whose plan debits `key` — a withdrawal's reserve, a subscription's cash leg,
-	/// a buy's escrow, a payment's reserve. Raw base units.
+	/// parked whose plan debits `key` — a withdrawal's reserve, a payment's reserve, a
+	/// scope's debit. Raw base units.
 	async fn unapplied_debits(&mut self, key: &LedgerAccountKey) -> Result<u128, LedgerError>;
 
 	/// The ledger's id for `key` from the adapter's id map; `None` when the account was
@@ -160,23 +141,12 @@ pub trait LockedReads: Send {
 
 /// A spend's last check, run by the repository that records the spend AFTER it takes the
 /// claim's write lock and before it writes — so two spends of one claim (a withdrawal and a
-/// move, a buy and a subscription) cannot both pass on the same money. The application
+/// move) cannot both pass on the same money. The application
 /// says what to check ([`ClaimCovers`]); the repository says when, and hands in the reads
 /// of its own locked connection.
 #[async_trait]
 pub trait SpendGuard: Send + Sync {
 	async fn check(&self, reads: &mut dyn LockedReads) -> Result<(), DomainError>;
-}
-
-/// The guard for a spend that needs no cover check — one whose money is booked in the same
-/// operation (a seed's deposit), or a sell that spends units, not cash.
-pub struct NoSpendCheck;
-
-#[async_trait]
-impl SpendGuard for NoSpendCheck {
-	async fn check(&self, _: &mut dyn LockedReads) -> Result<(), DomainError> {
-		Ok(())
-	}
 }
 
 /// `key` still covers `amount` — [`Ledger::spendable_locked`], net of every debit recorded
@@ -241,7 +211,7 @@ pub enum CashSide {
 
 impl CashSide {
 	/// The side an account of kind `code` counts on; `None` for a kind that is not on
-	/// the USDT ledger at all (custody in the mocked bank, every unit account).
+	/// the USDT ledger at all (custody in the mocked bank, the retired unit accounts).
 	pub fn of(code: AccountCode) -> Option<Self> {
 		match code {
 			AccountCode::CryptoWallet => Some(Self::Custody),
@@ -258,33 +228,6 @@ impl CashSide {
 		}
 	}
 }
-/// Which unit holdings a [`Ledger::share_holdings`] scan returns. The membership rule is
-/// the domain's ([`UnitHolder::of_holding`]): a holding is a product's `UserShares`,
-/// `BookShares` (a user's units resting in a sell are still theirs) or `FeeShares` (the
-/// `fee` allocation's). Supply (`SharesOutstanding`), every cash account and the retired
-/// company stake (`shares_company:<svc>`, code 63 — it exists, holds zero, and no live key
-/// names it) are never holdings.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HoldingScope {
-	/// Every holder's account in one product — the cap table.
-	Product(ServiceId),
-	/// One holder's account in every product — what an allocation owns, priced.
-	Holder(UnitHolder),
-}
-
-impl HoldingScope {
-	/// Whether `key` is a holding inside this scope.
-	pub fn admits(&self, key: &LedgerAccountKey) -> bool {
-		let Some((service, holder)) = UnitHolder::of_holding(key) else {
-			return false;
-		};
-		match self {
-			Self::Product(product) => &service == product,
-			Self::Holder(wanted) => &holder == wanted,
-		}
-	}
-}
-
 /// The reconciliation read of the cash plane's global double-entry invariant: the summed
 /// posted custody side and claims side. They must be equal (`balanced()`).
 ///
@@ -367,9 +310,8 @@ impl From<LedgerError> for DomainError {
 }
 
 /// An account's live balance in **raw base units**, normalized to its natural side
-/// (every field `>= 0`). The unit is the account's ledger's (18-dp USDT for the cash
-/// ledger, 18-dp shares for the Share ledger) — the gateway is currency-agnostic, so
-/// callers wrap into the typed `Usdt`/`Shares` at the boundary. Zero when the account
+/// (every field `>= 0`). The unit is the account's ledger's — the gateway is
+/// currency-agnostic, so callers wrap into the typed `Usdt` at the boundary. Zero when the account
 /// doesn't exist yet.
 #[derive(Clone, Copy, Debug)]
 pub struct LedgerBalance {
@@ -393,8 +335,8 @@ impl LedgerBalance {
 }
 
 /// A posted or to-be-pending transfer. `id` is caller-assigned and deterministic;
-/// `amount` is in the ledger's base units (`Usdt`/`Shares` converted via `base_units()`
-/// by the relay); `reference` is stamped into `user_data_128` (the aggregate id) for
+/// `amount` is in the ledger's base units (`Usdt` converted via `base_units()` by the
+/// relay); `reference` is stamped into `user_data_128` (the aggregate id) for
 /// reconciliation.
 #[derive(Clone, Debug)]
 pub struct LedgerTransfer {
@@ -462,13 +404,8 @@ mod tests {
 			LedgerAccountKey::CryptoWallet(Network::Bep20),
 			LedgerAccountKey::BankCustody,
 			LedgerAccountKey::UserClaim(user),
-			LedgerAccountKey::ServiceClaim(ServiceId::fee()),
 			LedgerAccountKey::WithdrawalClearing,
-			LedgerAccountKey::UserShares(ServiceId::fee(), user),
-			LedgerAccountKey::SharesOutstanding(ServiceId::fee()),
-			LedgerAccountKey::FeeShares(ServiceId::fee()),
-			LedgerAccountKey::BookShares(ServiceId::fee(), user),
-			LedgerAccountKey::BookCash(user),
+			LedgerAccountKey::HoldClearing,
 			LedgerAccountKey::ScopeClaim(user, domain::scopes::ScopeId::parse("sa").unwrap()),
 			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury()),
 		];

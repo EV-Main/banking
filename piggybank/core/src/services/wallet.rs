@@ -43,8 +43,6 @@ impl WalletService for WalletSvc {
 		let wallet = wallet_app::get_wallet(
 			&wallet_app::WalletPorts {
 				ledger: self.state.ledger.as_ref(),
-				positions: self.state.positions.as_ref(),
-				nav: self.state.nav.as_ref(),
 				deposit_addresses: self.state.deposit_addresses.as_ref(),
 				users: self.state.users.as_ref(),
 				compartments: self.state.compartments.as_ref(),
@@ -58,10 +56,8 @@ impl WalletService for WalletSvc {
 		Ok(Response::new(pb::Wallet {
 			balance: Some(pb::Balance {
 				available: wallet.balance.available.to_decimal_string(),
-				invested: wallet.balance.invested.to_decimal_string(),
 				pending_withdrawal: wallet.balance.pending_withdrawal.to_decimal_string(),
 				total: wallet.balance.total.to_decimal_string(),
-				in_orders: wallet.balance.in_orders.to_decimal_string(),
 				in_compartments: wallet.balance.in_compartments.to_decimal_string(),
 			}),
 			deposit_addresses: wallet

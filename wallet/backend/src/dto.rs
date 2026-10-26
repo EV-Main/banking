@@ -118,15 +118,12 @@ impl From<cc::UserProfile> for UserProfile {
 
 // ── piggybank: wallet ────────────────────────────────────────────────────────
 
-/// The unified balance by lifecycle: `total = available + in_orders + invested +
-/// pending_withdrawal + in_compartments`. `in_orders` is the cash the book holds for the
-/// caller's resting buy orders, `in_compartments` the caller's money in scope compartments —
-/// both still theirs, so inside `total` and outside `available`.
+/// The unified balance by lifecycle: `total = available + pending_withdrawal +
+/// in_compartments`. `in_compartments` is the caller's money in scope compartments — still
+/// theirs, so inside `total` and outside `available`.
 #[derive(Default, Serialize)]
 pub struct Balance {
 	pub available: String,
-	pub in_orders: String,
-	pub invested: String,
 	pub pending_withdrawal: String,
 	pub in_compartments: String,
 	pub total: String,
@@ -136,8 +133,6 @@ impl From<bk::Balance> for Balance {
 	fn from(b: bk::Balance) -> Self {
 		Self {
 			available: b.available,
-			in_orders: b.in_orders,
-			invested: b.invested,
 			pending_withdrawal: b.pending_withdrawal,
 			in_compartments: b.in_compartments,
 			total: b.total,
@@ -486,17 +481,10 @@ pub struct Operation {
 	pub amount: String,
 	pub fee: String,
 	pub net_amount: String,
-	pub units: String,
-	pub nav: String,
-	pub service: String,
 	pub network: String,
 	pub address: String,
 	pub tx_ref: String,
-	/// fee only — the two legs of a charge, so a timeline row can say whether it was rent
-	/// on the capital or a share of the gain rather than only how much was taken.
-	pub management: String,
-	pub performance: String,
-	/// The compartment the row belongs to (`main` for every kind the feed carries today).
+	/// The compartment the row belongs to (`main` for every kind the feed carries).
 	pub scope: String,
 }
 
@@ -510,14 +498,9 @@ impl From<bk::Operation> for Operation {
 			amount: o.amount,
 			fee: o.fee,
 			net_amount: o.net_amount,
-			units: o.units,
-			nav: o.nav,
-			service: o.service,
 			network: o.network,
 			address: o.address,
 			tx_ref: o.tx_ref,
-			management: o.management,
-			performance: o.performance,
 			scope: o.scope,
 		}
 	}
@@ -593,14 +576,13 @@ fn non_empty(value: String) -> Option<String> {
 #[derive(Default, Serialize)]
 pub struct PaymentEnd {
 	pub label: String,
-	/// `service` | `user`, or `external` for an address (the retired `piggybank` /
-	/// `revenue` kinds are refused at the hub and no order carries them).
+	/// `user` | `treasury`, or `external` for an address.
 	pub kind: String,
 	pub id: String,
 	pub network: String,
 	pub address: String,
-	/// What a person recognises this end BY: the receiving investor's masked mailbox, the
-	/// product's title. Never part of the digest.
+	/// What a person recognises this end BY: the receiving investor's masked mailbox. Never
+	/// part of the digest.
 	pub detail: String,
 }
 
@@ -725,28 +707,23 @@ mod tests {
 		assert_eq!(mask_email("ada@"), "***");
 	}
 
-	/// The wallet's five lifecycle figures cross one-to-one — `in_orders` in particular,
-	/// which the wallet host shows beside `available` so a resting buy order explains the dip.
+	/// The wallet's lifecycle figures cross one-to-one.
 	#[test]
 	fn the_balance_carries_every_lifecycle_figure() {
 		let balance = Balance::from(bk::Balance {
 			available: "87.88".into(),
-			in_orders: "12.12".into(),
-			invested: "50".into(),
-			pending_withdrawal: "0".into(),
-			total: "160".into(),
+			pending_withdrawal: "2".into(),
+			total: "99.88".into(),
 			in_compartments: "10".into(),
 		});
 		assert_eq!(
 			(
 				balance.available.as_str(),
-				balance.in_orders.as_str(),
-				balance.invested.as_str(),
 				balance.pending_withdrawal.as_str(),
 				balance.in_compartments.as_str(),
 				balance.total.as_str()
 			),
-			("87.88", "12.12", "50", "0", "10", "160")
+			("87.88", "2", "10", "99.88")
 		);
 	}
 
