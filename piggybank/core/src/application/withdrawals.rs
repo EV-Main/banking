@@ -227,7 +227,7 @@ fn replay(first: Withdrawal, network: Network, address: &WalletAddress, amount: 
 /// dispatcher, however liquid the rail is right now.
 ///
 /// Deliberately outside the velocity limits and the address hold of
-/// [`request_withdrawal_screened`]: a payment order is authorised by the owners' consilium or
+/// [`request_withdrawal_screened`]: a payment order is authorised by the owners' approval or
 /// the investor's own confirmation, not by a session, and its delay is its 72 h consent window.
 ///
 /// This is the shape a payment order takes. Its consent was given up to 72 hours before
@@ -308,10 +308,10 @@ pub async fn check_user_withdrawal(ledger: &dyn Ledger, gates: &AdmissionGates<'
 	require_solvent(ledger, source, amount).await
 }
 
-/// An L1 payment out of banking's treasury (D17), executing an order the owners' consilium
+/// An L1 payment out of banking's treasury (D17), executing an order the owners
 /// approved: always queued, like [`queue_withdrawal`], so the dispatch re-reads the pause
 /// and the rail freeze when the money actually leaves. There is no account to freeze or
-/// verify — the consilium is the say-so — and no fee: it would be paid to the treasury out
+/// verify — the owners' approval is the say-so — and no fee: it would be paid to the treasury out
 /// of the treasury.
 pub async fn queue_treasury_withdrawal(
 	ports: &WithdrawalPorts<'_>,
@@ -487,7 +487,7 @@ pub async fn require_outflows_enabled(policy: &dyn OutflowPolicy) -> Result<(), 
 async fn require_dispatchable(policy: &dyn OutflowPolicy, gate: KycGate, withdrawal: &Withdrawal) -> Result<(), DomainError> {
 	require_outflows_enabled(policy).await?;
 	require_unfrozen_rail(policy, withdrawal.network()).await?;
-	// A treasury payout has no owner to freeze or verify: the owners' consilium approved
+	// A treasury payout has no owner to freeze or verify: the owners approved
 	// it. The pause and the rail freeze above still hold it.
 	let Some(owner) = withdrawal.user() else {
 		return Ok(());

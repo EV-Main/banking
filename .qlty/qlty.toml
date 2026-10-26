@@ -57,11 +57,8 @@ test_patterns = [
 threshold = 15
 
 # `similar_code` matches on structure while ignoring identifiers, so at the default
-# 15 lines it flags code that is parallel by design and correct as written: the gRPC
-# handlers in services/funds.rs (`subscribe` vs `redeem`, different domain types), the
-# domain transitions in domain/src/redemptions.rs (`fail` vs `cancel`, different events
-# and different actors), and the per-network custody/sweep/watcher adapters
-# (ton_* vs tron_*). Collapsing those means adding an abstraction layer, which the
+# 15 lines it flags code that is parallel by design and correct as written: the
+# per-network custody/sweep/watcher adapters (ton_* vs tron_*). Collapsing those means adding an abstraction layer, which the
 # hard rules in AGENTS.md forbid for this scaffold. The measured band for that
 # idiomatic repetition tops out at 26 lines, so the gate starts above it and still
 # fails on structural clones large enough to be genuine duplication.

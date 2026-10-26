@@ -1,7 +1,7 @@
 "use client";
 
-// The token-addressed approval endpoints, reached from a mailbox: the two owner approvals
-// and the investor's payment consent.
+// The token-addressed approval endpoint, reached from a mailbox: an owner's answer to their
+// own removal.
 //
 // These deliberately do NOT go through `shared/lib/api-client.ts`, and the reason is the
 // whole character of these pages. `requestJson` is built around a session: it rotates the
@@ -23,15 +23,7 @@
 // boundary exactly as it does elsewhere, and no new dialect of "something went wrong"
 // appears on the one surface a reader may only ever see once.
 
-import type {
-  PayoutApproval,
-  PayoutApprovalResult,
-  PayoutDecision,
-  RemovalApproval,
-  RemovalApprovalResult,
-  RemovalDecision,
-} from "@/shared/contracts/governance";
-import type { ConsentDecision, PaymentConsentInvitation, PaymentConsentResult } from "@/shared/contracts/payments";
+import type { RemovalApproval, RemovalApprovalResult, RemovalDecision } from "@/shared/contracts/governance";
 import { apiPath } from "@/shared/config/base-path";
 import { type ErrorCode, RequestError } from "@/shared/lib/api-client";
 import { csrfHeader } from "@/shared/lib/csrf-client";
@@ -41,7 +33,7 @@ import { csrfHeader } from "@/shared/lib/csrf-client";
  *
  * Unknown, expired, already-spent and burned tokens all produce an identical 404 from the
  * BFF, by design — a caller must not be able to tell them apart, because telling them apart
- * is an enumeration oracle (docs/CONSILIUM.md, policy 10). This error carries the same
+ * is an enumeration oracle. This error carries the same
  * single meaning up to the view, which is why it is one class with no `reason` field: there
  * is nothing to put in one, and a field would invite a view to guess.
  */
@@ -101,20 +93,10 @@ async function approvalJson<T>(path: `/${string}`, body?: unknown): Promise<T> {
 const seg = (token: string) => encodeURIComponent(token);
 
 /**
- * Read the redacted payout summary. Strictly inert: it casts no vote, spends no token and
- * changes nothing, which is precisely what makes it safe for the mail scanners that will
- * fetch it before any human does (policy 5).
+ * Read the removal notice addressed to this owner. Strictly inert: it casts no vote, spends
+ * no token and changes nothing, which is precisely what makes it safe for the mail scanners
+ * that will fetch it before any human does.
  */
-export function fetchPayoutApproval(token: string): Promise<PayoutApproval> {
-  return approvalJson<PayoutApproval>(`/api/approval/payout/${seg(token)}`);
-}
-
-/** Cast this seat's vote on the payout. The code is what makes it a deliberate human act. */
-export function submitPayoutDecision(token: string, code: string, decision: PayoutDecision): Promise<PayoutApprovalResult> {
-  return approvalJson<PayoutApprovalResult>(`/api/approval/payout/${seg(token)}`, { code, decision });
-}
-
-/** Read the removal notice addressed to this owner. Inert, on the same terms as the payout GET. */
 export function fetchRemovalApproval(token: string): Promise<RemovalApproval> {
   return approvalJson<RemovalApproval>(`/api/approval/removal/${seg(token)}`);
 }
@@ -122,27 +104,13 @@ export function fetchRemovalApproval(token: string): Promise<RemovalApproval> {
 /**
  * Answer a removal from the target's own mailbox — `remove` accepts it, `keep` refuses it.
  *
- * The wire vocabulary is NOT the domain one. Both public approval routes parse the same
- * two words, `approve` and `reject`, and the BFF is what maps them onto Remove and Keep for
- * this endpoint. Sending the domain words here is a 400 every time, permanently — so the
- * translation happens at the edge, in this function, and the rest of the code above it goes
- * on saying what it means.
+ * The wire vocabulary is NOT the domain one. The public approval route parses `approve`
+ * and `reject`, and the BFF is what maps them onto Remove and Keep. Sending the domain words
+ * here is a 400 every time, permanently — so the translation happens at the edge, in this
+ * function, and the rest of the code above it goes on saying what it means.
  */
 const REMOVAL_WIRE: Record<RemovalDecision, "approve" | "reject"> = { remove: "approve", keep: "reject" };
 
 export function submitRemovalDecision(token: string, code: string, decision: RemovalDecision): Promise<RemovalApprovalResult> {
   return approvalJson<RemovalApprovalResult>(`/api/approval/removal/${seg(token)}`, { code, decision: REMOVAL_WIRE[decision] });
-}
-
-/**
- * Read the payment an investor is being asked to consent to. Inert on the same terms as
- * the payout GET — and, like it, every dead token is one identical 404.
- */
-export function fetchConsentApproval(token: string): Promise<PaymentConsentInvitation> {
-  return approvalJson<PaymentConsentInvitation>(`/api/approval/consent/${seg(token)}`);
-}
-
-/** Answer for one's own money. The wire vocabulary is the domain one here: approve/reject. */
-export function submitConsentDecision(token: string, code: string, decision: ConsentDecision): Promise<PaymentConsentResult> {
-  return approvalJson<PaymentConsentResult>(`/api/approval/consent/${seg(token)}`, { code, decision });
 }

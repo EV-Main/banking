@@ -533,8 +533,8 @@ impl CatalogGate {
 	/// published the newer) is the one refusal that does not hold: it is logged at error and
 	/// proposing goes on, because concierge checks every proposal's kind and fields against the
 	/// catalog it holds, and execution is bound to the `payload_hash` stored with the operation.
-	/// Rolling the image back is still wrong — the way back is the `PAYMENT_APPROVALS_*=consilium` flags —
-	/// but it must not stop every `bank:*` proposal on top of that.
+	/// Rolling the image back is still wrong, but it must not stop every `bank:*` proposal on top
+	/// of that.
 	pub(crate) async fn ensure(&self, approvals: &dyn Approvals) -> bool {
 		{
 			let state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1077,7 +1077,7 @@ mod tests {
 	/// the same version with other content, which would hold every proposal back in prod.
 	#[test]
 	fn the_published_catalog_is_pinned_to_its_version() {
-		const PINNED: (u64, &str) = (1_792_368_000, "efc475fab36d5b69405b792a33e41eacf82399359b62abf6a2af1005983e83bb");
+		const PINNED: (u64, &str) = (1_792_972_800, "a3d6b4fe7dc33df3e9c992a4f4e29f3f683ab5963597b812566e9fa82b6537a2");
 		let digest = sha256_hex(&domain::scope_operations::bank_catalog_canonical());
 		assert_eq!(
 			(BANK_CATALOG_VERSION, digest.as_str()),

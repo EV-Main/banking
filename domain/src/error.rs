@@ -8,8 +8,8 @@ pub enum DomainError {
 	Conflict(String),
 	#[error("validation failed: {0}")]
 	Validation(String),
-	/// A domain policy forbids the action for this caller in principle (e.g. only the
-	/// staking user may revoke, and only while the fund owns the allocation): retrying
+	/// A domain policy forbids the action for this caller in principle (e.g. an unverified
+	/// caller asking for a deposit address): retrying
 	/// later changes nothing. Distinct from `Validation` (bad input) and from
 	/// `Precondition` (a caller who IS entitled, refused by the current state) — it maps
 	/// to gRPC `permission_denied`, not `invalid_argument` or `failed_precondition`.

@@ -5,8 +5,11 @@ import { routeMessages } from "@/shared/config/i18n";
 import { currentLocale } from "@/shared/config/locale";
 
 // The "your ownership is being ended" notice, opened by the owner it is about.
-// Same contract as the payout approval next door: the token is handed to the client and
-// read from the browser, and the page is never prerendered or cached.
+//
+// The token is handed to the client and read from the browser, never server-side: that
+// keeps it out of the server's logs and the RSC payload's fetch cache. `dynamic` is asserted
+// because every token is a different, single-use page that must never be prerendered or
+// cached.
 export const dynamic = "force-dynamic";
 
 export default async function OwnerRemovalApprovalPage({ params }: { params: Promise<{ token: string }> }) {

@@ -1,23 +1,19 @@
 // Per-rail display chrome: the chain's own name, the badge glyph, and the accent tier its
 // badge is tinted with.
 //
-// This moved out of `views/wallet/lib/format.ts` when the governance surfaces arrived. It
-// had been a wallet detail for as long as only the wallet named a chain; now the payout
-// approval page and the owners' room both render a network beside an address, and a rail's
-// display name is not the wallet slice's property to lend them — a `views/*` importing
-// another `views/*` is a same-layer dependency, and the layer below is where a fact shared
-// by three slices belongs. `views/wallet/lib/format.ts` re-exports these, so every existing
-// call site is unchanged.
+// A rail's display name is not one slice's property to lend another — a `views/*` importing
+// another `views/*` is a same-layer dependency — so it lives in the layer below.
+// `views/wallet/lib/format.ts` re-exports these.
 //
 // `label` and `badge` are the rail's own marks — `BEP20`, `TON`, `◆` — and stay literal in
 // every locale. The chain's *name* is prose, so it travels as a function of `t` resolved at
 // the render site: this module is plain TypeScript and has no translator of its own.
 //
 // The chain LOGOS deliberately do not live here, and adding an `icon` field would be a
-// regression: `@/shared/ui/icons/networks` owns them, keyed by the same wire id. Two
-// surfaces (payout approval, consilium) import this module for `networkLabel` alone, and a
-// component reference on `RailMeta` would pull every logo path into their route bundles for
-// a mark they never draw — besides making this data module depend on React. `badge` stays
+// regression: `@/shared/ui/icons/networks` owns them, keyed by the same wire id. A surface
+// that imports this module for `networkLabel` alone would otherwise pull every logo path into
+// its route bundle for a mark it never draws — besides making this data module depend on
+// React. `badge` stays
 // as the fallback a rail with no logo renders instead.
 
 import type { Translate } from "@evinvest/i18n";

@@ -9,15 +9,6 @@
 //! - `evbanking_auth` uses the `AuthService` stubs to serve its issuance routes.
 //! - Other service repos add this crate as a git dependency for the **client**
 //!   stubs, and `evbanking_auth` for the verification flow.
-//!
-//! Generated code is flat by nature, so the primitives a consumer repo is organized
-//! around get curated hand-written facades: [`allocation`] gathers the whole Allocation
-//! surface (stubs, messages, the wire state vocabulary) and documents the conversation
-//! it belongs to; [`book`] does the same for the secondary market in an allocation's
-//! units.
-
-pub mod allocation;
-pub mod book;
 
 /// Generated tonic code for the `banking.v1` proto package (clients + servers +
 /// message types), pulled in via `tonic::include_proto!("banking.v1")`.

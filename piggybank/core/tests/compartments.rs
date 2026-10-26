@@ -23,8 +23,7 @@ use piggybank_core::{
 		wallet as wallet_app, withdrawals as withdrawal_app,
 	},
 	infrastructure::{
-		compartments::PgCompartments, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, positions::PgFundPositions, reaper::Reaper,
-		redemptions::PgRedemptions, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
+		compartments::PgCompartments, custody::StubCustody, deposits::PgDeposits, outflow::PgOutflowPolicy, reaper::Reaper, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
 	},
 	ports::{
 		UserRepository,
@@ -516,13 +515,7 @@ async fn the_reaper_replays_a_move_whose_event_was_lost() {
 		.execute(&h.pool)
 		.await
 		.unwrap();
-	let reaper = Reaper::new(
-		h.pool.clone(),
-		Arc::new(PgWithdrawals::new(h.pool.clone())),
-		Arc::new(PgRedemptions::new(h.pool.clone())),
-		h.notify.clone(),
-	)
-	.with_move_redrive_after(std::time::Duration::from_secs(60));
+	let reaper = Reaper::new(h.pool.clone(), Arc::new(PgWithdrawals::new(h.pool.clone())), h.notify.clone()).with_move_redrive_after(std::time::Duration::from_secs(60));
 	assert!(reaper.sweep().await.unwrap().redriven_compartment_moves >= 1);
 	assert_eq!(reaper.sweep().await.unwrap().redriven_compartment_moves, 0, "a replay waits for its own event");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
@@ -552,8 +545,6 @@ async fn the_wallet_total_counts_the_compartments() {
 	let wallet = wallet_app::get_wallet(
 		&wallet_app::WalletPorts {
 			ledger: h.ledger.as_ref(),
-			positions: &PgFundPositions::new(h.pool.clone()),
-			nav: &PgNav::new(h.pool.clone()),
 			deposit_addresses: &common::NoAddresses,
 			users: &h.users,
 			compartments: &h.store,
@@ -725,9 +716,9 @@ async fn the_withdrawal_repository_checks_the_cover_under_its_lock() {
 /// Money leaving banking's treasury that no approved payment accounts for is a finding.
 #[tokio::test]
 async fn an_unapproved_treasury_debit_is_reported() {
-	use piggybank_core::infrastructure::{allocations::PgAllocations, reconciliation::Reconciliation};
+	use piggybank_core::infrastructure::reconciliation::Reconciliation;
 	let Some(h) = harness().await else { return };
-	let reconciliation = Reconciliation::new(h.pool.clone(), h.ledger.clone(), Arc::new(PgAllocations::new(h.pool.clone())));
+	let reconciliation = Reconciliation::new(h.pool.clone(), h.ledger.clone());
 	let before = reconciliation.scan().await.unwrap();
 	let treasury = domain::balance::Party::Treasury.claim_key();
 	for (debit, credit) in [
@@ -844,44 +835,6 @@ async fn withdraw(h: &Harness, user: UserId, amount: &str) -> Result<(), DomainE
 	.map(drop)
 }
 
-/// A product open to every investor, for the subscriptions below.
-async fn open_product(h: &Harness) -> domain::balance::ServiceId {
-	use piggybank_core::{infrastructure::allocations::PgAllocations, ports::allocations::AllocationRegistry};
-	let allocations = PgAllocations::new(h.pool.clone());
-	let service = domain::balance::ServiceId::parse(&format!("svc-{}", Uuid::new_v4())).unwrap();
-	let mut allocation = domain::allocations::Allocation::register(
-		domain::allocations::AllocationId::new(),
-		service.clone(),
-		"itest fund",
-		"",
-		domain::allocations::AllocationIcon::default(),
-	)
-	.unwrap();
-	allocations.register(&mut allocation).await.unwrap();
-	allocations.open(&service).await.unwrap();
-	allocations.set_access(&service, domain::allocations::AllocationAccess::Invest).await.unwrap();
-	service
-}
-
-async fn subscribe(h: &Harness, user: UserId, service: &domain::balance::ServiceId, amount: &str) -> Result<(), DomainError> {
-	use piggybank_core::{
-		application::funds as funds_app,
-		infrastructure::{allocations::PgAllocations, subscriptions::PgSubscriptions},
-	};
-	let allocations = PgAllocations::new(h.pool.clone());
-	let nav = PgNav::new(h.pool.clone());
-	let ports = funds_app::FundPorts {
-		allocations: &allocations,
-		ledger: h.ledger.as_ref(),
-		nav: &nav,
-		relay: &h.notify,
-	};
-	let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
-	funds_app::subscribe(&ports, &PgSubscriptions::new(h.pool.clone()), user, service.clone(), usdt(amount), now)
-		.await
-		.map(drop)
-}
-
 /// Read under the claim's lock, a spend counts every other spend recorded and not yet on
 /// the ledger — not only moves. With the relay held, the first withdrawal's reserve is
 /// still an outbox event: the second, and a move, must be refused, not parked later.
@@ -901,30 +854,20 @@ async fn a_withdrawal_the_relay_has_not_reserved_is_already_spent() {
 }
 
 #[tokio::test]
-async fn a_subscription_the_relay_has_not_applied_is_already_spent() {
+async fn a_withdrawal_and_a_move_share_one_cover_in_either_order() {
 	let Some(h) = harness().await else { return };
-	let service = open_product(&h).await;
-	let user = funded_user(&h, "5").await;
-	subscribe(&h, user, &service, "5").await.expect("the first subscription is covered");
-	let second = subscribe(&h, user, &service, "5").await;
-	assert!(matches!(second, Err(DomainError::Validation(_))), "{second:?}");
-	common::drain_to_quiescence(&h.relay, &h.pool).await;
-	assert_eq!(posted(&h, &LedgerAccountKey::UserClaim(user)).await, Usdt::ZERO);
-	assert_eq!(posted(&h, &LedgerAccountKey::ServiceClaim(service)).await, usdt("5"), "one subscription's cash");
-}
-
-#[tokio::test]
-async fn a_withdrawal_and_a_subscription_share_one_cover_in_either_order() {
-	let Some(h) = harness().await else { return };
-	let service = open_product(&h).await;
 	let first_withdraws = funded_user(&h, "10").await;
 	withdraw(&h, first_withdraws, "6").await.unwrap();
-	let refused = subscribe(&h, first_withdraws, &service, "6").await;
-	assert!(matches!(refused, Err(DomainError::Validation(_))), "{refused:?}");
-	let first_subscribes = funded_user(&h, "10").await;
-	subscribe(&h, first_subscribes, &service, "6").await.unwrap();
-	let refused = withdraw(&h, first_subscribes, "6").await;
+	assert_eq!(refusal(move_funds(&h, first_withdraws, "main", "sa", "6", &key()).await), MoveRefusal::InsufficientFunds);
+	let first_moves = funded_user(&h, "10").await;
+	move_funds(&h, first_moves, "main", "sa", "6", &key()).await.unwrap();
+	let refused = withdraw(&h, first_moves, "6").await;
 	assert!(matches!(refused, Err(DomainError::Validation(_))), "{refused:?}");
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
-	assert_eq!(posted(&h, &LedgerAccountKey::ServiceClaim(service)).await, usdt("6"), "only the second user's subscription");
+	assert_eq!(posted(&h, &LedgerAccountKey::ScopeClaim(first_withdraws, ScopeId::parse("sa").unwrap())).await, Usdt::ZERO);
+	assert_eq!(
+		posted(&h, &LedgerAccountKey::ScopeClaim(first_moves, ScopeId::parse("sa").unwrap())).await,
+		usdt("6"),
+		"only the second user's move"
+	);
 }

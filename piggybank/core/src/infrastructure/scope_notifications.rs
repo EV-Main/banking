@@ -4,8 +4,7 @@
 //! A notice is written in the same transaction as the fact it announces, so it cannot be
 //! lost to a concierge outage nor sent for a fact that rolled back, and is delivered
 //! afterwards. `EmitScopeNotification` is idempotent by `dedupe_key`, so redelivery is free.
-//! Unlike the governance mail it replaces on this path, a notice carries no secret: nothing
-//! is redacted and nothing is blanked on withdrawal.
+//! A notice carries no secret: nothing is redacted and nothing is blanked on withdrawal.
 
 use std::{sync::Arc, time::Duration};
 
@@ -336,14 +335,6 @@ impl ScopeNotificationWorker {
 			.map_err(repo_err)?;
 		Ok(())
 	}
-}
-
-/// How many notices are still owed — for the boot line and for tests.
-pub async fn pending_count(pool: &PgPool) -> Result<i64, DomainError> {
-	sqlx::query_scalar("SELECT COUNT(*) FROM scope_notification_outbox WHERE sent_at IS NULL AND withdrawn_at IS NULL")
-		.fetch_one(pool)
-		.await
-		.map_err(repo_err)
 }
 
 #[cfg(test)]

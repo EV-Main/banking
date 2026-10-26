@@ -1,16 +1,16 @@
 // The wallet host's one answer to "when was that" for absolute stamps and deadlines.
 //
-// It lives in `shared/` rather than beside the governance views because three slices now
-// render the same deadline — the two emailed approval pages and the owners' room — and a
-// helper each would be three chances for them to disagree about what "expires in 2 days"
-// means. Same argument `shared/lib/intl-locale.ts` makes for its one line.
+// It lives in `shared/` because several slices render the same deadline — the emailed
+// approval page and the signed-in payment answer — and a helper each would be a chance for
+// them to disagree about what "expires in 2 days" means. Same argument
+// `shared/lib/intl-locale.ts` makes for its one line.
 //
 // WHAT A STAMP IS HERE: unix SECONDS, as a decimal string, with "0" meaning "no stamp
 // yet". That is what the wire actually carries — every timestamp in the contract is an
-// `int64` (see `banking/v1/consilium.proto`, "Unix seconds; 0 while pending") and the BFF
-// hands it over via `.to_string()`. This module used to parse RFC 3339 instead, which no
-// caller was ever given: `new Date("1757000000")` is an Invalid Date, so every date in the
-// owners' room, both approval pages and the removal/admission cards rendered "—". Nothing
+// `int64` of unix seconds, 0 while unset, and the BFF hands it over via `.to_string()`. This
+// module used to parse RFC 3339 instead, which no caller was ever given:
+// `new Date("1757000000")` is an Invalid Date, so every date on the approval pages
+// rendered "—". Nothing
 // caught it because both shapes are `string`.
 //
 // The parsing itself lives in `shared/lib/unix-stamp.ts` — import-free, and therefore the

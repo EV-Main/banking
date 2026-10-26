@@ -3,7 +3,7 @@
 //!
 //! It owns a pool clone (an `Arc` under the hood) rather than a borrow, so one instance can
 //! sit in [`AppState`](crate::AppState) beside the other adapters and be lent to the
-//! withdrawal, payment and consilium use cases alike — the pause is one fact, read through
+//! withdrawal and payment use cases alike — the pause is one fact, read through
 //! one handle, and a use case that could not borrow it would have to be trusted to remember
 //! it. It is built INSIDE `AppState::new` from the pool already passed there rather than
 //! threaded through as a twenty-sixth constructor argument.

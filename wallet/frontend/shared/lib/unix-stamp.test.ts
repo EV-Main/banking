@@ -1,6 +1,5 @@
-// The regression these cover shipped to production: the owners' room rendered "Owner
-// since —" for every seat, and the same dash stood in for every deadline and decision
-// time in the consilium, both approval pages and the removal/admission cards.
+// The regression these cover shipped to production: a dash stood in for every deadline and
+// decision time on the emailed approval pages.
 //
 // The first assertion is the one that matters. It fails against the old RFC 3339 parser
 // (`new Date("1757000000")` is an Invalid Date) and passes against this one, which is the
@@ -20,7 +19,7 @@ test("a wire stamp is unix seconds, not RFC 3339", () => {
 });
 
 test('"0" is absence, never 1 Jan 1970', () => {
-  // The contract writes 0 for "not decided yet" (banking/v1/consilium.proto). Rendering
+  // The contract writes 0 for "not decided yet". Rendering
   // that as a 1970 date would put a confident wrong answer on a card about money.
   assert.equal(unixStampToDate("0"), null);
   assert.equal(hasUnixStamp("0"), false);

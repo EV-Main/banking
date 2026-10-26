@@ -12,16 +12,14 @@
 //!
 //! - tier 0 gets **no deposit address**, and the address gateway is never reached — the
 //!   gate sits above the port precisely because the first call there mints a signer
-//!   keypair, and a key issued to an unverified user is an address the fund must watch,
+//!   keypair, and a key issued to an unverified user is an address banking must watch,
 //!   sweep and account for forever;
 //! - tier 0 **cannot withdraw**, with a funded claim, so the refusal is the gate and not
 //!   insolvency;
 //! - tier 1 does both;
 //! - the refusals are told apart at the wire: an unconfigured rail is `Ok(None)` ("this
 //!   rail cannot fund you"), an unverified caller is `Forbidden` ("finish verification");
-//! - a **payment out of the fee allocation is not gated** — its source is the platform's
-//!   own money, held by people through units, with no user behind it to verify; what
-//!   gates it is the owners' quorum.
+//! - a **payment is gated on its source**, never on a tier-0 recipient or initiator.
 
 use std::sync::{
 	Arc,
@@ -31,7 +29,7 @@ use std::sync::{
 use async_trait::async_trait;
 use domain::{
 	auth::AuthSubject,
-	balance::{LedgerAccountKey, Party, ServiceId, TransferCode},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	payments::{PaymentDestination, PaymentReason, PaymentTerms},
@@ -40,15 +38,9 @@ use domain::{
 };
 use piggybank_core::{
 	application::{balance as balance_app, payments as payments_app, wallet as wallet_app, withdrawals as withdrawal_app},
-	config::{KycGate, PaymentApprovalModes},
-	infrastructure::{
-		allocations::PgAllocations, consilium::PgConsilia, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, payments::PgPayments,
-		positions::PgFundPositions, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
-	},
-	ports::{
-		DepositAddresses, UserRepository, WithdrawalRepository,
-		ledger::{Ledger, LedgerTransfer},
-	},
+	config::KycGate,
+	infrastructure::{custody::StubCustody, deposits::PgDeposits, outflow::PgOutflowPolicy, payments::PgPayments, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals},
+	ports::{DepositAddresses, UserRepository, WithdrawalRepository, ledger::Ledger, payments::SeatView},
 };
 use sqlx::PgPool;
 use tokio::sync::{MutexGuard, Notify};
@@ -94,12 +86,9 @@ struct Harness {
 	address_calls: Arc<AtomicUsize>,
 	relay: Relay,
 	notify: Arc<Notify>,
-	/// This suite is exposed to the shared-outbox race the same way `allocation_registry`
-	/// was (#294/#298): every test deposits and drains, and the since-retired `a_revenue_payout_is_not_gated_on_kyc`
-	/// drains five times. It has failed for it in CI — run 34894158429, `a_revenue_payout_is_not_gated_on_kyc`
-	/// panicking on `fund the fee claim: Validation("insufficient available balance to
-	/// withdraw")`: the 200 USDT this test had just deposited and drained was not on the
-	/// ledger when the next line spent it. The user is freshly provisioned per test, so no
+	/// This suite is exposed to the shared-outbox race (#294/#298): every test deposits and
+	/// drains. It has failed for it in CI (run 34894158429): the 200 USDT a test had just
+	/// deposited and drained was not on the ledger when the next line spent it. The user is freshly provisioned per test, so no
 	/// sibling could have moved that claim — the single `drain()` returned before applying
 	/// the test's own row, which is the early return this guard and `drain_to_quiescence`
 	/// close between them. (The local repro attempt did not land it: 60 runs at eight threads
@@ -245,16 +234,12 @@ async fn an_unconfigured_rail_and_an_unverified_caller_answer_differently() {
 async fn an_unverified_wallet_shows_the_balance_but_no_address() {
 	let Some(h) = harness().await else { return };
 	let user = user_at_tier(&h, 0).await;
-	let positions = PgFundPositions::new(h.pool.clone());
-	let nav = PgNav::new(h.pool.clone());
 
 	deposit(&h, user, Network::Bep20, "100").await;
 
 	let wallet = wallet_app::get_wallet(
 		&wallet_app::WalletPorts {
 			ledger: h.ledger.as_ref(),
-			positions: &positions,
-			nav: &nav,
 			deposit_addresses: &h.addresses,
 			users: h.users.as_ref(),
 			compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(h.pool.clone()),
@@ -322,88 +307,47 @@ async fn a_verified_user_can_withdraw() {
 	assert_eq!(Usdt::from_base_units(claim.locked), usdt("50"), "the gross is reserved into clearing");
 }
 
-/// A payment out of the fee allocation is the platform's own money moving — there is no
-/// user behind `Party::Service(fee)` (its holders own it through units), so a KYC tier is
-/// not merely unchecked at open, there is nothing to check: what stands in front of it is
-/// the owners' quorum. The gate stays out of the DESTINATION too: the money lands on a
-/// tier-0 investor's claim, and the verification floor applies when they try to take it
-/// out, not when it arrives. Exercised end to end rather than asserted by reading the code.
-///
-/// Opening a fund-owned order seats a consilium, so this test wears the governance suite's
-/// fixtures: three owners on the global roster and a mailer that stands in as wired.
+/// The verification floor applies to whoever's money leaves, never to the DESTINATION: a
+/// verified investor's payment lands on a tier-0 investor's claim, and the floor applies when
+/// they try to take it out, not when it arrives. Nor is the initiator gated — they are not the
+/// source. Exercised end to end rather than asserted by reading the code.
 #[tokio::test]
-async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
+async fn a_payment_to_an_unverified_investor_is_not_gated_on_their_kyc() {
 	let Some(h) = harness().await else { return };
-	let recipient = user_at_tier(&h, 0).await;
-	let fee_claim = LedgerAccountKey::ServiceClaim(ServiceId::fee());
-	// Fund the whole amount rather than leaning on whatever the shared claim happens to
-	// hold: the open runs the real solvency pre-check against it.
-	h.ledger
-		.post(&LedgerTransfer {
-			id: Uuid::new_v4().as_u128(),
-			debit: LedgerAccountKey::CryptoWallet(Network::Bep20),
-			credit: fee_claim.clone(),
-			amount: usdt("2").base_units(),
-			code: TransferCode::Deposit,
-			reference: 0,
-		})
+	let source = user_at_tier(&h, 1).await;
+	deposit(&h, source, Network::Bep20, "2").await;
+	// The investor answers in the wallet host, so their notice needs their identity-plane id.
+	sqlx::query("UPDATE users SET concierge_user_id = $2 WHERE id = $1")
+		.bind(source.raw())
+		.bind(Uuid::new_v4())
+		.execute(&h.pool)
 		.await
-		.expect("fund the fee allocation's claim");
-	let mut owners = Vec::with_capacity(3);
-	for _ in 0..3 {
-		let owner = user_at_tier(&h, 0).await;
-		sqlx::query("UPDATE users SET role = 'owner', concierge_user_id = $2 WHERE id = $1")
-			.bind(owner.raw())
-			.bind(Uuid::new_v4())
-			.execute(&h.pool)
-			.await
-			.unwrap();
-		owners.push(owner);
-	}
-	let (payments, consilia, allocations) = (PgPayments::new(h.pool.clone()), PgConsilia::new(h.pool.clone()), PgAllocations::new(h.pool.clone()));
+		.unwrap();
+	let recipient = user_at_tier(&h, 0).await;
+	let initiator = user_at_tier(&h, 0).await;
+	let payments = PgPayments::new(h.pool.clone());
 	let ports = payments_app::PaymentPorts {
 		payments: &payments,
-		consilia: &consilia,
 		users: h.users.as_ref(),
 		withdrawals: h.withdrawals.as_ref(),
 		ledger: h.ledger.as_ref(),
 		custody: &StubCustody,
 		policy: &h.outflow,
-		allocations: &allocations,
 		relay: &h.notify,
 		configured: &Network::ALL,
 		kyc: KycGate::ENFORCED,
-		approval_url_base: "https://example.test/consilium",
-		consent_url_base: "https://example.test/consent",
-		governance_mail_wired: true,
-		approvals: PaymentApprovalModes::ALL_CONSILIUM,
 	};
 	let terms = PaymentTerms::new(
-		Party::Service(ServiceId::fee()),
+		Party::User(source),
 		PaymentDestination::Internal(Party::User(recipient)),
 		usdt("2"),
 		PaymentReason::new("a documented reason").unwrap(),
 	)
 	.unwrap();
-	// Neither end is a verified account, and the open passes: the tier-0 initiator is an
-	// owner, not the source, and the tier-0 recipient is only being paid.
-	let view = payments_app::open(&ports, owners[0], terms, now_unix())
+	let view = payments_app::open(&ports, initiator, terms, now_unix())
 		.await
-		.expect("a payment from the fee allocation is never gated on a user's KYC tier");
-	assert!(view.consilium_id.is_some(), "the fund's money is the owners' to release");
-	assert!(view.consent.is_none(), "no investor is asked to consent to the fund's money");
-	// Leave the governance state as it was found: the roster is global.
-	sqlx::query("UPDATE users SET role = 'investor' WHERE role = 'owner'").execute(&h.pool).await.unwrap();
-	sqlx::query("UPDATE consilium SET state = 'cancelled', decided_at = now() WHERE id = $1")
-		.bind(view.consilium_id.unwrap().raw())
-		.execute(&h.pool)
-		.await
-		.unwrap();
-	sqlx::query("UPDATE payments SET state = 'cancelled', decided_at = now() WHERE id = $1")
-		.bind(view.order.id().raw())
-		.execute(&h.pool)
-		.await
-		.unwrap();
+		.expect("neither the tier-0 recipient nor the tier-0 initiator is the source");
+	assert!(matches!(view.seat, SeatView::Session(_)), "the source investor answers it");
 }
 
 fn now_unix() -> i64 {
@@ -432,14 +376,10 @@ async fn a_lifted_gate_issues_an_unverified_user_an_address() {
 async fn a_lifted_gate_puts_an_address_on_an_unverified_wallet() {
 	let Some(h) = harness().await else { return };
 	let user = user_at_tier(&h, 0).await;
-	let positions = PgFundPositions::new(h.pool.clone());
-	let nav = PgNav::new(h.pool.clone());
 
 	let wallet = wallet_app::get_wallet(
 		&wallet_app::WalletPorts {
 			ledger: h.ledger.as_ref(),
-			positions: &positions,
-			nav: &nav,
 			deposit_addresses: &h.addresses,
 			users: h.users.as_ref(),
 			compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(h.pool.clone()),

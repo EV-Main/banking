@@ -1,14 +1,10 @@
-//! `withdrawals` bounded context — on-chain withdrawals out of the fund.
+//! `withdrawals` bounded context — on-chain withdrawals out of the platform.
 //!
 //! The claim debited is an investor's own ([`WithdrawalSource::User`]) or, for an L1
-//! payment the owners' consilium approved, banking's treasury ([`WithdrawalSource::Treasury`],
-//! D17). The fund's
-//! earnings used to leave by a second source — the revenue payout — which #245 retired:
-//! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
-//! through a holder's redemption onto their own claim and then their own withdrawal. The
-//! withdrawal fee itself is banking's own and lands in its treasury (D17).
+//! payment the owners approved, banking's treasury ([`WithdrawalSource::Treasury`],
+//! D17). The withdrawal fee is banking's own and lands in its treasury (D17).
 //!
-//! A withdrawal moves that claim out of the fund and onto an external
+//! A withdrawal moves that claim out of the platform and onto an external
 //! address. It is the **dangerous direction** (value leaves the system), so it is a
 //! saga with an explicit queue. The gross amount is *reserved* against the user's
 //! claim the instant the request is recorded — into the network-agnostic
@@ -30,7 +26,7 @@ use ev::architecture::{AggregateRoot, DomainEvent, EmitsEvents, Entity, Id};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	balance::{FeePayee, LedgerAccountKey},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	payments::PaymentId,
@@ -43,7 +39,7 @@ pub type WithdrawalId = Id<WithdrawalTag>;
 pub struct WithdrawalTag;
 
 /// **Whose money leaves** — the claim a withdrawal debits: an investor's, or banking's
-/// treasury paying out what the owners' consilium approved (D17). The saga, the relay's
+/// treasury paying out what the owners approved (D17). The saga, the relay's
 /// legs and the stored `source` column are all written against "a source", so the second
 /// one is a variant here, not a parallel saga.
 ///
@@ -58,7 +54,7 @@ pub enum WithdrawalSource {
 	/// An investor's own unified claim (`user:<uuid>`).
 	User(UserId),
 	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever executing `payment`,
-	/// an order the owners' consilium approved. The order rides on the source so no
+	/// an order the owners approved. The order rides on the source so no
 	/// treasury withdrawal can exist without the approval it spends (a schema CHECK says
 	/// the same of the row).
 	Treasury { payment: PaymentId },
@@ -100,7 +96,7 @@ impl WithdrawalSource {
 	pub fn claim_key(&self) -> LedgerAccountKey {
 		match self {
 			Self::User(user) => LedgerAccountKey::UserClaim(*user),
-			Self::Treasury { .. } => crate::balance::FeePayee::treasury().claim_key(),
+			Self::Treasury { .. } => Party::Treasury.claim_key(),
 		}
 	}
 
@@ -135,7 +131,7 @@ impl TryFrom<String> for WithdrawalSource {
 	}
 }
 
-/// Per-network withdrawal policy — the flat network fee the fund retains and the
+/// Per-network withdrawal policy — the flat network fee banking's treasury retains and the
 /// minimum gross a user may withdraw. **Placeholder constants** standing in for a
 /// real fee oracle (gas/energy/bandwidth fluctuate per chain); kept here so the rule
 /// stays pure and testable. Both are whole-USDT, hence representable at every chain's
@@ -143,7 +139,7 @@ impl TryFrom<String> for WithdrawalSource {
 pub struct WithdrawalPolicy;
 
 impl WithdrawalPolicy {
-	/// The flat fee retained by the fund on a withdrawal (1 USDT).
+	/// The flat fee banking's treasury retains on a withdrawal (1 USDT).
 	pub const fn fee(_network: Network) -> Usdt {
 		Usdt::from_base_units(1_000_000_000_000_000_000)
 	}
@@ -329,7 +325,6 @@ impl Withdrawal {
 			amount: self.amount,
 			fee: self.fee,
 			tx_ref,
-			payee: FeePayee::treasury(),
 		});
 		Ok(())
 	}
@@ -468,10 +463,7 @@ pub enum WithdrawalEvent {
 		fee: Usdt,
 	},
 	/// Confirmed on-chain (relay: post the clearing pending, then move net→`wallet:<net>`
-	/// and the retained fee→`payee`'s account).
-	///
-	/// `payee` is banking's treasury (D17); an event raised before names the `fee`
-	/// allocation and still pays it.
+	/// and the retained fee→banking's treasury, D17).
 	Settled {
 		withdrawal_id: WithdrawalId,
 		#[serde(alias = "user")]
@@ -480,7 +472,6 @@ pub enum WithdrawalEvent {
 		amount: Usdt,
 		fee: Usdt,
 		tx_ref: TxRef,
-		payee: FeePayee,
 	},
 	/// Broadcast confirmed not to have landed — void the clearing reservation (refund).
 	Failed {
@@ -658,7 +649,7 @@ mod tests {
 		let source = WithdrawalSource::User(uid);
 		assert_eq!(WithdrawalSource::parse(&source.as_wire()).unwrap(), source);
 		// Not UUID-shaped ⇒ refused, never a silent default — the retired `revenue` literal
-		// included (#245).
+		// included.
 		assert!(WithdrawalSource::parse("revenue").is_err());
 		assert!(WithdrawalSource::parse("fund").is_err());
 		assert!(WithdrawalSource::parse("").is_err());
@@ -674,7 +665,7 @@ mod tests {
 
 	#[test]
 	fn a_pre_payout_event_payload_still_deserializes() {
-		// An outbox/event_log row written before revenue payouts existed spells the field
+		// An outbox/event_log row written before `source` existed spells the field
 		// `user` and holds a bare UUID. If this regressed, a parked row from before the
 		// upgrade could never be unparked — it would fail to deserialize forever.
 		let uid = UserId::new();

@@ -31,7 +31,10 @@ use piggybank_core::{
 		relay::Relay,
 		tigerbeetle::TigerBeetle,
 	},
-	ports::{deposit_addresses::DepositAddresses, ledger::Ledger},
+	ports::{
+		deposit_addresses::DepositAddresses,
+		ledger::{Ledger, LockedReads, SpendGuard},
+	},
 };
 use sqlx::{AssertSqlSafe, Connection, PgConnection, PgPool, migrate::MigrateError, postgres::PgPoolOptions};
 use tokio::sync::OnceCell;
@@ -370,16 +373,8 @@ pub async fn seeded_ledger(pool: &PgPool, skipping: &str) -> Option<Arc<dyn Ledg
 	Some(ledger)
 }
 
-/// Mirror a concierge KYC tier onto a local user row.
-///
-/// Banking deliberately has no aggregate transition for `kyc_level` — the identity plane
-/// owns the value and the lifecycle bridge is its only writer — so a test that needs a
-/// verified investor sets the column exactly the way the bridge does. `provision` leaves
-/// a fresh user at the schema default (tier 0, unverified), which is what the money gates
-/// refuse.
 /// No deposit rails at all: no user owns any address, so nothing ever attributes a
-/// transfer to a person. For the suites whose consilium ports need an address gateway
-/// but never open a seed — the seed suite fakes its own, with one owned address.
+/// transfer to a person.
 pub struct NoAddresses;
 
 impl domain::architecture::Gateway for NoAddresses {}
@@ -391,6 +386,13 @@ impl DepositAddresses for NoAddresses {
 	}
 }
 
+/// Mirror a concierge KYC tier onto a local user row.
+///
+/// Banking deliberately has no aggregate transition for `kyc_level` — the identity plane
+/// owns the value and the lifecycle bridge is its only writer — so a test that needs a
+/// verified investor sets the column exactly the way the bridge does. `provision` leaves
+/// a fresh user at the schema default (tier 0, unverified), which is what the money gates
+/// refuse.
 pub async fn set_kyc_level(pool: &PgPool, user: UserId, level: i32) {
 	let affected = sqlx::query("UPDATE users SET kyc_level = $2 WHERE id = $1")
 		.bind(user.raw())
@@ -400,4 +402,15 @@ pub async fn set_kyc_level(pool: &PgPool, user: UserId, level: i32) {
 		.expect("mirror the KYC tier")
 		.rows_affected();
 	assert_eq!(affected, 1, "no user row to mirror the KYC tier onto");
+}
+
+/// A spend guard that checks nothing — for a test that opens a spend whose cover it is not
+/// testing.
+pub struct NoSpendCheck;
+
+#[async_trait]
+impl SpendGuard for NoSpendCheck {
+	async fn check(&self, _: &mut dyn LockedReads) -> Result<(), DomainError> {
+		Ok(())
+	}
 }

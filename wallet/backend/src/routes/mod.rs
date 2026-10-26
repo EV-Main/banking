@@ -75,9 +75,7 @@ fn requests(state: AppState) -> Router {
 		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
 		// The public approval surface. NO session, NO CSRF, and no session cookie is even
 		// read: the emailed token in the path is the whole credential. See `approval`.
-		.route("/api/approval/payout/{token}", get(approval::payout_invitation).post(approval::payout_decision))
 		.route("/api/approval/removal/{token}", get(approval::removal_invitation).post(approval::removal_decision))
-		.route("/api/approval/consent/{token}", get(approval::consent_invitation).post(approval::consent_decision))
 		// A trusted host's wallet actions: the one cross-origin surface that may move money,
 		// mounted only when `WALLET_ACTION_ORIGINS` names a host. See `intents`.
 		.merge(intents::routes(&state))

@@ -1,24 +1,21 @@
 //! Postgres adapter for the [`OperationFeed`] port — the caller's activity timeline.
 //!
-//! One `UNION ALL` over the four projections the write side already maintains
-//! (`deposits`, `withdrawals`, `subscriptions`, `redemptions`), ordered and paged in
-//! the database. Doing the merge here rather than in four round-trips is the whole
-//! point of the port: `LIMIT` applies to the *merged* stream, so a user with a long
-//! deposit history still sees their most recent redemption.
+//! One `UNION ALL` over the projections the write side already maintains (`deposits`,
+//! `withdrawals`), ordered and paged in the database. Doing the merge here rather than in
+//! separate round-trips is the whole point of the port: `LIMIT` applies to the *merged*
+//! stream, so a user with a long deposit history still sees their most recent withdrawal.
 //!
 //! A plain pool read — a projection, never a fact write, so no transaction. The rows
 //! are read across aggregates but each is a self-consistent snapshot of its own row;
 //! the timeline makes no cross-row invariant claim, so it needs no snapshot isolation.
 //!
-//! `party_id` on `deposits` is TEXT (the party may be a service, not a user) while the
-//! other three key on a UUID `user_id` — hence the two bindings of the same caller.
+//! `party_id` on `deposits` is TEXT while `withdrawals` keys on a UUID `user_id` — hence
+//! the two bindings of the same caller.
 
 use async_trait::async_trait;
 use domain::{
-	balance::ServiceId,
 	error::DomainError,
-	money::{Nav, Network, Shares, TxRef, Usdt},
-	redemptions::RedemptionState,
+	money::{Network, TxRef, Usdt},
 	users::UserId,
 	withdrawals::WithdrawalState,
 };
@@ -29,52 +26,24 @@ use crate::ports::operations::{Operation, OperationFeed, OperationPage};
 
 /// The merged feed. The inner branches select `created_at` as a `timestamptz` so the
 /// ordering keeps sub-second resolution — truncating to epoch seconds first would make
-/// same-second operations tie, and a tie here reorders a subscribe/redeem pair that a
-/// user performed in a deliberate sequence. `id` breaks a genuine tie deterministically,
-/// so paging never drops or repeats a row.
+/// same-second operations tie. `id` breaks a genuine tie deterministically, so paging
+/// never drops or repeats a row.
 const FEED_SQL: &str = "\
-SELECT kind, id, state, EXTRACT(EPOCH FROM ts)::bigint AS created_at, amount, fee, units, nav, service, network, address, tx_ref, management, performance FROM (
+SELECT kind, id, state, EXTRACT(EPOCH FROM ts)::bigint AS created_at, amount, fee, network, address, tx_ref FROM (
     SELECT 'deposit' AS kind, tx_ref AS id, 'credited' AS state, created_at AS ts,
-           amount, NULL::text AS fee, NULL::text AS units, NULL::text AS nav,
-           NULL::text AS service, network, NULL::text AS address, tx_ref,
-           NULL::text AS management, NULL::text AS performance
+           amount, NULL::text AS fee, network, NULL::text AS address, tx_ref
       FROM deposits WHERE party_kind = 'user' AND party_id = $1
     UNION ALL
     SELECT 'withdrawal', id::text, state, created_at,
-           amount, fee, NULL::text, NULL::text,
-           NULL::text, network, address, tx_ref,
-           NULL::text, NULL::text
+           amount, fee, network, address, tx_ref
       FROM withdrawals WHERE user_id = $2
-    UNION ALL
-    SELECT 'subscription', id::text, 'completed', created_at,
-           cash, NULL::text, units, nav,
-           service, NULL::text, NULL::text, NULL::text,
-           NULL::text, NULL::text
-      FROM subscriptions WHERE user_id = $2
-    UNION ALL
-    SELECT 'redemption', id::text, state, created_at,
-           cash, NULL::text, units, nav,
-           service, NULL::text, NULL::text, NULL::text,
-           NULL::text, NULL::text
-      FROM redemptions WHERE user_id = $2
-    UNION ALL
-    -- The fund's own charge against this holding. It moves no cash and no chain
-    -- reference exists, so `amount` is what the clawed-back units were worth at `nav`;
-    -- `state` says whether the whole charge landed or part of it deferred into debt.
-    SELECT 'fee', id::text,
-           CASE WHEN debt_carried = '0' THEN 'charged' ELSE 'partly_deferred' END,
-           assessed_at,
-           charged_cash, NULL::text, charged_units, nav,
-           service, NULL::text, NULL::text, NULL::text,
-           management, performance
-      FROM fee_assessments WHERE user_id = $2
 ) AS feed
 ORDER BY ts DESC, id
 LIMIT $3";
 
 /// The raw shape of one merged row, before it is narrowed back to an [`Operation`]
-/// variant. Every value column is nullable because the union is a widening of four
-/// disjoint shapes — the narrowing below is what re-establishes which are guaranteed.
+/// variant. Every value column is nullable because the union is a widening of disjoint
+/// shapes — the narrowing below is what re-establishes which are guaranteed.
 type FeedRow = (
 	String,         // kind
 	String,         // id
@@ -82,14 +51,9 @@ type FeedRow = (
 	i64,            // created_at (unix seconds)
 	Option<String>, // amount (base units)
 	Option<String>, // fee
-	Option<String>, // units
-	Option<String>, // nav
-	Option<String>, // service
 	Option<String>, // network
 	Option<String>, // address
 	Option<String>, // tx_ref
-	Option<String>, // management (fee only)
-	Option<String>, // performance (fee only)
 );
 
 pub struct PgOperationFeed {
@@ -124,20 +88,12 @@ fn amount(raw: &str, column: &str) -> Result<Usdt, DomainError> {
 	Ok(Usdt::from_base_units(base_units(raw, column)?))
 }
 
-fn shares(raw: &str, column: &str) -> Result<Shares, DomainError> {
-	Ok(Shares::from_base_units(base_units(raw, column)?))
-}
-
-fn nav(raw: &str, column: &str) -> Result<Nav, DomainError> {
-	Ok(Nav::from_base_units(base_units(raw, column)?))
-}
-
 fn id(raw: &str) -> Result<Uuid, DomainError> {
 	Uuid::parse_str(raw).map_err(|_| DomainError::Repository("operation feed: malformed id".into()))
 }
 
 fn narrow(row: FeedRow) -> Result<Operation, DomainError> {
-	let (kind, row_id, state, created_at, amount_raw, fee_raw, units_raw, nav_raw, service_raw, network_raw, address_raw, tx_ref_raw, management_raw, performance_raw) = row;
+	let (kind, row_id, state, created_at, amount_raw, fee_raw, network_raw, address_raw, tx_ref_raw) = row;
 	match kind.as_str() {
 		"deposit" => Ok(Operation::Deposit {
 			tx_ref: TxRef::parse(&row_id)?,
@@ -160,35 +116,6 @@ fn narrow(row: FeedRow) -> Result<Operation, DomainError> {
 				created_at,
 			})
 		}
-		"subscription" => Ok(Operation::Subscription {
-			id: id(&row_id)?,
-			service: ServiceId::parse(&required(service_raw, "service", &kind)?)?,
-			cash: amount(&required(amount_raw, "cash", &kind)?, "subscription cash")?,
-			nav: nav(&required(nav_raw, "nav", &kind)?, "subscription nav")?,
-			units: shares(&required(units_raw, "units", &kind)?, "subscription units")?,
-			created_at,
-		}),
-		"redemption" => Ok(Operation::Redemption {
-			id: id(&row_id)?,
-			service: ServiceId::parse(&required(service_raw, "service", &kind)?)?,
-			units: shares(&required(units_raw, "units", &kind)?, "redemption units")?,
-			// Both NULL until settle (settle-time pricing) — absent, not malformed.
-			nav: nav_raw.as_deref().map(|raw| nav(raw, "redemption nav")).transpose()?,
-			cash: amount_raw.as_deref().map(|raw| amount(raw, "redemption cash")).transpose()?,
-			state: RedemptionState::parse(&state)?,
-			created_at,
-		}),
-		"fee" => Ok(Operation::FeeCharge {
-			id: id(&row_id)?,
-			service: ServiceId::parse(&required(service_raw, "service", &kind)?)?,
-			units: shares(&required(units_raw, "units", &kind)?, "fee units")?,
-			nav: nav(&required(nav_raw, "nav", &kind)?, "fee nav")?,
-			cash: amount(&required(amount_raw, "cash", &kind)?, "fee cash")?,
-			management: amount(&required(management_raw, "management", &kind)?, "management fee")?,
-			performance: amount(&required(performance_raw, "performance", &kind)?, "performance fee")?,
-			deferred: state == "partly_deferred",
-			created_at,
-		}),
 		other => Err(DomainError::Repository(format!("operation feed: unknown kind {other}"))),
 	}
 }

@@ -41,7 +41,7 @@ export function VerificationRequired({ title, description, className }: { title:
 
   return (
     // uikit's Empty draws a dashed frame but leaves the border width to the caller, and
-    // doubles its padding at `md` — the call the dashboard and consilium already make.
+    // doubles its padding at `md` — the call the dashboard already makes.
     <Empty className={cn("border md:p-6", className)}>
       <EmptyHeader>
         <EmptyMedia variant="icon">

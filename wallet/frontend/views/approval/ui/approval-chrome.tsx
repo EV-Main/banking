@@ -1,6 +1,7 @@
 "use client";
 
-// The framing and the shared states of the two token-approval pages.
+// The framing and the shared states of the emailed approval page; the signed-in payment
+// answer borrows them.
 //
 // These pages are unlike everything else in the wallet host: no session, no rail, no shell, and
 // for most readers exactly one visit. That makes the non-happy states the majority of the
@@ -8,7 +9,7 @@
 // closed is a page someone will genuinely land on, having done nothing wrong, with no
 // navigation to fall back to. So the outcomes live here as first-class components built on
 // uikit's `Empty` (AGENTS.md § Frontend design rules: never a bare grey sentence in a blank
-// box), and both pages compose the same ones.
+// box), and every page composes the same ones.
 
 import { Clock, Link2Off, ShieldX, Unplug } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -93,8 +94,7 @@ export function DetailRow({ label, value, mono = false, tone }: { label: string;
  *
  * Its own component so that no screen can quietly decide to shorten it. A `0x1234…abcd` in
  * an approval flow is an invitation to approve the wrong address — the one thing an owner
- * is here to check is the one thing that must never be elided (docs/CONSILIUM.md,
- * policy 13). `break-all` rather than truncation: it wraps, it never hides.
+ * is here to check is the one thing that must never be elided. `break-all` rather than truncation: it wraps, it never hides.
  */
 export function FullAddress({ label, address }: { label: string; address: string }) {
   return (
@@ -112,7 +112,7 @@ export function FullAddress({ label, address }: { label: string; address: string
  *
  * The code is what makes a vote a deliberate human act: mail scanners follow every link in
  * a message, so the GET behind this page is inert and the code is what a scanner cannot
- * type (policy 5). The field says that plainly rather than presenting itself as a second
+ * type. The field says that plainly rather than presenting itself as a second
  * password, because a reader who thinks it is one will go looking for it in a password
  * manager instead of in the email they are already reading.
  */
@@ -165,7 +165,7 @@ export function CodeField({
       ) : (
         // The count is the server's, read back from the authoritative summary — never a
         // number this page decremented for itself. The attempt is recorded before the
-        // comparison, in the same transaction (policy 7), so ours would be a guess.
+        // comparison, in the same transaction, so ours would be a guess.
         //
         // `role="alert"` because losing an attempt is news: four wrong codes and the link
         // burns, and a reader who cannot see the field turning red gets no other warning.
@@ -182,7 +182,7 @@ export function CodeField({
  *
  * It takes focus on mount. Every one of these replaces the form the reader was just using,
  * so without this the focused element is destroyed and focus falls to `<body>` — a screen
- * reader announces nothing, and the one sentence saying whether a payout was approved goes
+ * reader announces nothing, and the one sentence saying what the answer did goes
  * unread by the person who most needs it. `tabIndex={-1}` makes it focusable
  * programmatically without adding it to the tab order.
  */
@@ -227,7 +227,7 @@ export function ApprovalOutcome({
  *
  * Unknown, expired, already-used and burned all arrive here as one identical 404, and this
  * component deliberately does not guess between them: telling them apart is an enumeration
- * oracle, and it is closed on purpose (policy 10). The copy says so — that the reason is
+ * oracle, and it is closed on purpose. The copy says so — that the reason is
  * not knowable from this page is more useful to a reader than a confident wrong guess, and
  * it points at the person who can actually fix it.
  */
@@ -238,24 +238,6 @@ export function ApprovalUnavailable() {
       icon={<Link2Off />}
       title={t("approval.gone.title", "This link can no longer be used")}
       description={t("approval.gone.body", "Approval links work once and expire after 72 hours. This one may have been used already, run out of time, or been closed — which of those it was cannot be told from here. Ask whoever opened the request to send a new one.")}
-    />
-  );
-}
-
-/**
- * The request is of a kind that no longer exists (banking#568).
- *
- * Neutral on purpose: no retry, because the terms will never arrive, and no decision, because
- * there is nothing on screen to agree to. Unlike {@link ApprovalUnrenderable} this is not a
- * fault on our side.
- */
-export function ApprovalRetired() {
-  const t = useT();
-  return (
-    <ApprovalOutcome
-      icon={<Link2Off />}
-      title={t("approval.retired.title", "This request is no longer available")}
-      description={t("approval.retired.body", "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.")}
     />
   );
 }
@@ -278,20 +260,15 @@ export function ApprovalExpired() {
   );
 }
 
-/**
- * The token burned: five wrong codes, and every owner has been told (policy 7).
- *
- * The consent page passes its own body: there the seat is one investor's, and "every
- * owner has been told" would name people who were never part of it.
- */
-export function ApprovalBurned({ description }: { description?: string }) {
+/** The token burned: five wrong codes, and every owner has been told. */
+export function ApprovalBurned() {
   const t = useT();
   return (
     <ApprovalOutcome
       icon={<ShieldX />}
       tone="text-accent-error"
       title={t("approval.burned.title", "This link has been closed")}
-      description={description ?? t("approval.burned.body", "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.")}
+      description={t("approval.burned.body", "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.")}
     />
   );
 }
@@ -321,29 +298,6 @@ export function ApprovalUnreachable({ onRetry, retrying }: { onRetry: () => void
   const t = useT();
   return (
     <ApprovalOutcome icon={<Unplug />} title={t("approval.loadFailed", "We couldn't load this request")} description={t("approval.loadFailedHint", "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.")}>
-      <Button variant="outline" onClick={onRetry} disabled={retrying}>
-        {retrying && <Spinner aria-hidden />}
-        {t("status.tryAgain", "Try again")}
-      </Button>
-    </ApprovalOutcome>
-  );
-}
-
-/**
- * The request loaded, but the terms it is about did not.
- *
- * Distinct from {@link ApprovalUnreachable} on purpose: nothing failed to arrive at the
- * network level, so "try again" is not the whole story — what matters is that no decision
- * is being offered, because there is nothing on screen to decide about. An approval page
- * that cannot show the amount and the address must not show buttons (policy 12–13).
- *
- * The consent page passes its own body, as with {@link ApprovalBurned}: the default
- * speaks of a payout, and the investor's page is about a payment of their own money.
- */
-export function ApprovalUnrenderable({ description, onRetry, retrying }: { description?: string; onRetry: () => void; retrying: boolean }) {
-  const t = useT();
-  return (
-    <ApprovalOutcome icon={<Unplug />} title={t("approval.unavailableTitle", "We can't show this request")} description={description ?? t("approval.unavailableBody", "The terms of this payout didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.")}>
       <Button variant="outline" onClick={onRetry} disabled={retrying}>
         {retrying && <Spinner aria-hidden />}
         {t("status.tryAgain", "Try again")}

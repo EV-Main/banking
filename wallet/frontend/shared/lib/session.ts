@@ -15,7 +15,7 @@
 // client (heals a 401 in place) and the session keeper (rotates the cookie before it
 // lapses). See `shared/lib/api-client.ts` and `application/layout/session-keeper.tsx`.
 
-import type { SessionInfo } from "@/shared/contracts/admin";
+import type { SessionInfo } from "@/shared/contracts/session";
 
 /// A fetch/parse failure — same shape as a server-resolved "not signed in", but
 /// identity-distinguishable so consumers don't force a re-login on a network blip.

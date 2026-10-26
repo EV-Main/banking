@@ -200,10 +200,10 @@ function withSetCookies(res: NextResponse, lines: readonly string[]): NextRespon
   return res;
 }
 
-// On the two approval pages the URL *is* the credential, so the wallet host's default
+// On the approval page the URL *is* the credential, so the wallet host's default
 // `strict-origin-when-cross-origin` is not enough: it still sends the full URL along with
 // same-origin requests, and the origin alone to everywhere else. `no-referrer` closes that
-// channel for exactly the pages that have something to leak (docs/CONSILIUM.md, policy 6).
+// channel for exactly the page that has something to leak.
 // Scoped rather than global — the rest of the wallet host gains nothing from it and loses the
 // same-origin referrer that analytics and error reports read.
 function withReferrerPolicy(res: NextResponse, pathname: string): NextResponse {

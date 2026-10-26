@@ -18,19 +18,16 @@
 //!   infrastructure  — driven adapters (Postgres control plane, TigerBeetle ledger,
 //!                     telemetry)
 //!
-//! The money plane (balance, subscriptions, redemptions, withdrawals, the allocation
-//! book) is implemented end to end through these layers; remaining domain areas stay
-//! documented placeholders until a feature explicitly asks.
+//! The money plane (balance, withdrawals, payments, compartments, the scope ledger) is
+//! implemented end to end through these layers.
 
 use std::sync::Arc;
 
-use application::book::BookFeed;
-use domain::{book::MatchingEngine, money::Network, scope_ledger::Grants};
+use domain::{money::Network, scope_ledger::Grants};
 use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
-	AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
-	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository,
+	CompartmentStore, Custody, DepositAddresses, Deposits, OperationFeed, OutflowPolicy, PaymentFeed, PaymentRepository, UserRepository, WithdrawalRepository,
 	ledger::Ledger,
 	scope_invoices::InvoiceStore,
 	scope_mandates::{MandateRequestStore, MandateStore},
@@ -64,47 +61,17 @@ pub struct AppState {
 	pub users: Arc<dyn UserRepository>,
 	/// The `withdrawals` aggregate's driven port (Postgres control plane).
 	pub withdrawals: Arc<dyn WithdrawalRepository>,
-	/// The `consilium` aggregate's driven port — multi-owner authorization for revenue
-	/// payouts. Control plane only; it moves no money itself, and reaches the money plane
-	/// exactly once, through the ordinary payout path, when a request is approved.
-	pub consilia: Arc<dyn ConsiliumRepository>,
 	/// The `payments` aggregate's driven port — the order that moves money between two named
-	/// ends of the platform, plus the consent seat that authorizes an investor-sourced one.
+	/// ends of the platform, plus the seat that authorizes it.
 	/// Control plane only: the money leaves through the relay, from the two events the order
 	/// drains to the outbox.
 	pub payments: Arc<dyn PaymentRepository>,
 	/// The admin payments screen's read model. A separate handle from [`Self::payments`] for
 	/// the reason `operations` is separate from the aggregates it reads: it owns nothing.
 	pub payment_feed: Arc<dyn PaymentFeed>,
-	/// The registry of investable products — the gate every subscribe resolves its
-	/// service through. Control plane only; moves no money.
-	pub allocations: Arc<dyn AllocationRegistry>,
-	/// The `subscriptions` aggregate's driven port (mint records + position cost basis).
-	pub subscriptions: Arc<dyn SubscriptionRepository>,
-	/// The `issuance` aggregate's driven port — an operator's in-kind mints (units to an
-	/// investor, no cash leg), idempotent by key.
-	pub issuances: Arc<dyn UnitIssuanceRepository>,
-	/// The `redemptions` aggregate's driven port (the accept-and-queue saga).
-	pub redemptions: Arc<dyn RedemptionRepository>,
-	/// The allocation book — orders, fills and per-product terms (Postgres control
-	/// plane); the escrow and the settlement of every fill go through the relay.
-	pub book: Arc<dyn BookStore>,
-	/// The matching rule the book runs under its write lock. Pure; wired here so the
-	/// composition root, not the store, decides how orders match.
-	pub book_engine: Arc<dyn MatchingEngine>,
-	/// The in-process fan-out every `WatchBook` subscriber hangs on.
-	pub book_feed: Arc<BookFeed>,
 	/// The aggregate-less on-chain arrival facts (the `tx_ref` deposit gate) + outbox.
 	pub deposits: Arc<dyn Deposits>,
-	/// Fund valuation marks → the derived NAV (the operator-posted AUM history).
-	pub nav: Arc<dyn NavMarks>,
-	/// The per-investor fund-position projection (cost basis, high-water mark).
-	pub positions: Arc<dyn FundPositionReader>,
-	/// The fee plane — a fund's "2 and 20" terms, the per-investor accrual clocks, the
-	/// charge, and the bulk settlement of accumulated fee units. A product with no policy
-	/// row charges nothing, so the fee is opt-in per product.
-	pub fees: FeePorts,
-	/// The read-side merge of the four money projections into one activity timeline.
+	/// The read-side merge of the money projections into one activity timeline.
 	/// Query only — it writes nothing and owns no aggregate.
 	pub operations: Arc<dyn OperationFeed>,
 	/// Per-user deposit-address provisioning (stub HD derivation behind a port).
@@ -145,19 +112,8 @@ pub struct AppState {
 	pub withdrawal_limits: application::withdrawal_limits::WithdrawalLimits,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
-	/// How a new payment order is seated: over concierge's approvals (the default) or by the
-	/// old consilium and emailed consent. See [`config::PaymentApprovalModes`].
-	pub payment_approvals: config::PaymentApprovalModes,
-	/// What opens a fund payment's approval with the proof of who asked. `None` only where no
-	/// concierge is wired (a test): a fund payment is then refused rather than opened unproposable.
-	pub payment_proposer: Option<Arc<application::payment_approvals::PaymentProposer>>,
-	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
-	/// page it points at is served by the wallet host, not here; the hub only has to mint a
-	/// link an owner's mail client will render.
-	pub consilium_approval_url_base: String,
-	/// Base URL the emailed payment CONSENT link is built on (`<base>/<token>`) — the
-	/// investor-facing twin of the approval base.
-	pub payment_consent_url_base: String,
+	/// What opens a treasury payment's approval with the proof of who asked.
+	pub payment_proposer: Arc<application::payment_approvals::PaymentProposer>,
 	/// Whether the TON rail is on testnet — surfaced on its deposit addresses so the client
 	/// renders the correct (testnet-tagged) user-friendly TON address. `false` when TON is
 	/// unconfigured or on mainnet. The other rails have no testnet-specific address form.
@@ -173,28 +129,16 @@ impl AppState {
 		analytics: Analytics,
 		users: Arc<dyn UserRepository>,
 		withdrawals: Arc<dyn WithdrawalRepository>,
-		consilia: Arc<dyn ConsiliumRepository>,
 		payments: Arc<dyn PaymentRepository>,
 		payment_feed: Arc<dyn PaymentFeed>,
-		allocations: Arc<dyn AllocationRegistry>,
-		subscriptions: Arc<dyn SubscriptionRepository>,
-		issuances: Arc<dyn UnitIssuanceRepository>,
-		redemptions: Arc<dyn RedemptionRepository>,
-		book: Arc<dyn BookStore>,
-		book_engine: Arc<dyn MatchingEngine>,
-		book_feed: Arc<BookFeed>,
 		deposits: Arc<dyn Deposits>,
-		nav: Arc<dyn NavMarks>,
-		positions: Arc<dyn FundPositionReader>,
-		fees: FeePorts,
 		operations: Arc<dyn OperationFeed>,
 		deposit_addresses: Arc<dyn DepositAddresses>,
 		custody: Arc<dyn Custody>,
 		configured_networks: Arc<[Network]>,
 		kyc_gate: config::KycGate,
 		relay_notify: Arc<Notify>,
-		consilium_approval_url_base: String,
-		payment_consent_url_base: String,
+		payment_proposer: Arc<application::payment_approvals::PaymentProposer>,
 		ton_is_testnet: bool,
 		outflow: Arc<dyn OutflowPolicy>,
 		compartments: Arc<dyn CompartmentStore>,
@@ -208,28 +152,16 @@ impl AppState {
 			analytics,
 			users,
 			withdrawals,
-			consilia,
 			payments,
 			payment_feed,
-			allocations,
-			subscriptions,
-			issuances,
-			redemptions,
-			book,
-			book_engine,
-			book_feed,
 			deposits,
-			nav,
-			positions,
-			fees,
 			operations,
 			deposit_addresses,
 			custody,
 			configured_networks,
 			kyc_gate,
 			relay_notify,
-			consilium_approval_url_base,
-			payment_consent_url_base,
+			payment_proposer,
 			ton_is_testnet,
 			outflow,
 			compartments,
@@ -238,16 +170,7 @@ impl AppState {
 			mandate_requests: scope_ledger,
 			scope_grants: Arc::new(Grants::default()),
 			withdrawal_limits: application::withdrawal_limits::WithdrawalLimits::default(),
-			payment_approvals: config::PaymentApprovalModes::DEFAULT,
-			payment_proposer: None,
 		}
-	}
-
-	/// The payment-approval switch as the environment set it.
-	pub fn with_payment_approvals(mut self, mode: config::PaymentApprovalModes, proposer: Arc<application::payment_approvals::PaymentProposer>) -> Self {
-		self.payment_approvals = mode;
-		self.payment_proposer = Some(proposer);
-		self
 	}
 
 	pub fn with_withdrawal_limits(mut self, limits: application::withdrawal_limits::WithdrawalLimits) -> Self {

@@ -1,44 +1,4 @@
 {
-  "admin.fees.basis.investedCapital": {
-    "en": "Invested capital",
-    "t": "Вложенный капитал"
-  },
-  "admin.fees.basis.marketValue": {
-    "en": "Market value",
-    "t": "Рыночная стоимость"
-  },
-  "admin.fees.chargedOn": {
-    "en": "Charged on",
-    "t": "База начисления"
-  },
-  "admin.fees.field.hurdle": {
-    "en": "Hurdle",
-    "t": "Барьер"
-  },
-  "admin.fees.field.management": {
-    "en": "Management",
-    "t": "За управление"
-  },
-  "admin.fees.field.performance": {
-    "en": "Performance",
-    "t": "За успех"
-  },
-  "admin.fees.period.annual": {
-    "en": "Annually",
-    "t": "Ежегодно"
-  },
-  "admin.fees.period.monthly": {
-    "en": "Monthly",
-    "t": "Ежемесячно"
-  },
-  "admin.fees.period.quarterly": {
-    "en": "Quarterly",
-    "t": "Ежеквартально"
-  },
-  "admin.fees.period.semiAnnual": {
-    "en": "Every 6 months",
-    "t": "Раз в полгода"
-  },
   "approval.amount": {
     "en": "Amount",
     "t": "Сумма"
@@ -70,14 +30,6 @@
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Вы ответили на это ранее, и ваш ответ остаётся в силе. Изменить данный ответ нельзя."
-  },
-  "approval.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose.",
-    "t": "Для любого ответа нужен код из письма. Введите его один раз, затем выберите."
-  },
-  "approval.decisionTitle": {
-    "en": "Your decision",
-    "t": "Ваше решение"
   },
   "approval.expired.title": {
     "en": "The deadline for this request has passed",
@@ -135,61 +87,25 @@
     "en": "Opened",
     "t": "Открыт"
   },
-  "approval.openedBy": {
-    "en": "Opened by",
-    "t": "Кто открыл"
-  },
   "approval.payloadHash": {
     "en": "Request fingerprint",
     "t": "Отпечаток запроса"
-  },
-  "approval.payment.approve": {
-    "en": "Approve this payment",
-    "t": "Согласовать платёж"
-  },
-  "approval.payment.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Вы согласовали этот платёж"
-  },
-  "approval.payment.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the payment goes ahead once enough owners have agreed.",
-    "t": "Ваш ответ записан. Больше здесь ничего делать не нужно — платёж исполнится, когда согласится достаточно владельцев."
-  },
-  "approval.payment.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Вы отклонили этот платёж"
   },
   "approval.payment.from": {
     "en": "From",
     "t": "Откуда"
   },
-  "approval.payment.lead": {
-    "en": "{initiator} has asked to move money the fund owns, as set out below. Moving the fund's own money is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} просит перевести деньги фонда, как описано ниже. Перевод собственных средств фонда никогда не решается одним человеком, поэтому нужно согласие владельцев."
-  },
   "approval.payment.payloadHashHint": {
     "en": "The fingerprint is taken over the amount, both ends and the reason above. It is checked again before any money moves, so a request cannot be edited after you have agreed to it.",
     "t": "Отпечаток считается по сумме, обеим сторонам и причине выше. Он проверяется снова перед движением денег, поэтому запрос нельзя изменить после вашего согласия."
-  },
-  "approval.payment.reasonLabel": {
-    "en": "Reason given",
-    "t": "Указанная причина"
   },
   "approval.payment.tier": {
     "en": "Tier",
     "t": "Уровень"
   },
-  "approval.payment.title": {
-    "en": "Approve a fund payment",
-    "t": "Согласовать платёж фонда"
-  },
   "approval.payment.to": {
     "en": "To",
     "t": "Куда"
-  },
-  "approval.reject": {
-    "en": "Reject",
-    "t": "Отклонить"
   },
   "approval.removal.about": {
     "en": "About",
@@ -236,8 +152,8 @@
     "t": "Согласие окончательно. Ваше владение прекращается сразу после записи ответа, и отменить это ни с этой страницы, ни с какой-либо другой нельзя."
   },
   "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.",
-    "t": "{initiator} предлагает лишить вас статуса владельца фонда. Ваш голос учитывается, и у ответа есть срок."
+    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
+    "t": "{initiator} предлагает лишить вас статуса владельца платформы. Ваш голос учитывается, и у ответа есть срок."
   },
   "approval.removal.noReason": {
     "en": "No reason was given.",
@@ -266,38 +182,6 @@
   "approval.removal.title": {
     "en": "A request to end your ownership",
     "t": "Просьба прекратить ваше владение"
-  },
-  "approval.retired.body": {
-    "en": "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.",
-    "t": "Запросы этого типа больше не обрабатываются на этой странице, поэтому здесь нечего подтверждать или отклонять. Если вы ждали запрос на решение, обратитесь к тому, кто его открыл."
-  },
-  "approval.retired.title": {
-    "en": "This request is no longer available",
-    "t": "Этот запрос больше недоступен"
-  },
-  "approval.tally": {
-    "en": "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far",
-    "t": "{approvals} из {threshold, plural, one {# подтверждения} few {# подтверждений} many {# подтверждений} other {# подтверждений}} на этот момент"
-  },
-  "approval.tallyHint": {
-    "en": "More than half of the owners must approve before any money moves. You are one of them.",
-    "t": "Прежде чем деньги уйдут, выплату должны подтвердить больше половины владельцев. Вы — один из них."
-  },
-  "approval.tallyOwners": {
-    "en": "{owners, plural, one {# owner} other {# owners}} in total",
-    "t": "{owners, plural, one {# владелец} few {# владельца} many {# владельцев} other {# владельца}} всего"
-  },
-  "approval.unavailableBody": {
-    "en": "The terms of this payout didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Условия выплаты не пришли, поэтому соглашаться здесь не с чем и решение не предлагается. Это проблема на нашей стороне, а не с вашей ссылкой. Попробуйте ещё раз через минуту."
-  },
-  "approval.unavailableTitle": {
-    "en": "We can't show this request",
-    "t": "Не удаётся показать этот запрос"
-  },
-  "approval.votingAs": {
-    "en": "You are answering as {email}.",
-    "t": "Вы отвечаете как {email}."
   },
   "auth.cabinet": {
     "en": "Cabinet",
@@ -343,82 +227,6 @@
     "en": "You've been signed out of your cabinet.",
     "t": "Вы вышли из своего кабинета."
   },
-  "consent.approve": {
-    "en": "Approve — move my money",
-    "t": "Согласиться — перевести мои деньги"
-  },
-  "consent.askedBy": {
-    "en": "Asked by",
-    "t": "Запросил"
-  },
-  "consent.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed. Nothing was approved and your money has not moved. Whoever asked can open a new request.",
-    "t": "Код был введён неверно слишком много раз, и ссылка закрыта. Ничего не согласовано, ваши деньги не двигались. Запросивший может открыть новый запрос."
-  },
-  "consent.decided.approvedFresh": {
-    "en": "Your answer has been recorded and the payment goes ahead. There is nothing further to do here.",
-    "t": "Ваш ответ записан, платёж будет исполнен. Больше здесь ничего делать не нужно."
-  },
-  "consent.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Вы согласились на этот платёж"
-  },
-  "consent.decided.rejectedFresh": {
-    "en": "Your answer has been recorded. Your money stays exactly where it is, and whoever asked has been told.",
-    "t": "Ваш ответ записан. Ваши деньги остаются там, где были, а запросивший об этом узнает."
-  },
-  "consent.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Вы отказали в этом платеже"
-  },
-  "consent.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose. Rejecting keeps your money exactly where it is.",
-    "t": "Для обоих ответов нужен код из письма. Введите его один раз и выберите. Отказ оставляет ваши деньги там, где они есть."
-  },
-  "consent.decisionTitle": {
-    "en": "Your decision",
-    "t": "Ваше решение"
-  },
-  "consent.lead": {
-    "en": "{initiator} is asking for it to be moved as set out below. Nothing happens unless you agree — nobody else is asked, and nobody else can answer for you.",
-    "t": "{initiator} просит перевести их, как описано ниже. Ничего не произойдёт без вашего согласия — больше никого не спрашивают, и никто не может ответить за вас."
-  },
-  "consent.leadOwn": {
-    "en": "This is your money.",
-    "t": "Это ваши деньги."
-  },
-  "consent.reasonLabel": {
-    "en": "Reason given by {initiator}",
-    "t": "Причина, указанная {initiator}"
-  },
-  "consent.reject": {
-    "en": "Reject — keep my money",
-    "t": "Отказать — оставить мои деньги"
-  },
-  "consent.title": {
-    "en": "Your money is asked to move",
-    "t": "Ваши деньги просят перевести"
-  },
-  "consent.unavailableBody": {
-    "en": "The terms of this payment didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Условия этого платежа не загрузились, поэтому здесь не с чем соглашаться и решение не предлагается. Это проблема на нашей стороне, а не с вашей ссылкой. Попробуйте ещё раз через минуту."
-  },
-  "consent.yourMoney": {
-    "en": "Whose money",
-    "t": "Чьи деньги"
-  },
-  "consilium.feePolicy.nothingCharged": {
-    "en": "Nothing charged",
-    "t": "Не взимается"
-  },
-  "consilium.feePolicy.now": {
-    "en": "Now",
-    "t": "Сейчас"
-  },
-  "consilium.feePolicy.proposed": {
-    "en": "Proposed",
-    "t": "Предлагается"
-  },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",
     "t": "Вход сейчас недоступен. Повторите попытку чуть позже."
@@ -430,10 +238,6 @@
   "err.forbidden": {
     "en": "You don't have access to this.",
     "t": "У вас нет доступа к этому."
-  },
-  "err.fundServiceRequired": {
-    "en": "Select a fund to continue.",
-    "t": "Выберите фонд, чтобы продолжить."
   },
   "err.kycStartFailed": {
     "en": "We couldn't start verification. Please try again.",
@@ -486,18 +290,6 @@
   "err.verificationRequired": {
     "en": "Verify your identity to continue.",
     "t": "Подтвердите личность, чтобы продолжить."
-  },
-  "invest.lockedIn": {
-    "en": "Locked in",
-    "t": "Фиксация"
-  },
-  "invest.ofTheGain": {
-    "en": "{pct} of the gain",
-    "t": "{pct} от прибыли"
-  },
-  "invest.perAnnum": {
-    "en": "{pct} p.a.",
-    "t": "{pct} годовых"
   },
   "kyc.chip.attention": {
     "en": "Needs attention",
@@ -564,8 +356,8 @@
     "t": "Начать проверку"
   },
   "meta.description": {
-    "en": "Your investor cabinet — portfolio, funds and wallet.",
-    "t": "Ваш инвесторский кабинет — портфель, фонды и кошелёк."
+    "en": "Your investor cabinet — wallet, deposits and withdrawals.",
+    "t": "Ваш инвесторский кабинет — кошелёк, пополнения и выводы."
   },
   "meta.title": {
     "en": "EV Investment — Cabinet",
@@ -607,18 +399,6 @@
     "en": "Deposit",
     "t": "Пополнение"
   },
-  "ops.kind.fee": {
-    "en": "Fee",
-    "t": "Комиссия"
-  },
-  "ops.kind.redemption": {
-    "en": "Redemption",
-    "t": "Погашение"
-  },
-  "ops.kind.subscription": {
-    "en": "Subscription",
-    "t": "Подписка"
-  },
   "ops.kind.unknown": {
     "en": "Operation",
     "t": "Операция"
@@ -630,10 +410,6 @@
   "ops.state.cancelled": {
     "en": "Cancelled",
     "t": "Отменено"
-  },
-  "ops.state.charged": {
-    "en": "Charged",
-    "t": "Списано"
   },
   "ops.state.completed": {
     "en": "Completed",
@@ -647,10 +423,6 @@
     "en": "Failed",
     "t": "Не выполнено"
   },
-  "ops.state.partlyDeferred": {
-    "en": "Partly deferred",
-    "t": "Частично"
-  },
   "ops.state.processing": {
     "en": "Processing",
     "t": "В обработке"
@@ -659,97 +431,17 @@
     "en": "Queued",
     "t": "В очереди"
   },
-  "payment.consent.approve": {
-    "en": "Consented",
-    "t": "Согласие дано"
-  },
-  "payment.consent.invalidated": {
-    "en": "Consent void",
-    "t": "Согласие аннулировано"
-  },
-  "payment.consent.pending": {
-    "en": "Awaiting the investor",
-    "t": "Ждёт инвестора"
-  },
-  "payment.consent.reject": {
-    "en": "Declined",
-    "t": "Отказано"
-  },
-  "payment.consent.unsent": {
-    "en": "Email not yet sent",
-    "t": "Письмо ещё не отправлено"
-  },
   "payment.end.fullAddress": {
     "en": "Show the full address",
     "t": "Показать адрес целиком"
-  },
-  "payment.requirement.hint.owner_consilium": {
-    "en": "Fund-owned money: more than half of the owners must confirm from their mailboxes.",
-    "t": "Деньги фонда: больше половины владельцев должны подтвердить из своей почты."
-  },
-  "payment.requirement.hint.subject_consent": {
-    "en": "An investor's own money: that investor alone is emailed and must agree.",
-    "t": "Собственные деньги инвестора: письмо получает только он, и только его согласие нужно."
-  },
-  "payment.requirement.owner_consilium": {
-    "en": "Owners' consilium",
-    "t": "Консилиум владельцев"
-  },
-  "payment.requirement.subject_consent": {
-    "en": "The investor's consent",
-    "t": "Согласие инвестора"
-  },
-  "payment.state.approved": {
-    "en": "Approved",
-    "t": "Одобрен"
-  },
-  "payment.state.cancelled": {
-    "en": "Cancelled",
-    "t": "Отменён"
-  },
-  "payment.state.executed": {
-    "en": "Executed",
-    "t": "Исполнен"
-  },
-  "payment.state.execution_failed": {
-    "en": "Execution failed",
-    "t": "Исполнение не удалось"
-  },
-  "payment.state.expired": {
-    "en": "Expired",
-    "t": "Истёк"
-  },
-  "payment.state.pending": {
-    "en": "Pending",
-    "t": "Ожидает"
-  },
-  "payment.state.rejected": {
-    "en": "Rejected",
-    "t": "Отклонён"
-  },
-  "payment.tier.external": {
-    "en": "External",
-    "t": "Внешний"
   },
   "payment.tier.hint.external": {
     "en": "Out to an on-chain address. Ships as a withdrawal once approved.",
     "t": "Наружу, на адрес в сети. После одобрения уходит как вывод."
   },
   "payment.tier.hint.internal": {
-    "en": "Between two claims inside the fund. No money leaves the ledger.",
-    "t": "Между двумя счетами внутри фонда. Деньги не покидают реестр."
-  },
-  "payment.tier.hint.service": {
-    "en": "Into one of the fund's products, as its pooled claim.",
-    "t": "В один из продуктов фонда, на его общий счёт."
-  },
-  "payment.tier.internal": {
-    "en": "Internal",
-    "t": "Внутренний"
-  },
-  "payment.tier.service": {
-    "en": "To a product",
-    "t": "В продукт"
+    "en": "Between two claims on the platform. No money leaves the ledger.",
+    "t": "Между двумя счетами на платформе. Деньги не покидают реестр."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",
@@ -980,8 +672,8 @@
     "t": "О чём это: {title}"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
-    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + в заявках + инвестировано + в ожидании вывода + в отсеках."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments.",
+    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + ожидает вывода + в отсеках."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
@@ -1770,14 +1462,6 @@
   "walletMfe.historyEmptyDesc": {
     "en": "Deposits, withdrawals and moves between compartments will show up here.",
     "t": "Здесь появятся пополнения, выводы и переводы между отсеками."
-  },
-  "walletMfe.inOrders": {
-    "en": "In orders",
-    "t": "В ордерах"
-  },
-  "walletMfe.invested": {
-    "en": "Invested",
-    "t": "Инвестировано"
   },
   "walletMfe.main": {
     "en": "Main account",

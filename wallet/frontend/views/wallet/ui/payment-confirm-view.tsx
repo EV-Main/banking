@@ -140,7 +140,7 @@ function PaymentAnswer({ id, hosted, onAnswered }: { id: string; hosted: boolean
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
-          <PaymentTermsBlock terms={payment} payloadHash={payment.payload_hash} reasonLabel={t("paymentConfirm.reasonLabel", "Reason given by {initiator}", { initiator: payment.initiator_email })} tierAs="hint" />
+          <PaymentTermsBlock terms={payment} payloadHash={payment.payload_hash} reasonLabel={t("paymentConfirm.reasonLabel", "Reason given by {initiator}", { initiator: payment.initiator_email })} />
           <DetailRow
             label={t("approval.expires", "Expires")}
             value={t("approval.expiresValue", "{at} · {left}", { at: formatMoment(payment.expires_at, locale), left: expiresIn(payment.expires_at, t) })}

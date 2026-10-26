@@ -16,7 +16,7 @@ use std::{
 use async_trait::async_trait;
 use domain::{
 	auth::AuthSubject,
-	balance::{FeePayee, LedgerAccountKey},
+	balance::{LedgerAccountKey, Party},
 	error::DomainError,
 	money::{Network, TxRef, Usdt, WalletAddress},
 	users::{Email, UserId},
@@ -195,7 +195,7 @@ async fn withdraw_reserves_then_settles_and_retains_fee() {
 	let user = active_user(&h).await;
 	let network = Network::Bep20;
 	let claim = LedgerAccountKey::UserClaim(user);
-	let fee_account = FeePayee::treasury().claim_key();
+	let fee_account = Party::Treasury.claim_key();
 
 	deposit(&h, user, network, "100").await;
 	let fee_before = bal(&h, &fee_account).await.posted;
@@ -773,7 +773,7 @@ async fn withdraw_on_polygon_reserves_then_settles_and_retains_fee() {
 	let user = active_user(&h).await;
 	let network = Network::Polygon;
 	let claim = LedgerAccountKey::UserClaim(user);
-	let fee_account = FeePayee::treasury().claim_key();
+	let fee_account = Party::Treasury.claim_key();
 
 	deposit(&h, user, network, "100").await;
 	let fee_before = bal(&h, &fee_account).await.posted;
@@ -1687,7 +1687,7 @@ impl Custody for TestCustody {
 }
 
 // ── Test-only deposit-address stub ──────────────────────────────────────────────
-// Stands in for HD derivation from the fund's xpub so the saga runs without the
+// Stands in for HD derivation from banking's xpub so the saga runs without the
 // separate signer process. It deterministically derives a *structurally valid* (not
 // spendable) per-(user, network) address and caches it. Production wires the
 // signer-backed `SignerDepositAddresses`; this double lives only here.

@@ -36,9 +36,7 @@ use piggybank_core::{
 	infrastructure::{
 		custody::StubCustody,
 		ledger::{self, TbLedger},
-		nav::PgNav,
 		outflow::PgOutflowPolicy,
-		positions::PgFundPositions,
 		signer_addresses::SignerDepositAddresses,
 		tigerbeetle::TigerBeetle,
 		users::PgUsers,
@@ -268,8 +266,6 @@ async fn get_wallet_presents_only_configured_rails() {
 		.serve(addr);
 	let channel = Endpoint::from_shared(format!("http://{addr}")).expect("endpoint").connect_lazy();
 	let addresses = SignerDepositAddresses::new(pool.clone(), SignerServiceClient::new(channel), None);
-	let positions = PgFundPositions::new(pool.clone());
-	let nav = PgNav::new(pool.clone());
 	let users = PgUsers::new(pool.clone());
 	let user = active_user(&pool, &users).await;
 
@@ -279,8 +275,6 @@ async fn get_wallet_presents_only_configured_rails() {
 			let wallet = wallet_app::get_wallet(
 				&wallet_app::WalletPorts {
 					ledger: ledger.as_ref(),
-					positions: &positions,
-					nav: &nav,
 					deposit_addresses: &addresses,
 					users: &users,
 					compartments: &piggybank_core::infrastructure::compartments::PgCompartments::new(pool.clone()),

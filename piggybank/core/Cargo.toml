@@ -15,27 +15,8 @@ path = "src/main.rs"
 name = "ledger-gap"
 path = "src/ledger_gap.rs"
 
-[[bin]]
-name = "window-export"
-path = "src/window_export.rs"
-
-[[bin]]
-name = "window-tool"
-path = "src/window_tool.rs"
-
-[features]
-# The concierge governance-mail transport — how an owner is actually told that a consilium
-# is waiting on them. ON by default: a consilium nobody can be emailed about is one
-# nobody can vote on, so every open refuses outright when no mailer is wired rather
-# than opening a request that can never reach quorum.
-default = ["concierge_governance_mail"]
-concierge_governance_mail = []
-
 [dependencies]
 async-trait.workspace = true
-# The OS CSPRNG behind consilium approval tokens and codes. Used directly (as the signer
-# does) so no crypto crate has to agree on a `rand_core` version.
-getrandom.workspace = true
 hex = { workspace = true }
 # Renders ledger-gap's TigerBeetle timestamps as dates.
 jiff.workspace = true
@@ -54,10 +35,10 @@ evbanking_contracts.workspace = true
 evconcierge_contracts.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
-# SHA-256 for the consilium payload hash and for the token/code digests at rest.
+# SHA-256 for the payment payload hash and the consent pins.
 sha2.workspace = true
 sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "migrate"] }
-# Constant-time comparison of the approval token/code digests.
+# Constant-time comparison of the consent pins.
 subtle.workspace = true
 thiserror.workspace = true
 tigerbeetle.workspace = true

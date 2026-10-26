@@ -1,14 +1,13 @@
 // What a timestamp IS on this wire, in one place.
 //
-// Every timestamp in the contract is an `int64` of unix SECONDS — see
-// `banking/v1/consilium.proto`, "Unix seconds; 0 while pending" — and the BFF hands it to
+// Every timestamp in the contract is an `int64` of unix SECONDS, 0 while unset, and the BFF
+// hands it to
 // the browser through `.to_string()`, so what actually arrives is a decimal string like
 // "1757000000", with "0" standing for "no stamp yet".
 //
 // This module exists because two callers had drifted on that. `shared/lib/datetime.ts`
 // parsed the value as RFC 3339, which no caller was ever given: `new Date("1757000000")`
-// is an Invalid Date, so every date in the owners' room, on both emailed approval pages
-// and on the removal/admission cards rendered "—". Nothing caught it — both shapes are
+// is an Invalid Date, so every date on the emailed approval pages rendered "—". Nothing caught it — both shapes are
 // `string`, so neither `tsc` nor eslint had anything to object to, and the only thing that
 // showed was a dash where a date belonged.
 //

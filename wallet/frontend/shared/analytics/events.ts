@@ -14,8 +14,6 @@ export const ACTIVATION = {
   kycCompleted: "kyc_completed",
   /** The account's one and only credited deposit was seen for the first time. */
   firstDeposit: "first_deposit",
-  /** A subscription was accepted by an account that held no units before it. */
-  firstSubscription: "first_subscription",
 } as const;
 
 export type ActivationEvent = (typeof ACTIVATION)[keyof typeof ACTIVATION];

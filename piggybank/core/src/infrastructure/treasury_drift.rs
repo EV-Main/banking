@@ -13,9 +13,9 @@
 //! **Alert-only, never a write.** The house rule for reconciliation, and doubly right here: a
 //! chain read can be stale, throttled or reorged, and a job that "corrected" the ledger from one
 //! would post money on the strength of a flaky node. The credit path is the deposit watcher
-//! (a user's address) or an operator's `SeedCapital` (the treasury, attributed to the person
-//! who sent it — the watchers report such an arrival and never credit it, #245), each
-//! idempotent per transaction; this only says the two sides disagree.
+//! (a user's address) or an operator's `RecordDeposit`, each idempotent per transaction — a
+//! treasury arrival is reported and never credited (#245); this only says the two sides
+//! disagree.
 //!
 //! **The comparison.** `wallet:<net>` counts every USDT we control on the rail, wherever it sits
 //! — the sweep moving funds from a deposit address to the treasury is invisible to it. So the
@@ -200,7 +200,7 @@ impl TreasuryDrift {
 				%network,
 				%expected,
 				%actual,
-				"treasury drift: the chain holds MORE USDT than the ledger records — an arrival was never credited. On a user's deposit address: RecordDeposit with its tx hash. On the treasury: an owner opens SeedCapital naming the sender (owners' consilium; RecordDeposit refuses it). See docs/RUNBOOK-withdrawals.md § Treasury surplus"
+				"treasury drift: the chain holds MORE USDT than the ledger records — an arrival was never credited. On a user's deposit address: RecordDeposit with its tx hash. On the treasury: RecordDeposit refuses it, the chain cannot say whose it is. See docs/RUNBOOK-withdrawals.md § Treasury surplus"
 			),
 			// The ledger promises funds the chain cannot show. Either money left without a
 			// ledger fact, or a credit was posted for a transfer that never landed.

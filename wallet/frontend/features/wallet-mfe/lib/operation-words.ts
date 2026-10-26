@@ -11,9 +11,6 @@ export type Direction = "in" | "out" | "move";
 const DIRECTIONS: Readonly<Record<string, Direction>> = {
   deposit: "in",
   withdrawal: "out",
-  fee: "out",
-  subscription: "move",
-  redemption: "move",
 };
 
 export function operationDirection(kind: string): Direction {
@@ -26,19 +23,13 @@ export function operationKindLabel(kind: string, t: Translate): string {
       return t("ops.kind.deposit", "Deposit");
     case "withdrawal":
       return t("ops.kind.withdrawal", "Withdrawal");
-    case "subscription":
-      return t("ops.kind.subscription", "Subscription");
-    case "redemption":
-      return t("ops.kind.redemption", "Redemption");
-    case "fee":
-      return t("ops.kind.fee", "Fee");
     default:
       // A kind the hub adds later is still a legible row: its wire id, never translated.
       return kind || t("ops.kind.unknown", "Operation");
   }
 }
 
-const SETTLED = new Set(["credited", "completed", "charged", "partly_deferred"]);
+const SETTLED = new Set(["credited", "completed"]);
 
 /** Done and nothing left to say about it: the row needs no state badge. */
 export function isSettled(state: string): boolean {

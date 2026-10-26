@@ -60,7 +60,7 @@ export interface ResourceConfig<T, A extends unknown[]> {
   name: string;
   /** The underlying read. One per endpoint; the entity clients supply these. */
   fetch: (...args: A) => Promise<T>;
-  /** Key material for a parameterised read (`fundNav(service)`). Omit for a read with no arguments. */
+  /** Key material for a parameterised read (`depositAddress(network)`). Omit for a read with no arguments. */
   key?: (...args: A) => string;
   /** Seconds the cached value is served without a background refresh. */
   revalidate?: number;
@@ -69,15 +69,14 @@ export interface ResourceConfig<T, A extends unknown[]> {
   /**
    * Mirror into sessionStorage so a hard reload also paints from cache.
    *
-   * NON-PERSONAL data only. The catalog of open funds and their NAVs qualify; a balance,
-   * a position, a profile or an operation does not — those stay in memory, which dies with
-   * the page. (`entities/user/model/identity-cache.ts` makes the same call for the
+   * NON-PERSONAL data only. A balance, a profile or an operation stays in memory, which
+   * dies with the page. (`entities/user/model/identity-cache.ts` makes the same call for the
    * three identity fields it needs.)
    */
   persist?: boolean;
   /**
    * Whether these arguments describe a read worth making. A resource keyed on a value the
-   * screen hasn't chosen yet (no fund selected) reports "not loading, no data" instead of
+   * screen hasn't chosen yet (no network selected) reports "not loading, no data" instead of
    * issuing a request the BFF would reject.
    */
   enabled?: (...args: A) => boolean;

@@ -1,14 +1,14 @@
 // Payload-hash display. One rule, because several surfaces show it and they must agree:
-// the approval email, the approval page and the owners' room all print the same prefix of
-// the same hash, and an owner comparing them is the entire point of showing it at all.
+// the email and the page print the same prefix of the same hash, and a reader comparing
+// them is the entire point of showing it at all.
 
 /**
  * How much of the payload hash a reader sees.
  *
  * Enough to compare against the prefix printed in the email — which is the whole job: an
  * owner checks that the page in front of them describes the request they were written to
- * about (docs/CONSILIUM.md, policy 12). Not enough to be mistaken for the full value, which
- * stays server-side and is re-verified against the payload at execution.
+ * about. Not enough to be mistaken for the full value, which stays server-side and is
+ * re-verified against the payload at execution.
  */
 const HASH_PREFIX_CHARS = 12;
 

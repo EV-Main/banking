@@ -50,7 +50,7 @@ const VALID_WINDOW_SECS: u64 = 300;
 /// funding view rides along on the treasury screen so an operator funds the RIGHT wallet.
 const GAS_STATION: Uuid = Uuid::from_u128(1);
 
-/// The reserved recipient word in a TON `tx_ref` for the fund itself. Not a uuid, so it can
+/// The reserved recipient word in a TON `tx_ref` for the treasury. Not a uuid, so it can
 /// never collide with a user's key for the same transaction hash.
 const PIGGYBANK_RECIPIENT: &str = "piggybank";
 

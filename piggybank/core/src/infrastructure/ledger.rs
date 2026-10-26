@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use domain::{
 	architecture::Gateway,
-	balance::{AccountCode, LedgerAccountKey, Normal},
+	balance::{LedgerAccountKey, Normal},
 };
 use sqlx::{PgConnection, PgPool};
 use tigerbeetle as tb;
@@ -22,14 +22,12 @@ use uuid::Uuid;
 
 use crate::{
 	infrastructure::{claims::TxReads, tigerbeetle::TigerBeetle},
-	ports::ledger::{CashInvariant, CashSide, CompletionKind, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
+	ports::ledger::{CashInvariant, CashSide, CompletionKind, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
 };
 
 /// The USDT cash ledger id (`Ledger::Usdt`) — the plane `cash_invariant` scans; each
 /// row's `code` then says which side of the invariant it counts on (`CashSide`).
 const USDT_LEDGER_ID: i32 = 1;
-/// The Share ledger id (`Ledger::Share`) — the plane `share_holdings` scans.
-const SHARE_LEDGER_ID: i32 = 3;
 
 /// The TB client caps one `lookup_accounts` request at this many events; a larger request
 /// resolves to `Err(TooMuchData)` and returns none of the accounts (the client only merges
@@ -303,10 +301,6 @@ impl Ledger for TbLedger {
 	}
 
 	async fn transfer_exists(&self, id: u128) -> Result<bool, LedgerError> {
-		Ok(self.transfer_amount(id).await?.is_some())
-	}
-
-	async fn transfer_amount(&self, id: u128) -> Result<Option<u128>, LedgerError> {
 		let call = self
 			.tb
 			.client()
@@ -315,7 +309,7 @@ impl Ledger for TbLedger {
 		let transfers = deadline("lookup_transfers", call, TB_CALL_TIMEOUT)
 			.await?
 			.map_err(|e| LedgerError::Unavailable(format!("lookup_transfers: {e:?}")))?;
-		Ok(transfers.first().map(|transfer| transfer.amount))
+		Ok(!transfers.is_empty())
 	}
 
 	async fn post(&self, transfer: &LedgerTransfer) -> Result<(), LedgerError> {
@@ -465,64 +459,6 @@ impl Ledger for TbLedger {
 		self.create_transfers(&rows).await
 	}
 
-	async fn share_holdings(&self, scope: &HoldingScope) -> Result<Vec<(LedgerAccountKey, u128)>, LedgerError> {
-		// The map is the index: every Share-ledger row is read back into the account it
-		// names and the DOMAIN decides membership (`HoldingScope::admits`), so this adapter
-		// never re-encodes which key strings belong to which holder. The scan is the whole
-		// Share ledger — one row per (product, holder) — which is small for a fund with a
-		// handful of products; narrowing it by key prefix in SQL is a later optimisation
-		// that changes nothing above this line.
-		let rows = sqlx::query_as::<_, (String, Vec<u8>, i32)>("SELECT logical_key, tb_account_id, code FROM tb_accounts WHERE ledger = $1")
-			.bind(SHARE_LEDGER_ID)
-			.fetch_all(&self.pool)
-			.await
-			.map_err(|e| LedgerError::Unavailable(format!("share-plane account scan: {e}")))?;
-		let mut wanted = std::collections::HashMap::with_capacity(rows.len());
-		let mut ids = Vec::with_capacity(rows.len());
-		for (logical_key, bytes, code) in &rows {
-			// A retired kind (the company stake, `shares_company:<svc>`, #245) is a row that
-			// exists for good and names no live account: skipped by its code, like the cash
-			// scan classifies by code, rather than parsed into a key nothing derives.
-			if u16::try_from(*code).ok().and_then(AccountCode::from_code).is_some_and(AccountCode::is_retired) {
-				continue;
-			}
-			let key = LedgerAccountKey::parse_logical_key(logical_key).map_err(|e| LedgerError::Conflict(format!("unreadable tb_accounts row {logical_key}: {e}")))?;
-			if !scope.admits(&key) {
-				continue;
-			}
-			let id = u128_from_be(bytes)?;
-			ids.push(id);
-			wanted.insert(id, key);
-		}
-		// Chunked like `cash_invariant`: one `lookup_accounts` is capped at
-		// `LOOKUP_ACCOUNTS_MAX`, and a product's cap table grows one row per holder.
-		let mut holdings = Vec::with_capacity(ids.len());
-		for chunk in ids.chunks(LOOKUP_ACCOUNTS_MAX) {
-			let call = self
-				.tb
-				.client()
-				.lookup_accounts(chunk)
-				.map_err(|e| LedgerError::Unavailable(format!("tigerbeetle closed: {e:?}")))?;
-			let accounts = deadline("lookup_accounts", call, TB_CASH_INVARIANT_TIMEOUT)
-				.await?
-				.map_err(|e| LedgerError::Unavailable(format!("lookup_accounts: {e:?}")))?;
-			for account in accounts {
-				let Some(key) = wanted.remove(&account.id) else { continue };
-				// Every holding is debit-normal: posted = debits − credits, and the account's
-				// non-negative flag makes an underflow a genuine ledger inconsistency.
-				let posted = account
-					.debits_posted
-					.checked_sub(account.credits_posted)
-					.ok_or_else(|| LedgerError::Conflict(format!("balance underflow on {}", key.logical_key())))?;
-				holdings.push((key, posted));
-			}
-		}
-		// A mapped account TigerBeetle has never seen (the map row landed, the create did
-		// not) holds nothing yet.
-		holdings.extend(wanted.into_values().map(|key| (key, 0)));
-		Ok(holdings)
-	}
-
 	async fn cash_invariant(&self) -> Result<CashInvariant, LedgerError> {
 		// Every cash-plane account id lives in the id-map; pull the USDT-ledger rows with
 		// their code so we can split custody (wallet) from claims, then read the posted
@@ -544,7 +480,7 @@ impl Ledger for TbLedger {
 		for (bytes, code) in &rows {
 			let id = u128_from_be(bytes)?;
 			ids.push(id);
-			let side = u16::try_from(*code).ok().and_then(AccountCode::from_code).and_then(CashSide::of);
+			let side = u16::try_from(*code).ok().and_then(CashSide::of); // a code that does not fit u16 is no kind: unclassified, which fails reconciliation
 			side_of.insert(id, side);
 		}
 		// One `lookup_accounts` is capped at `LOOKUP_ACCOUNTS_MAX`; the cash plane grows
@@ -575,9 +511,7 @@ impl Ledger for TbLedger {
 				inv.claims = inv.claims.saturating_add(posted);
 				let bucket = match side {
 					Some(CashSide::UserClaims) => &mut inv.user_claims,
-					Some(CashSide::ServiceClaims) => &mut inv.service_claims,
 					Some(CashSide::Clearing) => &mut inv.clearing,
-					Some(CashSide::BookCash) => &mut inv.book_cash,
 					Some(CashSide::ScopeClaims) => &mut inv.scope_claims,
 					Some(CashSide::ScopeAccounts) => &mut inv.scope_accounts,
 					Some(CashSide::RetiredClaims) => &mut inv.retired_claims,
@@ -592,11 +526,10 @@ impl Ledger for TbLedger {
 
 /// Ensure the singleton accounts exist at boot: a custody wallet per network (the
 /// per-rail treasury), the network-agnostic withdrawal-clearing account and the mocked
-/// bank custody. Per-user/-service claim accounts are created lazily on first transfer.
+/// bank custody. Per-user/-scope claim accounts are created lazily on first transfer.
 ///
-/// The retired `fund` and `fee` claims (#245) are not seeded and are never resolved: no
-/// live key names them. Production still has both (and `shares_company:service_arb`) in
-/// `tb_accounts`, at zero; the scans classify those rows by code.
+/// No live key names a retired account; production still has their rows in `tb_accounts`,
+/// and the cash scan classifies them by code.
 pub async fn seed_singletons(ledger: &dyn Ledger) -> Result<(), LedgerError> {
 	use domain::money::Network;
 	for network in Network::ALL {

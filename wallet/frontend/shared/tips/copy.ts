@@ -15,7 +15,7 @@ export interface TipCopy {
 export const TIP_COPY: Readonly<Record<TipKey, (t: Translate) => TipCopy>> = {
   "wallet.balance.model": (t) => ({
     title: t("tips.wallet.balance.model.title", "One balance, many networks"),
-    body: t("tips.wallet.balance.model.body", "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments."),
+    body: t("tips.wallet.balance.model.body", "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments."),
   }),
   "wallet.deposit.network": (t) => ({
     title: t("tips.wallet.deposit.network.title", "Network"),

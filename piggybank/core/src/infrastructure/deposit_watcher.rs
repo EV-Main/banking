@@ -23,8 +23,7 @@
 //! USDT arriving at the rail's **treasury** hot wallet from outside is watched but never
 //! credited (#245): the chain names the wallet, not the person, and every claim needs a
 //! holder. It is reported at `error!` with a counter (`telemetry`) — and by the treasury
-//! drift watch as a surplus until an operator attributes it with `SeedCapital`, which
-//! books it as that person's deposit and their subscription into `fund`.
+//! drift watch as a surplus.
 //!
 //! Generic over the EVM rail — one instance per chain (BEP20, Polygon), keyed by
 //! `config.network`; the raw log value is scaled into canonical base units via
@@ -555,8 +554,7 @@ enum Recipient {
 	/// Landed on this user's derived deposit address: credit them.
 	User(UserId),
 	/// Landed on the treasury from outside every wallet we control. NOT credited (#245):
-	/// the chain names the wallet, not the person, and a claim needs a holder — reported
-	/// for the operator to attribute by hand (`SeedCapital`).
+	/// the chain names the wallet, not the person, and a claim needs a holder — reported.
 	UnattributedTreasury,
 	/// The sweep consolidating our own funds, or an address that is not ours.
 	NotOurs,
@@ -784,7 +782,7 @@ mod tests {
 
 	/// The invariant-critical case. A sweep arrives at the treasury exactly like an operator
 	/// top-up does — same recipient, same token, same event — and only the sender tells them
-	/// apart. Credit a sweep and one dollar is booked twice, inventing fund capital and
+	/// apart. Credit a sweep and one dollar is booked twice, inventing capital and
 	/// breaking `sum(custody) == sum(claims)`.
 	#[test]
 	fn only_a_source_outside_our_own_wallets_is_new_capital() {
@@ -844,7 +842,7 @@ mod tests {
 		assert_eq!(recipient_of(&transfer(outsider, treasury), &watched, None, None), Recipient::NotOurs);
 
 		// The report is a counter as well as a line: one per arrival, so a dashboard can
-		// alert on "there is a SeedCapital owed" without grepping logs.
+		// alert on an unbooked treasury arrival without grepping logs.
 		let before = telemetry::unattributed_treasury_inflows();
 		telemetry::note_unattributed_treasury_inflow("bep20", "0xabc", outsider, "1");
 		assert_eq!(telemetry::unattributed_treasury_inflows(), before + 1);

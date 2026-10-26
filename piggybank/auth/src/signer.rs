@@ -244,10 +244,10 @@ mod tests {
 		let signer = Signer::try_new(&signing, &cfg).unwrap();
 		let (cache, _) = load_jwks(&signing).unwrap();
 
-		let (token, _) = signer.mint_hub_service("allocations").unwrap();
+		let (token, _) = signer.mint_hub_service("piggybank-hub").unwrap();
 		let claims = verify_token(&token, &cache, &policy("banking-services", vec![TokenType::Service])).unwrap();
 		assert_eq!(claims.typ, TokenType::Service);
-		assert_eq!(claims.sub, "allocations");
+		assert_eq!(claims.sub, "piggybank-hub");
 
 		// An access-only client policy must reject the service token.
 		assert!(verify_token(&token, &cache, &policy("banking-services", vec![TokenType::Access])).is_err());

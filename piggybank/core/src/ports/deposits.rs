@@ -1,11 +1,9 @@
-//! The deposit-log port — the control-plane record behind every on-chain arrival. A
-//! seed of the platform's capital is a deposit here too, to the person who sent it
-//! (there is no separate capital fact since issue #234, and no fund-owned party since
-//! #245); their subscription into the `fund` allocation is a separate aggregate.
+//! The deposit-log port — the control-plane record behind every on-chain arrival, always
+//! a person's.
 //!
 //! These are the aggregate-less standalone [`LedgerEvent`](domain::balance::LedgerEvent)
 //! facts (see [`domain::balance`]) — there is no aggregate to hang a `Repository`
-//! marker on, so like [`NavMarks`](super::NavMarks) this is a plain driven port. Each
+//! marker on, so this is a plain driven port. Each
 //! method is its own atomic unit: the fact row (where one exists) and its outbox
 //! event commit in one Postgres transaction; the relay moves the money afterwards
 //! (Write-Last).
@@ -29,11 +27,6 @@ pub trait Deposits: Send + Sync {
 	/// the idempotency-gate rows where `party_kind = 'user'`.
 	async fn list_by_user(&self, user: UserId) -> Result<Vec<DepositRecord>, DomainError>;
 
-	/// Whether `tx_ref` has already passed the gate — under any party. A seed consilium asks
-	/// before opening, so the owners are not sent to vote over a transfer somebody already
-	/// booked; the gate itself, not this read, is what keeps a double credit impossible.
-	async fn is_recorded(&self, tx_ref: &TxRef) -> Result<bool, DomainError>;
-
 	/// Does `user` still have a credited deposit on `network` that no sweep cycle has
 	/// observed drained?
 	///
@@ -45,7 +38,7 @@ pub trait Deposits: Send + Sync {
 	///
 	/// It is bookkeeping, not a chain read, and the difference matters in one direction only.
 	/// `swept_at` is stamped when a cycle sees the address drained **below the sweep
-	/// minimum**, so `false` means "nothing the fund is owed is left there", not "the balance
+	/// minimum**, so `false` means "nothing credited is left there", not "the balance
 	/// is exactly zero" — dust under the sweep floor can remain, and is knowingly abandoned
 	/// (moving it costs more gas than it is worth). What `false` does NOT cover is an arrival
 	/// the watcher has not credited yet; that residual is why the signer archives the old key

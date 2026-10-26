@@ -4,14 +4,13 @@
 //! ever holds one across the port. Two of them carry the weight:
 //!
 //! - [`PaymentRepository::open`] writes the order, its materialized approval requirement
-//!   (a consent seat, or the link to the consilium that will decide it) and the drained
-//!   events in ONE transaction, so an order can never exist with no record of what would
-//!   authorize it;
-//! - [`PaymentRepository::submit`] counts the attempt, compares the code, records the
-//!   decision and transitions the order **all under one `SELECT … FOR UPDATE` on the
-//!   `payments` row** — not on the consent row, because the order is what the transition
-//!   belongs to and locking the seat instead would let the approval and the order move in
-//!   two transactions a retry could interleave.
+//!   (the investor's session seat, or the concierge approval's) and the drained events in ONE
+//!   transaction, so an order can never exist with no record of what would authorize it;
+//! - [`PaymentRepository::answer_session_consent`] re-reads the pins, records the decision
+//!   and transitions the order **all under one `SELECT … FOR UPDATE` on the `payments` row**
+//!   — not on the seat row, because the order is what the transition belongs to and locking
+//!   the seat instead would let the approval and the order move in two transactions a retry
+//!   could interleave.
 //!
 //! **TigerBeetle is never touched here.** A payment's money moves in the relay, from the
 //! `Reserved`/`Settled` events these methods drain to the outbox — the one ACID point stays
@@ -20,7 +19,6 @@
 use async_trait::async_trait;
 use domain::{
 	balance::Party,
-	consilium::ConsiliumId,
 	error::DomainError,
 	payments::{PaymentEffect, PaymentId, PaymentOrder, PaymentState},
 	users::UserId,
@@ -29,14 +27,9 @@ use domain::{
 
 use super::scope_operations::ApprovalLevel;
 
-/// The digest length every stored secret is reduced to, named so the schema's
+/// The digest length every stored hash is reduced to, named so the schema's
 /// `octet_length(...) = 32` checks and the Rust side cannot drift apart.
 pub const DIGEST_BYTES: usize = 32;
-
-/// How many wrong codes a consent seat may submit before its token burns permanently — and,
-/// with it, the payment fails closed. The consilium's ceiling, deliberately: `docs/CONSILIUM.md`
-/// § "One specification for both planes" is one specification, not shared code.
-pub const MAX_CODE_ATTEMPTS: i32 = 5;
 
 /// What must be written beside a brand-new order to materialize its one approval requirement.
 ///
@@ -44,13 +37,7 @@ pub const MAX_CODE_ATTEMPTS: i32 = 5;
 /// [`domain::payments::PaymentTerms::requirement`], and a shape that could carry both or
 /// neither would let an unauthorizable order commit.
 pub enum ApprovalSeat {
-	/// The source is fund-owned: the owner quorum that decides this order. The consilium
-	/// itself is opened through [`ConsiliumRepository`](super::ConsiliumRepository); this is
-	/// only the link, recorded so the order names its authorization from the moment it exists.
-	Consilium(ConsiliumId),
-	/// The source is one investor's claim: that investor's own emailed consent.
-	Consent(ConsentCredential),
-	/// The source is fund-owned and the owners decide over a concierge `bank:payment`
+	/// The source is the treasury and the owners decide over a concierge `bank:payment`
 	/// approval. Nothing to supply: the repository renders the approval's fields from the
 	/// order and stores what it sent, and the executor proposes it.
 	Concierge,
@@ -58,78 +45,31 @@ pub enum ApprovalSeat {
 	Session(SessionSeat),
 }
 
-/// The investor's seat in the wallet host. The repository writes the notice that asks them to answer
-/// it in the same transaction as the seat, for the reason a consent mail was: an order nobody
-/// was told about looks open for 72 hours and was unanswerable from the first instant.
+/// The investor's seat in the wallet host. The repository writes the notice that asks them to
+/// answer it in the same transaction as the seat: an order nobody was told about looks open
+/// for 72 hours and was unanswerable from the first instant.
 pub struct SessionSeat {
 	pub subject: UserId,
-	/// The subject's folded revoke floor at open — [`ConsentCredential::token_version_at_open`].
-	pub token_version_at_open: u64,
-	/// SHA-256 over the subject's mirrored mailbox at open — [`ConsentCredential::email_hash_at_open`].
-	pub email_hash_at_open: [u8; DIGEST_BYTES],
-}
-
-/// The minted consent seat. The plaintext token and code travel no further than the mail row
-/// [`PaymentRepository::open`] writes from them — in the SAME transaction as the seat, so a
-/// concierge outage can never leave an order nobody was asked about, and a mail can never
-/// exist for an order that failed to commit. Only their digests are stored on the seat, so a
-/// dump of `payment_consent` yields nothing that can consent to anything.
-pub struct ConsentCredential {
-	pub subject: UserId,
-	/// The opaque single-use token that goes in the emailed link.
-	pub token: String,
-	/// The secret code the subject types on the consent page.
-	pub code: String,
-	pub token_hash: [u8; DIGEST_BYTES],
-	pub code_hash: [u8; DIGEST_BYTES],
 	/// The subject's folded revoke floor at open — `GREATEST(concierge_token_version,
 	/// token_version)`, the same value [`IssuanceTarget::token_version`](super::IssuanceTarget)
-	/// carries, so a revoke on either plane counts. Re-checked at consent and again at
+	/// carries, so a revoke on either plane counts. Re-checked at the answer and again at
 	/// execution, which is what makes `RevokeTokens` void a consent that is already in flight.
 	pub token_version_at_open: u64,
 	/// SHA-256 over the subject's mirrored `users.email` at open, byte for byte as stored
-	/// (already normalized by `Email::parse`). Re-checked at consent and at execution, so
-	/// changing the mailbox at the identity provider cannot redirect a live token.
+	/// (already normalized by `Email::parse`). Re-checked at the answer and at execution, so
+	/// changing the mailbox at the identity provider cannot redirect a pending consent.
 	pub email_hash_at_open: [u8; DIGEST_BYTES],
-}
-
-/// The consent seat as a surface renders it.
-#[derive(Debug)]
-pub struct ConsentView {
-	pub subject: UserId,
-	pub email: String,
-	pub decision: ConsentDecision,
-	/// Unix seconds; 0 while pending.
-	pub decided_at: i64,
-	pub notified: bool,
-	pub attempts_remaining: u32,
-	/// Why the seat can no longer be answered or executed — one of the pins recorded at open
-	/// has moved — or `None` while it still holds. The execution path for an L1 order must
-	/// read this BEFORE creating the withdrawal: `record_execution` refuses a moved pin too,
-	/// but by then the withdrawal would already exist.
-	pub invalidated: Option<ConsentInvalidation>,
 }
 
 /// Why a consent seat stopped being trustworthy — which of the two pins frozen at open has
 /// moved. Typed rather than a sentence because the cause travels: it is the reason the order
-/// records AND the closed word the subject and the initiator are mailed (#238), and a word
-/// recovered by parsing the sentence would break the first time the sentence was reworded.
+/// records AND what the notices to the subject and the initiator say (#238).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConsentInvalidation {
 	/// The subject's folded revoke floor moved — `RevokeTokens` on either plane.
 	SessionsRevoked { at_open: i64, now: i64 },
-	/// The subject's mirrored mailbox is not the one the invitation was mailed to.
+	/// The subject's mirrored mailbox is not the one recorded at open.
 	EmailChanged,
-}
-
-impl ConsentInvalidation {
-	/// The closed reason word concierge's `PaymentOutcomeMail` takes for this cause.
-	pub fn mail_reason(self) -> &'static str {
-		match self {
-			Self::SessionsRevoked { .. } => "SESSIONS_REVOKED",
-			Self::EmailChanged => "EMAIL_CHANGED",
-		}
-	}
 }
 
 impl core::fmt::Display for ConsentInvalidation {
@@ -144,9 +84,7 @@ impl core::fmt::Display for ConsentInvalidation {
 	}
 }
 
-/// What the emailed investor answered. The consilium's `VoteDecision` is the same three
-/// values and is deliberately NOT reused: these are two planes that happen to agree today,
-/// and folding them would make a future divergence a refactor of both.
+/// What the investor answered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConsentDecision {
 	Pending,
@@ -202,14 +140,12 @@ pub struct ConciergeSeatView {
 
 /// What a human recognises the receiving end BY, beside the canonical label. The label
 /// (`PaymentTerms::destination_label`) is what the digest binds and every surface shares; an
-/// investor's masked mailbox or a product's title is the detail that lets an approver tell
-/// "investor 8f3e…" from the person they meant. Never digested, and masked by the surface.
+/// investor's masked mailbox is the detail that lets an approver tell "investor 8f3e…" from
+/// the person they meant. Never digested, and masked by the surface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EndDetail {
 	/// The receiving investor's mirrored address, UNMASKED — every surface masks it.
 	Mailbox(String),
-	/// The receiving product's title from the allocation registry.
-	ProductTitle(String),
 }
 
 /// An order and the identity slice a surface needs beside it.
@@ -217,42 +153,28 @@ pub enum EndDetail {
 pub struct PaymentView {
 	pub order: PaymentOrder,
 	pub initiator_email: String,
-	/// Present exactly when the requirement is the owner quorum.
-	pub consilium_id: Option<ConsiliumId>,
-	/// Present exactly when the requirement is the subject's emailed consent.
-	pub consent: Option<ConsentView>,
-	/// Present exactly when the owners decide over a concierge approval.
-	pub concierge: Option<ConciergeSeatView>,
-	/// Present exactly when the subject answers inside the wallet host.
-	pub session: Option<SessionConsentView>,
+	pub seat: SeatView,
 	/// The receiving end's recognisable detail, when it has one.
 	pub destination_detail: Option<EndDetail>,
 }
 
-impl PaymentView {
-	/// Why the investor's consent — by either seat — no longer stands, if it does not.
-	pub fn consent_invalidated(&self) -> Option<ConsentInvalidation> {
-		self.consent
-			.as_ref()
-			.and_then(|consent| consent.invalidated)
-			.or_else(|| self.session.as_ref().and_then(|session| session.invalidated))
-	}
+/// The one seat that decides an order, as a surface renders it — [`ApprovalSeat`] once written.
+#[derive(Debug)]
+pub enum SeatView {
+	/// The owners decide over a concierge approval.
+	Concierge(ConciergeSeatView),
+	/// The subject answers inside the wallet host.
+	Session(SessionConsentView),
 }
 
-/// What the emailed investor is shown. Deliberately narrower than [`PaymentView`]: the terms
-/// they are consenting to and nothing about the operator who proposed it beyond an address.
-#[derive(Debug)]
-pub struct ConsentInvitation {
-	pub payment_id: PaymentId,
-	pub state: PaymentState,
-	pub order: PaymentOrder,
-	pub payload_hash: String,
-	pub initiator_email: String,
-	pub subject_email: String,
-	pub expires_at: i64,
-	pub decision: ConsentDecision,
-	pub attempts_remaining: u32,
-	pub destination_detail: Option<EndDetail>,
+impl PaymentView {
+	/// Why the investor's consent no longer stands, if it does not.
+	pub fn consent_invalidated(&self) -> Option<ConsentInvalidation> {
+		match &self.seat {
+			SeatView::Session(session) => session.invalidated,
+			SeatView::Concierge(_) => None,
+		}
+	}
 }
 
 /// Audit facts the edge supplies with a consent. Recorded, never trusted for authorization.
@@ -276,10 +198,10 @@ pub enum ExecutionOutcome {
 	Executed(PaymentEffect),
 	Failed(String),
 	/// The consent behind the order was found void before the effect was recorded. Recorded
-	/// as a failure whose reason is the cause, and — unlike any other failure — told by mail
-	/// to the audience that cause allows, which is why the cause stays typed this far.
+	/// as a failure whose reason is the cause, and — unlike any other failure — told to the
+	/// audience that cause allows, which is why the cause stays typed this far.
 	///
-	/// `withdrawal` is the L1 order's derived withdrawal id, `None` for an L2/L3 order. An
+	/// `withdrawal` is the L1 order's derived withdrawal id, `None` for an L3 order. An
 	/// earlier attempt may have created it and died before recording the effect; the void
 	/// cancels it while it is still `Queued`, as the L1 window does, and records the effect
 	/// that exists when it is already past voiding.
@@ -289,7 +211,7 @@ pub enum ExecutionOutcome {
 	},
 }
 
-/// Where an L2/L3 order's reservation stands in the relay — the Read-First the settlement
+/// Where an L3 order's reservation stands in the relay — the Read-First the settlement
 /// takes before it is recorded, because `Approved` commits the `Reserved` event and the
 /// relay applies it afterwards, in its own time.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -308,23 +230,22 @@ pub enum ReservationStatus {
 #[derive(Default)]
 pub struct PaymentFilter {
 	pub state: Option<PaymentState>,
-	/// Either end. Most payments have no user on either side (`Piggybank → Revenue`), which
-	/// is exactly why the admin screen cannot be served by the per-user operation feed.
+	/// Either end.
 	pub party: Option<Party>,
-	/// Only orders whose source is fund-owned (the governance surface), when true.
-	pub fund_owned_source: Option<bool>,
+	/// Only orders whose source is banking's treasury (the owners' surface), when true.
+	pub treasury_source: Option<bool>,
 }
 
-/// The refusal for a second open order against one fund-owned source claim — the partial
+/// The refusal for a second open order against the treasury — the partial
 /// unique index's answer, and the pre-check's, in the same words: which of the two spoke
 /// is an accident of timing the caller has no business telling apart.
 pub fn already_open() -> DomainError {
 	DomainError::Conflict("a payment is already open against this claim — close it before opening another".into())
 }
 
-/// The single response every unusable consent token produces, whatever made it unusable —
-/// unknown, expired, spent, burned, or attached to an order that has closed. A caller cannot
-/// tell which they hit, so the surface cannot be used to probe for live tokens.
+/// The single response for an order the caller cannot answer, whatever the reason — not
+/// theirs, not seated on their answer, or not there. A caller cannot tell which they hit, so
+/// the surface cannot be used to find other people's payments.
 pub fn consent_not_found() -> DomainError {
 	DomainError::NotFound {
 		entity: "consent",
@@ -336,62 +257,32 @@ pub fn consent_not_found() -> DomainError {
 pub trait PaymentRepository: Send + Sync {
 	/// Persist a brand-new order together with its materialized approval requirement, in one
 	/// transaction. Takes the source claim's write lock ([`lock_claim`](crate::infrastructure::outbox::lock_claim))
-	/// first: a payment spends the same claims withdrawals and subscriptions do, and a
+	/// first: a payment spends the same claims withdrawals and moves do, and a
 	/// spender that skips the lock silently stops the serialization covering the others.
 	///
 	/// Refuses with [`DomainError::Conflict`] when another order is already open against the
-	/// same fund-owned source (the partial unique index is what actually enforces it).
+	/// same treasury source (the partial unique index is what actually enforces it).
 	///
-	/// For a consent seat the invitation mail is queued in this same transaction, addressed
-	/// to the subject's identity-plane id; `consent_url_base` is what the emailed link is
-	/// built on. Refused when the subject has no mirrored concierge id — there would be no
-	/// safe address to send to, and an order nobody can be asked about must not exist.
-	async fn open(&self, order: &mut PaymentOrder, seat: ApprovalSeat, consent_url_base: &str) -> Result<(), DomainError>;
+	/// For a session seat the notice asking the subject is queued in this same transaction.
+	/// Refused when the subject has no mirrored concierge id — they could not be told, and an
+	/// order nobody can be asked about must not exist.
+	async fn open(&self, order: &mut PaymentOrder, seat: ApprovalSeat) -> Result<(), DomainError>;
 
 	/// Load one order in full (no lock; for queries).
 	async fn find(&self, id: PaymentId) -> Result<Option<PaymentView>, DomainError>;
 
 	/// Whether an order is already open (`pending` or `approved`) against `source`. A read
-	/// the fund-owned open path takes BEFORE seating its consilium: the unique index would
-	/// refuse the order anyway, but only after a quorum had been opened and every owner
-	/// mailed — and then withdrawn and every owner mailed again. Advisory, not the guard:
-	/// the index is the guard.
+	/// the treasury open path takes before writing, so the ordinary refusal reads as one.
+	/// Advisory, not the guard: the index is the guard.
 	async fn has_open_against(&self, source: &Party) -> Result<bool, DomainError>;
 
-	/// Record that the owner quorum carried this order — the consilium branch's counterpart
-	/// to [`Self::submit`]. Applies [`PaymentOrder::approve`] under the order's row lock, so
-	/// the reservation event and the state change commit together. Idempotent.
-	///
-	/// `consilium` must be the quorum this order was opened under (the `payment_approval`
-	/// link), checked under the same lock: a consilium over one order must not be able to
-	/// approve another, whatever its terms happen to say.
-	async fn record_approval(&self, id: PaymentId, consilium: ConsiliumId, at: i64) -> Result<PaymentView, DomainError>;
-
-	/// Record that the owner quorum refused, or that the order was withdrawn by its initiator.
+	/// Record that the owners' approval did not pass, or that the order could not be proposed.
 	/// Under the row lock; idempotent on an already-closed order.
 	async fn record_rejection(&self, id: PaymentId, at: i64) -> Result<PaymentView, DomainError>;
 
 	/// Withdraw an order the caller opened, under the row lock. Refuses a caller who is not
 	/// the initiator; idempotent on an already-cancelled one.
 	async fn cancel(&self, id: PaymentId, by: UserId, at: i64) -> Result<PaymentView, DomainError>;
-
-	/// Resolve an emailed consent token to its invitation. **Strictly side-effect free** —
-	/// mail scanners issue automatic requests for every URL in a message, so this must not
-	/// count an attempt, spend a token, or record anything.
-	async fn invitation(&self, token_hash: &[u8; DIGEST_BYTES], at: i64) -> Result<ConsentInvitation, DomainError>;
-
-	/// Answer a consent: count the attempt, compare the code in constant time, record the
-	/// decision and transition the order — one transaction, one lock, taken on the `payments`
-	/// row. A repeat of the same answer is an idempotent no-op; a different one is refused.
-	///
-	/// Burning the token (five wrong codes) **fails the payment closed**. With one seat there
-	/// is no second party to escalate to, so the burn is a refusal, not a detector.
-	///
-	/// A seat whose pins have moved since open (the subject's sessions revoked, or their
-	/// mailbox changed) is refused with [`DomainError::Conflict`] before the code is compared,
-	/// and the order is rejected with it — fail-closed, and terminal for the same one-seat
-	/// reason.
-	async fn submit(&self, token_hash: &[u8; DIGEST_BYTES], code: &str, decision: ConsentDecision, audit: &ConsentAudit, at: i64) -> Result<ConsentOutcome, DomainError>;
 
 	/// Expire every pending order past its deadline. Returns how many closed.
 	async fn expire_due(&self, at: i64) -> Result<usize, DomainError>;
@@ -412,21 +303,20 @@ pub trait PaymentRepository: Send + Sync {
 	/// idempotent for the same effect and a conflict for a different one — which is what lets
 	/// the caller re-read by the deterministic id and believe the row rather than the error.
 	///
-	/// An `Executed` outcome over a consent seat whose pins have moved since open is NOT
-	/// recorded: the order is moved to `execution_failed` (releasing an L2/L3 reservation)
+	/// An `Executed` outcome over a session seat whose pins have moved since open is NOT
+	/// recorded: the order is moved to `execution_failed` (releasing an L3 reservation)
 	/// and the call returns [`DomainError::Conflict`] naming why. See
-	/// [`ConsentView::invalidated`] for the L1 path, which must check before the withdrawal
-	/// exists — and for the window between that check and this call, a withdrawal the
+	/// [`SessionConsentView::invalidated`] for the L1 path, which must check before the
+	/// withdrawal exists — and for the window between that check and this call, a withdrawal the
 	/// refused effect names is CANCELLED in this same transaction while it is still queued,
 	/// so a revocation that lands after the check still stops the money. A withdrawal that
 	/// has already been dispatched cannot be voided (the broadcast may have landed), so the
 	/// effect is recorded as it is and the pin movement is logged rather than lied about.
 	async fn record_execution(&self, id: PaymentId, outcome: ExecutionOutcome, at: i64) -> Result<PaymentView, DomainError>;
 
-	/// Record that the concierge approval decided this order in favour. The counterpart of
-	/// [`Self::record_approval`] for the concierge seat, and idempotent in the same way: an
-	/// order already `approved` or `executed` is returned as it stands, so a decision served
-	/// twice approves once and reserves once.
+	/// Record that the concierge approval decided this order in favour. Idempotent: an order
+	/// already `approved` or `executed` is returned as it stands, so a decision served twice
+	/// approves once and reserves once.
 	///
 	/// `approval_id` must be the one the seat recorded when the proposal was opened; a seat
 	/// that has none yet (the answer to the proposal was lost) takes this one. A different id
@@ -437,8 +327,7 @@ pub trait PaymentRepository: Send + Sync {
 	async fn record_concierge_approval(&self, id: PaymentId, approval_id: &str, execute_by: i64, at: i64) -> Result<PaymentView, DomainError>;
 
 	/// The investor's own answer to an order seated on [`ApprovalSeat::Session`], given signed
-	/// in. Under the order's lock it re-reads the pins, records the answer and moves the order,
-	/// exactly as [`Self::submit`] does for the emailed seat — without a code to compare, since
+	/// in. Under the order's lock it re-reads the pins, records the answer and moves the order;
 	/// the session proved who is asking.
 	///
 	/// `subject` must be the seat's subject: another user's order is [`consent_not_found`], the

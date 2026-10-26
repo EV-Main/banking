@@ -2,7 +2,7 @@
 //!
 //! A single-row config flag (`operations_mode`) toggled by an admin RPC and checked at
 //! every user money mutation (see [`support::unfrozen_caller`](crate::services::support)).
-//! When `read_only` is on, withdraws/subscribes/redeems are refused — "pause deposits &
+//! When `read_only` is on, withdrawals, moves and payments are refused — "pause deposits &
 //! withdrawals". Plain config, not a domain aggregate, so it lives in the adapter layer.
 
 use domain::money::Network;

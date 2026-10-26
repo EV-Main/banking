@@ -3,19 +3,18 @@
 // "Someone has proposed that you stop being an owner." Reached from an email, by the person
 // it is about.
 //
-// This page has the same machinery as the payout approval and a different job. Nobody
-// arrives here pleased, and the writing is the design: plain sentences, no exclamation, no
+// Nobody arrives here pleased, and the writing is the design: plain sentences, no exclamation, no
 // reassurance nobody asked for, and no urgency the deadline does not actually create. It
 // says who proposed it, what reason they gave, how long there is, and what each answer
-// does. It does not editorialise about the proposal, because this page is not the fund's
+// does. It does not editorialise about the proposal, because this page is not the platform's
 // argument — it is the notice.
 //
 // The asymmetry between the two answers is structural rather than decorative. Accepting
-// ends an ownership stake and cannot be undone from here or anywhere else, so it is the
+// ends an owner seat and cannot be undone from here or anywhere else, so it is the
 // smaller, colder control AND it goes through a second, explicit confirmation. Refusing is
 // the reversible answer and takes one press. Neither is preselected, and refusing is not
 // dressed up as the "safe" choice — the copy says plainly that refusing does not end the
-// matter, because the peers can still decide it without them (docs/CONSILIUM.md, path (b)).
+// matter, because the peers can still decide it without them.
 
 import { CheckCircle2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
@@ -62,9 +61,9 @@ export function RemovalApprovalView({ token }: { token: string }) {
   /** The second, deliberate step in front of the irreversible answer. */
   const [confirming, setConfirming] = useState(false);
 
-  // See the payout view: the wire says "pending", not null, for an unanswered notice.
+  // The wire says "pending", not null, for an unanswered notice.
   const settled = settledRemoval(invitation?.decision);
-  // See the payout view: an answered notice keeps its outcome, whatever a later read says.
+  // An answered notice keeps its outcome, whatever a later read says.
   const gone = spent || (!settled && summary.error instanceof ApprovalUnavailableError);
 
   const decide = async (decision: RemovalDecision) => {
@@ -95,8 +94,8 @@ export function RemovalApprovalView({ token }: { token: string }) {
       setActionError(cause);
       setCode("");
       setConfirming(false);
-      // The same refusal the payout page meets (banking#324): the plane's count of attempts
-      // left, behind the BFF's prefix, goes under the field rather than out as a sentence.
+      // The plane's count of attempts left, behind the BFF's prefix, goes under the field
+      // rather than out as a sentence.
       const attemptsLeft = wrongCodeAttempts(cause);
       if (attemptsLeft !== null) setRejectedAttempts(attemptsLeft);
       // The server owns the attempt count; a failure here may or may not have spent one.
@@ -141,7 +140,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
         <CardHeader>
           <ApprovalTitle>{t("approval.removal.title", "A request to end your ownership")}</ApprovalTitle>
           <CardDescription className="text-balance">
-            {t("approval.removal.lead", "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.", { initiator: invitation.initiator_email })}
+            {t("approval.removal.lead", "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.", { initiator: invitation.initiator_email })}
           </CardDescription>
         </CardHeader>
 
@@ -150,7 +149,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
             <FieldCaption>{t("approval.removal.reasonLabel", "Reason given")}</FieldCaption>
             {/* The reason is someone else's words about the reader. It is shown whole, in
                 their own phrasing, with no summarising and no quotation marks that would
-                let the fund distance itself from it. */}
+                let the platform distance itself from it. */}
             <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
               {invitation.reason?.trim() || t("approval.removal.noReason", "No reason was given.")}
             </p>

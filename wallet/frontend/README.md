@@ -31,7 +31,7 @@ wallet element reach:
 |---|---|---|
 | `(host)` | `/cabinet`, `/cabinet/wallet`, `/cabinet/wallet/deposit`, `/cabinet/wallet/activity` | The sign-in host and the concierge `KYC_RETURN_URL` target; the wallet panel (the fallback link of wallet notices); the two pages the wallet element links to |
 | `(wallet-action)` | `/cabinet/wallet/action/*` | The money-action popups scope hosts open (`@evinvest/wallet`) and the payment answer link |
-| `(public)` | `/cabinet/approve/*`, `/cabinet/consent/*`, `/cabinet/owner-removal/*` | Token links in mails already sent |
+| `(public)` | `/cabinet/owner-removal/*` | The token link in the concierge's removal mail |
 | `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
 | `(auth)` | `/cabinet/loggedout` | The sign-out landing |
 
@@ -87,9 +87,8 @@ makes drift detectable:
 { "nav.wallet": { "en": "Wallet", "t": "Кошелёк" } }
 ```
 
-Only the navigation is translated so far. The banking vocabulary in it —
-*Treasury*, *Valuation & redemptions* — wants a native review before any locale
-is offered to a real investor.
+Only the navigation is translated so far; it wants a native review before any
+locale is offered to a real investor.
 
 ## Observability
 
@@ -106,7 +105,7 @@ its env var is set, so local dev needs no configuration.
   (`cabinetApp.env`); the host also feeds the CSP `connect-src`. What the shared
   seam lacks lives in [`shared/analytics`](./shared/analytics): the activation
   funnel's event names (`login_view`, `session_created`, `kyc_started`,
-  `kyc_completed`, `first_deposit`, `first_subscription` — a contract with the
+  `kyc_completed`, `first_deposit` — a contract with the
   site and the PostHog funnel), the `once`/`mark` idempotency marks
   (sessionStorage per tab, localStorage per "first ever"), and `identity` — the
   one hand-rolled vendor call, `posthog.identify(userId)` on the first
@@ -141,7 +140,7 @@ and the cache decides whether that costs a request.
 
 ```ts
 const wallet = useResource(walletResource);          // no argument
-const nav = useResource(fundNavResource, service);   // keyed per fund
+const address = useResource(depositAddressResource, network);   // keyed per rail
 ```
 
 Why it exists: every screen used to own its own `useEffect(() => fetchX().then(setX))`,
@@ -175,8 +174,7 @@ Rules:
 - **A failed refresh never blanks a figure.** The stale value stays and the error
   is reported beside it. Only a read that has *never* succeeded should surface as
   an error state.
-- **`persist: true` is for non-personal data only** — the fund catalog and NAVs.
-  A balance, a position, a profile or an operation stays in memory, which dies
+- **`persist: true` is for non-personal data only.** A balance, a position, a profile or an operation stays in memory, which dies
   with the page. Sign-out clears both halves.
 - **Warm at idle.** `CacheWarmer` in the `(host)` layout warms the balance at
   idle, so the wallet pages usually paint their figures on the first frame.

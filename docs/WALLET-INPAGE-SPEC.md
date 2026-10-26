@@ -27,7 +27,7 @@ Source of truth for the analysis: the security review of 2026-10-19 (threat mode
     (forces preflight). CORS for these routes: OPTIONS only for the allowlist, `Allow-Methods: POST`, `Allow-Headers: content-type,
     x-ev-csrf`, `Allow-Credentials: true`, `Vary: Origin`, `Max-Age: 60`; `route_layer` on the specific routes only.
     Also close existing gaps: `require_fresh_login` + mandatory `idempotency_key` on withdrawals (money.rs ~159/167), step-up by
-    threshold on `pay_invoice` (~203), `money_gate` on subscribe/redeem/cancel_redemption/book orders, strict Content-Type on
+    threshold on `pay_invoice` (~203), strict Content-Type on
     first-party money routes.
 (b) CSRF for a host without a readable cookie: `GET /api/wallet/csrf` (CORS for the allowlist) returns a token = HMAC(BFF key, sub, origin,
     10 min window; current + previous window), `Cache-Control: no-store`, `Vary: Origin`, never in a URL. First-party keeps cookie double-submit.

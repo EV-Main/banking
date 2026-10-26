@@ -102,7 +102,6 @@ fn event(subject: &str, kind: Kind, sequence: u64) -> UserLifecycleEvent {
 		// Base events carry no role (empty → the consumer mirrors it as Investor); a
 		// ROLE_CHANGED test overrides this field explicitly.
 		role: String::new(),
-		permissions: Vec::new(),
 		seat_permissions: None,
 	}
 }
@@ -425,11 +424,10 @@ async fn redelivery_is_idempotent() {
 /// THE MIRRORED COLUMN IS THE ONLY SOURCE OF A PERMISSION.
 ///
 /// The money plane used to promote subjects listed in an `ADMIN_SUBJECTS` env var to
-/// `Role::Owner` inside `require_permission`, ahead of this lookup. That produced owners
-/// the consilium could not count (it reads the persisted roster) and a second UUID list an
-/// operator had to keep in sync with concierge's by hand. The override is gone: a subject
+/// `Role::Owner` inside `require_permission`, ahead of this lookup. That produced a second
+/// UUID list an operator had to keep in sync with concierge's by hand. The override is gone: a subject
 /// with no row in the local projection holds nothing — least of all the permission that
-/// governs the fund's own money.
+/// governs the treasury.
 #[tokio::test]
 async fn a_subject_absent_from_the_projection_is_never_an_owner() {
 	let Some(pool) = pool().await else {
@@ -440,70 +438,9 @@ async fn a_subject_absent_from_the_projection_is_never_an_owner() {
 
 	let held = bridge::permissions_of(&pool, stranger).await.unwrap();
 	assert!(
-		!held.may(bank::Treasury::Read) && !held.may(bank::Consilium::Manage),
+		!held.may(bank::Treasury::Read) && !held.may(bank::Payment::Open),
 		"no local row ⇒ nothing, not an inherited privilege"
 	);
-}
-
-/// AN OWNER MUST NEVER REACH THE MONEY PLANE WITHOUT A ROSTER-JOURNAL ROW.
-///
-/// This event shape does not occur today: concierge stamps the role snapshot at drain time,
-/// and CREATED drains right after `User::provision`, while the role is still `investor`. The
-/// arm is a latch against that ordering changing in the other repository. Without the
-/// journal row there is no `changed_at` for the cooling-off window to read, so a roster
-/// change would be immediately launderable into a payout — the exact motion the 48h freeze
-/// exists to make visible. If this test ever looks redundant, that is the argument for
-/// keeping it, not for deleting it.
-#[tokio::test]
-async fn created_carrying_owner_still_journals_the_roster_change() {
-	let Some(pool) = pool().await else {
-		return;
-	};
-	let subject = unique_subject();
-	let mut born_an_owner = event(&subject, Kind::Created, 1);
-	born_an_owner.role = "owner".to_string();
-
-	drive(&pool, vec![born_an_owner], move |pool| {
-		let subject = subject.clone();
-		async move {
-			let user_id = user_id_for(&pool, &subject).await.expect("user provisioned");
-			let journalled: Option<(String, String)> = sqlx::query_as("SELECT from_role, to_role FROM governance_roster_change WHERE user_id = $1")
-				.bind(user_id)
-				.fetch_optional(&pool)
-				.await
-				.unwrap();
-			assert_eq!(
-				journalled,
-				Some(("investor".to_string(), "owner".to_string())),
-				"a CREATED that seats an owner must start the cooling-off clock, reporting the nothing it replaced as the default role"
-			);
-		}
-	})
-	.await;
-}
-
-/// The common case must NOT be journalled: almost every CREATED carries `investor`, and
-/// charging the cooling-off window for each new signup would freeze payouts permanently.
-#[tokio::test]
-async fn created_carrying_an_ordinary_role_journals_nothing() {
-	let Some(pool) = pool().await else {
-		return;
-	};
-	let subject = unique_subject();
-
-	drive(&pool, vec![event(&subject, Kind::Created, 1)], move |pool| {
-		let subject = subject.clone();
-		async move {
-			let user_id = user_id_for(&pool, &subject).await.expect("user provisioned");
-			let journalled: i64 = sqlx::query_scalar("SELECT count(*) FROM governance_roster_change WHERE user_id = $1")
-				.bind(user_id)
-				.fetch_one(&pool)
-				.await
-				.unwrap();
-			assert_eq!(journalled, 0, "an ordinary signup moves nobody in or out of the voting roster");
-		}
-	})
-	.await;
 }
 
 /// Poll `check` until it holds or the budget runs out, then return whether it held. The

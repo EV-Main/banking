@@ -35,12 +35,12 @@ use piggybank_core::{
 	application::{balance as balance_app, withdrawals as withdrawal_app},
 	config::KycGate,
 	infrastructure::{
-		allocations::PgAllocations, custody::StubCustody, deposits::PgDeposits, outbox, outflow::PgOutflowPolicy, reaper::Reaper, reconciliation::Reconciliation, redemptions::PgRedemptions,
-		relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
+		custody::StubCustody, deposits::PgDeposits, outbox, outflow::PgOutflowPolicy, reaper::Reaper, reconciliation::Reconciliation, relay::Relay, users::PgUsers,
+		withdrawals::PgWithdrawals,
 	},
 	ports::{
-		BroadcastRequest, Custody, CustodyError, RedemptionRepository, UserRepository, WithdrawalRepository,
-		ledger::{CashInvariant, HoldingScope, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
+		BroadcastRequest, Custody, CustodyError, UserRepository, WithdrawalRepository,
+		ledger::{CashInvariant, Ledger, LedgerBalance, LedgerError, LedgerTransfer, LinkedLeg, LockedReads, PendingCompletion},
 	},
 };
 use sqlx::PgPool;
@@ -54,7 +54,6 @@ struct Harness {
 	deposits: PgDeposits,
 	ledger: Arc<dyn Ledger>,
 	withdrawals: Arc<dyn WithdrawalRepository>,
-	redemptions: Arc<dyn RedemptionRepository>,
 	users: Arc<dyn UserRepository>,
 	outflow: PgOutflowPolicy,
 	relay: Relay,
@@ -66,7 +65,6 @@ async fn harness() -> Option<Harness> {
 	let ledger = common::seeded_ledger(&pool, "relay recovery test").await?;
 
 	let withdrawals: Arc<dyn WithdrawalRepository> = Arc::new(PgWithdrawals::new(pool.clone()));
-	let redemptions: Arc<dyn RedemptionRepository> = Arc::new(PgRedemptions::new(pool.clone()));
 	let users: Arc<dyn UserRepository> = Arc::new(PgUsers::new(pool.clone()));
 	let notify = Arc::new(Notify::new());
 	let relay = Relay::new(pool.clone(), ledger.clone(), Arc::new(StubCustody), notify.clone());
@@ -76,7 +74,6 @@ async fn harness() -> Option<Harness> {
 		pool,
 		ledger,
 		withdrawals,
-		redemptions,
 		users,
 		relay,
 		notify,
@@ -168,10 +165,7 @@ async fn a_parked_event_is_not_dispatched_and_reconciliation_surfaces_it() {
 	assert!(last_error.is_some_and(|e| e.contains("unplannable")), "the park reason is recorded for forensics");
 
 	// Reconciliation's parked-row scan surfaces it.
-	let report = Reconciliation::new(h.pool.clone(), h.ledger.clone(), Arc::new(PgAllocations::new(h.pool.clone())))
-		.scan()
-		.await
-		.expect("reconciliation scan");
+	let report = Reconciliation::new(h.pool.clone(), h.ledger.clone()).scan().await.expect("reconciliation scan");
 	assert!(report.parked_rows >= 1, "reconciliation must surface the parked row");
 	assert!(report.uncompensated_parked >= 1, "an un-compensated park is reported for intervention");
 }
@@ -240,7 +234,7 @@ async fn the_reaper_alerts_on_stuck_processing_and_reaps_queued_withdrawals() {
 	// Sweep with a 30-minute window: our rows are backdated an hour (abandoned), while any
 	// queued saga a parallel test binary left behind is seconds old and stays untouched — so
 	// the shared rails/DB don't make this flaky.
-	let reaper = Reaper::new(h.pool.clone(), h.withdrawals.clone(), h.redemptions.clone(), h.notify.clone()).with_max_age(Duration::from_secs(30 * 60));
+	let reaper = Reaper::new(h.pool.clone(), h.withdrawals.clone(), h.notify.clone()).with_max_age(Duration::from_secs(30 * 60));
 	let report = reaper.sweep().await.expect("reaper sweep");
 
 	assert!(report.stuck_processing_withdrawals >= 1, "the stuck processing withdrawal is surfaced (alert-only)");
@@ -580,7 +574,7 @@ async fn a_redelivered_half_applied_settle_completes_instead_of_parking() {
 	assert!(is_dispatched, "a redelivered half-applied settle must complete, not park (last_error = {last_error:?})");
 	assert!(!is_parked, "no spurious liquidity park on redelivery");
 
-	// All three legs recorded — the fee reached fee-revenue instead of stranding in clearing.
+	// All three legs recorded — the fee reached the treasury instead of stranding in clearing.
 	let legs: i64 = sqlx::query_scalar("SELECT count(*) FROM saga_steps WHERE event_id = (SELECT event_id FROM outbox WHERE aggregate_id = $1 AND payload->>'type' = 'settled')")
 		.bind(withdrawal.id().raw())
 		.fetch_one(&h.pool)
@@ -624,14 +618,6 @@ impl Ledger for FailFeeLegOnce {
 
 	async fn balance_locked(&self, key: &LedgerAccountKey, reads: &mut dyn LockedReads) -> Result<LedgerBalance, LedgerError> {
 		self.inner.balance_locked(key, reads).await
-	}
-
-	async fn transfer_amount(&self, id: u128) -> Result<Option<u128>, LedgerError> {
-		self.inner.transfer_amount(id).await
-	}
-
-	async fn share_holdings(&self, scope: &HoldingScope) -> Result<Vec<(LedgerAccountKey, u128)>, LedgerError> {
-		self.inner.share_holdings(scope).await
 	}
 
 	async fn post(&self, transfer: &LedgerTransfer) -> Result<(), LedgerError> {

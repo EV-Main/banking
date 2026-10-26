@@ -2,7 +2,7 @@
 //!
 //! On account-model chains (BEP20/TRC20) a per-user deposit address is the only way
 //! to attribute an incoming transfer — a USDT transfer carries no memo — so addresses
-//! are HD-derived from the fund's xpub. This port hands the application a **stable**
+//! are HD-derived from banking's xpub. This port hands the application a **stable**
 //! address per (user, network); a stub deterministically derives and caches one until
 //! the real key-management/derivation service exists.
 

@@ -1,7 +1,5 @@
 //! `balance` context — company-money RPCs (all admin-gated): treasury reads,
-//! chain-proven arrival recording (a deposit; a seed of the `fund` allocation opens the
-//! owners' consilium instead of booking), the operator withdrawal lifecycle, and fund
-//! valuation + redemption settlement.
+//! chain-proven arrival recording (a deposit), and the operator withdrawal lifecycle.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large
 //! type we don't control, so the large-err lint does not apply in this module.
@@ -9,29 +7,19 @@
 
 use concierge_domain::authz::bank;
 use domain::{
-	balance::{Party, ServiceId},
-	consilium::SeedCapitalTerms,
+	balance::Party,
 	money::{Network, TxRef, Usdt},
 };
-use evbanking_auth::claims_of;
 use evbanking_contracts::banking::v1::{self as pb, balance_service_server::BalanceService};
 use tonic::{Request, Response, Status};
 
 use crate::{
 	AppState,
 	application::{
-		balance::{self as balance_app, AllocationTreasury},
-		consilium as consilium_app, funds as funds_app,
-		ownership::AllocationClaim,
+		balance::{self as balance_app, ClaimBalance},
 		wallet as wallet_app, withdrawals as withdrawal_app,
 	},
-	services::{
-		allocations::holding_to_proto,
-		funds::redemption_to_proto,
-		support::{
-			caller_id, map_err, optional, parse_redemption_id, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_not_paused, require_permission, resolve_target_user, unix_now,
-		},
-	},
+	services::support::{map_err, optional, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_permission},
 };
 
 #[derive(Clone)]
@@ -64,24 +52,11 @@ impl BalanceSvc {
 
 #[tonic::async_trait]
 impl BalanceService for BalanceSvc {
-	/// The treasury: every claim on the custody is somebody's (#245) — a person's
-	/// directly (`held_by_users`) or an allocation's, whose units people hold
-	/// (`allocations`, the hidden `fee` and `fund` included, each with its claim, supply,
-	/// price and holders).
-	///
-	/// The retired singleton claims have no field: once the data migration has run they
-	/// are zero, and until then a non-zero balance on them is a fact for the operator's
-	/// log, not a figure on a screen that would have to explain a fourth kind of owner.
+	/// The treasury: every claim on the custody is somebody's (#245) — a person's, or
+	/// banking's own.
 	async fn get_treasury(&self, request: Request<pb::GetTreasuryRequest>) -> Result<Response<pb::Treasury>, Status> {
 		require_permission(&self.state, &request, bank::Treasury::Read).await?;
-		let t = balance_app::treasury(&balance_app::TreasuryPorts {
-			ledger: self.state.ledger.as_ref(),
-			custody: self.state.custody.as_ref(),
-			allocations: self.state.allocations.as_ref(),
-			nav: self.state.nav.as_ref(),
-		})
-		.await
-		.map_err(map_err)?;
+		let t = balance_app::treasury(self.state.ledger.as_ref(), self.state.custody.as_ref()).await.map_err(map_err)?;
 		Ok(Response::new(pb::Treasury {
 			rails: t
 				.rails
@@ -101,57 +76,8 @@ impl BalanceService for BalanceSvc {
 			total_custody: t.total_custody.to_decimal_string(),
 			reserved_for_withdrawals: t.reserved_for_withdrawals.to_decimal_string(),
 			held_by_users: t.held_by_users.to_decimal_string(),
-			allocations: t.allocations.iter().map(allocation_treasury_to_proto).collect(),
 			banking_treasury: Some(claim_to_proto(&t.banking_treasury)),
 			held_in_compartments: t.held_in_compartments.to_decimal_string(),
-		}))
-	}
-
-	/// Propose a seed of the platform's capital: the caller's chain-proven transfer into
-	/// the treasury, to be booked as THEIR deposit and subscribed into the `fund`
-	/// allocation once the owners' quorum executes it (#245).
-	///
-	/// This OPENS A CONSILIUM and books nothing. The chain proves the dollar arrived on the
-	/// treasury; it cannot say whose it is, and the first administrator to name a reference
-	/// must not be the one who decides — so the attribution is the owners' call, and the
-	/// caller must hold a seat (`Consilium::open` refuses anyone else, whatever permission
-	/// admitted them here). The arrival is verified now, against `expected_amount`, so the
-	/// owners vote over a transfer that exists and is worth what the terms say.
-	///
-	/// The depositor is `depositor_user_id` — resolved the way every admin RPC resolves a
-	/// target, so an owner can attribute another person's transfer — or the caller when
-	/// the field is empty. `expected_amount` is REQUIRED: the amount is under the owners'
-	/// signature, so "whatever the chain says" is not a proposal. The response reports
-	/// `recorded = false` — nothing is booked until the quorum executes — the amount the
-	/// terms carry, and the consilium the proposal lives in.
-	async fn seed_capital(&self, request: Request<pb::SeedCapitalRequest>) -> Result<Response<pb::SeedCapitalResponse>, Status> {
-		require_permission(&self.state, &request, bank::Capital::Manage).await?;
-		let initiator = caller_id(&request)?;
-		let req = request.into_inner();
-		let tx_ref = TxRef::parse(&req.tx_ref).map_err(map_err)?;
-		let network = Network::parse(&req.network).map_err(map_err)?;
-		let amount = optional(&req.expected_amount)
-			.ok_or_else(|| Status::invalid_argument("expected_amount is required: a seed is proposed at the amount the chain reports, and the owners approve that figure"))
-			.and_then(|raw| Usdt::parse_decimal(raw).map_err(map_err))?;
-		let depositor = match optional(&req.depositor_user_id) {
-			Some(raw) => resolve_target_user(&self.state, raw).await?,
-			None => initiator,
-		};
-		let terms = SeedCapitalTerms::new(tx_ref, network, amount, depositor).map_err(map_err)?;
-		let opened = consilium_app::open_seed_capital(&self.state.consilium_ports(), initiator, terms, unix_now())
-			.await
-			.map_err(map_err)?;
-		tracing::info!(
-			consilium_id = %opened.consilium.id(),
-			%initiator,
-			%depositor,
-			amount = %amount.to_decimal_string(),
-			"seed consilium opened: the treasury arrival is booked only once the owners' quorum executes it"
-		);
-		Ok(Response::new(pb::SeedCapitalResponse {
-			recorded: false,
-			amount: amount.to_decimal_string(),
-			consilium_id: opened.consilium.id().to_string(),
 		}))
 	}
 
@@ -174,7 +100,7 @@ impl BalanceService for BalanceSvc {
 		.await
 		.map_err(map_err)?;
 		// Always a person: the chain names a deposit address's owner, and a treasury
-		// arrival is refused upstream (it is attributed by hand, through `SeedCapital`).
+		// arrival is refused upstream.
 		let party = Party::User(arrival.user);
 		Ok(Response::new(pb::RecordDepositResponse {
 			recorded: arrival.recorded,
@@ -227,86 +153,6 @@ impl BalanceService for BalanceSvc {
 			.await
 			.map_err(map_err)?;
 		Ok(Response::new(pb::FailWithdrawalResponse {}))
-	}
-
-	async fn post_fund_valuation(&self, request: Request<pb::PostFundValuationRequest>) -> Result<Response<pb::FundNav>, Status> {
-		require_permission(&self.state, &request, bank::Valuation::Post).await?;
-		require_not_paused(&self.state).await?;
-		let caller = caller_id(&request)?;
-		let claims = claims_of(&request).ok_or_else(|| Status::unauthenticated("missing claims"))?;
-		let posted_by = claims.sub.clone();
-		let req = request.into_inner();
-		let service = ServiceId::parse(&req.service).map_err(map_err)?;
-		let aum = Usdt::parse_decimal(&req.aum).map_err(map_err)?;
-		funds_app::post_fund_valuation(
-			self.state.allocations.as_ref(),
-			self.state.nav.as_ref(),
-			self.state.ledger.as_ref(),
-			service.clone(),
-			aum,
-			&posted_by,
-			unix_now(),
-		)
-		.await
-		.map_err(map_err)?;
-		// Answer by re-reading the view rather than mapping the mark by hand: the response
-		// carries the allocation's supply headroom too, and one construction path is what
-		// keeps this route and `GetFundNav` from drifting apart field by field. Unrestricted:
-		// ValuationPost already admitted the caller to a product in any state, and the mark
-		// they just wrote must not vanish behind their own (possibly `hidden`) access level.
-		let view = funds_app::fund_nav_view(
-			self.state.allocations.as_ref(),
-			self.state.nav.as_ref(),
-			self.state.ledger.as_ref(),
-			service,
-			caller,
-			true,
-			unix_now(),
-		)
-		.await
-		.map_err(map_err)?;
-		Ok(Response::new(super::funds::fund_nav_to_proto(&view)))
-	}
-
-	async fn settle_redemption(&self, request: Request<pb::SettleRedemptionRequest>) -> Result<Response<pb::Redemption>, Status> {
-		require_permission(&self.state, &request, bank::Redemption::Settle).await?;
-		let id = parse_redemption_id(&request.get_ref().redemption_id)?;
-		let redemption = funds_app::settle_redemption(
-			self.state.redemptions.as_ref(),
-			self.state.nav.as_ref(),
-			self.state.ledger.as_ref(),
-			&self.state.relay_notify,
-			id,
-			unix_now(),
-		)
-		.await
-		.map_err(map_err)?;
-		Ok(Response::new(redemption_to_proto(&redemption)))
-	}
-
-	async fn fail_redemption(&self, request: Request<pb::FailRedemptionRequest>) -> Result<Response<pb::Redemption>, Status> {
-		require_permission(&self.state, &request, bank::Redemption::Fail).await?;
-		let id = parse_redemption_id(&request.get_ref().redemption_id)?;
-		let redemption = funds_app::fail_redemption(self.state.redemptions.as_ref(), &self.state.relay_notify, id).await.map_err(map_err)?;
-		Ok(Response::new(redemption_to_proto(&redemption)))
-	}
-
-	async fn list_redemption_queue(&self, request: Request<pb::ListRedemptionQueueRequest>) -> Result<Response<pb::RedemptionQueue>, Status> {
-		require_permission(&self.state, &request, bank::Redemption::Settle).await?;
-		let queued = self.state.redemptions.list_queued().await.map_err(map_err)?;
-		Ok(Response::new(pb::RedemptionQueue {
-			items: queued
-				.into_iter()
-				.map(|q| pb::RedemptionQueueItem {
-					redemption_id: q.id.to_string(),
-					user_id: q.user_id.to_string(),
-					email: q.email,
-					service: q.service.to_string(),
-					units: q.units.to_decimal_string(),
-					created_at: q.created_at,
-				})
-				.collect(),
-		}))
 	}
 
 	async fn get_operations_mode(&self, request: Request<pb::GetOperationsModeRequest>) -> Result<Response<pb::OperationsMode>, Status> {
@@ -410,22 +256,6 @@ impl BalanceService for BalanceSvc {
 		}))
 	}
 
-	/// The `fee` allocation as its owners read it (#245): the same line the treasury
-	/// lists it as — cash, supply, price and holders. Nothing here pays it out: a holder
-	/// is paid by redeeming, and a payment out of its claim is the owners' consilium.
-	async fn get_fund_revenue(&self, request: Request<pb::GetFundRevenueRequest>) -> Result<Response<pb::AllocationTreasury>, Status> {
-		require_permission(&self.state, &request, bank::Consilium::Manage).await?;
-		let (fee, treasury) = tokio::try_join!(
-			balance_app::fee_allocation(self.state.allocations.as_ref(), self.state.ledger.as_ref(), self.state.nav.as_ref()),
-			balance_app::banking_treasury(self.state.ledger.as_ref()),
-		)
-		.map_err(map_err)?;
-		Ok(Response::new(pb::AllocationTreasury {
-			banking_treasury: Some(claim_to_proto(&treasury)),
-			..allocation_treasury_to_proto(&fee)
-		}))
-	}
-
 	async fn rotate_deposit_address(&self, request: Request<pb::RotateDepositAddressRequest>) -> Result<Response<pb::RotateDepositAddressResponse>, Status> {
 		require_permission(&self.state, &request, bank::DepositAddress::Rotate).await?;
 		let req = request.get_ref();
@@ -479,27 +309,8 @@ impl BalanceService for BalanceSvc {
 	}
 }
 
-/// One allocation's treasury line on the wire — the shape `GetTreasury` lists every
-/// allocation in and `GetFundRevenue` answers with for `fee`. The holders cross exactly
-/// as the cap table's do ([`holding_to_proto`]), so the two screens cannot come to name
-/// a holder differently.
-fn allocation_treasury_to_proto(line: &AllocationTreasury) -> pb::AllocationTreasury {
-	pb::AllocationTreasury {
-		service: line.service.to_string(),
-		title: line.title.clone(),
-		access: line.access.as_str().to_owned(),
-		claim: Some(claim_to_proto(&line.claim)),
-		units_outstanding: line.units_outstanding.to_decimal_string(),
-		nav: line.nav.nav.to_decimal_string(),
-		nav_posted_at_unix: line.nav.posted_at_unix,
-		holders: line.holders.iter().map(holding_to_proto).collect(),
-		// Carried once, by `GetFundRevenue`; never per allocation line.
-		banking_treasury: None,
-	}
-}
-
-fn claim_to_proto(claim: &AllocationClaim) -> pb::AllocationClaim {
-	pb::AllocationClaim {
+fn claim_to_proto(claim: &ClaimBalance) -> pb::ClaimBalance {
+	pb::ClaimBalance {
 		posted: claim.posted.to_decimal_string(),
 		available: claim.available.to_decimal_string(),
 		reserved: claim.reserved.to_decimal_string(),

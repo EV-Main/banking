@@ -1,7 +1,6 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The wrong-code sentence is copied from the money plane verbatim
-// (`piggybank/core/src/infrastructure/consilium.rs`); the prefixes are `DomainError`'s
+// The wrong-code sentence is copied from the plane's refusal verbatim; the prefixes are `DomainError`'s
 // Display forms (`domain/src/error.rs`). A backend rewording that breaks one of these is
 // the test doing its job: the screen falls back to the raw prose, safe but untranslated.
 import assert from "node:assert/strict";

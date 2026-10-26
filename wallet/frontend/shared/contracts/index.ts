@@ -16,10 +16,9 @@
 export type {
   BankingV1PayableInvoice as PayableInvoice,
   BankingV1Wallet as Wallet,
-  // Five terms sum to `total`: `available` + `in_orders` (cash escrowed by resting buy
-  // orders on the book) + `invested` (units at NAV, those escrowed by resting sells
-  // included) + `pending_withdrawal` + `in_compartments` (the caller's scope
-  // compartments, still theirs). A surface that shows the split shows all five.
+  // Three terms sum to `total`: `available` + `pending_withdrawal` + `in_compartments`
+  // (the caller's scope compartments, still theirs). A surface that shows the split shows
+  // all three.
   BankingV1Balance as Balance,
   BankingV1NetworkWithdrawable as NetworkWithdrawable,
   BankingV1DepositAddress as DepositAddress,
@@ -27,54 +26,18 @@ export type {
   BankingV1WithdrawalList as WithdrawalList,
   BankingV1Deposit as Deposit,
   BankingV1DepositList as DepositList,
-  // Fund shares (the service currency).
-  BankingV1FundNav as FundNav,
-  BankingV1Subscription as Subscription,
-  BankingV1Redemption as Redemption,
-  // The unified activity timeline — one read model over all four money kinds.
+  // The unified activity timeline — one read model over deposits and withdrawals.
   BankingV1Operation as Operation,
   // One compartment's balance (`GET /api/wallet/compartment?scope=`).
   BankingV1Compartment as Compartment,
   BankingV1CompartmentList as CompartmentList,
   BankingV1CompartmentMove as CompartmentMove,
-  // What a fund charges, and what the caller's holding owes for it right now.
-  BankingV1FeePolicy as FeePolicy,
   // Payment orders are NOT re-exported from `./gen`: the BFF reshapes them (resolved ends
-  // with a `detail`, a nested consent, lowercase states, string stamps), so the
-  // hand-written `./payments` is the wallet host's contract for that surface.
+  // with a `detail`, lowercase states, string stamps), so the hand-written `./payments` is
+  // the wallet host's contract for that surface.
   // Mandates are not re-exported either: the BFF reshapes them (lowercase operation
   // names, string stamps), so `wallet/backend/src/dto.rs` `Mandate` is their contract.
 } from "./gen";
-
-// The allocation catalog is served to BOTH the investor surface (`/api/allocations`,
-// open products only) and the admin one from the same BFF DTO, so the hand-written
-// types live in one place and are re-exported here for the investor imports.
-//
-// The treasury and the cap table (#245) are hand-written there too, NOT re-exported from
-// `./gen`: the BFF reshapes them (`nav_posted_at_unix` → the string `nav_posted_at`, a
-// missing claim → zeros, a holder-less line dropped), so the generated `BankingV1Treasury`
-// is not the shape that arrives. `./governance` carries the two #245 consilium terms for
-// the same reason.
-export type {
-  Allocation,
-  AllocationAccessGrant,
-  AllocationAccessGrantList,
-  AllocationAccessLevel,
-  AllocationBacking,
-  AllocationClaim,
-  AllocationGrantLevel,
-  AllocationIcon,
-  AllocationList,
-  AllocationState,
-  AllocationTreasury,
-  RailLiquidity,
-  SeedCapitalBody,
-  SeedCapitalProposal,
-  Treasury,
-  UnitHolderKind,
-  UnitHolderRef,
-  UnitHolding,
-} from "./admin";
 
 // Identity surface — owned by the concierge plane.
 export type {
