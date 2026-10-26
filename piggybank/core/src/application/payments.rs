@@ -110,7 +110,7 @@ pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTer
 	if spending_closed(terms.from()) {
 		return Err(DomainError::Precondition(TREASURY_SPENDING_CLOSED.into()));
 	}
-	if terms.requirement() == PaymentApproval::OwnerConsilium {
+	if terms.requirement() == PaymentApproval::OwnersApproval {
 		// The owners decide over the sentence the order carries; one that would not fit the
 		// approval is refused here, before an approval nobody could read is proposed.
 		terms.approval_fields(&terms.destination_label())?;
@@ -124,7 +124,7 @@ pub async fn open(ports: &PaymentPorts<'_>, initiator: UserId, terms: PaymentTer
 			ports.payments.open(&mut order, ApprovalSeat::Session(seat)).await?;
 			find(ports.payments, order.id()).await
 		}
-		PaymentApproval::OwnerConsilium => {
+		PaymentApproval::OwnersApproval => {
 			if ports.payments.has_open_against(terms.from()).await? {
 				return Err(already_open());
 			}

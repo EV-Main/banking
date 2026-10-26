@@ -143,7 +143,7 @@ message Payment {
   string amount = 6;
   // Why, in the initiator's words. Required, shown verbatim, never interpreted.
   string reason = 7;
-  // owner_consilium | subject_consent — the one requirement, read off the source.
+  // owners_approval | subject_consent — the one requirement, read off the source.
   string requirement = 8;
   // Hex SHA-256 over the canonical terms, re-verified at execution.
   string payload_hash = 9;
@@ -191,7 +191,7 @@ message ListPaymentsRequest {
   // Either end. Unset means every party.
   Party party = 3;
   // Only orders whose source is banking's treasury — the ones the owners gate.
-  bool fund_owned_only = 4;
+  bool treasury_only = 4;
 }
 
 message GetPaymentRequest {

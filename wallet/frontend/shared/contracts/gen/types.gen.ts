@@ -740,11 +740,11 @@ export type BankingV1ListPaymentsRequest = {
      */
     party?: BankingV1Party;
     /**
-     * fund_owned_only
+     * treasury_only
      *
      * Only orders whose source is banking's treasury — the ones the owners gate.
      */
-    fund_owned_only?: boolean;
+    treasury_only?: boolean;
 };
 
 /**
@@ -1464,7 +1464,7 @@ export type BankingV1Payment = {
     /**
      * requirement
      *
-     * owner_consilium | subject_consent — the one requirement, read off the source.
+     * owners_approval | subject_consent — the one requirement, read off the source.
      */
     requirement?: string;
     /**

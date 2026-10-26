@@ -244,7 +244,7 @@ impl PaymentEffect {
 #[serde(tag = "requirement", content = "subject", rename_all = "snake_case")]
 pub enum PaymentApproval {
 	/// The source is banking's treasury: the owners, through a concierge `bank:payment` approval.
-	OwnerConsilium,
+	OwnersApproval,
 	/// The source is one investor's claim: that investor's own consent.
 	SubjectConsent(UserId),
 }
@@ -252,7 +252,7 @@ pub enum PaymentApproval {
 impl PaymentApproval {
 	pub fn as_str(self) -> &'static str {
 		match self {
-			Self::OwnerConsilium => "owner_consilium",
+			Self::OwnersApproval => "owners_approval",
 			Self::SubjectConsent(_) => "subject_consent",
 		}
 	}
@@ -423,7 +423,7 @@ impl PaymentTerms {
 	pub fn requirement(&self) -> PaymentApproval {
 		match &self.from {
 			Party::User(user) => PaymentApproval::SubjectConsent(*user),
-			Party::Treasury => PaymentApproval::OwnerConsilium,
+			Party::Treasury => PaymentApproval::OwnersApproval,
 		}
 	}
 
@@ -1046,7 +1046,7 @@ mod tests {
 			let terms = PaymentTerms::new(treasury(), to, usdt("5"), reason()).unwrap();
 			assert_eq!(
 				terms.requirement(),
-				PaymentApproval::OwnerConsilium,
+				PaymentApproval::OwnersApproval,
 				"treasury money at the {} tier must need the owners",
 				terms.tier().as_str()
 			);
@@ -1067,7 +1067,7 @@ mod tests {
 	#[test]
 	fn the_treasury_pays_out_but_is_never_paid_into() {
 		let terms = terms(treasury(), external());
-		assert_eq!(terms.requirement(), PaymentApproval::OwnerConsilium);
+		assert_eq!(terms.requirement(), PaymentApproval::OwnersApproval);
 		assert!(PaymentTerms::new(treasury(), PaymentDestination::Internal(investor()), usdt("5"), reason()).is_ok());
 		for from in [investor(), Party::User(UserId::new())] {
 			assert!(PaymentTerms::new(from, PaymentDestination::Internal(treasury()), usdt("5"), reason()).is_err());
@@ -1384,7 +1384,7 @@ mod tests {
 		};
 		assert_eq!(payload_hash, "ab".repeat(32));
 		assert_eq!(tier, PaymentTier::External);
-		assert_eq!(requirement, PaymentApproval::OwnerConsilium);
+		assert_eq!(requirement, PaymentApproval::OwnersApproval);
 	}
 
 	/// BOTH DESTINATION SHAPES, BOTH DIRECTIONS.

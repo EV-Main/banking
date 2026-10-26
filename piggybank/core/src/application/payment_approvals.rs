@@ -162,7 +162,7 @@ fn proposed_payload(view: &PaymentView) -> Result<(Proposal, String), DomainErro
 /// token, minted for this request — and is proposed with it right after it is stored; every
 /// other order opens as [`payments::open`] does and needs neither.
 pub async fn open_with_proof(ports: &ApprovalRoundPorts<'_>, initiator: UserId, terms: PaymentTerms, proof_token: Option<&str>, now: i64) -> Result<PaymentView, DomainError> {
-	if terms.requirement() != PaymentApproval::OwnerConsilium {
+	if terms.requirement() != PaymentApproval::OwnersApproval {
 		return payments::open(ports.payments, initiator, terms, now).await;
 	}
 	// Before the order is written: nothing to undo when the proof is missing.

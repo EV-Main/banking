@@ -325,7 +325,7 @@ impl PaymentsService for PaymentsSvc {
 		let filter = PaymentFilter {
 			state: state_from_proto(req.state)?,
 			party,
-			fund_owned_source: req.fund_owned_only.then_some(true),
+			treasury_source: req.treasury_only.then_some(true),
 		};
 		let views = payments_app::list(self.state.payment_feed.as_ref(), &filter, i64::from(limit)).await.map_err(map_err)?;
 		Ok(Response::new(pb::PaymentList {

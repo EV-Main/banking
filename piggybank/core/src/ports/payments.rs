@@ -233,7 +233,7 @@ pub struct PaymentFilter {
 	/// Either end.
 	pub party: Option<Party>,
 	/// Only orders whose source is banking's treasury (the owners' surface), when true.
-	pub fund_owned_source: Option<bool>,
+	pub treasury_source: Option<bool>,
 }
 
 /// The refusal for a second open order against the treasury — the partial

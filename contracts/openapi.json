@@ -5115,9 +5115,9 @@
             "description": "Either end. Unset means every party.",
             "$ref": "#/components/schemas/banking.v1.Party"
           },
-          "fund_owned_only": {
+          "treasury_only": {
             "type": "boolean",
-            "title": "fund_owned_only",
+            "title": "treasury_only",
             "description": "Only orders whose source is banking's treasury — the ones the owners gate."
           }
         },
@@ -5828,7 +5828,7 @@
           "requirement": {
             "type": "string",
             "title": "requirement",
-            "description": "owner_consilium | subject_consent — the one requirement, read off the source."
+            "description": "owners_approval | subject_consent — the one requirement, read off the source."
           },
           "payload_hash": {
             "type": "string",

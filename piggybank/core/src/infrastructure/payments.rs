@@ -517,12 +517,12 @@ async fn persist(conn: &mut PgConnection, order: &mut PaymentOrder) -> Result<()
 /// written.
 fn require_seat_matches(seat: &ApprovalSeat, requirement: PaymentApproval) -> Result<(), DomainError> {
 	match (seat, requirement) {
-		(ApprovalSeat::Concierge, PaymentApproval::OwnerConsilium) => Ok(()),
+		(ApprovalSeat::Concierge, PaymentApproval::OwnersApproval) => Ok(()),
 		(ApprovalSeat::Session(session), PaymentApproval::SubjectConsent(subject)) if session.subject == subject => Ok(()),
 		(ApprovalSeat::Session(_), PaymentApproval::SubjectConsent(_)) => Err(DomainError::Validation("the consent seat names an investor other than the order's source".into())),
 		(ApprovalSeat::Concierge, PaymentApproval::SubjectConsent(_)) =>
 			Err(DomainError::Validation("an investor's own money is decided by that investor's consent, not by the owners".into())),
-		(ApprovalSeat::Session(_), PaymentApproval::OwnerConsilium) => Err(DomainError::Validation("the treasury is decided by the owners, not by one investor's consent".into())),
+		(ApprovalSeat::Session(_), PaymentApproval::OwnersApproval) => Err(DomainError::Validation("the treasury is decided by the owners, not by one investor's consent".into())),
 	}
 }
 
@@ -1163,7 +1163,7 @@ impl PaymentFeed for PgPayments {
 		.bind(filter.state.map(PaymentState::as_str))
 		.bind(party_kind)
 		.bind(party_id)
-		.bind(filter.fund_owned_source)
+		.bind(filter.treasury_source)
 		.bind(limit)
 		.fetch_all(&mut *conn)
 		.await
