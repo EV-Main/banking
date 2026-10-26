@@ -31,7 +31,7 @@ wallet element reach:
 |---|---|---|
 | `(host)` | `/cabinet`, `/cabinet/wallet`, `/cabinet/wallet/deposit`, `/cabinet/wallet/activity` | The sign-in host and the concierge `KYC_RETURN_URL` target; the wallet panel (the fallback link of wallet notices); the two pages the wallet element links to |
 | `(wallet-action)` | `/cabinet/wallet/action/*` | The money-action popups scope hosts open (`@evinvest/wallet`) and the payment answer link |
-| `(public)` | `/cabinet/approve/*`, `/cabinet/consent/*`, `/cabinet/owner-removal/*` | Token links in mails already sent |
+| `(public)` | `/cabinet/owner-removal/*` | The token link in the concierge's removal mail |
 | `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
 | `(auth)` | `/cabinet/loggedout` | The sign-out landing |
 

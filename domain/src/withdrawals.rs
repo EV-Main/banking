@@ -1,7 +1,7 @@
 //! `withdrawals` bounded context — on-chain withdrawals out of the fund.
 //!
 //! The claim debited is an investor's own ([`WithdrawalSource::User`]) or, for an L1
-//! payment the owners' consilium approved, banking's treasury ([`WithdrawalSource::Treasury`],
+//! payment the owners approved, banking's treasury ([`WithdrawalSource::Treasury`],
 //! D17). The fund's
 //! earnings used to leave by a second source — the revenue payout — which #245 retired:
 //! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
@@ -43,7 +43,7 @@ pub type WithdrawalId = Id<WithdrawalTag>;
 pub struct WithdrawalTag;
 
 /// **Whose money leaves** — the claim a withdrawal debits: an investor's, or banking's
-/// treasury paying out what the owners' consilium approved (D17). The saga, the relay's
+/// treasury paying out what the owners approved (D17). The saga, the relay's
 /// legs and the stored `source` column are all written against "a source", so the second
 /// one is a variant here, not a parallel saga.
 ///
@@ -58,7 +58,7 @@ pub enum WithdrawalSource {
 	/// An investor's own unified claim (`user:<uuid>`).
 	User(UserId),
 	/// banking's treasury, `ScopeAccount(main, treasury)` — only ever executing `payment`,
-	/// an order the owners' consilium approved. The order rides on the source so no
+	/// an order the owners approved. The order rides on the source so no
 	/// treasury withdrawal can exist without the approval it spends (a schema CHECK says
 	/// the same of the row).
 	Treasury { payment: PaymentId },

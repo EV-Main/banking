@@ -280,8 +280,8 @@ message IssueUnitsRequest {
   // Who receives the units: a banking (or concierge) user id, resolved the way every
   // admin RPC resolves a target. Required — a mint to nobody is a malformed request.
   // Only a person: the company is not a holder (#245), and a reserved allocation is
-  // seated by the owners' consilium (`ConsiliumService.OpenHolderGrant`) or by the fee
-  // accrual, never by an operator's mint — so there is deliberately no arm for either.
+  // seated by the fee accrual, never by an operator's mint — so there is deliberately no
+  // arm for either.
   string user_id = 2;
   // Field 3 was `bool company`, the other arm of a `oneof holder`. Reserved so no later
   // field can inherit its number and be read by an old client as "mint to the company".

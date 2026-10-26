@@ -7,13 +7,12 @@
 //! `Queued → Processing → Completed | Failed | Cancelled` lifecycle, a `clearing` reserve
 //! and the cardinal rule ("never void once the broadcast may have landed"). Folding an
 //! on-chain payout's five states into this aggregate would mean either duplicating
-//! `WithdrawalState` in a second table — which the header of `0025_consilium.sql` rejects
-//! outright — or stopping at [`PaymentState::Executed`] while the screen claims the money
-//! has arrived when it is still in a queue.
+//! `WithdrawalState` in a second table or stopping at [`PaymentState::Executed`] while the
+//! screen claims the money has arrived when it is still in a queue.
 //!
 //! So an executed order produces EITHER a withdrawal id OR one ledger fact, and records
 //! only which ([`PaymentEffect`]). The machinery behind each stays in the application
-//! layer, exactly as it does for a consilium's effect.
+//! layer.
 //!
 //! # The three tiers, and why the caller never picks one
 //!
@@ -35,8 +34,8 @@
 //!
 //! > Every payment out of `User(u)` requires `u`'s own consent, at every tier. Every
 //! > other source — an allocation's pooled claim (`Service`, the reserved `fee` and `fund`
-//! > allocations included) and the retired fund singletons — requires the owner
-//! > consilium, at every tier.
+//! > allocations included) and banking's treasury — requires the owners' approval, at
+//! > every tier.
 //!
 //! [`PaymentTerms::requirement`] is that rule, and it is total over [`Party`] by
 //! construction: a party is a person, or it is money held for people through an
@@ -78,8 +77,8 @@ pub type PaymentId = Id<PaymentTag>;
 /// Phantom tag making [`PaymentId`] a distinct, incompatible identity type.
 pub struct PaymentTag;
 
-/// How long an unapproved payment order stays open (72h) — the same window an approval
-/// token lives for, because they close the same gap: a human has to read a mail and act.
+/// How long an unapproved payment order stays open (72h): a human has to read a notice and
+/// act.
 pub const TTL_SECS: i64 = 72 * 60 * 60;
 
 /// How long an order stays open while a concierge approval decides it (7 days). The approval
@@ -97,15 +96,15 @@ pub const DECISION_WINDOW_SECS: i64 = 96 * 60 * 60;
 pub const DECISION_MARGIN_SECS: i64 = 2 * 60 * 60;
 
 /// The longest reason an initiator may attach, **in bytes**. Bytes, not characters, because the limit exists to
-/// bound what a mail and a column carry, and both count bytes.
+/// bound what an approval and a column carry, and both count bytes.
 pub const MAX_REASON_BYTES: usize = 500;
 
 /// Why this payment is being made — required, and shown verbatim to whoever approves it.
 ///
 /// It is a newtype rather than a bare `String` because it is **hashed into the payload the
 /// approver signs**: an unvalidated reason would be a way to put a control character (and
-/// therefore a forged line) into the one mail whose whole job is to state the facts of a
-/// money move.
+/// therefore a forged line) into the one approval whose whole job is to state the facts of
+/// a money move.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct PaymentReason(String);
@@ -119,8 +118,8 @@ impl PaymentReason {
 		if value.len() > MAX_REASON_BYTES {
 			return Err(DomainError::Validation(format!("reason exceeds {MAX_REASON_BYTES} bytes")));
 		}
-		// A control character has no meaning in a reason and every meaning in a mail header
-		// or a plain-text line an approver reads as a fact about the amount.
+		// A control character has no meaning in a reason and every meaning in a plain-text
+		// line an approver reads as a fact about the amount.
 		if value.chars().any(char::is_control) {
 			return Err(DomainError::Validation("reason may not contain control characters".into()));
 		}
@@ -148,8 +147,8 @@ impl core::fmt::Display for PaymentReason {
 /// tag would splice the two maps together: the inner `kind` overwrites the outer one, so
 /// `Internal(Party::Service(_))` serializes as `{"kind":"service",…}` — a value that has lost
 /// which VARIANT it is and cannot be read back. `PaymentEvent::Opened` carries these bytes
-/// into `event_log`, and `ConsiliumTerms::Payment` into `consilium.terms`, so a shape that
-/// only survives one direction is an audit row nobody can ever load.
+/// into `event_log`, so a shape that only survives one direction is an audit row nobody can
+/// ever load.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "target", rename_all = "snake_case")]
 pub enum PaymentDestination {
@@ -257,10 +256,9 @@ impl PaymentEffect {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "requirement", content = "subject", rename_all = "snake_case")]
 pub enum PaymentApproval {
-	/// The source is the fund's money: a quorum of owners, through a
-	/// [`crate::consilium::Consilium`].
+	/// The source is the fund's money: the owners, through a concierge `bank:payment` approval.
 	OwnerConsilium,
-	/// The source is one investor's claim: that investor's own emailed consent.
+	/// The source is one investor's claim: that investor's own consent.
 	SubjectConsent(UserId),
 }
 
@@ -269,14 +267,6 @@ impl PaymentApproval {
 		match self {
 			Self::OwnerConsilium => "owner_consilium",
 			Self::SubjectConsent(_) => "subject_consent",
-		}
-	}
-
-	/// The investor whose consent is required, or `None` for the consilium requirement.
-	pub fn subject(self) -> Option<UserId> {
-		match self {
-			Self::OwnerConsilium => None,
-			Self::SubjectConsent(user) => Some(user),
 		}
 	}
 }
@@ -298,7 +288,7 @@ pub enum PaymentState {
 	/// Approved, but the effect could not be created. Terminal — nothing retries silently —
 	/// and for L2/L3 the reservation taken at approval is released on the way in.
 	ExecutionFailed,
-	/// The approver refused, or their token burned.
+	/// The approver refused, or their consent was voided.
 	Rejected,
 	/// The window closed with no answer.
 	Expired,
@@ -489,7 +479,7 @@ impl PaymentTerms {
 	///
 	/// `reason` is IN the digest. Leaving it out would bind an approval to an amount and a
 	/// destination while the sentence the human actually read stayed free to change — the
-	/// one part of the mail that explains why the money is moving.
+	/// one part of the approval that explains why the money is moving.
 	pub fn canonical_bytes(&self) -> Vec<u8> {
 		let mut out = Vec::with_capacity(Self::DOMAIN.len() + 160);
 		out.extend_from_slice(Self::DOMAIN);
@@ -516,9 +506,9 @@ impl PaymentTerms {
 /// One end of a payment, in words rather than as a `(kind, id)` pair.
 ///
 /// IT LIVES HERE, BESIDE THE DIGESTED TERMS, because three surfaces must describe one money
-/// move identically — the owners' approval screen, the subject's consent mail, and the
+/// move identically — the owners' approval, the subject's confirmation page, and the
 /// payments history — and the terms are the only thing all three are bound to. A per-surface
-/// formatter is how the mail and the screen come to disagree about what was approved.
+/// formatter is how two surfaces come to disagree about what was approved.
 ///
 /// The reserved allocations get the names an operator uses out loud; a product and an
 /// investor keep their id, because "a service" and "an investor" are not answers to
@@ -530,30 +520,6 @@ fn party_label(party: &Party) -> String {
 		Party::Service(service) => format!("the {service} product"),
 		Party::User(user) => format!("investor {user}"),
 		Party::Treasury => "banking's treasury".to_owned(),
-	}
-}
-
-/// A payment as a consilium decides it: the terms, plus the order they belong to.
-///
-/// The id is inside the hashed subject on purpose. Without it two orders with identical
-/// terms would produce one digest, and an owner's approval of the first would be a valid
-/// signature over the second.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PaymentSubject {
-	pub payment_id: PaymentId,
-	pub terms: PaymentTerms,
-}
-
-impl PaymentSubject {
-	/// FROZEN, for the reason [`PaymentTerms::DOMAIN`] is.
-	pub const DOMAIN: &'static [u8] = b"banking.v1.PaymentSubject\x00";
-
-	pub fn canonical_bytes(&self) -> Vec<u8> {
-		let mut out = Vec::with_capacity(Self::DOMAIN.len() + 192);
-		out.extend_from_slice(Self::DOMAIN);
-		push_field(&mut out, self.payment_id.raw().as_bytes());
-		out.extend_from_slice(&self.terms.canonical_bytes());
-		out
 	}
 }
 
@@ -635,7 +601,7 @@ impl PaymentOrder {
 	/// Reconstitute from the store. Raises no events.
 	// One parameter per stored column, by design: a struct of the same eleven fields would
 	// only move the arity behind a name and cost the compiler's check that the repository
-	// filled every one of them. `Consilium::rehydrate` is the same shape for the same reason.
+	// filled every one of them.
 	#[allow(clippy::too_many_arguments)]
 	pub fn rehydrate(
 		id: PaymentId,
@@ -666,7 +632,7 @@ impl PaymentOrder {
 		}
 	}
 
-	/// The order's one requirement is satisfied — the consilium carried, or the subject
+	/// The order's one requirement is satisfied — the owners' approval passed, or the subject
 	/// consented. Idempotent.
 	///
 	/// For an L2/L3 order this is also where the source is **reserved**: a pending
@@ -698,12 +664,7 @@ impl PaymentOrder {
 		Ok(())
 	}
 
-	/// The approver refused, or their token burned. Terminal. Idempotent.
-	///
-	/// A BURN IS A REFUSAL, NOT A DETECTOR. With a single-seat consent there is no second
-	/// owner to alert and no quorum to fall back on, so five wrong codes end the payment
-	/// rather than escalating it to "an admin approves instead" — which would make the
-	/// token theatre.
+	/// The approver refused, or their consent was voided. Terminal. Idempotent.
 	pub fn reject(&mut self, at: i64) -> Result<(), DomainError> {
 		if self.enter_verdict(PaymentState::Rejected, at)? {
 			self.raise(PaymentEvent::Rejected { payment_id: self.id, at });
@@ -769,7 +730,7 @@ impl PaymentOrder {
 	}
 
 	/// The approved payment could not be executed. Terminal: nothing retries silently, and
-	/// the reason is what the initiator (and, for a consilium, the owners) read.
+	/// the reason is what the initiator reads.
 	///
 	/// An L2/L3 order RELEASES ITS RESERVATION here. `Approved` is a real committed state
 	/// for those tiers — the reservation is raised by [`Self::approve`] in one transaction
@@ -847,14 +808,6 @@ impl PaymentOrder {
 		&self.terms
 	}
 
-	/// The subject a consilium decides, when this order's requirement is one.
-	pub fn subject(&self) -> PaymentSubject {
-		PaymentSubject {
-			payment_id: self.id,
-			terms: self.terms.clone(),
-		}
-	}
-
 	pub fn tier(&self) -> PaymentTier {
 		self.terms.tier()
 	}
@@ -871,7 +824,7 @@ impl PaymentOrder {
 		self.payload_hash
 	}
 
-	/// The hash as the mail and the wire show it.
+	/// The hash as the wire shows it.
 	pub fn payload_hash_hex(&self) -> String {
 		hex32(&self.payload_hash)
 	}
@@ -925,8 +878,7 @@ impl PaymentOrder {
 ///
 /// **Only [`PaymentEvent::Reserved`], [`PaymentEvent::Settled`] and
 /// [`PaymentEvent::Released`] reach the outbox** ([`PaymentEvent::relays`]); everything else
-/// is an audit fact drained with `relay = false` exactly as `allocations` and `consilium`
-/// are. In particular
+/// is an audit fact drained with `relay = false` exactly as `allocations` are. In particular
 /// [`PaymentEvent::Executed`] must NOT be relayed: for an L1 order the money is already
 /// moved by the [`crate::withdrawals::WithdrawalEvent::Requested`] sitting in the outbox,
 /// and two relayed events over one payment means two reservations against one claim.
@@ -1114,7 +1066,7 @@ mod tests {
 	}
 
 	#[test]
-	fn fund_money_needs_a_consilium_and_a_users_money_needs_their_consent_at_every_tier() {
+	fn fund_money_needs_the_owners_and_a_users_money_needs_their_consent_at_every_tier() {
 		// THE §3 MATRIX. The source decides, and the tier does not enter into it — which is
 		// the whole content of the rule, and the cell an earlier draft got wrong.
 		let user = UserId::new();
@@ -1137,7 +1089,7 @@ mod tests {
 				assert_eq!(
 					terms.requirement(),
 					PaymentApproval::OwnerConsilium,
-					"fund-owned money at the {} tier must need the owner consilium",
+					"fund-owned money at the {} tier must need the owners",
 					terms.tier().as_str()
 				);
 			}
@@ -1153,8 +1105,6 @@ mod tests {
 		}
 		// There is NO cell in which an admin alone may move fund-owned money: every source
 		// resolves to one of exactly two requirements, and neither is "the initiator".
-		assert_eq!(PaymentApproval::OwnerConsilium.subject(), None);
-		assert_eq!(PaymentApproval::SubjectConsent(user).subject(), Some(user));
 	}
 
 	#[test]
@@ -1180,7 +1130,7 @@ mod tests {
 
 	#[test]
 	fn the_reserved_allocations_are_named_out_loud_and_products_by_slug() {
-		// The label is what the owners' screen, the consent mail and the history all
+		// The label is what the owners' approval, the confirmation page and the history all
 		// render — one wording per party, decided here.
 		assert_eq!(terms(fee(), external()).source_label(), "the fee allocation");
 		assert_eq!(terms(fund(), external()).source_label(), "the fund allocation");
@@ -1215,12 +1165,12 @@ mod tests {
 		assert!(PaymentReason::new("   ").is_err());
 		assert!(PaymentReason::new("x".repeat(MAX_REASON_BYTES)).is_ok());
 		assert!(PaymentReason::new("x".repeat(MAX_REASON_BYTES + 1)).is_err());
-		// BYTES, not chars: the limit bounds what a column and a mail carry, and both count
+		// BYTES, not chars: the limit bounds what a column and an approval carry, and both count
 		// bytes. A 2-byte character therefore costs two, so half as many of them fit.
 		let multibyte = "д".repeat(MAX_REASON_BYTES / 2 + 1);
 		assert!(multibyte.chars().count() <= MAX_REASON_BYTES, "still well inside a character-counted limit");
 		assert!(PaymentReason::new(multibyte).is_err());
-		// A newline in the reason forges a line in the plain-text part of the approval mail.
+		// A newline in the reason forges a line in the plain text of the approval.
 		assert!(PaymentReason::new("paid\nAmount: 1000000").is_err());
 		assert!(PaymentReason::new("tab\there").is_err());
 	}
@@ -1254,24 +1204,6 @@ mod tests {
 		let internal = PaymentTerms::new(fee(), PaymentDestination::Internal(fund()), usdt("1"), reason()).unwrap();
 		let out = PaymentTerms::new(fee(), external(), usdt("1"), reason()).unwrap();
 		assert_ne!(internal.canonical_bytes(), out.canonical_bytes());
-	}
-
-	#[test]
-	fn two_orders_with_identical_terms_hash_differently_as_subjects() {
-		// Without the id in the subject an owner's approval of one order would be a valid
-		// signature over every other order with the same terms.
-		let shared = terms(fee(), external());
-		let one = PaymentSubject {
-			payment_id: PaymentId::new(),
-			terms: shared.clone(),
-		};
-		let two = PaymentSubject {
-			payment_id: PaymentId::new(),
-			terms: shared,
-		};
-		assert_ne!(one.canonical_bytes(), two.canonical_bytes());
-		assert!(one.canonical_bytes().starts_with(PaymentSubject::DOMAIN));
-		assert_eq!(PaymentSubject::DOMAIN, b"banking.v1.PaymentSubject\x00");
 	}
 
 	#[test]
@@ -1369,9 +1301,7 @@ mod tests {
 	}
 
 	#[test]
-	fn a_burned_or_refused_approval_ends_the_payment_dead() {
-		// A burn is a REFUSAL, not a detector: with one seat there is no other owner to
-		// alert, so it must never degrade to "an admin approves instead".
+	fn a_refused_approval_ends_the_payment_dead() {
 		let mut order = opened(Party::User(UserId::new()), external());
 		order.reject(NOW).unwrap();
 		assert_eq!(order.state(), PaymentState::Rejected);
@@ -1508,10 +1438,8 @@ mod tests {
 	/// The external one round-tripped under an internal tag by luck — its fields are
 	/// `network`/`address`, which do not collide with `kind`. `Internal(Party)` does collide:
 	/// [`Party`] carries its own `kind`, and the spliced map silently dropped the outer tag,
-	/// so `{"kind":"internal"}` went in and `{"kind":"revenue"}` came out — unreadable, and
-	/// discovered only when `consilium.terms` tried to load one back. These bytes are audit
-	/// (`event_log`) and stored governance terms, so a one-way encoding is a row nobody can
-	/// ever read.
+	/// so `{"kind":"internal"}` went in and `{"kind":"revenue"}` came out — unreadable. These
+	/// bytes are audit (`event_log`), so a one-way encoding is a row nobody can ever read.
 	#[test]
 	fn every_destination_shape_survives_a_json_round_trip() {
 		for destination in [
@@ -1520,16 +1448,13 @@ mod tests {
 			PaymentDestination::Internal(Party::User(UserId::new())),
 			PaymentDestination::Internal(Party::Service(ServiceId::parse("alpha").unwrap())),
 		] {
-			let subject = PaymentSubject {
-				payment_id: PaymentId::new(),
-				terms: terms(fund(), destination.clone()),
-			};
-			let json = serde_json::to_string(&subject).unwrap();
-			let back: PaymentSubject = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{destination:?} must read back: {err} — from {json}"));
-			assert_eq!(back, subject);
+			let terms = terms(fund(), destination.clone());
+			let json = serde_json::to_string(&terms).unwrap();
+			let back: PaymentTerms = serde_json::from_str(&json).unwrap_or_else(|err| panic!("{destination:?} must read back: {err} — from {json}"));
+			assert_eq!(back, terms);
 			// The digest is taken over `canonical_bytes`, never over serde, so the two must
 			// agree about what a round trip preserves.
-			assert_eq!(back.canonical_bytes(), subject.canonical_bytes());
+			assert_eq!(back.canonical_bytes(), terms.canonical_bytes());
 		}
 	}
 	/// The approval carries exactly the fields `bank:payment` declares, with the types it

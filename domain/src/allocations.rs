@@ -755,9 +755,8 @@ fn validate_title(raw: &str) -> Result<String, DomainError> {
 	if title.chars().count() > MAX_TITLE_LEN {
 		return Err(DomainError::Validation(format!("allocation title must be at most {MAX_TITLE_LEN} characters")));
 	}
-	// The title is printed into consent and approval mail. Concierge refuses a URL there,
-	// which leaves the consilium waiting for an invitation that is never sent; an address
-	// it lets through, but a mail client still renders it as a link. A bare domain stays
+	// The title is printed into approvals and notices. Concierge refuses a URL there; an
+	// address it lets through, but a client still renders it as a link. A bare domain stays
 	// allowed: products are legitimately named after their sites (`Aquafix.ae`).
 	if contains_url(title) || title.contains('@') {
 		return Err(DomainError::Validation("allocation title must not contain a link or an address".into()));

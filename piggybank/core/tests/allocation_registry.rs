@@ -160,8 +160,8 @@ async fn issue(h: &Harness, service: &ServiceId, holder: UnitHolder, units: &str
 	.await
 }
 
-/// The owners' mint into a RESERVED allocation — the door a holder-grant consilium's
-/// execution and the data migration use; the operator's `issue_units` refuses it.
+/// The mint into a RESERVED allocation — no RPC reaches it; the operator's `issue_units`
+/// refuses it.
 async fn grant(h: &Harness, service: &ServiceId, holder: UnitHolder, units: &str, cost_basis: Option<&str>, key: &str) -> Result<UnitIssuanceRecord, DomainError> {
 	issuance_app::grant_units(
 		&fund_ports(h),
@@ -710,8 +710,8 @@ async fn an_issuance_is_logged_and_reaches_the_relay_as_its_own_kind() {
 // `tests/ownership_contract.rs`, over a database migrated to 0046 first.
 
 /// H-2 / M-2 of the #245 security review: one `AllocationManage` holder could grant
-/// themselves `invest` on `fee` or `fund` and subscribe cash into the owners' money without
-/// a quorum, or close, re-back or cap a reserved allocation and lock its holders in. Every
+/// themselves `invest` on `fee` or `fund` and subscribe cash into the owners' money, or
+/// close, re-back or cap a reserved allocation and lock its holders in. Every
 /// operator write on a reserved allocation is refused, and a subscription into one is
 /// refused before the catalog is even consulted — so what 0045 wrote stays as written.
 #[tokio::test]
@@ -838,13 +838,12 @@ async fn the_fee_allocation_holds_a_products_fee_class_and_nothing_holds_a_reser
 	let err = issue(&h, &service, UnitHolder::Allocation(ServiceId::fund()), "1", None, "fund-holds").await.unwrap_err();
 	assert!(matches!(err, DomainError::Forbidden(ref m) if m.contains("fee accrual")), "got {err:?}");
 	// A person may hold the reserved allocations — migration 0045 registered them, hidden —
-	// but only the owners seat them: the operator's mint is refused outright, and a
-	// product is not granted.
+	// but the operator's mint is refused outright, and a product is not granted.
 	let owner = provisioned_user(&h).await;
 	let err = issue(&h, &ServiceId::fee(), UnitHolder::User(owner), "10", Some("10"), "operator-seeds-holder")
 		.await
 		.unwrap_err();
-	assert!(matches!(err, DomainError::Forbidden(ref m) if m.contains("holder grant")), "got {err:?}");
+	assert!(matches!(err, DomainError::Forbidden(ref m) if m.contains("never issued by hand")), "got {err:?}");
 	let err = grant(&h, &service, UnitHolder::User(owner), "10", Some("10"), "grant-a-product").await.unwrap_err();
 	assert!(matches!(err, DomainError::Validation(ref m) if m.contains("not a reserved allocation")), "got {err:?}");
 	for reserved in [ServiceId::fee(), ServiceId::fund()] {

@@ -40,14 +40,15 @@ use domain::{
 };
 use piggybank_core::{
 	application::{balance as balance_app, payments as payments_app, wallet as wallet_app, withdrawals as withdrawal_app},
-	config::{KycGate, PaymentApprovalModes},
+	config::KycGate,
 	infrastructure::{
-		allocations::PgAllocations, consilium::PgConsilia, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, payments::PgPayments,
-		positions::PgFundPositions, relay::Relay, users::PgUsers, withdrawals::PgWithdrawals,
+		allocations::PgAllocations, custody::StubCustody, deposits::PgDeposits, nav::PgNav, outflow::PgOutflowPolicy, payments::PgPayments, positions::PgFundPositions, relay::Relay,
+		users::PgUsers, withdrawals::PgWithdrawals,
 	},
 	ports::{
 		DepositAddresses, UserRepository, WithdrawalRepository,
 		ledger::{Ledger, LedgerTransfer},
+		payments::SeatView,
 	},
 };
 use sqlx::PgPool;
@@ -325,12 +326,9 @@ async fn a_verified_user_can_withdraw() {
 /// A payment out of the fee allocation is the platform's own money moving — there is no
 /// user behind `Party::Service(fee)` (its holders own it through units), so a KYC tier is
 /// not merely unchecked at open, there is nothing to check: what stands in front of it is
-/// the owners' quorum. The gate stays out of the DESTINATION too: the money lands on a
+/// the owners' approval. The gate stays out of the DESTINATION too: the money lands on a
 /// tier-0 investor's claim, and the verification floor applies when they try to take it
 /// out, not when it arrives. Exercised end to end rather than asserted by reading the code.
-///
-/// Opening a fund-owned order seats a consilium, so this test wears the governance suite's
-/// fixtures: three owners on the global roster and a mailer that stands in as wired.
 #[tokio::test]
 async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 	let Some(h) = harness().await else { return };
@@ -349,21 +347,10 @@ async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 		})
 		.await
 		.expect("fund the fee allocation's claim");
-	let mut owners = Vec::with_capacity(3);
-	for _ in 0..3 {
-		let owner = user_at_tier(&h, 0).await;
-		sqlx::query("UPDATE users SET role = 'owner', concierge_user_id = $2 WHERE id = $1")
-			.bind(owner.raw())
-			.bind(Uuid::new_v4())
-			.execute(&h.pool)
-			.await
-			.unwrap();
-		owners.push(owner);
-	}
-	let (payments, consilia, allocations) = (PgPayments::new(h.pool.clone()), PgConsilia::new(h.pool.clone()), PgAllocations::new(h.pool.clone()));
+	let initiator = user_at_tier(&h, 0).await;
+	let (payments, allocations) = (PgPayments::new(h.pool.clone()), PgAllocations::new(h.pool.clone()));
 	let ports = payments_app::PaymentPorts {
 		payments: &payments,
-		consilia: &consilia,
 		users: h.users.as_ref(),
 		withdrawals: h.withdrawals.as_ref(),
 		ledger: h.ledger.as_ref(),
@@ -373,10 +360,6 @@ async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 		relay: &h.notify,
 		configured: &Network::ALL,
 		kyc: KycGate::ENFORCED,
-		approval_url_base: "https://example.test/consilium",
-		consent_url_base: "https://example.test/consent",
-		governance_mail_wired: true,
-		approvals: PaymentApprovalModes::ALL_CONSILIUM,
 	};
 	let terms = PaymentTerms::new(
 		Party::Service(ServiceId::fee()),
@@ -385,20 +368,16 @@ async fn a_payment_from_the_fee_allocation_is_not_gated_on_kyc() {
 		PaymentReason::new("a documented reason").unwrap(),
 	)
 	.unwrap();
-	// Neither end is a verified account, and the open passes: the tier-0 initiator is an
-	// owner, not the source, and the tier-0 recipient is only being paid.
-	let view = payments_app::open(&ports, owners[0], terms, now_unix())
+	// Neither end is a verified account, and the open passes: the tier-0 initiator is not the
+	// source, and the tier-0 recipient is only being paid.
+	let view = payments_app::open(&ports, initiator, terms, now_unix())
 		.await
 		.expect("a payment from the fee allocation is never gated on a user's KYC tier");
-	assert!(view.consilium_id.is_some(), "the fund's money is the owners' to release");
-	assert!(view.consent.is_none(), "no investor is asked to consent to the fund's money");
-	// Leave the governance state as it was found: the roster is global.
-	sqlx::query("UPDATE users SET role = 'investor' WHERE role = 'owner'").execute(&h.pool).await.unwrap();
-	sqlx::query("UPDATE consilium SET state = 'cancelled', decided_at = now() WHERE id = $1")
-		.bind(view.consilium_id.unwrap().raw())
-		.execute(&h.pool)
-		.await
-		.unwrap();
+	assert!(
+		matches!(view.seat, SeatView::Concierge(_)),
+		"the fund's money is the owners' to release, and no investor is asked to consent to it"
+	);
+	// The open order would hold the fee claim's one fund-owned slot for every later test.
 	sqlx::query("UPDATE payments SET state = 'cancelled', decided_at = now() WHERE id = $1")
 		.bind(view.order.id().raw())
 		.execute(&h.pool)

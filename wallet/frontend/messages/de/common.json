@@ -1,44 +1,4 @@
 {
-  "admin.fees.basis.investedCapital": {
-    "en": "Invested capital",
-    "t": "Investiertes Kapital"
-  },
-  "admin.fees.basis.marketValue": {
-    "en": "Market value",
-    "t": "Marktwert"
-  },
-  "admin.fees.chargedOn": {
-    "en": "Charged on",
-    "t": "Berechnet auf"
-  },
-  "admin.fees.field.hurdle": {
-    "en": "Hurdle",
-    "t": "Hurdle"
-  },
-  "admin.fees.field.management": {
-    "en": "Management",
-    "t": "Verwaltung"
-  },
-  "admin.fees.field.performance": {
-    "en": "Performance",
-    "t": "Performance"
-  },
-  "admin.fees.period.annual": {
-    "en": "Annually",
-    "t": "Jährlich"
-  },
-  "admin.fees.period.monthly": {
-    "en": "Monthly",
-    "t": "Monatlich"
-  },
-  "admin.fees.period.quarterly": {
-    "en": "Quarterly",
-    "t": "Vierteljährlich"
-  },
-  "admin.fees.period.semiAnnual": {
-    "en": "Every 6 months",
-    "t": "Alle 6 Monate"
-  },
   "approval.amount": {
     "en": "Amount",
     "t": "Betrag"
@@ -70,14 +30,6 @@
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Sie haben dies bereits beantwortet, und diese Antwort gilt. Eine einmal gegebene Antwort kann nicht geändert werden."
-  },
-  "approval.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose.",
-    "t": "Beide Antworten brauchen den Code aus Ihrer E-Mail. Geben Sie ihn einmal ein, dann wählen Sie."
-  },
-  "approval.decisionTitle": {
-    "en": "Your decision",
-    "t": "Ihre Entscheidung"
   },
   "approval.expired.title": {
     "en": "The deadline for this request has passed",
@@ -135,61 +87,25 @@
     "en": "Opened",
     "t": "Eröffnet"
   },
-  "approval.openedBy": {
-    "en": "Opened by",
-    "t": "Eröffnet von"
-  },
   "approval.payloadHash": {
     "en": "Request fingerprint",
     "t": "Fingerabdruck des Antrags"
-  },
-  "approval.payment.approve": {
-    "en": "Approve this payment",
-    "t": "Diese Zahlung genehmigen"
-  },
-  "approval.payment.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Sie haben diese Zahlung genehmigt"
-  },
-  "approval.payment.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the payment goes ahead once enough owners have agreed.",
-    "t": "Ihre Antwort wurde aufgezeichnet. Hier gibt es nichts weiter zu tun — die Zahlung wird ausgeführt, sobald genügend Eigentümer zugestimmt haben."
-  },
-  "approval.payment.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Sie haben diese Zahlung abgelehnt"
   },
   "approval.payment.from": {
     "en": "From",
     "t": "Von"
   },
-  "approval.payment.lead": {
-    "en": "{initiator} has asked to move money the fund owns, as set out below. Moving the fund's own money is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} bittet darum, Geld des Fonds wie unten beschrieben zu bewegen. Das eigene Geld des Fonds zu bewegen ist nie die Entscheidung einer einzelnen Person, daher müssen die Eigentümer zustimmen."
-  },
   "approval.payment.payloadHashHint": {
     "en": "The fingerprint is taken over the amount, both ends and the reason above. It is checked again before any money moves, so a request cannot be edited after you have agreed to it.",
     "t": "Der Fingerabdruck wird über den Betrag, beide Enden und den obigen Grund gebildet. Er wird vor jeder Geldbewegung erneut geprüft, sodass eine Anfrage nach Ihrer Zustimmung nicht mehr geändert werden kann."
-  },
-  "approval.payment.reasonLabel": {
-    "en": "Reason given",
-    "t": "Angegebener Grund"
   },
   "approval.payment.tier": {
     "en": "Tier",
     "t": "Ebene"
   },
-  "approval.payment.title": {
-    "en": "Approve a fund payment",
-    "t": "Eine Fondszahlung genehmigen"
-  },
   "approval.payment.to": {
     "en": "To",
     "t": "An"
-  },
-  "approval.reject": {
-    "en": "Reject",
-    "t": "Ablehnen"
   },
   "approval.removal.about": {
     "en": "About",
@@ -267,38 +183,6 @@
     "en": "A request to end your ownership",
     "t": "Ein Antrag, Ihr Eigentum zu beenden"
   },
-  "approval.retired.body": {
-    "en": "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.",
-    "t": "Diese Art von Anfrage wird auf dieser Seite nicht mehr bearbeitet, daher gibt es hier nichts zu genehmigen oder abzulehnen. Wenn Sie eine Entscheidung erwartet haben, fragen Sie die Person, die die Anfrage geöffnet hat."
-  },
-  "approval.retired.title": {
-    "en": "This request is no longer available",
-    "t": "Diese Anfrage ist nicht mehr verfügbar"
-  },
-  "approval.tally": {
-    "en": "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far",
-    "t": "Bisher {approvals} von {threshold, plural, one {# Zustimmung} other {# Zustimmungen}}"
-  },
-  "approval.tallyHint": {
-    "en": "More than half of the owners must approve before any money moves. You are one of them.",
-    "t": "Mehr als die Hälfte der Eigentümer muss zustimmen, bevor Geld bewegt wird. Sie sind einer davon."
-  },
-  "approval.tallyOwners": {
-    "en": "{owners, plural, one {# owner} other {# owners}} in total",
-    "t": "{owners, plural, one {# Eigentümer} other {# Eigentümer}} insgesamt"
-  },
-  "approval.unavailableBody": {
-    "en": "The terms of this payout didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Die Bedingungen dieser Auszahlung sind nicht angekommen, hier gibt es also nichts, dem Sie zustimmen könnten, und es wird keine Entscheidung angeboten. Das Problem liegt bei uns, nicht an Ihrem Link. Versuchen Sie es gleich noch einmal."
-  },
-  "approval.unavailableTitle": {
-    "en": "We can't show this request",
-    "t": "Wir können diesen Antrag nicht anzeigen"
-  },
-  "approval.votingAs": {
-    "en": "You are answering as {email}.",
-    "t": "Sie antworten als {email}."
-  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Cabinet"
@@ -342,82 +226,6 @@
   "auth.signedOutSub": {
     "en": "You've been signed out of your cabinet.",
     "t": "Sie wurden von Ihrem Cabinet abgemeldet."
-  },
-  "consent.approve": {
-    "en": "Approve — move my money",
-    "t": "Zustimmen — mein Geld bewegen"
-  },
-  "consent.askedBy": {
-    "en": "Asked by",
-    "t": "Angefragt von"
-  },
-  "consent.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed. Nothing was approved and your money has not moved. Whoever asked can open a new request.",
-    "t": "Der Code wurde zu oft falsch eingegeben, daher wurde der Link geschlossen. Nichts wurde genehmigt und Ihr Geld wurde nicht bewegt. Der Anfragende kann eine neue Anfrage öffnen."
-  },
-  "consent.decided.approvedFresh": {
-    "en": "Your answer has been recorded and the payment goes ahead. There is nothing further to do here.",
-    "t": "Ihre Antwort wurde aufgezeichnet und die Zahlung wird ausgeführt. Hier gibt es nichts weiter zu tun."
-  },
-  "consent.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Sie haben dieser Zahlung zugestimmt"
-  },
-  "consent.decided.rejectedFresh": {
-    "en": "Your answer has been recorded. Your money stays exactly where it is, and whoever asked has been told.",
-    "t": "Ihre Antwort wurde aufgezeichnet. Ihr Geld bleibt genau dort, wo es ist, und der Anfragende wurde informiert."
-  },
-  "consent.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Sie haben diese Zahlung abgelehnt"
-  },
-  "consent.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose. Rejecting keeps your money exactly where it is.",
-    "t": "Beide Antworten brauchen den Code aus Ihrer E-Mail. Geben Sie ihn einmal ein und wählen Sie dann. Ablehnen lässt Ihr Geld genau dort, wo es ist."
-  },
-  "consent.decisionTitle": {
-    "en": "Your decision",
-    "t": "Ihre Entscheidung"
-  },
-  "consent.lead": {
-    "en": "{initiator} is asking for it to be moved as set out below. Nothing happens unless you agree — nobody else is asked, and nobody else can answer for you.",
-    "t": "{initiator} bittet darum, es wie unten beschrieben zu bewegen. Ohne Ihre Zustimmung geschieht nichts — niemand sonst wird gefragt, und niemand kann für Sie antworten."
-  },
-  "consent.leadOwn": {
-    "en": "This is your money.",
-    "t": "Das ist Ihr Geld."
-  },
-  "consent.reasonLabel": {
-    "en": "Reason given by {initiator}",
-    "t": "Von {initiator} angegebener Grund"
-  },
-  "consent.reject": {
-    "en": "Reject — keep my money",
-    "t": "Ablehnen — mein Geld behalten"
-  },
-  "consent.title": {
-    "en": "Your money is asked to move",
-    "t": "Ihr Geld soll bewegt werden"
-  },
-  "consent.unavailableBody": {
-    "en": "The terms of this payment didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Die Bedingungen dieser Zahlung sind nicht angekommen, also gibt es hier nichts, dem Sie zustimmen könnten, und keine Entscheidung wird angeboten. Das Problem liegt bei uns, nicht an Ihrem Link. Versuchen Sie es gleich noch einmal."
-  },
-  "consent.yourMoney": {
-    "en": "Whose money",
-    "t": "Wessen Geld"
-  },
-  "consilium.feePolicy.nothingCharged": {
-    "en": "Nothing charged",
-    "t": "Nichts berechnet"
-  },
-  "consilium.feePolicy.now": {
-    "en": "Now",
-    "t": "Jetzt"
-  },
-  "consilium.feePolicy.proposed": {
-    "en": "Proposed",
-    "t": "Vorgeschlagen"
   },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",
@@ -486,18 +294,6 @@
   "err.verificationRequired": {
     "en": "Verify your identity to continue.",
     "t": "Bestätigen Sie Ihre Identität, um fortzufahren."
-  },
-  "invest.lockedIn": {
-    "en": "Locked in",
-    "t": "Festgeschrieben"
-  },
-  "invest.ofTheGain": {
-    "en": "{pct} of the gain",
-    "t": "{pct} des Gewinns"
-  },
-  "invest.perAnnum": {
-    "en": "{pct} p.a.",
-    "t": "{pct} p. a."
   },
   "kyc.chip.attention": {
     "en": "Needs attention",
@@ -659,77 +455,9 @@
     "en": "Queued",
     "t": "Wartend"
   },
-  "payment.consent.approve": {
-    "en": "Consented",
-    "t": "Zugestimmt"
-  },
-  "payment.consent.invalidated": {
-    "en": "Consent void",
-    "t": "Zustimmung ungültig"
-  },
-  "payment.consent.pending": {
-    "en": "Awaiting the investor",
-    "t": "Wartet auf den Anleger"
-  },
-  "payment.consent.reject": {
-    "en": "Declined",
-    "t": "Abgelehnt"
-  },
-  "payment.consent.unsent": {
-    "en": "Email not yet sent",
-    "t": "E-Mail noch nicht gesendet"
-  },
   "payment.end.fullAddress": {
     "en": "Show the full address",
     "t": "Vollständige Adresse anzeigen"
-  },
-  "payment.requirement.hint.owner_consilium": {
-    "en": "Fund-owned money: more than half of the owners must confirm from their mailboxes.",
-    "t": "Fondseigenes Geld: mehr als die Hälfte der Eigentümer muss aus ihrem Postfach bestätigen."
-  },
-  "payment.requirement.hint.subject_consent": {
-    "en": "An investor's own money: that investor alone is emailed and must agree.",
-    "t": "Das eigene Geld eines Anlegers: nur dieser Anleger wird angeschrieben und muss zustimmen."
-  },
-  "payment.requirement.owner_consilium": {
-    "en": "Owners' consilium",
-    "t": "Konsilium der Eigentümer"
-  },
-  "payment.requirement.subject_consent": {
-    "en": "The investor's consent",
-    "t": "Zustimmung des Anlegers"
-  },
-  "payment.state.approved": {
-    "en": "Approved",
-    "t": "Genehmigt"
-  },
-  "payment.state.cancelled": {
-    "en": "Cancelled",
-    "t": "Storniert"
-  },
-  "payment.state.executed": {
-    "en": "Executed",
-    "t": "Ausgeführt"
-  },
-  "payment.state.execution_failed": {
-    "en": "Execution failed",
-    "t": "Ausführung fehlgeschlagen"
-  },
-  "payment.state.expired": {
-    "en": "Expired",
-    "t": "Abgelaufen"
-  },
-  "payment.state.pending": {
-    "en": "Pending",
-    "t": "Ausstehend"
-  },
-  "payment.state.rejected": {
-    "en": "Rejected",
-    "t": "Abgelehnt"
-  },
-  "payment.tier.external": {
-    "en": "External",
-    "t": "Extern"
   },
   "payment.tier.hint.external": {
     "en": "Out to an on-chain address. Ships as a withdrawal once approved.",
@@ -742,14 +470,6 @@
   "payment.tier.hint.service": {
     "en": "Into one of the fund's products, as its pooled claim.",
     "t": "In eines der Produkte des Fonds, als dessen gepoolter Anspruch."
-  },
-  "payment.tier.internal": {
-    "en": "Internal",
-    "t": "Intern"
-  },
-  "payment.tier.service": {
-    "en": "To a product",
-    "t": "An ein Produkt"
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

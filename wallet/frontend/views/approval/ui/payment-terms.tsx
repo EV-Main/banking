@@ -1,31 +1,29 @@
 "use client";
 
-// The terms of a payment order, as an approval page shows them — the amount, both ends,
-// the tier, the reason, the fingerprint. Shared by the investor's consent page and the
-// owners' approval page when the consilium carries a payment.
+// The terms of a payment order, as the investor's signed-in answer shows them — the amount,
+// both ends, the tier, the reason, the fingerprint.
 //
-// Policy 12–13 shape it: everything the digest covers is on screen before the code field
-// is. An external destination shows its address whole through `FullAddress`; an internal
+// Everything the digest covers is on screen before either button is. An external destination shows its address whole through `FullAddress`; an internal
 // end shows the label the digest binds AND the detail a person recognises it by, because
 // "investor 8f3e…" is exactly the thing a reader cannot check.
 
 import { useLocale, useT } from "@evinvest/i18n/react";
 import { Separator } from "@evinvest/uikit";
 
-import { tierHint, tierLabel } from "@/entities/payment/lib/format";
+import { tierHint } from "@/entities/payment/lib/format";
 import { PaymentEndSummary } from "@/entities/payment/ui/payment-end";
-import type { ConsiliumPaymentTerms } from "@/shared/contracts/payments";
+import type { PaymentConfirmation } from "@/shared/contracts/payments";
 import { hashPrefix } from "@/shared/lib/hash";
 import { formatExactUsdt } from "@/shared/lib/money";
 import { DetailRow, FieldCaption, FullAddress } from "@/views/approval/ui/approval-chrome";
 
-/** What the digest covers is exactly these; `payment_id` is not part of the terms. */
-export type PaymentTerms = Omit<ConsiliumPaymentTerms, "payment_id">;
+/** What the digest covers is exactly these. */
+export type PaymentTerms = Pick<PaymentConfirmation, "tier" | "source" | "destination" | "amount" | "reason">;
 
 /**
  * The terms a reader is agreeing to must actually be on screen. The BFF fills a missing
  * order with empty strings, and an empty string is not nullish — so a page that cannot
- * show the amount and where it goes must not show buttons (policy 12–13).
+ * show the amount and where it goes must not show buttons.
  */
 export function renderablePayment(terms: PaymentTerms | null | undefined): terms is PaymentTerms {
   if (!terms?.amount?.trim()) return false;
@@ -37,17 +35,10 @@ export function PaymentTermsBlock({
   terms,
   payloadHash,
   reasonLabel,
-  tierAs = "label",
 }: {
   terms: PaymentTerms;
   payloadHash: string;
   reasonLabel: string;
-  /**
-   * `label` names the tier as the console and the owners' room do; `hint` says what it
-   * means for the money instead. The consent page takes the hint: its reader is an
-   * investor, and "Internal" tells them nothing about whether their money leaves the ledger.
-   */
-  tierAs?: "label" | "hint";
 }) {
   const t = useT();
   const locale = useLocale();
@@ -87,7 +78,7 @@ export function PaymentTermsBlock({
       </div>
 
       <div className="flex flex-col gap-2.5">
-        <DetailRow label={t("approval.payment.tier", "Tier")} value={tierAs === "hint" ? tierHint(terms.tier, t) : tierLabel(terms.tier, t)} />
+        <DetailRow label={t("approval.payment.tier", "Tier")} value={tierHint(terms.tier, t)} />
         <DetailRow label={t("approval.payloadHash", "Request fingerprint")} value={hashPrefix(payloadHash)} mono />
       </div>
       <p className="text-xs text-ink-soft">{t("approval.payment.payloadHashHint", "The fingerprint is taken over the amount, both ends and the reason above. It is checked again before any money moves, so a request cannot be edited after you have agreed to it.")}</p>

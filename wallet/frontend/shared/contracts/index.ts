@@ -40,41 +40,11 @@ export type {
   // What a fund charges, and what the caller's holding owes for it right now.
   BankingV1FeePolicy as FeePolicy,
   // Payment orders are NOT re-exported from `./gen`: the BFF reshapes them (resolved ends
-  // with a `detail`, a nested consent, lowercase states, string stamps), so the
-  // hand-written `./payments` is the wallet host's contract for that surface.
+  // with a `detail`, lowercase states, string stamps), so the hand-written `./payments` is
+  // the wallet host's contract for that surface.
   // Mandates are not re-exported either: the BFF reshapes them (lowercase operation
   // names, string stamps), so `wallet/backend/src/dto.rs` `Mandate` is their contract.
 } from "./gen";
-
-// The allocation catalog is served to BOTH the investor surface (`/api/allocations`,
-// open products only) and the admin one from the same BFF DTO, so the hand-written
-// types live in one place and are re-exported here for the investor imports.
-//
-// The treasury and the cap table (#245) are hand-written there too, NOT re-exported from
-// `./gen`: the BFF reshapes them (`nav_posted_at_unix` → the string `nav_posted_at`, a
-// missing claim → zeros, a holder-less line dropped), so the generated `BankingV1Treasury`
-// is not the shape that arrives. `./governance` carries the two #245 consilium terms for
-// the same reason.
-export type {
-  Allocation,
-  AllocationAccessGrant,
-  AllocationAccessGrantList,
-  AllocationAccessLevel,
-  AllocationBacking,
-  AllocationClaim,
-  AllocationGrantLevel,
-  AllocationIcon,
-  AllocationList,
-  AllocationState,
-  AllocationTreasury,
-  RailLiquidity,
-  SeedCapitalBody,
-  SeedCapitalProposal,
-  Treasury,
-  UnitHolderKind,
-  UnitHolderRef,
-  UnitHolding,
-} from "./admin";
 
 // Identity surface — owned by the concierge plane.
 export type {

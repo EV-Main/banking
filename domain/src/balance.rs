@@ -144,7 +144,7 @@ pub enum Party {
 	Service(ServiceId),
 	/// banking's own treasury, `ScopeAccount(main, treasury)`, where the fees it charges
 	/// for its own service land (D17). Money leaves it like an allocation's — by a payment
-	/// the owners' consilium approved — so it is a party a payment may name as its SOURCE.
+	/// the owners approved — so it is a party a payment may name as its SOURCE.
 	Treasury,
 }
 

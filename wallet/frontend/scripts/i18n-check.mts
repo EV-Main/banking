@@ -7,7 +7,7 @@
 //
 // Fails on *drift* and on *missing keys* alike. The check used to tolerate
 // untranslated keys so a locale could be filled in over time — and three locales
-// sat at 86 % for a release cycle while every new consilium screen shipped in
+// sat at 86 % for a release cycle while every new screen shipped in
 // English. All five catalogues are complete now, so the floor is 100 %: a new
 // `t(key, English)` lands with all four translations in the same change, or CI is red.
 //
@@ -84,7 +84,7 @@ const SHARED_TERMS: ReadonlySet<string> = new Set([
 // Strings that coincide with English in *one* language — loanwords, shared Latin
 // roots, or a term the locale's own catalogue already uses untranslated
 // ("Wallet", "Treasury", "Cabinet" and "Outbox" in German; "wallet", "rail" and
-// "outbox" in French; "email" and "consilium" in Vietnamese). Keyed by value, not by key: whether
+// "outbox" in French; "email" in Vietnamese). Keyed by value, not by key: whether
 // "Status" is a German word does not depend on which screen shows it.
 const LOANWORDS: Readonly<Record<Translated, ReadonlySet<string>>> = {
   de: new Set([
@@ -142,8 +142,6 @@ const LOANWORDS: Readonly<Record<Translated, ReadonlySet<string>>> = {
     "Allocation",
     "Arbitrage",
     "Code",
-    "Consilium",
-    "Consilium {id}",
     "Documents",
     "Feature flags",
     "Max",
@@ -167,7 +165,7 @@ const LOANWORDS: Readonly<Record<Translated, ReadonlySet<string>>> = {
     "6M",
   ]),
   ru: new Set(),
-  vi: new Set(["Cabinet", "Consilium", "Email"]),
+  vi: new Set(["Cabinet", "Email"]),
 };
 
 const isLegitimatelyIdentical = (locale: Translated, text: string): boolean =>

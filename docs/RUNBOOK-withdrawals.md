@@ -42,7 +42,7 @@ rode this saga (the fund paying its own earnings out) was retired in #245 and re
 CHECK admits only `user` (`0047_ownership_contract.sql`), and production held no revenue row
 when it was narrowed. The platform's earnings are the `fee` allocation; cash leaves it by a
 holder's redemption and their own withdrawal, or an owners' payment order from
-`service:fee` to an internal `user:` ([`CONSILIUM.md`](./CONSILIUM.md) §Payments), and a payment order's L1 withdrawal (opened
+`service:fee` to an internal `user:` (`PaymentsService`), and a payment order's L1 withdrawal (opened
 out of an investor's own claim) is an ordinary user row here.
 
 ## A queued withdrawal that does not move: the new-address hold
@@ -221,21 +221,10 @@ rail or on a block explorer, then:
   (e.g. a pruned-history gap). `BalanceService.RecordDeposit` with the tx hash (admin →
   Treasury); the amount and the user are read back from the chain.
 - **It landed on the treasury** — `RecordDeposit` refuses it: the chain cannot say whose
-  it is. An owner opens `BalanceService.SeedCapital` (`tx_ref`, `network`,
-  `expected_amount`, `depositor_user_id` = the sender's account). That opens a
-  `seed_capital` consilium; nothing is booked until it carries:
-  - it needs **≥ 3 owners** on the roster, and **⌊N/2⌋+1** of them to approve — the
-    initiator counts in N but does not vote, so with 3 owners both others must approve;
-  - it **expires after 72 h** without a verdict (a deadline, not a wait — it executes as
-    soon as the threshold is reached);
-  - on execution the amount is booked as the depositor's deposit **and** at once
-    subscribed into the hidden `fund` allocation at its dealing NAV (`fund` must be open
-    and its NAV fresh). The depositor holds `fund` units, not cash.
-  - Getting it back out: the depositor `Redeem`s those units, an operator settles it
-    (`SettleRedemption`, admin → Valuation), then they withdraw as usual (fee 1 USDT).
+  it is, and banking has no path that books it. It stays surplus custody.
 
-So during a test pass or an incident, never "top up" the treasury with USDT unless the
-seed above is intended: fund liquidity by sweeping deposits, and send only native gas.
+So during a test pass or an incident, never "top up" the treasury with USDT: fund liquidity by
+sweeping deposits, and send only native gas.
 
 ## Spend brake — stop or tighten the signer without a restart
 

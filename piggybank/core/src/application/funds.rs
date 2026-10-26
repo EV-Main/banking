@@ -13,7 +13,6 @@
 //! reader every price in this module and beyond goes through.
 
 use domain::{
-	allocations::AllocationAccess,
 	balance::{LedgerAccountKey, ServiceId, ValuationId},
 	error::DomainError,
 	issuance::UnitHolder,
@@ -37,8 +36,7 @@ use crate::{
 /// A derived NAV that moves more than this (percent) from the previous mark, or from the
 /// mark anchoring the rolling [`NAV_MOVE_WINDOW_SECS`] window, is rejected — the
 /// fat-finger guard on the AUM trust seam, and since banking#232 the ONLY guard a single
-/// poster faces: there is no per-request override. A larger move goes to the owners
-/// (`consilium::open_valuation_override`).
+/// poster faces: there is no override.
 pub const MAX_NAV_MOVE_PCT: u128 = 50;
 /// The rolling window the move cap is also measured across.
 ///
@@ -53,7 +51,7 @@ pub const NAV_MOVE_WINDOW_SECS: i64 = 7 * 24 * 60 * 60;
 /// The redeem settles at the price the poster set; a cooldown means the person who moved
 /// the price is not the person who cashes out at it, within the window the move guard
 /// measures. Fee settlement is deliberately not gated: its cash lands in `fee`, whose only
-/// exit is already a consilium.
+/// exit is already a payment the owners approve.
 pub const VALUATION_REDEEM_COOLDOWN_SECS: i64 = 7 * 24 * 60 * 60;
 /// A mark older than this (seconds) is stale; subscribe/redeem refuse to deal on it
 /// rather than price off a drifted NAV (the backward-pricing arbitrage guard). 24h for v1.
@@ -276,11 +274,9 @@ async fn holds_units(ledger: &dyn Ledger, service: &ServiceId, user: UserId) -> 
 /// operator" from "the product is closed" from "over the cap".
 ///
 /// A **reserved allocation** is refused before either (#245): `fee` and `fund` are the
-/// platform's own money, and a seat at them is the owners' quorum's to give — a holder
-/// grant, or the seed of a chain-proven arrival — never something cash buys. The catalog
-/// hides them from everyone, which would refuse this anyway; the explicit check is what
-/// keeps a grant of `invest` on them (itself refused in `allocations`) from ever being a
-/// way in. The seed prices through [`price_fund_seed`], which is not this path.
+/// platform's own money, never something cash buys. The catalog hides them from everyone,
+/// which would refuse this anyway; the explicit check is what keeps a grant of `invest` on
+/// them (itself refused in `allocations`) from ever being a way in.
 ///
 /// The **supply gate** runs second, once the mint has been priced and is therefore
 /// known: `issued + minting` must fit the allocation's unit cap. Like the cash check
@@ -300,9 +296,7 @@ async fn holds_units(ledger: &dyn Ledger, service: &ServiceId, user: UserId) -> 
 /// everywhere else.
 pub async fn subscribe(ports: &FundPorts<'_>, subscriptions: &dyn SubscriptionRepository, user: UserId, service: ServiceId, cash: Usdt, now_unix: i64) -> Result<Subscription, DomainError> {
 	if service.is_reserved() {
-		return Err(DomainError::Forbidden(format!(
-			"units of the reserved '{service}' allocation are seated only by a holder grant or a seed, never bought"
-		)));
+		return Err(DomainError::Forbidden(format!("units of the reserved '{service}' allocation are never bought")));
 	}
 	let allocation = allocations_app::require_subscribable(ports.allocations, &service, user).await?;
 	let covers = ClaimCovers {
@@ -319,33 +313,6 @@ pub async fn subscribe(ports: &FundPorts<'_>, subscriptions: &dyn SubscriptionRe
 	subscriptions.open(&mut subscription, &covers).await?;
 	ports.relay.notify_one();
 	Ok(subscription)
-}
-
-/// Price and gate a seed of the `fund` allocation — `depositor` subscribing `cash` into it
-/// — without opening it: the caller records the chain-proven deposit the cash comes from
-/// first, then opens what this returns (see `balance::seed_fund_capital`), so a refusal
-/// here leaves nothing written.
-///
-/// The gates are [`subscribe`]'s minus two, each left out for a reason spelled here:
-///
-/// * **The catalog's access level.** `fund` is `hidden` from everyone (#245) — a holder
-///   reads it through [`allocation_for_holder`], never through the catalog — so
-///   `require_subscribable` would refuse every depositor. The state gate it also runs is
-///   kept: a `fund` an operator closed takes no seed. `Invest` is asserted in its place
-///   because the operator's permission to seed is the admission.
-/// * **The Read-First balance check.** The cash is the deposit being recorded alongside,
-///   not yet on the ledger; TigerBeetle's non-negative flag stays the backstop and a
-///   parked cash leg leaves the money on the depositor's own claim.
-///
-/// The price is [`dealing_nav`], as for any deal — the seed NAV while `fund` has no supply,
-/// its computed value per unit after — and the unit cap applies as to any subscription.
-pub async fn price_fund_seed(ports: &FundPorts<'_>, id: SubscriptionId, depositor: UserId, cash: Usdt, now_unix: i64) -> Result<Subscription, DomainError> {
-	let service = ServiceId::fund();
-	let allocation = allocations_app::get(ports.allocations, &service).await?;
-	allocation.ensure_subscribable(AllocationAccess::Invest)?;
-	let price = dealing_nav(ports.nav, ports.ledger, &service, now_unix).await?;
-	allocation.ensure_capacity(issued_units(ports.ledger, &service).await?, Shares::from_cash(cash, price)?)?;
-	Subscription::open(id, depositor, service, cash, price)
 }
 
 /// Units the ledger considers issued for `service` — settled **plus in-flight inflow**.
@@ -698,10 +665,8 @@ fn participation_series(live_units: u128, flows: &[UnitFlow], pre_window: Option
 /// Operator posts a fund's total AUM; NAV is derived (`AUM / units_outstanding`, read
 /// live from TigerBeetle). Rejects zero units (NAV undefined) and a move beyond
 /// [`MAX_NAV_MOVE_PCT`] measured against BOTH the previous mark and the mark anchoring
-/// the [`NAV_MOVE_WINDOW_SECS`] window. There is no way past the guard on this path: a
-/// larger move is proposed to the owners and recorded by the consilium's execution
-/// through the same [`record_valuation`] writer. Records the mark (with `posted_by`) and
-/// returns it.
+/// the [`NAV_MOVE_WINDOW_SECS`] window. There is no way past the guard. Records the mark
+/// (with `posted_by`) through [`record_valuation`] and returns it.
 ///
 /// Gated on the allocation *existing* (any state — a closed product still gets marked so
 /// queued redemptions price correctly). Without this an AUM post would write a valuation
@@ -736,11 +701,9 @@ pub async fn post_fund_valuation(
 	record_valuation(nav, ledger, ValuationId::new(), service, aum, posted_by).await
 }
 
-/// The one writer of a valuation mark, shared by the cap-checked direct post and the
-/// owners' override (`consilium::execute`): derive NAV from the LIVE unit supply, append
-/// the mark, return it. Applies NO move guard — every caller decides its own admission
-/// before reaching this. The allocation gate is the caller's too: the direct post checks it
-/// per request, the override checked it at open.
+/// The one writer of a valuation mark: derive NAV from the LIVE unit supply, append the
+/// mark, return it. Applies NO move guard and no allocation gate — the caller decides its
+/// own admission before reaching this.
 pub async fn record_valuation(nav: &dyn NavMarks, ledger: &dyn Ledger, id: ValuationId, service: ServiceId, aum: Usdt, posted_by: &str) -> Result<Valuation, DomainError> {
 	let units = issued_supply(ledger, &service).await?;
 	// `from_aum` rejects zero units — NAV is undefined with nothing outstanding.
@@ -757,8 +720,7 @@ pub async fn record_valuation(nav: &dyn NavMarks, ledger: &dyn Ledger, id: Valua
 }
 
 /// A reserved allocation (`fee`, `fund`) takes no mark: its NAV is the value of what it
-/// holds, computed by [`nav_of`] on every read. Shared by the direct post and the owners'
-/// override, which are the two ways a mark can be asked for.
+/// holds, computed by [`nav_of`] on every read.
 pub fn refuse_mark_on_reserved(service: &ServiceId) -> Result<(), DomainError> {
 	if service.is_reserved() {
 		return Err(DomainError::Validation(format!(
@@ -775,9 +737,7 @@ async fn issued_supply(ledger: &dyn Ledger, service: &ServiceId) -> Result<Share
 }
 
 fn move_guard_tripped(from: Nav, to: Nav, against: &str) -> DomainError {
-	DomainError::Validation(format!(
-		"nav move {from} → {to} exceeds {MAX_NAV_MOVE_PCT}% against {against} — open a valuation-override consilium for the owners to approve it"
-	))
+	DomainError::Validation(format!("nav move {from} → {to} exceeds {MAX_NAV_MOVE_PCT}% against {against}"))
 }
 /// Assemble a position view: read the live unit balances — the holding and the book
 /// escrow — and the current NAV, value the two together.
@@ -799,8 +759,8 @@ async fn build_position_view(ledger: &dyn Ledger, nav: &dyn NavMarks, user: User
 }
 
 /// `|new − prev| / prev > pct%`, computed on base units (saturating; a previous NAV of
-/// zero makes any non-zero move "exceed", so recovering a wiped-out fund is an owners'
-/// decision — a valuation-override consilium — never a single post).
+/// zero makes any non-zero move "exceed", so recovering a wiped-out fund is never a single
+/// post).
 fn nav_move_exceeds(prev: Nav, new: Nav, pct: u128) -> bool {
 	let (p, n) = (prev.base_units(), new.base_units());
 	p.abs_diff(n).saturating_mul(100) > p.saturating_mul(pct)

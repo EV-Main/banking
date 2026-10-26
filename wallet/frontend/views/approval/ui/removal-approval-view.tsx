@@ -3,8 +3,7 @@
 // "Someone has proposed that you stop being an owner." Reached from an email, by the person
 // it is about.
 //
-// This page has the same machinery as the payout approval and a different job. Nobody
-// arrives here pleased, and the writing is the design: plain sentences, no exclamation, no
+// Nobody arrives here pleased, and the writing is the design: plain sentences, no exclamation, no
 // reassurance nobody asked for, and no urgency the deadline does not actually create. It
 // says who proposed it, what reason they gave, how long there is, and what each answer
 // does. It does not editorialise about the proposal, because this page is not the fund's
@@ -15,7 +14,7 @@
 // smaller, colder control AND it goes through a second, explicit confirmation. Refusing is
 // the reversible answer and takes one press. Neither is preselected, and refusing is not
 // dressed up as the "safe" choice — the copy says plainly that refusing does not end the
-// matter, because the peers can still decide it without them (docs/CONSILIUM.md, path (b)).
+// matter, because the peers can still decide it without them.
 
 import { CheckCircle2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
@@ -62,9 +61,9 @@ export function RemovalApprovalView({ token }: { token: string }) {
   /** The second, deliberate step in front of the irreversible answer. */
   const [confirming, setConfirming] = useState(false);
 
-  // See the payout view: the wire says "pending", not null, for an unanswered notice.
+  // The wire says "pending", not null, for an unanswered notice.
   const settled = settledRemoval(invitation?.decision);
-  // See the payout view: an answered notice keeps its outcome, whatever a later read says.
+  // An answered notice keeps its outcome, whatever a later read says.
   const gone = spent || (!settled && summary.error instanceof ApprovalUnavailableError);
 
   const decide = async (decision: RemovalDecision) => {
@@ -95,8 +94,8 @@ export function RemovalApprovalView({ token }: { token: string }) {
       setActionError(cause);
       setCode("");
       setConfirming(false);
-      // The same refusal the payout page meets (banking#324): the plane's count of attempts
-      // left, behind the BFF's prefix, goes under the field rather than out as a sentence.
+      // The plane's count of attempts left, behind the BFF's prefix, goes under the field
+      // rather than out as a sentence.
       const attemptsLeft = wrongCodeAttempts(cause);
       if (attemptsLeft !== null) setRejectedAttempts(attemptsLeft);
       // The server owns the attempt count; a failure here may or may not have spent one.

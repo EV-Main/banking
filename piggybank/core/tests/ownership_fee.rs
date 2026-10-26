@@ -44,10 +44,8 @@ use piggybank_core::{
 	config::KycGate,
 	infrastructure::{
 		allocations::PgAllocations,
-		consilium::PgConsilia,
 		custody::StubCustody,
 		deposits::PgDeposits,
-		fee_policy_changes::PgFeePolicyChanges,
 		fees::{PgFeeAssessments, PgFeePolicies, PgFeeSettlements, PgPositionAccruals},
 		issuance::PgUnitIssuances,
 		nav::PgNav,
@@ -61,7 +59,7 @@ use piggybank_core::{
 	},
 	ports::{
 		AllocationRegistry, RedemptionRepository, UserRepository,
-		fees::{FeePolicyChanges, FeeSettlements, PositionAccruals},
+		fees::{FeeSettlements, PositionAccruals},
 		ledger::{Ledger, LedgerTransfer},
 		nav::NavMarks,
 	},
@@ -85,8 +83,6 @@ struct Harness {
 	nav: PgNav,
 	deposits: PgDeposits,
 	policies: PgFeePolicies,
-	changes: PgFeePolicyChanges,
-	consilia: PgConsilia,
 	accruals: PgPositionAccruals,
 	assessments: PgFeeAssessments,
 	settlements: PgFeeSettlements,
@@ -114,8 +110,6 @@ async fn harness() -> Option<Harness> {
 		nav: PgNav::new(pool.clone()),
 		deposits: PgDeposits::new(pool.clone()),
 		policies: PgFeePolicies::new(pool.clone()),
-		changes: PgFeePolicyChanges::new(pool.clone()),
-		consilia: PgConsilia::new(pool.clone()),
 		accruals: PgPositionAccruals::new(pool.clone()),
 		assessments: PgFeeAssessments::new(pool.clone()),
 		settlements: PgFeeSettlements::new(pool.clone()),
@@ -189,22 +183,7 @@ async fn open_fund(h: &Harness, service: &ServiceId) {
 	h.allocations.register(&mut allocation).await.unwrap();
 	h.allocations.open(service).await.unwrap();
 	h.allocations.set_access(service, AllocationAccess::Invest).await.unwrap();
-	let ports = fee_app::FeePolicyPorts {
-		policies: &h.policies,
-		changes: &h.changes,
-		allocations: &h.allocations,
-		consilia: &h.consilia,
-		approval_url_base: "https://example.test/approve",
-		governance_mail_wired: true,
-	};
-	let request = fee_app::PolicyChangeRequest {
-		service: service.clone(),
-		policy: FeePolicy::HOUSE,
-		requested_effective_from_unix: 0,
-		reason: String::new(),
-	};
-	let change = fee_app::schedule_policy(&ports, UserId::new(), request, now_unix()).await.unwrap();
-	assert!(h.changes.promote(change.id, now_unix()).await.unwrap(), "a fund with no holders takes new terms at once");
+	common::install_fee_policy(&h.pool, service, FeePolicy::HOUSE).await;
 }
 
 /// New custody credited to `party`: a person's chain deposit, or — for an allocation,
@@ -568,10 +547,10 @@ async fn a_holder_of_the_hidden_fee_allocation_sees_their_position_with_its_titl
 	assert!(matches!(err, DomainError::NotFound { .. }), "{err:?}");
 }
 
-/// A reserved allocation's price is computed, never posted, and it charges no fee of its
-/// own — both asks are refused as validation, before anything is written.
+/// A reserved allocation's price is computed, never posted — the ask is refused as
+/// validation, before anything is written.
 #[tokio::test]
-async fn a_reserved_allocation_takes_no_mark_and_no_fee_policy() {
+async fn a_reserved_allocation_takes_no_mark() {
 	let Some(h) = harness().await else { return };
 	for reserved in [ServiceId::fee(), ServiceId::fund()] {
 		let err = funds_app::post_fund_valuation(&h.allocations, &h.nav, h.ledger.as_ref(), reserved.clone(), usdt("100"), "itest", now_unix())
@@ -579,24 +558,6 @@ async fn a_reserved_allocation_takes_no_mark_and_no_fee_policy() {
 			.unwrap_err();
 		assert!(matches!(err, DomainError::Validation(ref m) if m.contains("reserved")), "{reserved}: {err:?}");
 		assert!(h.nav.current(&reserved).await.unwrap().is_none(), "{reserved}: no mark was written");
-
-		let ports = fee_app::FeePolicyPorts {
-			policies: &h.policies,
-			changes: &h.changes,
-			allocations: &h.allocations,
-			consilia: &h.consilia,
-			approval_url_base: "https://example.test/approve",
-			governance_mail_wired: true,
-		};
-		let request = fee_app::PolicyChangeRequest {
-			service: reserved.clone(),
-			policy: FeePolicy::HOUSE,
-			requested_effective_from_unix: 0,
-			reason: String::new(),
-		};
-		let err = fee_app::schedule_policy(&ports, UserId::new(), request, now_unix()).await.unwrap_err();
-		assert!(matches!(err, DomainError::Validation(ref m) if m.contains("reserved")), "{reserved}: {err:?}");
-		assert!(h.changes.pending(&reserved).await.unwrap().is_none(), "{reserved}: no change was scheduled");
 	}
 	// With nothing outstanding the price is the seed NAV — the first units issued are
 	// worth exactly what stands behind them, and nothing ever divides by zero.

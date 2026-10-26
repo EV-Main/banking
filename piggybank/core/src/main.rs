@@ -33,24 +33,20 @@ use piggybank_core::{
 			endpoint::{BridgeTlsFiles, bridge_endpoint},
 		},
 		compartments::PgCompartments,
-		consilium::PgConsilia,
-		consilium_mailer::{self, ConsiliumMailer},
-		consilium_sweeper::ConsiliumSweeper,
 		custody::{ChainCustody, MultiChainCustody, StubCustody},
 		db,
 		deposit_watcher::DepositWatcher,
 		deposits::PgDeposits,
 		dispatcher::Dispatcher,
-		fee_policy_changes::PgFeePolicyChanges,
 		fee_sweeper::FeeSweeper,
 		fees::{PgFeeAssessments, PgFeePolicies, PgFeeSettlements, PgPositionAccruals},
-		governance_mail,
 		issuance::PgUnitIssuances,
 		ledger::{self, TbLedger},
 		nav::PgNav,
 		operation_feed::PgOperationFeed,
 		outflow::PgOutflowPolicy,
 		payments::PgPayments,
+		payments_sweeper::PaymentsSweeper,
 		positions::PgFundPositions,
 		reaper::Reaper,
 		reconciliation::Reconciliation,
@@ -77,8 +73,8 @@ use piggybank_core::{
 		withdrawals::PgWithdrawals,
 	},
 	ports::{
-		AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
-		PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
+		AllocationRegistry, BookStore, CompartmentStore, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
+		PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository, ledger::Ledger,
 	},
 	services::{
 		self,
@@ -149,20 +145,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// applied. Announced at boot for the same reason the signer's spend policy is: a gate
 	// that is off is visible in a pod's first log lines, not only in whoever's memory of
 	// the environment.
-	let payment_approval_mode = config::PaymentApprovalModes::from_env();
-	tracing::info!(
-		fund = ?payment_approval_mode.fund,
-		session = ?payment_approval_mode.session,
-		"new payment orders: fund money is decided by {}, an investor's by {}",
-		match payment_approval_mode.fund {
-			config::PaymentApprovalMode::Concierge => "a concierge approval proposed in the initiator's name",
-			config::PaymentApprovalMode::Consilium => "banking's consilium",
-		},
-		match payment_approval_mode.session {
-			config::PaymentApprovalMode::Concierge => "their own answer in the wallet host",
-			config::PaymentApprovalMode::Consilium => "the emailed token",
-		},
-	);
 	let kyc_gate = config::KycGate::from_env();
 	if kyc_gate.is_enforced() {
 		tracing::info!("kyc gate enforced — deposit addresses and withdrawals require a verified tier");
@@ -220,9 +202,8 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// Production refuses to pull the lifecycle stream from a peer it cannot authenticate
 	// (#199, phase 2) — asked here, with the other production guards and before any infra
 	// dial, and before the endpoint exists, so the refusal reads as policy and not as a
-	// transport error. The endpoint built next carries both cross-plane seams, the
-	// lifecycle consumer and the governance-mail relay: one address, one trust
-	// relationship, one place it is configured.
+	// transport error. The endpoint built next carries every cross-plane seam: one
+	// address, one trust relationship, one place it is configured.
 	// The scope ledger's listener, read and checked with the other boot guards: a grants file
 	// that grants something unsafe, or a CA that is not one, stops the boot here.
 	// EX_CONFIG (78), like every other configuration refusal: "the config is wrong" must not
@@ -272,7 +253,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 
 	let users: Arc<dyn UserRepository> = Arc::new(PgUsers::new(pool.clone()));
 	let withdrawals: Arc<dyn WithdrawalRepository> = Arc::new(PgWithdrawals::new(pool.clone()));
-	let consilia: Arc<dyn ConsiliumRepository> = Arc::new(PgConsilia::new(pool.clone()));
 	// ONE adapter behind three ports: `PgPayments` implements the write repository, the
 	// executor's bookkeeping and the admin read model, and they are handed out separately so a surface can be granted the
 	// history without the surface that opens orders.
@@ -301,7 +281,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// these touch cash; only `settlements` ever crosses into it, once per period per fund.
 	let fees = FeePorts {
 		policies: Arc::new(PgFeePolicies::new(pool.clone())),
-		changes: Arc::new(PgFeePolicyChanges::new(pool.clone())),
 		accruals: Arc::new(PgPositionAccruals::new(pool.clone())),
 		assessments: Arc::new(PgFeeAssessments::new(pool.clone())),
 		settlements: Arc::new(PgFeeSettlements::new(pool.clone())),
@@ -403,7 +382,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	// recovery jobs' cadence and their per-item warn-and-continue discipline.
 	let fee_sweeper = FeeSweeper::new(
 		fees.policies.clone(),
-		fees.changes.clone(),
 		fees.accruals.clone(),
 		fees.assessments.clone(),
 		ledger.clone(),
@@ -518,13 +496,16 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		_ => None,
 	};
 
-	// ── consilium (multi-owner payout authorization) ───────────────────────────
-	// The sweeper owns the two things the governance aggregate cannot hear on its own: a
-	// 72h window running out, and an approval whose payout never got created (a crash
-	// between the verdict and the money). Both are idempotent.
-	let consilium_sweeper = ConsiliumSweeper {
+	// Notices to people about their money go through concierge's scope inbox, from a queue
+	// written beside the fact they announce.
+	let scope_notifications = ScopeNotificationWorker::new(
+		pool.clone(),
+		Arc::new(ConciergeScopeNotifier::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
+	);
+	// The payment orders' clock: windows running out, approved orders whose effect never got
+	// created, and the concierge approval round. Both are idempotent.
+	let payments_sweeper = PaymentsSweeper {
 		pool: pool.clone(),
-		consilia: consilia.clone(),
 		withdrawals: withdrawals.clone(),
 		payments: payments.clone(),
 		users: users.clone(),
@@ -532,33 +513,11 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		custody: custody.clone(),
 		policy: outflow.clone(),
 		allocations: allocations.clone(),
-		fee_changes: fees.changes.clone(),
-		issuances: issuances.clone(),
-		deposits: deposits.clone(),
-		addresses: deposit_addresses.clone(),
-		subscriptions: subscriptions.clone(),
-		nav: nav.clone(),
 		notify: relay_notify.clone(),
 		configured: Arc::from(rails.configured_networks()),
 		kyc: kyc_gate,
-		approval_url_base: config.consilium_approval_url_base.clone(),
-		consent_url_base: config.payment_consent_url_base.clone(),
-		// Always wired, whichever way new payments are seated: orders already seated on a
-		// concierge approval are finished by it, and with none open a round is a few cheap reads.
-		payment_approvals: Some(payment_proposer.clone()),
+		proposer: payment_proposer.clone(),
 	};
-	// Notices to people about their money go through concierge's scope inbox, from a queue
-	// written beside the fact they announce.
-	let scope_notifications = ScopeNotificationWorker::new(
-		pool.clone(),
-		Arc::new(ConciergeScopeNotifier::new(concierge_endpoint.connect_lazy(), config.bridge_service_token.clone())),
-	);
-	// The mail worker exists only when the seam is compiled in — see
-	// `infrastructure::governance_mail`. Unwired, the queue still fills (nothing is lost)
-	// and the boot line below says so loudly, because an approval mail that never goes out
-	// is a consilium that can never reach quorum.
-	let consilium_mailer = governance_mail_adapter(&concierge_endpoint, &config).map(|mailer| ConsiliumMailer::new(pool.clone(), mailer));
-	governance_mail::announce_wiring(consilium_mailer::pending_count(&pool).await.unwrap_or_default());
 
 	let (provisioner, provision_rx) = provisioner_channel();
 	let (auth_service, authorizer) = AuthService::try_new(auth_config, provisioner).await.context("failed to build the auth service")?;
@@ -572,7 +531,6 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		analytics,
 		users.clone(),
 		withdrawals.clone(),
-		consilia.clone(),
 		payments,
 		payment_feed,
 		allocations,
@@ -592,16 +550,14 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		Arc::from(rails.configured_networks()),
 		kyc_gate,
 		relay_notify,
-		config.consilium_approval_url_base.clone(),
-		config.payment_consent_url_base.clone(),
+		payment_proposer,
 		rails.ton.as_ref().is_some_and(|ton| ton.is_testnet),
 		outflow,
 		compartments,
 		scope_ledger_store.clone(),
 	)
 	.with_withdrawal_limits(withdrawal_limits)
-	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default())
-	.with_payment_approvals(payment_approval_mode, payment_proposer);
+	.with_scope_grants(scope_ledger_settings.as_ref().map(|settings| settings.grants.clone()).unwrap_or_default());
 
 	// Operations are only ever requested over the scope ledger's listener, so their executor
 	// runs exactly when the listener does: a hub without it neither opens nor pulls banking's
@@ -685,8 +641,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		ton_withdrawal_watcher_done,
 		ton_sweep_done,
 		treasury_resolve_done,
-		consilium_sweeper_done,
-		consilium_mailer_done,
+		payments_sweeper_done,
 		scope_notifications_done,
 		settings_drift_done,
 	) = tokio::join!(
@@ -781,12 +736,7 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 			"treasury resolve",
 			infallible(resolve_treasuries(bsc_custody, polygon_custody, tron_custody, ton_custody, shutdown.clone()))
 		),
-		branch(&shutdown, "consilium sweeper", infallible(consilium_sweeper.run(shutdown.clone()))),
-		branch(
-			&shutdown,
-			"consilium mailer",
-			infallible(run_or_idle(shutdown.clone(), consilium_mailer.map(|mailer| mailer.run(shutdown.clone()))))
-		),
+		branch(&shutdown, "payments sweeper", infallible(payments_sweeper.run(shutdown.clone()))),
 		branch(&shutdown, "scope notifications", infallible(scope_notifications.run(shutdown.clone()))),
 		branch(
 			&shutdown,
@@ -826,33 +776,9 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 		.and(ton_withdrawal_watcher_done)
 		.and(ton_sweep_done)
 		.and(treasury_resolve_done)
-		.and(consilium_sweeper_done)
-		.and(consilium_mailer_done)
+		.and(payments_sweeper_done)
 		.and(scope_notifications_done)
 		.and(settings_drift_done)
-}
-
-/// Build the governance-mail adapter over the concierge endpoint, or `None` when the seam
-/// is not compiled in.
-///
-/// It rides the SAME endpoint and the SAME shared secret as the one-way lifecycle bridge:
-/// banking↔concierge is one trust relationship, and giving the mail relay a second one would
-/// mean a second thing to rotate and a second thing to get wrong. The endpoint is the one
-/// already built (and boot-checked) for the bridge, not a second build of it: a second
-/// build was how an `https://` bridge could have left the mail seam on a channel that
-/// never negotiated TLS — and its failure was swallowed into "no mailer", which reads as a
-/// build without the feature.
-#[allow(unused_variables, reason = "both parameters are only read when the seam is compiled in")]
-fn governance_mail_adapter(concierge: &Endpoint, config: &config::AppConfig) -> Option<Arc<dyn piggybank_core::ports::GovernanceMailer>> {
-	#[cfg(feature = "concierge_governance_mail")]
-	{
-		Some(Arc::new(governance_mail::wired::ConciergeGovernanceMailer::new(
-			concierge.connect_lazy(),
-			config.bridge_service_token.clone(),
-		)))
-	}
-	#[cfg(not(feature = "concierge_governance_mail"))]
-	None
 }
 
 /// Resolve + log each configured rail's treasury hot wallet so the operator can fund it

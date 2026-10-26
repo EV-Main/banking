@@ -36,10 +36,8 @@ use piggybank_core::{
 	application::{balance as balance_app, fees as fee_app, funds as funds_app, issuance as issuance_app, ownership as ownership_app},
 	infrastructure::{
 		allocations::PgAllocations,
-		consilium::PgConsilia,
 		custody::StubCustody,
 		deposits::PgDeposits,
-		fee_policy_changes::PgFeePolicyChanges,
 		fees::{PgFeeAssessments, PgFeePolicies, PgFeeSettlements, PgPositionAccruals},
 		issuance::PgUnitIssuances,
 		nav::PgNav,
@@ -52,7 +50,7 @@ use piggybank_core::{
 	},
 	ports::{
 		AllocationRegistry, UserRepository,
-		fees::{FeePolicyChanges, PositionAccruals},
+		fees::PositionAccruals,
 		ledger::{Ledger, LedgerTransfer},
 	},
 };
@@ -74,8 +72,6 @@ struct Harness {
 	nav: PgNav,
 	deposits: PgDeposits,
 	policies: PgFeePolicies,
-	changes: PgFeePolicyChanges,
-	consilia: PgConsilia,
 	accruals: PgPositionAccruals,
 	assessments: PgFeeAssessments,
 	settlements: PgFeeSettlements,
@@ -100,8 +96,6 @@ async fn harness() -> Option<Harness> {
 		nav: PgNav::new(pool.clone()),
 		deposits: PgDeposits::new(pool.clone()),
 		policies: PgFeePolicies::new(pool.clone()),
-		changes: PgFeePolicyChanges::new(pool.clone()),
-		consilia: PgConsilia::new(pool.clone()),
 		accruals: PgPositionAccruals::new(pool.clone()),
 		assessments: PgFeeAssessments::new(pool.clone()),
 		settlements: PgFeeSettlements::new(pool.clone()),
@@ -171,25 +165,9 @@ async fn open_product(h: &Harness, service: &ServiceId, with_fees: bool) {
 	h.allocations.register(&mut allocation).await.unwrap();
 	h.allocations.open(service).await.unwrap();
 	h.allocations.set_access(service, AllocationAccess::Invest).await.unwrap();
-	if !with_fees {
-		return;
+	if with_fees {
+		common::install_fee_policy(&h.pool, service, FeePolicy::HOUSE).await;
 	}
-	let ports = fee_app::FeePolicyPorts {
-		policies: &h.policies,
-		changes: &h.changes,
-		allocations: h.allocations.as_ref(),
-		consilia: &h.consilia,
-		approval_url_base: "https://example.test/approve",
-		governance_mail_wired: true,
-	};
-	let request = fee_app::PolicyChangeRequest {
-		service: service.clone(),
-		policy: FeePolicy::HOUSE,
-		requested_effective_from_unix: 0,
-		reason: String::new(),
-	};
-	let change = fee_app::schedule_policy(&ports, UserId::new(), request, now_unix()).await.unwrap();
-	assert!(h.changes.promote(change.id, now_unix()).await.unwrap(), "a fund with no holders takes new terms at once");
 }
 
 /// New custody credited to `party`: a person's chain deposit, or — for an allocation,

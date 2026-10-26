@@ -51,20 +51,6 @@ export type BankingV1AccruedFees = {
 };
 
 /**
- * AcknowledgeUndeliveredNoticesRequest
- */
-export type BankingV1AcknowledgeUndeliveredNoticesRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * change_id
-     */
-    change_id?: string;
-};
-
-/**
  * AdminBalanceRequest
  */
 export type BankingV1AdminBalanceRequest = {
@@ -591,30 +577,6 @@ export type BankingV1BookSnapshot = {
 };
 
 /**
- * CancelConsiliumRequest
- */
-export type BankingV1CancelConsiliumRequest = {
-    /**
-     * consilium_id
-     */
-    consilium_id?: string;
-};
-
-/**
- * CancelFeePolicyChangeRequest
- */
-export type BankingV1CancelFeePolicyChangeRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * change_id
-     */
-    change_id?: string;
-};
-
-/**
  * CancelOrderRequest
  */
 export type BankingV1CancelOrderRequest = {
@@ -818,442 +780,9 @@ export type BankingV1CompartmentMove = {
 /**
  * ConsentDecision
  *
- * What the emailed investor answered.
+ * What the investor answered.
  */
 export type BankingV1ConsentDecision = 'CONSENT_DECISION_UNSPECIFIED' | 'CONSENT_DECISION_PENDING' | 'CONSENT_DECISION_APPROVE' | 'CONSENT_DECISION_REJECT';
-
-/**
- * Consilium
- */
-export type BankingV1Consilium = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * state
-     */
-    state?: BankingV1ConsiliumState;
-    /**
-     * payload_hash
-     *
-     * Hex SHA-256 over the canonical terms. Shown (short prefix) in the mail so an owner
-     * can tell that what they approved is what will execute.
-     */
-    payload_hash?: string;
-    /**
-     * initiator_user_id
-     */
-    initiator_user_id?: string;
-    /**
-     * initiator_email
-     */
-    initiator_email?: string;
-    /**
-     * owner_count
-     *
-     * N — owners at open. The threshold is frozen from this, never recomputed later.
-     */
-    owner_count?: number;
-    /**
-     * threshold
-     */
-    threshold?: number;
-    /**
-     * approvals
-     *
-     * Votes that are still valid: an approver who has since lost ownership does not count.
-     */
-    approvals?: number;
-    /**
-     * rejections
-     */
-    rejections?: number;
-    /**
-     * voters
-     */
-    voters?: Array<BankingV1ConsiliumVoter>;
-    /**
-     * created_at
-     */
-    created_at?: number | string;
-    /**
-     * expires_at
-     */
-    expires_at?: number | string;
-    /**
-     * decided_at
-     */
-    decided_at?: number | string;
-    /**
-     * executed_withdrawal_id
-     *
-     * Set exactly once, on EXECUTED — and exactly ONE of the effect ids is
-     * (`executed_withdrawal_id`, `executed_payment_id`, `executed_valuation_id`,
-     * `executed_fee_policy_change_id`, `executed_issuance_id`, `executed_subscription_id`),
-     * because a consilium has one effect. `consilium_execution_is_recorded` states that to
-     * the database as `num_nonnulls(...) = 1`.
-     */
-    executed_withdrawal_id?: string;
-    /**
-     * failure_reason
-     */
-    failure_reason?: string;
-    /**
-     * version
-     *
-     * Monotonic per consilium. The live page watches this and refetches when it moves —
-     * the socket carries a version, never a tally.
-     */
-    version?: number | string;
-    /**
-     * payment
-     */
-    payment?: BankingV1ConsiliumPaymentTerms;
-    /**
-     * executed_payment_id
-     *
-     * The payment order an executed PAYMENT consilium carried.
-     */
-    executed_payment_id?: string;
-    /**
-     * valuation_override
-     *
-     * A terms sibling — see the "exactly one" note above.
-     */
-    valuation_override?: BankingV1ValuationOverrideTerms;
-    /**
-     * executed_valuation_id
-     *
-     * The `fund_valuations` row an executed VALUATION-OVERRIDE consilium recorded.
-     */
-    executed_valuation_id?: string;
-    /**
-     * fee_policy
-     *
-     * The fourth terms sibling — set exactly for a FEE_POLICY consilium.
-     */
-    fee_policy?: BankingV1ConsiliumFeePolicyTerms;
-    /**
-     * executed_fee_policy_change_id
-     *
-     * The fee-policy change an executed FEE_POLICY consilium scheduled.
-     */
-    executed_fee_policy_change_id?: string;
-    /**
-     * holder_grant
-     *
-     * The fifth terms sibling — set exactly for a HOLDER_GRANT consilium.
-     */
-    holder_grant?: BankingV1HolderGrantTerms;
-    /**
-     * seed_capital
-     *
-     * The sixth — set exactly for a SEED_CAPITAL consilium.
-     */
-    seed_capital?: BankingV1SeedCapitalTerms;
-    /**
-     * executed_issuance_id
-     *
-     * The in-kind issuance an executed HOLDER_GRANT consilium minted
-     * (`AllocationsService.UnitIssuance`).
-     */
-    executed_issuance_id?: string;
-    /**
-     * executed_subscription_id
-     *
-     * The `fund` subscription an executed SEED_CAPITAL consilium booked
-     * (`FundsService.Subscription`).
-     */
-    executed_subscription_id?: string;
-};
-
-/**
- * ConsiliumFeePolicyTerms
- *
- * The immutable subject of a FEE-POLICY consilium — a change of a product's fee terms
- * that tightens them beyond the house envelope (docs/FEES.md § "Changing the terms").
- * Not a money move: carrying it schedules the change, and the fee sweeper promotes it once
- * the holders' notice period has run.
- */
-export type BankingV1ConsiliumFeePolicyTerms = {
-    /**
-     * change_id
-     *
-     * The change this quorum authorizes. Inside the hashed subject, so an approval of one
-     * change is never a valid signature over another naming the same numbers.
-     */
-    change_id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * allocation_name
-     *
-     * The product's display name, read live from the registry.
-     */
-    allocation_name?: string;
-    /**
-     * from_configured
-     *
-     * The terms in force when the change was proposed. `from_configured` is false when the
-     * fund charged nothing — a different fact from a policy whose rates are zero — and the
-     * `from_*` fields are then zero / default.
-     */
-    from_configured?: boolean;
-    /**
-     * from_management_bps
-     */
-    from_management_bps?: number;
-    /**
-     * from_performance_bps
-     */
-    from_performance_bps?: number;
-    /**
-     * from_hurdle_bps
-     */
-    from_hurdle_bps?: number;
-    /**
-     * from_basis
-     */
-    from_basis?: string;
-    /**
-     * from_crystallization
-     */
-    from_crystallization?: string;
-    /**
-     * to_management_bps
-     */
-    to_management_bps?: number;
-    /**
-     * to_performance_bps
-     */
-    to_performance_bps?: number;
-    /**
-     * to_hurdle_bps
-     */
-    to_hurdle_bps?: number;
-    /**
-     * to_basis
-     */
-    to_basis?: string;
-    /**
-     * to_crystallization
-     */
-    to_crystallization?: string;
-    /**
-     * effective_from
-     *
-     * Unix seconds the requester asked the change to bind from; 0 = as soon as the notice
-     * allows. The moment actually fixed is never earlier than 24h after the carrying vote
-     * while anyone holds units.
-     */
-    effective_from?: number | string;
-    /**
-     * holder_count
-     *
-     * How many investors hold units right now — who the change binds.
-     */
-    holder_count?: number;
-    /**
-     * reason
-     *
-     * Why, in the requester's words. Required for this kind, shown verbatim.
-     */
-    reason?: string;
-};
-
-/**
- * ConsiliumInvitation
- *
- * What the emailed owner is shown BEFORE they vote. Deliberately narrower than
- * `Consilium`: no other owner's identity, no vote-by-vote breakdown.
- */
-export type BankingV1ConsiliumInvitation = {
-    /**
-     * consilium_id
-     */
-    consilium_id?: string;
-    /**
-     * state
-     */
-    state?: BankingV1ConsiliumState;
-    /**
-     * payload_hash
-     */
-    payload_hash?: string;
-    /**
-     * initiator_email
-     *
-     * Who opened it, masked.
-     */
-    initiator_email?: string;
-    /**
-     * voter_email
-     *
-     * The recipient's own masked address, so they can confirm the mail reached the right
-     * seat before typing the code.
-     */
-    voter_email?: string;
-    /**
-     * threshold
-     */
-    threshold?: number;
-    /**
-     * approvals
-     */
-    approvals?: number;
-    /**
-     * owner_count
-     */
-    owner_count?: number;
-    /**
-     * created_at
-     */
-    created_at?: number | string;
-    /**
-     * expires_at
-     */
-    expires_at?: number | string;
-    /**
-     * decision
-     *
-     * This seat's own answer, so a reopened link shows what was already said.
-     */
-    decision?: BankingV1VoteDecision;
-    /**
-     * attempts_remaining
-     *
-     * Code attempts left before the token burns.
-     */
-    attempts_remaining?: number;
-    /**
-     * payment
-     */
-    payment?: BankingV1ConsiliumPaymentTerms;
-    /**
-     * valuation_override
-     */
-    valuation_override?: BankingV1ValuationOverrideTerms;
-    /**
-     * fee_policy
-     */
-    fee_policy?: BankingV1ConsiliumFeePolicyTerms;
-    /**
-     * holder_grant
-     */
-    holder_grant?: BankingV1HolderGrantTerms;
-    /**
-     * seed_capital
-     */
-    seed_capital?: BankingV1SeedCapitalTerms;
-};
-
-/**
- * ConsiliumList
- */
-export type BankingV1ConsiliumList = {
-    /**
-     * items
-     */
-    items?: Array<BankingV1Consilium>;
-};
-
-/**
- * ConsiliumPaymentTerms
- *
- * The immutable subject of a PAYMENT consilium — the §3 rule that money pooled in an
- * allocation (`service:<id>`, the reserved `fee` and `fund` included) moves only on the
- * owners' quorum, at every tier.
- *
- * A PROJECTION OF THE ORDER, not the order. `banking.v1.Payment` (payments.proto) is what
- * the payments screen reads; this is what an owner needs in order to judge one request:
- * where the money leaves from, where it lands, how much, and why. The two ends are rendered
- * as LABELS rather than as `(kind, id)` pairs because the question an owner is answering is
- * "should this money move", and an account id is not an answer to it.
- */
-export type BankingV1ConsiliumPaymentTerms = {
-    /**
-     * payment_id
-     *
-     * The order this quorum authorizes. Inside the hashed subject too, so an approval of one
-     * payment is never a valid signature over another with identical terms.
-     */
-    payment_id?: string;
-    /**
-     * tier
-     *
-     * internal | service | external — DERIVED from the destination, never supplied.
-     */
-    tier?: string;
-    /**
-     * source
-     *
-     * Where the money leaves from.
-     */
-    source?: string;
-    /**
-     * destination
-     *
-     * Where it lands. An external destination is rendered in FULL, address and rail: a
-     * truncated address in an approval flow is an invitation to approve the wrong one.
-     */
-    destination?: string;
-    /**
-     * amount
-     *
-     * Decimal USDT string, as everywhere else on this wire.
-     */
-    amount?: string;
-    /**
-     * reason
-     *
-     * Why, in the initiator's words. Required, shown verbatim, never interpreted.
-     */
-    reason?: string;
-};
-
-/**
- * ConsiliumState
- *
- * Where a consilium stands. Terminal everywhere except OPEN.
- */
-export type BankingV1ConsiliumState = 'CONSILIUM_STATE_UNSPECIFIED' | 'CONSILIUM_STATE_OPEN' | 'CONSILIUM_STATE_APPROVED' | 'CONSILIUM_STATE_REJECTED' | 'CONSILIUM_STATE_EXPIRED' | 'CONSILIUM_STATE_CANCELLED' | 'CONSILIUM_STATE_EXECUTED' | 'CONSILIUM_STATE_EXECUTION_FAILED';
-
-/**
- * ConsiliumVoter
- *
- * One owner's seat in a consilium.
- */
-export type BankingV1ConsiliumVoter = {
-    /**
-     * user_id
-     */
-    user_id?: string;
-    /**
-     * email
-     *
-     * Masked (`a***@example.com`) on every surface a non-owner can reach.
-     */
-    email?: string;
-    /**
-     * decision
-     */
-    decision?: BankingV1VoteDecision;
-    /**
-     * decided_at
-     *
-     * Unix seconds; 0 while pending.
-     */
-    decided_at?: number | string;
-    /**
-     * notified
-     *
-     * True once the mail has actually been handed to the delivery queue.
-     */
-    notified?: boolean;
-};
 
 /**
  * Deposit
@@ -1576,154 +1105,6 @@ export type BankingV1FeePolicy = {
      * Unix seconds since which these terms bind; 0 when unconfigured.
      */
     effective_from?: number | string;
-    /**
-     * pending
-     *
-     * The change on its way, if any — awaiting the owners or scheduled. Shown to holders
-     * and non-holders alike: the terms coming are part of deciding whether to stay in.
-     */
-    pending?: BankingV1FeePolicyChange;
-};
-
-/**
- * FeePolicyChange
- *
- * One row of a fund's fee-policy history. `state` is one of awaiting_consilium |
- * scheduled | active | superseded | rejected | cancelled; `requirement` is admin |
- * owner_consilium. See docs/FEES.md § "Changing the terms".
- */
-export type BankingV1FeePolicyChange = {
-    /**
-     * id
-     */
-    id?: string;
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * version
-     */
-    version?: number;
-    /**
-     * state
-     */
-    state?: string;
-    /**
-     * management_bps
-     */
-    management_bps?: number;
-    /**
-     * performance_bps
-     */
-    performance_bps?: number;
-    /**
-     * hurdle_bps
-     */
-    hurdle_bps?: number;
-    /**
-     * basis
-     */
-    basis?: string;
-    /**
-     * crystallization
-     */
-    crystallization?: string;
-    /**
-     * effective_from
-     *
-     * Unix seconds the terms bind from. Provisional while awaiting the owners; fixed when
-     * the change is scheduled.
-     */
-    effective_from?: number | string;
-    /**
-     * requirement
-     */
-    requirement?: string;
-    /**
-     * consilium_id
-     *
-     * The consilium this change waits on (or waited on); empty for an administrator's change.
-     */
-    consilium_id?: string;
-    /**
-     * requested_by
-     */
-    requested_by?: string;
-    /**
-     * requested_at
-     */
-    requested_at?: number | string;
-    /**
-     * scheduled_at
-     *
-     * Unix seconds the notice clock started; 0 while awaiting the owners.
-     */
-    scheduled_at?: number | string;
-    /**
-     * applied_at
-     *
-     * Unix seconds the terms took effect; 0 until they did.
-     */
-    applied_at?: number | string;
-    /**
-     * reason
-     *
-     * Why, in the requester's words; empty when none was given.
-     */
-    reason?: string;
-    /**
-     * notices_waived_by
-     *
-     * The operator's acknowledgement of holders who could not be told (see
-     * AcknowledgeUndeliveredNotices): who took responsibility — the latest to, when the
-     * record was extended — governance detail, shown to operators and blank for everyone
-     * else.
-     */
-    notices_waived_by?: string;
-    /**
-     * notices_waived_at
-     *
-     * Unix seconds the (latest) acknowledgement was given; 0 when the notices were never
-     * waived. Public like every other moment on the change.
-     */
-    notices_waived_at?: number | string;
-    /**
-     * notices_waived_users
-     *
-     * The ids of the holders whose notice the mailer had given up on by that moment — the
-     * holders the change binds over untold. Operators only; empty for everyone else.
-     */
-    notices_waived_users?: Array<string>;
-    /**
-     * undelivered_notices
-     *
-     * Notices of this change not yet delivered to a CURRENT holder, how many of those the
-     * mailer has given up on — the figures a tightening waits on — and how many of the
-     * given-up ones the acknowledgement does not cover (all of them while there is none):
-     * the holders a (further) AcknowledgeUndeliveredNotices would name, so it is worth
-     * offering exactly while this is non-zero. Counted only while `scheduled` (0 in every
-     * other state), and shown to operators only.
-     */
-    undelivered_notices?: number;
-    /**
-     * notices_given_up
-     */
-    notices_given_up?: number;
-    /**
-     * notices_unacknowledged
-     */
-    notices_unacknowledged?: number;
-};
-
-/**
- * FeePolicyChangeList
- */
-export type BankingV1FeePolicyChangeList = {
-    /**
-     * changes
-     */
-    changes?: Array<BankingV1FeePolicyChange>;
 };
 
 /**
@@ -1925,28 +1306,6 @@ export type BankingV1GetCompartmentRequest = {
 };
 
 /**
- * GetConsentInvitationRequest
- */
-export type BankingV1GetConsentInvitationRequest = {
-    /**
-     * token
-     *
-     * The opaque single-use token from the mail. Never the code.
-     */
-    token?: string;
-};
-
-/**
- * GetConsiliumRequest
- */
-export type BankingV1GetConsiliumRequest = {
-    /**
-     * consilium_id
-     */
-    consilium_id?: string;
-};
-
-/**
  * GetDepositAddressRequest
  */
 export type BankingV1GetDepositAddressRequest = {
@@ -1993,18 +1352,6 @@ export type BankingV1GetFundNavRequest = {
  */
 export type BankingV1GetFundRevenueRequest = {
     [key: string]: never;
-};
-
-/**
- * GetInvitationRequest
- */
-export type BankingV1GetInvitationRequest = {
-    /**
-     * token
-     *
-     * The opaque single-use token from the mail. Never the code.
-     */
-    token?: string;
 };
 
 /**
@@ -2165,36 +1512,6 @@ export type BankingV1GrantMandateRequest = {
 };
 
 /**
- * HolderGrantTerms
- *
- * The immutable subject of a HOLDER-GRANT consilium (#245): `units` of the reserved
- * `allocation` minted to `user_id`, with no cash leg. The units are frozen, not a cash
- * figure — what they are worth is the allocation's NAV at execution. Executing it records
- * a `UnitIssuance` (`source = "mint"`, holder `user`) that `executed_issuance_id` names.
- */
-export type BankingV1HolderGrantTerms = {
-    /**
-     * allocation
-     *
-     * fee | fund — a reserved allocation only
-     */
-    allocation?: string;
-    /**
-     * user_id
-     *
-     * On the request: a banking (or concierge) user id, resolved the way every admin RPC
-     * resolves a target. On a response: the money-plane id the terms stored.
-     */
-    user_id?: string;
-    /**
-     * units
-     *
-     * decimal units, > 0
-     */
-    units?: string;
-};
-
-/**
  * IssueUnitsRequest
  */
 export type BankingV1IssueUnitsRequest = {
@@ -2208,8 +1525,8 @@ export type BankingV1IssueUnitsRequest = {
      * Who receives the units: a banking (or concierge) user id, resolved the way every
      * admin RPC resolves a target. Required — a mint to nobody is a malformed request.
      * Only a person: the company is not a holder (#245), and a reserved allocation is
-     * seated by the owners' consilium (`ConsiliumService.OpenHolderGrant`) or by the fee
-     * accrual, never by an operator's mint — so there is deliberately no arm for either.
+     * seated by the fee accrual, never by an operator's mint — so there is deliberately no
+     * arm for either.
      */
     user_id?: string;
     /**
@@ -2371,18 +1688,6 @@ export type BankingV1ListCompartmentsRequest = {
 };
 
 /**
- * ListConsiliaRequest
- */
-export type BankingV1ListConsiliaRequest = {
-    /**
-     * limit
-     *
-     * 0 means the server default.
-     */
-    limit?: number;
-};
-
-/**
  * ListDepositsRequest
  */
 export type BankingV1ListDepositsRequest = {
@@ -2401,16 +1706,6 @@ export type BankingV1ListFeeAssessmentsRequest = {
  */
 export type BankingV1ListFeePoliciesRequest = {
     [key: string]: never;
-};
-
-/**
- * ListFeePolicyChangesRequest
- */
-export type BankingV1ListFeePolicyChangesRequest = {
-    /**
-     * service
-     */
-    service?: string;
 };
 
 /**
@@ -2535,7 +1830,7 @@ export type BankingV1ListPaymentsRequest = {
      * fund_owned_only
      *
      * Only orders whose source is an allocation's claim (`service:<id>`) or banking's
-     * treasury — the ones the owners' consilium gates, i.e. the governance surface.
+     * treasury — the ones the owners gate, i.e. the governance surface.
      */
     fund_owned_only?: boolean;
 };
@@ -2993,16 +2288,6 @@ export type BankingV1NetworkWithdrawable = {
 };
 
 /**
- * OpenHolderGrantRequest
- */
-export type BankingV1OpenHolderGrantRequest = {
-    /**
-     * terms
-     */
-    terms?: BankingV1HolderGrantTerms;
-};
-
-/**
  * OpenPaymentRequest
  */
 export type BankingV1OpenPaymentRequest = {
@@ -3027,16 +2312,6 @@ export type BankingV1OpenPaymentRequest = {
      * payload the approver signs.
      */
     reason?: string;
-};
-
-/**
- * OpenValuationOverrideRequest
- */
-export type BankingV1OpenValuationOverrideRequest = {
-    /**
-     * terms
-     */
-    terms?: BankingV1ValuationOverrideTerms;
 };
 
 /**
@@ -3579,18 +2854,6 @@ export type BankingV1Payment = {
      */
     initiator_email?: string;
     /**
-     * consilium_id
-     *
-     * Set exactly when the requirement is the owner consilium.
-     */
-    consilium_id?: string;
-    /**
-     * consent
-     *
-     * Set exactly when the requirement is the subject's consent.
-     */
-    consent?: BankingV1PaymentConsent;
-    /**
      * created_at
      */
     created_at?: number | string;
@@ -3624,9 +2887,8 @@ export type BankingV1Payment = {
     /**
      * seat
      *
-     * The seat that decides the order: `consilium`, `consent` (the emailed token),
-     * `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
-     * the wallet host). Empty only for a row written before seats were recorded.
+     * The seat that decides the order: `concierge_approval` (a `bank:payment` approval) or
+     * `session` (the investor's answer in the wallet host).
      */
     seat?: string;
     /**
@@ -3724,120 +2986,6 @@ export type BankingV1PaymentConfirmationList = {
 };
 
 /**
- * PaymentConsent
- *
- * The consent seat of an investor-sourced order, as the owner surface sees it.
- */
-export type BankingV1PaymentConsent = {
-    /**
-     * subject_email
-     *
-     * Masked (`a***@example.com`).
-     */
-    subject_email?: string;
-    /**
-     * decision
-     */
-    decision?: BankingV1ConsentDecision;
-    /**
-     * notified
-     *
-     * True once the consent mail has actually been handed to concierge.
-     */
-    notified?: boolean;
-    /**
-     * attempts_remaining
-     *
-     * Code attempts left before the token burns.
-     */
-    attempts_remaining?: number;
-    /**
-     * invalidated
-     *
-     * True when one of the pins recorded at open (the subject's token version, their
-     * mailbox) has moved: the seat can no longer be answered or executed.
-     */
-    invalidated?: boolean;
-    /**
-     * invalidation_reason
-     *
-     * Why, when `invalidated` is true.
-     */
-    invalidation_reason?: string;
-};
-
-/**
- * PaymentConsentInvitation
- *
- * What the emailed investor is shown BEFORE they answer. Deliberately narrower than
- * `Payment`: the terms they are consenting to, and nothing about the operator beyond a
- * masked address.
- */
-export type BankingV1PaymentConsentInvitation = {
-    /**
-     * payment_id
-     */
-    payment_id?: string;
-    /**
-     * state
-     */
-    state?: BankingV1PaymentState;
-    /**
-     * tier
-     */
-    tier?: string;
-    /**
-     * source
-     */
-    source?: BankingV1PaymentEnd;
-    /**
-     * destination
-     */
-    destination?: BankingV1PaymentEnd;
-    /**
-     * amount
-     */
-    amount?: string;
-    /**
-     * reason
-     */
-    reason?: string;
-    /**
-     * payload_hash
-     */
-    payload_hash?: string;
-    /**
-     * initiator_email
-     *
-     * Who opened it, masked.
-     */
-    initiator_email?: string;
-    /**
-     * subject_email
-     *
-     * The recipient's own masked address, so they can confirm the mail reached the right
-     * mailbox before typing the code.
-     */
-    subject_email?: string;
-    /**
-     * expires_at
-     */
-    expires_at?: number | string;
-    /**
-     * decision
-     *
-     * This seat's own answer, so a reopened link shows what was already said.
-     */
-    decision?: BankingV1ConsentDecision;
-    /**
-     * attempts_remaining
-     *
-     * Code attempts left before the token burns.
-     */
-    attempts_remaining?: number;
-};
-
-/**
  * PaymentDestination
  *
  * Where a payment lands. An external SOURCE is unrepresentable on purpose: money cannot
@@ -3860,7 +3008,7 @@ export type BankingV1PaymentDestination = {
  * PaymentEnd
  *
  * One end of a payment, as a RESPONSE describes it. `label` is the wording every approval
- * surface (the owners' mail, the subject's mail, this screen) shares; the structured
+ * surface shares; the structured
  * fields let a screen link to the account.
  */
 export type BankingV1PaymentEnd = {
@@ -4360,8 +3508,7 @@ export type BankingV1RecordDepositRequest = {
  *
  * The chain names the owner of the deposit address the transfer landed on, so the
  * credited party is always a PERSON: `party_kind` is `user` and `party_id` their banking
- * id. A transfer to the treasury address is nobody's until the owners say whose — it is
- * refused here and attributed through `SeedCapital`.
+ * id. A transfer to the treasury address is nobody's — it is refused here.
  */
 export type BankingV1RecordDepositResponse = {
     /**
@@ -4729,50 +3876,6 @@ export type BankingV1RotateDepositAddressResponse = {
 };
 
 /**
- * ScheduleFeePolicyRequest
- */
-export type BankingV1ScheduleFeePolicyRequest = {
-    /**
-     * service
-     */
-    service?: string;
-    /**
-     * management_bps
-     */
-    management_bps?: number;
-    /**
-     * performance_bps
-     */
-    performance_bps?: number;
-    /**
-     * hurdle_bps
-     */
-    hurdle_bps?: number;
-    /**
-     * basis
-     */
-    basis?: string;
-    /**
-     * crystallization
-     */
-    crystallization?: string;
-    /**
-     * effective_from
-     *
-     * Unix seconds the change should bind from; 0 = as soon as the notice period allows.
-     * An earlier request than the notice allows is lifted to the minimum, not refused.
-     */
-    effective_from?: number | string;
-    /**
-     * reason
-     *
-     * Why, in the requester's words. Required and non-empty when the owners must approve
-     * (the approval mail is refused without one); optional otherwise. Shown verbatim.
-     */
-    reason?: string;
-};
-
-/**
  * ScopePolicy
  *
  * What it takes to move money into a scope, and how far its services may move money
@@ -4840,118 +3943,6 @@ export type BankingV1ScopePolicy = {
      * rolling 24 h
      */
     auto_transfer_24h?: string;
-};
-
-/**
- * SeedCapitalRequest
- *
- * Propose a seed: a transfer that reached a rail's treasury, PROVEN against the chain,
- * as `depositor_user_id`'s deposit and subscription into `fund`.
- *
- * Like RecordDepositRequest the caller supplies only a pointer to a fact: the transfer
- * must have landed on the rail's treasury address from a sender outside every wallet we
- * control. A transfer to a user's deposit address is that user's deposit, not a seed —
- * refused, use RecordDeposit. The sweep consolidating a user's address into the treasury
- * is money already on the ledger — refused. Unlike RecordDeposit the amount is UNDER THE
- * OWNERS' SIGNATURE: `expected_amount` is required, checked against the chain now, and
- * frozen into the terms the owners vote over.
- */
-export type BankingV1SeedCapitalRequest = {
-    /**
-     * network
-     *
-     * bep20 | polygon | trc20 | ton — the rail the capital lands on
-     */
-    network?: string;
-    /**
-     * tx_ref
-     *
-     * `txhash:logIndex` (EVM) | `txhash:recipient` (TON) — verified, and the idempotency key
-     */
-    tx_ref?: string;
-    /**
-     * expected_amount
-     *
-     * REQUIRED, decimal USDT: what the chain must report for this reference. A seed is
-     * proposed at a figure the owners approve, not at "whatever the chain says" — a
-     * mistyped reference naming some other real transfer fails here, loudly.
-     */
-    expected_amount?: string;
-    /**
-     * depositor_user_id
-     *
-     * Whose money it is: the person booked as depositor and seated as a holder of `fund`.
-     * A banking (or concierge) user id, resolved the way every admin RPC resolves a
-     * target. Empty means the caller — an owner attributing their own transfer.
-     */
-    depositor_user_id?: string;
-};
-
-/**
- * SeedCapitalResponse
- *
- * A seed is a consilium, not a write: `recorded` is always false here — nothing is
- * booked until the owners' quorum executes it — and `consilium_id` is where the
- * proposal lives (`ConsiliumService.GetConsilium`).
- */
-export type BankingV1SeedCapitalResponse = {
-    /**
-     * recorded
-     *
-     * always false: the booking is the consilium's execution
-     */
-    recorded?: boolean;
-    /**
-     * amount
-     *
-     * what the terms carry, decimal USDT — verified against the chain
-     */
-    amount?: string;
-    /**
-     * consilium_id
-     *
-     * the seed-capital consilium this opened
-     */
-    consilium_id?: string;
-};
-
-/**
- * SeedCapitalTerms
- *
- * The immutable subject of a SEED-CAPITAL consilium (#245): the transfer `tx_ref` names
- * on `network`, which the chain must report as exactly `amount` USDT landing on the
- * treasury from outside, is `depositor_user_id`'s — booked as their deposit and
- * subscribed into `fund` at its price when the quorum executes. The amount is frozen
- * into the terms (the owners approve "this dollar is this person's"); the units are
- * not — they are what the cash buys at execution. Executing it records the fund
- * subscription `executed_subscription_id` names. Opened through
- * `BalanceService.SeedCapital`, never here.
- */
-export type BankingV1SeedCapitalTerms = {
-    /**
-     * tx_ref
-     *
-     * `txhash:logIndex` (EVM) | `txhash:recipient` (TON)
-     */
-    tx_ref?: string;
-    /**
-     * network
-     *
-     * bep20 | polygon | trc20 | ton
-     */
-    network?: string;
-    /**
-     * amount
-     *
-     * decimal USDT, as the chain reports it
-     */
-    amount?: string;
-    /**
-     * depositor_user_id
-     *
-     * the money-plane id the terms stored
-     */
-    depositor_user_id?: string;
 };
 
 /**
@@ -5171,106 +4162,6 @@ export type BankingV1SettleWithdrawalRequest = {
  */
 export type BankingV1SettleWithdrawalResponse = {
     [key: string]: never;
-};
-
-/**
- * SubmitConsentRequest
- */
-export type BankingV1SubmitConsentRequest = {
-    /**
-     * token
-     */
-    token?: string;
-    /**
-     * code
-     *
-     * The secret code from the same mail. Compared in constant time, as a hash.
-     */
-    code?: string;
-    /**
-     * decision
-     *
-     * APPROVE or REJECT. PENDING is rejected as an invalid argument.
-     */
-    decision?: BankingV1ConsentDecision;
-    /**
-     * client_ip
-     *
-     * Audit only — the edge supplies these; they are never trusted for authorization.
-     */
-    client_ip?: string;
-    /**
-     * user_agent
-     */
-    user_agent?: string;
-};
-
-/**
- * SubmitConsentResponse
- */
-export type BankingV1SubmitConsentResponse = {
-    /**
-     * invitation
-     *
-     * The invitation as it stands after the answer.
-     */
-    invitation?: BankingV1PaymentConsentInvitation;
-    /**
-     * decided
-     *
-     * True when this answer carried the order out of PENDING.
-     */
-    decided?: boolean;
-};
-
-/**
- * SubmitDecisionRequest
- */
-export type BankingV1SubmitDecisionRequest = {
-    /**
-     * token
-     */
-    token?: string;
-    /**
-     * code
-     *
-     * The secret code from the same mail. Compared in constant time, as a hash.
-     */
-    code?: string;
-    /**
-     * decision
-     *
-     * APPROVE or REJECT. PENDING is rejected as an invalid argument.
-     */
-    decision?: BankingV1VoteDecision;
-    /**
-     * client_ip
-     *
-     * Audit only — the edge supplies these; they are never trusted for authorization.
-     */
-    client_ip?: string;
-    /**
-     * user_agent
-     */
-    user_agent?: string;
-};
-
-/**
- * SubmitDecisionResponse
- */
-export type BankingV1SubmitDecisionResponse = {
-    /**
-     * invitation
-     *
-     * The invitation as it stands after the vote.
-     */
-    invitation?: BankingV1ConsiliumInvitation;
-    /**
-     * decided
-     *
-     * True when this vote carried the consilium to its verdict.
-     */
-    decided?: boolean;
 };
 
 /**
@@ -5956,39 +4847,6 @@ export type BankingV1UserSummary = {
      */
     username?: string;
 };
-
-/**
- * ValuationOverrideTerms
- *
- * The immutable subject of a VALUATION-OVERRIDE consilium — a NAV mark the move guard
- * refuses (banking#232). The direct `PostFundValuation` caps a move at `MAX_NAV_MOVE_PCT`
- * against the previous mark AND the mark anchoring a rolling window, and carries no flag
- * to lift it; a genuine re-mark past the cap is put to the owners instead. Executing the
- * consilium derives NAV from the LIVE unit supply at that moment and records the mark with
- * the initiator as `posted_by`, so the redeem cooldown binds them exactly as a direct post
- * would.
- */
-export type BankingV1ValuationOverrideTerms = {
-    /**
-     * service
-     *
-     * The fund/service id being marked.
-     */
-    service?: string;
-    /**
-     * aum
-     *
-     * The fund's total AUM to mark it at — decimal USDT string, as everywhere on this wire.
-     */
-    aum?: string;
-};
-
-/**
- * VoteDecision
- *
- * How one voter answered.
- */
-export type BankingV1VoteDecision = 'VOTE_DECISION_UNSPECIFIED' | 'VOTE_DECISION_PENDING' | 'VOTE_DECISION_APPROVE' | 'VOTE_DECISION_REJECT';
 
 /**
  * Wallet
@@ -9787,35 +8645,6 @@ export type BankingV1BalanceServiceRotateDepositAddressResponses = {
 
 export type BankingV1BalanceServiceRotateDepositAddressResponse = BankingV1BalanceServiceRotateDepositAddressResponses[keyof BankingV1BalanceServiceRotateDepositAddressResponses];
 
-export type BankingV1BalanceServiceSeedCapitalData = {
-    body: BankingV1SeedCapitalRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.BalanceService/SeedCapital';
-};
-
-export type BankingV1BalanceServiceSeedCapitalErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1BalanceServiceSeedCapitalError = BankingV1BalanceServiceSeedCapitalErrors[keyof BankingV1BalanceServiceSeedCapitalErrors];
-
-export type BankingV1BalanceServiceSeedCapitalResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1SeedCapitalResponse;
-};
-
-export type BankingV1BalanceServiceSeedCapitalResponse = BankingV1BalanceServiceSeedCapitalResponses[keyof BankingV1BalanceServiceSeedCapitalResponses];
-
 export type BankingV1BalanceServiceSetOperationsModeData = {
     body: BankingV1SetOperationsModeRequest;
     headers: {
@@ -10483,267 +9312,6 @@ export type BankingV1CompartmentServiceRevokeMandateResponses = {
 
 export type BankingV1CompartmentServiceRevokeMandateResponse = BankingV1CompartmentServiceRevokeMandateResponses[keyof BankingV1CompartmentServiceRevokeMandateResponses];
 
-export type BankingV1ConsiliumApprovalServiceGetInvitationData = {
-    body: BankingV1GetInvitationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumApprovalService/GetInvitation';
-};
-
-export type BankingV1ConsiliumApprovalServiceGetInvitationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumApprovalServiceGetInvitationError = BankingV1ConsiliumApprovalServiceGetInvitationErrors[keyof BankingV1ConsiliumApprovalServiceGetInvitationErrors];
-
-export type BankingV1ConsiliumApprovalServiceGetInvitationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1ConsiliumInvitation;
-};
-
-export type BankingV1ConsiliumApprovalServiceGetInvitationResponse = BankingV1ConsiliumApprovalServiceGetInvitationResponses[keyof BankingV1ConsiliumApprovalServiceGetInvitationResponses];
-
-export type BankingV1ConsiliumApprovalServiceSubmitDecisionData = {
-    body: BankingV1SubmitDecisionRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumApprovalService/SubmitDecision';
-};
-
-export type BankingV1ConsiliumApprovalServiceSubmitDecisionErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumApprovalServiceSubmitDecisionError = BankingV1ConsiliumApprovalServiceSubmitDecisionErrors[keyof BankingV1ConsiliumApprovalServiceSubmitDecisionErrors];
-
-export type BankingV1ConsiliumApprovalServiceSubmitDecisionResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1SubmitDecisionResponse;
-};
-
-export type BankingV1ConsiliumApprovalServiceSubmitDecisionResponse = BankingV1ConsiliumApprovalServiceSubmitDecisionResponses[keyof BankingV1ConsiliumApprovalServiceSubmitDecisionResponses];
-
-export type BankingV1ConsiliumServiceCancelConsiliumData = {
-    body: BankingV1CancelConsiliumRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumService/CancelConsilium';
-};
-
-export type BankingV1ConsiliumServiceCancelConsiliumErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumServiceCancelConsiliumError = BankingV1ConsiliumServiceCancelConsiliumErrors[keyof BankingV1ConsiliumServiceCancelConsiliumErrors];
-
-export type BankingV1ConsiliumServiceCancelConsiliumResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Consilium;
-};
-
-export type BankingV1ConsiliumServiceCancelConsiliumResponse = BankingV1ConsiliumServiceCancelConsiliumResponses[keyof BankingV1ConsiliumServiceCancelConsiliumResponses];
-
-export type BankingV1ConsiliumServiceGetConsiliumData = {
-    body: BankingV1GetConsiliumRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumService/GetConsilium';
-};
-
-export type BankingV1ConsiliumServiceGetConsiliumErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumServiceGetConsiliumError = BankingV1ConsiliumServiceGetConsiliumErrors[keyof BankingV1ConsiliumServiceGetConsiliumErrors];
-
-export type BankingV1ConsiliumServiceGetConsiliumResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Consilium;
-};
-
-export type BankingV1ConsiliumServiceGetConsiliumResponse = BankingV1ConsiliumServiceGetConsiliumResponses[keyof BankingV1ConsiliumServiceGetConsiliumResponses];
-
-export type BankingV1ConsiliumServiceListConsiliaData = {
-    body: BankingV1ListConsiliaRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumService/ListConsilia';
-};
-
-export type BankingV1ConsiliumServiceListConsiliaErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumServiceListConsiliaError = BankingV1ConsiliumServiceListConsiliaErrors[keyof BankingV1ConsiliumServiceListConsiliaErrors];
-
-export type BankingV1ConsiliumServiceListConsiliaResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1ConsiliumList;
-};
-
-export type BankingV1ConsiliumServiceListConsiliaResponse = BankingV1ConsiliumServiceListConsiliaResponses[keyof BankingV1ConsiliumServiceListConsiliaResponses];
-
-export type BankingV1ConsiliumServiceOpenHolderGrantData = {
-    body: BankingV1OpenHolderGrantRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumService/OpenHolderGrant';
-};
-
-export type BankingV1ConsiliumServiceOpenHolderGrantErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumServiceOpenHolderGrantError = BankingV1ConsiliumServiceOpenHolderGrantErrors[keyof BankingV1ConsiliumServiceOpenHolderGrantErrors];
-
-export type BankingV1ConsiliumServiceOpenHolderGrantResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Consilium;
-};
-
-export type BankingV1ConsiliumServiceOpenHolderGrantResponse = BankingV1ConsiliumServiceOpenHolderGrantResponses[keyof BankingV1ConsiliumServiceOpenHolderGrantResponses];
-
-export type BankingV1ConsiliumServiceOpenValuationOverrideData = {
-    body: BankingV1OpenValuationOverrideRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.ConsiliumService/OpenValuationOverride';
-};
-
-export type BankingV1ConsiliumServiceOpenValuationOverrideErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1ConsiliumServiceOpenValuationOverrideError = BankingV1ConsiliumServiceOpenValuationOverrideErrors[keyof BankingV1ConsiliumServiceOpenValuationOverrideErrors];
-
-export type BankingV1ConsiliumServiceOpenValuationOverrideResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1Consilium;
-};
-
-export type BankingV1ConsiliumServiceOpenValuationOverrideResponse = BankingV1ConsiliumServiceOpenValuationOverrideResponses[keyof BankingV1ConsiliumServiceOpenValuationOverrideResponses];
-
-export type BankingV1FeesServiceAcknowledgeUndeliveredNoticesData = {
-    body: BankingV1AcknowledgeUndeliveredNoticesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/AcknowledgeUndeliveredNotices';
-};
-
-export type BankingV1FeesServiceAcknowledgeUndeliveredNoticesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceAcknowledgeUndeliveredNoticesError = BankingV1FeesServiceAcknowledgeUndeliveredNoticesErrors[keyof BankingV1FeesServiceAcknowledgeUndeliveredNoticesErrors];
-
-export type BankingV1FeesServiceAcknowledgeUndeliveredNoticesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicyChange;
-};
-
-export type BankingV1FeesServiceAcknowledgeUndeliveredNoticesResponse = BankingV1FeesServiceAcknowledgeUndeliveredNoticesResponses[keyof BankingV1FeesServiceAcknowledgeUndeliveredNoticesResponses];
-
-export type BankingV1FeesServiceCancelFeePolicyChangeData = {
-    body: BankingV1CancelFeePolicyChangeRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/CancelFeePolicyChange';
-};
-
-export type BankingV1FeesServiceCancelFeePolicyChangeErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceCancelFeePolicyChangeError = BankingV1FeesServiceCancelFeePolicyChangeErrors[keyof BankingV1FeesServiceCancelFeePolicyChangeErrors];
-
-export type BankingV1FeesServiceCancelFeePolicyChangeResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicyChange;
-};
-
-export type BankingV1FeesServiceCancelFeePolicyChangeResponse = BankingV1FeesServiceCancelFeePolicyChangeResponses[keyof BankingV1FeesServiceCancelFeePolicyChangeResponses];
-
 export type BankingV1FeesServiceGetAccruedFeesData = {
     body: BankingV1GetAccruedFeesRequest;
     headers: {
@@ -10889,35 +9457,6 @@ export type BankingV1FeesServiceListFeePoliciesResponses = {
 
 export type BankingV1FeesServiceListFeePoliciesResponse = BankingV1FeesServiceListFeePoliciesResponses[keyof BankingV1FeesServiceListFeePoliciesResponses];
 
-export type BankingV1FeesServiceListFeePolicyChangesData = {
-    body: BankingV1ListFeePolicyChangesRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/ListFeePolicyChanges';
-};
-
-export type BankingV1FeesServiceListFeePolicyChangesErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceListFeePolicyChangesError = BankingV1FeesServiceListFeePolicyChangesErrors[keyof BankingV1FeesServiceListFeePolicyChangesErrors];
-
-export type BankingV1FeesServiceListFeePolicyChangesResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicyChangeList;
-};
-
-export type BankingV1FeesServiceListFeePolicyChangesResponse = BankingV1FeesServiceListFeePolicyChangesResponses[keyof BankingV1FeesServiceListFeePolicyChangesResponses];
-
 export type BankingV1FeesServiceListFundFeeAssessmentsData = {
     body: BankingV1ListFundFeeAssessmentsRequest;
     headers: {
@@ -10946,35 +9485,6 @@ export type BankingV1FeesServiceListFundFeeAssessmentsResponses = {
 };
 
 export type BankingV1FeesServiceListFundFeeAssessmentsResponse = BankingV1FeesServiceListFundFeeAssessmentsResponses[keyof BankingV1FeesServiceListFundFeeAssessmentsResponses];
-
-export type BankingV1FeesServiceScheduleFeePolicyData = {
-    body: BankingV1ScheduleFeePolicyRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.FeesService/ScheduleFeePolicy';
-};
-
-export type BankingV1FeesServiceScheduleFeePolicyErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1FeesServiceScheduleFeePolicyError = BankingV1FeesServiceScheduleFeePolicyErrors[keyof BankingV1FeesServiceScheduleFeePolicyErrors];
-
-export type BankingV1FeesServiceScheduleFeePolicyResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1FeePolicyChange;
-};
-
-export type BankingV1FeesServiceScheduleFeePolicyResponse = BankingV1FeesServiceScheduleFeePolicyResponses[keyof BankingV1FeesServiceScheduleFeePolicyResponses];
 
 export type BankingV1FeesServiceSettleFeeSharesData = {
     body: BankingV1SettleFeeSharesRequest;
@@ -11468,64 +9978,6 @@ export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses
 };
 
 export type BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponse = BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses[keyof BankingV1PaymentConfirmationServiceListPaymentConfirmationsResponses];
-
-export type BankingV1PaymentConsentServiceGetConsentInvitationData = {
-    body: BankingV1GetConsentInvitationRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.PaymentConsentService/GetConsentInvitation';
-};
-
-export type BankingV1PaymentConsentServiceGetConsentInvitationErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1PaymentConsentServiceGetConsentInvitationError = BankingV1PaymentConsentServiceGetConsentInvitationErrors[keyof BankingV1PaymentConsentServiceGetConsentInvitationErrors];
-
-export type BankingV1PaymentConsentServiceGetConsentInvitationResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1PaymentConsentInvitation;
-};
-
-export type BankingV1PaymentConsentServiceGetConsentInvitationResponse = BankingV1PaymentConsentServiceGetConsentInvitationResponses[keyof BankingV1PaymentConsentServiceGetConsentInvitationResponses];
-
-export type BankingV1PaymentConsentServiceSubmitConsentData = {
-    body: BankingV1SubmitConsentRequest;
-    headers: {
-        'Connect-Protocol-Version': ConnectProtocolVersion;
-        'Connect-Timeout-Ms'?: ConnectTimeoutHeader;
-    };
-    path?: never;
-    query?: never;
-    url: '/banking.v1.PaymentConsentService/SubmitConsent';
-};
-
-export type BankingV1PaymentConsentServiceSubmitConsentErrors = {
-    /**
-     * Error
-     */
-    default: ConnectError;
-};
-
-export type BankingV1PaymentConsentServiceSubmitConsentError = BankingV1PaymentConsentServiceSubmitConsentErrors[keyof BankingV1PaymentConsentServiceSubmitConsentErrors];
-
-export type BankingV1PaymentConsentServiceSubmitConsentResponses = {
-    /**
-     * Success
-     */
-    200: BankingV1SubmitConsentResponse;
-};
-
-export type BankingV1PaymentConsentServiceSubmitConsentResponse = BankingV1PaymentConsentServiceSubmitConsentResponses[keyof BankingV1PaymentConsentServiceSubmitConsentResponses];
 
 export type BankingV1PaymentsServiceCancelPaymentData = {
     body: BankingV1CancelPaymentRequest;

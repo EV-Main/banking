@@ -665,8 +665,7 @@ const PAYMENT_FIELDS: &[FieldSpec] = &[
 ];
 
 /// The kinds banking proposes today — what [`PendingOperation::approval_fields`] and
-/// `PaymentTerms::approval_fields` send, field for field. `bank:seed_capital` is not here
-/// (it goes with the allocations, banking#245), and `bank:treasury_surplus` and
+/// `PaymentTerms::approval_fields` send, field for field. `bank:treasury_surplus` and
 /// `bank:compartment_policy` join when banking has a path that opens them — the treasury's
 /// spending is closed and a scope's policy has no RPC yet. A catalog is published whole, so
 /// a kind left out here is one concierge stops accepting.

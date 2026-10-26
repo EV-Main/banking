@@ -17,7 +17,6 @@ const STAFF = "concierge:user:read";
 /** Zone-relative section prefix → permission. Matched on whole segments; `/` is Home alone. */
 const SECTIONS: readonly (readonly [prefix: `/${string}`, permission: string])[] = [
   ["/admin", STAFF],
-  ["/consilium", STAFF],
   ["/invest", OWN.invest],
   ["/wallet", OWN.wallet],
   ["/operations", OWN.operations],

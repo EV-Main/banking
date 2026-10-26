@@ -1,6 +1,6 @@
 //! [`Approvals`] over concierge's `ApprovalExecutionService` — banking as the proposer and
 //! executor of its `bank:*` kinds. It rides the bridge: the same endpoint and the same
-//! `BRIDGE_SERVICE_TOKEN` as the lifecycle consumer and the governance mail, which concierge
+//! `BRIDGE_SERVICE_TOKEN` as the lifecycle consumer and the scope inbox, which concierge
 //! maps to namespace `bank` (its `docs/SCOPES-AND-APPROVALS.md`, "Service callers"). One trust
 //! relationship between the planes, as before — and so a leaked bridge token now also opens
 //! and reports banking's approvals, and publishes the `bank:*` catalog.

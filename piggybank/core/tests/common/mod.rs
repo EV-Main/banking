@@ -20,7 +20,9 @@ use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
 use domain::{
+	balance::ServiceId,
 	error::DomainError,
+	fees::FeePolicy,
 	money::{Network, WalletAddress},
 	users::UserId,
 };
@@ -370,16 +372,8 @@ pub async fn seeded_ledger(pool: &PgPool, skipping: &str) -> Option<Arc<dyn Ledg
 	Some(ledger)
 }
 
-/// Mirror a concierge KYC tier onto a local user row.
-///
-/// Banking deliberately has no aggregate transition for `kyc_level` — the identity plane
-/// owns the value and the lifecycle bridge is its only writer — so a test that needs a
-/// verified investor sets the column exactly the way the bridge does. `provision` leaves
-/// a fresh user at the schema default (tier 0, unverified), which is what the money gates
-/// refuse.
 /// No deposit rails at all: no user owns any address, so nothing ever attributes a
-/// transfer to a person. For the suites whose consilium ports need an address gateway
-/// but never open a seed — the seed suite fakes its own, with one owned address.
+/// transfer to a person.
 pub struct NoAddresses;
 
 impl domain::architecture::Gateway for NoAddresses {}
@@ -391,6 +385,13 @@ impl DepositAddresses for NoAddresses {
 	}
 }
 
+/// Mirror a concierge KYC tier onto a local user row.
+///
+/// Banking deliberately has no aggregate transition for `kyc_level` — the identity plane
+/// owns the value and the lifecycle bridge is its only writer — so a test that needs a
+/// verified investor sets the column exactly the way the bridge does. `provision` leaves
+/// a fresh user at the schema default (tier 0, unverified), which is what the money gates
+/// refuse.
 pub async fn set_kyc_level(pool: &PgPool, user: UserId, level: i32) {
 	let affected = sqlx::query("UPDATE users SET kyc_level = $2 WHERE id = $1")
 		.bind(user.raw())
@@ -400,4 +401,22 @@ pub async fn set_kyc_level(pool: &PgPool, user: UserId, level: i32) {
 		.expect("mirror the KYC tier")
 		.rows_affected();
 	assert_eq!(affected, 1, "no user row to mirror the KYC tier onto");
+}
+
+/// Write a product's live fee terms straight into `fee_policies` — no code path writes them.
+pub async fn install_fee_policy(pool: &PgPool, service: &ServiceId, policy: FeePolicy) {
+	sqlx::query(
+		"INSERT INTO fee_policies (service, management_bps, performance_bps, hurdle_bps, basis, crystallization, updated_by) VALUES ($1, $2, $3, $4, $5, $6, 'itest') \
+		 ON CONFLICT (service) DO UPDATE SET management_bps = EXCLUDED.management_bps, performance_bps = EXCLUDED.performance_bps, hurdle_bps = EXCLUDED.hurdle_bps, \
+		   basis = EXCLUDED.basis, crystallization = EXCLUDED.crystallization, version = fee_policies.version + 1, effective_from = now()",
+	)
+	.bind(service.as_str())
+	.bind(i32::try_from(policy.management_bps()).expect("capped by FeePolicy::new"))
+	.bind(i32::try_from(policy.performance_bps()).expect("capped by FeePolicy::new"))
+	.bind(i32::try_from(policy.hurdle_bps()).expect("capped by FeePolicy::new"))
+	.bind(policy.basis().as_str())
+	.bind(policy.crystallization().as_str())
+	.execute(pool)
+	.await
+	.expect("install the fee policy");
 }

@@ -83,7 +83,7 @@ test("unit counts compact only once they stop being readable", () => {
 
 test("an exact wire decimal is shown to the digit, never through a float", () => {
   // The approval screens bind `payload_hash` to this exact string, so a rounded render is
-  // an approval of something the hash does not cover (docs/CONSILIUM.md, policy 12).
+  // an approval of something the hash does not cover.
   // `formatUsdt` caps at 6 dp and parses through `Number`; both lose these.
   assert.equal(formatExactUsdt("1000.0000005"), "1,000.0000005");
   assert.equal(formatExactUsdt("0.000000000000000001"), "0.000000000000000001");

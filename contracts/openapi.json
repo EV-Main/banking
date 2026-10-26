@@ -1837,7 +1837,7 @@
           "banking.v1.BalanceService"
         ],
         "summary": "PostFundValuation",
-        "description": "Post a fund's total AUM; NAV is derived = AUM / units_outstanding (units read live\n from TigerBeetle). Rejects zero units and a NAV move beyond the safety threshold —\n measured against BOTH the previous mark and the mark that anchored the rolling\n window, so the cap cannot be walked past in steps. There is NO per-request override:\n a move past the cap is put to the owners through\n `ConsiliumService.OpenValuationOverride`, and only an executed consilium records it.",
+        "description": "Post a fund's total AUM; NAV is derived = AUM / units_outstanding (units read live\n from TigerBeetle). Rejects zero units and a NAV move beyond the safety threshold —\n measured against BOTH the previous mark and the mark that anchored the rolling\n window, so the cap cannot be walked past in steps. There is NO override.",
         "operationId": "banking.v1.BalanceService.PostFundValuation",
         "parameters": [
           {
@@ -2001,65 +2001,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.RotateDepositAddressResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.BalanceService/SeedCapital": {
-      "post": {
-        "tags": [
-          "banking.v1.BalanceService"
-        ],
-        "summary": "SeedCapital",
-        "description": "Propose a seed of the platform's capital: a transfer that reached a rail's treasury\n address from outside, PROVEN against the chain, to be booked as the depositor's\n deposit and subscribed into the `fund` allocation — units of `fund` for the person\n whose money it was. This OPENS A CONSILIUM and books nothing: the chain proves the\n dollar arrived, it cannot say whose it is, and the first administrator to name a\n reference must not be the one who decides. The caller must hold an owner seat. The\n arrival is verified now (same verification as RecordDeposit, against\n `expected_amount`); a transfer to a user's deposit address is that user's deposit\n and is refused (record it with RecordDeposit); the sweep is refused; a reference\n already recorded is a conflict.",
-        "operationId": "banking.v1.BalanceService.SeedCapital",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.SeedCapitalRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.SeedCapitalResponse"
                 }
               }
             }
@@ -3425,537 +3366,6 @@
         }
       }
     },
-    "/banking.v1.ConsiliumApprovalService/GetInvitation": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumApprovalService"
-        ],
-        "summary": "GetInvitation",
-        "description": "The redacted invitation behind an emailed token. Side-effect free. Unknown,\n expired, spent and wrong-state tokens all return the SAME NOT_FOUND, so this\n cannot be used to probe which is which.",
-        "operationId": "banking.v1.ConsiliumApprovalService.GetInvitation",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.GetInvitationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.ConsiliumInvitation"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumApprovalService/SubmitDecision": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumApprovalService"
-        ],
-        "summary": "SubmitDecision",
-        "description": "Cast this owner's vote. Requires the token AND the secret code from the mail.\n Five failed code attempts burn the token permanently.",
-        "operationId": "banking.v1.ConsiliumApprovalService.SubmitDecision",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.SubmitDecisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.SubmitDecisionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumService/CancelConsilium": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumService"
-        ],
-        "summary": "CancelConsilium",
-        "description": "Withdraw an invoice the caller opened, while it is still OPEN.",
-        "operationId": "banking.v1.ConsiliumService.CancelConsilium",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.CancelConsiliumRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.Consilium"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumService/GetConsilium": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumService"
-        ],
-        "summary": "GetConsilium",
-        "description": "One consilium in full, including per-voter state (Owner only).",
-        "operationId": "banking.v1.ConsiliumService.GetConsilium",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.GetConsiliumRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.Consilium"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumService/ListConsilia": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumService"
-        ],
-        "summary": "ListConsilia",
-        "description": "Consilia newest first — the governance history (Owner only).",
-        "operationId": "banking.v1.ConsiliumService.ListConsilia",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.ListConsiliaRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.ConsiliumList"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumService/OpenHolderGrant": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumService"
-        ],
-        "summary": "OpenHolderGrant",
-        "description": "Seat a new holder of a reserved allocation (Owner only): `units` of `fee` or `fund`\n minted to a person, with no cash leg, once the quorum carries. The units are\n frozen into the terms, not a cash figure — what they are worth is the allocation's\n NAV at execution, as a subscription is priced at its own moment. Refused when the\n person is not an active user, when the allocation is not reserved, or when the\n roster is too small. This is the ONLY way a person comes to hold `fee` or `fund`\n other than a seed (`BalanceService.SeedCapital`) or the book.",
-        "operationId": "banking.v1.ConsiliumService.OpenHolderGrant",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.OpenHolderGrantRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.Consilium"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.ConsiliumService/OpenValuationOverride": {
-      "post": {
-        "tags": [
-          "banking.v1.ConsiliumService"
-        ],
-        "summary": "OpenValuationOverride",
-        "description": "Put a NAV mark the move guard refuses to the owners (ValuationPost holders — the\n poster proposes, the owners decide). Executing it records the mark at exactly this\n AUM, guard or no guard; there is no other way past the guard. One open request per\n fund: it shares the fund's `service:\u003cid\u003e` claim with a payment out of that claim.",
-        "operationId": "banking.v1.ConsiliumService.OpenValuationOverride",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.OpenValuationOverrideRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.Consilium"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.FeesService/AcknowledgeUndeliveredNotices": {
-      "post": {
-        "tags": [
-          "banking.v1.FeesService"
-        ],
-        "summary": "AcknowledgeUndeliveredNotices",
-        "description": "Take responsibility for the holders of a scheduled change who could not be told\n (AllocationManage, AND the caller must be the one who requested the change or a fund\n owner). A change that TIGHTENS the terms does not bind while a holder's notice is\n undelivered; for a holder the identity plane can never reach that is forever. This\n records who acknowledged, when, and exactly which holders' notices the mailer had\n GIVEN UP on by that moment (`notices_given_up`, never a notice still being tried), and\n the change then binds over those holders — and over nobody else who turns out untold\n later. A later call ADDS the holders given up on since (`notices_unacknowledged`) and\n stands as the latest: its caller and moment replace the record's, taking\n responsibility for the whole list. A repeat that would add nobody returns the record\n unchanged. ALREADY_EXISTS when the change is not scheduled, only loosens the terms (it\n binds by itself), or has no notice given up on yet that is not already covered —\n there is nothing to take responsibility for; PERMISSION_DENIED for a caller who is\n neither the requester nor an owner.",
-        "operationId": "banking.v1.FeesService.AcknowledgeUndeliveredNotices",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.AcknowledgeUndeliveredNoticesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.FeePolicyChange"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.FeesService/CancelFeePolicyChange": {
-      "post": {
-        "tags": [
-          "banking.v1.FeesService"
-        ],
-        "summary": "CancelFeePolicyChange",
-        "description": "Withdraw a pending change (AllocationManage). One still awaiting the owners takes its\n consilium down with it. Idempotent on an already-cancelled change.",
-        "operationId": "banking.v1.FeesService.CancelFeePolicyChange",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.CancelFeePolicyChangeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.FeePolicyChange"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/banking.v1.FeesService/GetAccruedFees": {
       "post": {
         "tags": [
@@ -4251,65 +3661,6 @@
         }
       }
     },
-    "/banking.v1.FeesService/ListFeePolicyChanges": {
-      "post": {
-        "tags": [
-          "banking.v1.FeesService"
-        ],
-        "summary": "ListFeePolicyChanges",
-        "description": "A fund's whole history of terms, newest version first. Readable by any\n authenticated user — the terms one is on, and how they came to be, are public\n information about a product.",
-        "operationId": "banking.v1.FeesService.ListFeePolicyChanges",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.ListFeePolicyChangesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.FeePolicyChangeList"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/banking.v1.FeesService/ListFundFeeAssessments": {
       "post": {
         "tags": [
@@ -4362,65 +3713,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.FeeAssessmentList"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.FeesService/ScheduleFeePolicy": {
-      "post": {
-        "tags": [
-          "banking.v1.FeesService"
-        ],
-        "summary": "Propose a change of a fund's terms (AllocationManage — the same trust seam as\n bringing the product into existence or posting its valuation). The service must\n already be a registered allocation. Rates are basis points, capped at 500\n (management, 5% p.a.) and 5000 (performance, 50% of the gain); the hurdle at 10000.",
-        "description": "A policy is never edited in place. The change is recorded with a version and takes\n effect no earlier than 24h after it was scheduled while anyone holds units (at once\n for a fund with no holders); `effective_from` may ask for later, never earlier. A\n change that TIGHTENS the terms beyond the house envelope (2-and-20 on invested\n capital, annual) needs the owners' consilium, which the caller must be an owner to\n open, and `reason` is then required; every other change is scheduled at once. The\n holders are mailed when the change is scheduled. One pending change per fund: a\n second is refused with ALREADY_EXISTS until the first is cancelled.",
-        "operationId": "banking.v1.FeesService.ScheduleFeePolicy",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.ScheduleFeePolicyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.FeePolicyChange"
                 }
               }
             }
@@ -5422,124 +4714,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/banking.v1.PaymentConfirmationList"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.PaymentConsentService/GetConsentInvitation": {
-      "post": {
-        "tags": [
-          "banking.v1.PaymentConsentService"
-        ],
-        "summary": "GetConsentInvitation",
-        "description": "The redacted invitation behind an emailed token. Side-effect free. Unknown, expired,\n spent, burned and closed tokens all return the SAME NOT_FOUND.",
-        "operationId": "banking.v1.PaymentConsentService.GetConsentInvitation",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.GetConsentInvitationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.PaymentConsentInvitation"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/banking.v1.PaymentConsentService/SubmitConsent": {
-      "post": {
-        "tags": [
-          "banking.v1.PaymentConsentService"
-        ],
-        "summary": "SubmitConsent",
-        "description": "Answer the consent. Requires the token AND the secret code from the mail. Five failed\n code attempts burn the token permanently — and, with one seat, fail the payment closed.",
-        "operationId": "banking.v1.PaymentConsentService.SubmitConsent",
-        "parameters": [
-          {
-            "name": "Connect-Protocol-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/connect-protocol-version"
-            }
-          },
-          {
-            "name": "Connect-Timeout-Ms",
-            "in": "header",
-            "schema": {
-              "$ref": "#/components/schemas/connect-timeout-header"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/banking.v1.SubmitConsentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/connect.error"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/banking.v1.SubmitConsentResponse"
                 }
               }
             }
@@ -9245,21 +8419,6 @@
         "additionalProperties": false,
         "description": "What a holding owes right now. `configured` is false when the fund charges no fee."
       },
-      "banking.v1.AcknowledgeUndeliveredNoticesRequest": {
-        "type": "object",
-        "properties": {
-          "service": {
-            "type": "string",
-            "title": "service"
-          },
-          "change_id": {
-            "type": "string",
-            "title": "change_id"
-          }
-        },
-        "title": "AcknowledgeUndeliveredNoticesRequest",
-        "additionalProperties": false
-      },
       "banking.v1.AdminBalanceRequest": {
         "type": "object",
         "properties": {
@@ -9751,32 +8910,6 @@
         "additionalProperties": false,
         "description": "The book as of `revision`. `bids` are best (highest) first, `asks` best (lowest)\n first. `last_price` / `last_side` describe the latest trade (empty before the first);\n `mid` and `spread` are empty unless both sides have a level. `volume_24h` is the units\n traded in the trailing day and `change_24h` the signed percent move of the last price\n against the last trade at or before 24h ago (empty when there is none). `nav` is the\n fund's current mark, carried so a ticker can show the two prices side by side."
       },
-      "banking.v1.CancelConsiliumRequest": {
-        "type": "object",
-        "properties": {
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id"
-          }
-        },
-        "title": "CancelConsiliumRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.CancelFeePolicyChangeRequest": {
-        "type": "object",
-        "properties": {
-          "service": {
-            "type": "string",
-            "title": "service"
-          },
-          "change_id": {
-            "type": "string",
-            "title": "change_id"
-          }
-        },
-        "title": "CancelFeePolicyChangeRequest",
-        "additionalProperties": false
-      },
       "banking.v1.CancelOrderRequest": {
         "type": "object",
         "properties": {
@@ -9998,427 +9131,7 @@
           "CONSENT_DECISION_APPROVE",
           "CONSENT_DECISION_REJECT"
         ],
-        "description": "What the emailed investor answered."
-      },
-      "banking.v1.Consilium": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "id"
-          },
-          "state": {
-            "title": "state",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumState"
-          },
-          "payload_hash": {
-            "type": "string",
-            "title": "payload_hash",
-            "description": "Hex SHA-256 over the canonical terms. Shown (short prefix) in the mail so an owner\n can tell that what they approved is what will execute."
-          },
-          "initiator_user_id": {
-            "type": "string",
-            "title": "initiator_user_id"
-          },
-          "initiator_email": {
-            "type": "string",
-            "title": "initiator_email"
-          },
-          "owner_count": {
-            "type": "integer",
-            "title": "owner_count",
-            "description": "N — owners at open. The threshold is frozen from this, never recomputed later."
-          },
-          "threshold": {
-            "type": "integer",
-            "title": "threshold"
-          },
-          "approvals": {
-            "type": "integer",
-            "title": "approvals",
-            "description": "Votes that are still valid: an approver who has since lost ownership does not count."
-          },
-          "rejections": {
-            "type": "integer",
-            "title": "rejections"
-          },
-          "voters": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/banking.v1.ConsiliumVoter"
-            },
-            "title": "voters"
-          },
-          "created_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "created_at",
-            "format": "int64"
-          },
-          "expires_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "expires_at",
-            "format": "int64"
-          },
-          "decided_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "decided_at",
-            "format": "int64"
-          },
-          "executed_withdrawal_id": {
-            "type": "string",
-            "title": "executed_withdrawal_id",
-            "description": "Set exactly once, on EXECUTED — and exactly ONE of the effect ids is\n (`executed_withdrawal_id`, `executed_payment_id`, `executed_valuation_id`,\n `executed_fee_policy_change_id`, `executed_issuance_id`, `executed_subscription_id`),\n because a consilium has one effect. `consilium_execution_is_recorded` states that to\n the database as `num_nonnulls(...) = 1`."
-          },
-          "failure_reason": {
-            "type": "string",
-            "title": "failure_reason"
-          },
-          "version": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "version",
-            "format": "int64",
-            "description": "Monotonic per consilium. The live page watches this and refetches when it moves —\n the socket carries a version, never a tally."
-          },
-          "payment": {
-            "title": "payment",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumPaymentTerms"
-          },
-          "executed_payment_id": {
-            "type": "string",
-            "title": "executed_payment_id",
-            "description": "The payment order an executed PAYMENT consilium carried."
-          },
-          "valuation_override": {
-            "title": "valuation_override",
-            "description": "A terms sibling — see the \"exactly one\" note above.",
-            "$ref": "#/components/schemas/banking.v1.ValuationOverrideTerms"
-          },
-          "executed_valuation_id": {
-            "type": "string",
-            "title": "executed_valuation_id",
-            "description": "The `fund_valuations` row an executed VALUATION-OVERRIDE consilium recorded."
-          },
-          "fee_policy": {
-            "title": "fee_policy",
-            "description": "The fourth terms sibling — set exactly for a FEE_POLICY consilium.",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumFeePolicyTerms"
-          },
-          "executed_fee_policy_change_id": {
-            "type": "string",
-            "title": "executed_fee_policy_change_id",
-            "description": "The fee-policy change an executed FEE_POLICY consilium scheduled."
-          },
-          "holder_grant": {
-            "title": "holder_grant",
-            "description": "The fifth terms sibling — set exactly for a HOLDER_GRANT consilium.",
-            "$ref": "#/components/schemas/banking.v1.HolderGrantTerms"
-          },
-          "seed_capital": {
-            "title": "seed_capital",
-            "description": "The sixth — set exactly for a SEED_CAPITAL consilium.",
-            "$ref": "#/components/schemas/banking.v1.SeedCapitalTerms"
-          },
-          "executed_issuance_id": {
-            "type": "string",
-            "title": "executed_issuance_id",
-            "description": "The in-kind issuance an executed HOLDER_GRANT consilium minted\n (`AllocationsService.UnitIssuance`)."
-          },
-          "executed_subscription_id": {
-            "type": "string",
-            "title": "executed_subscription_id",
-            "description": "The `fund` subscription an executed SEED_CAPITAL consilium booked\n (`FundsService.Subscription`)."
-          }
-        },
-        "title": "Consilium",
-        "additionalProperties": false
-      },
-      "banking.v1.ConsiliumFeePolicyTerms": {
-        "type": "object",
-        "properties": {
-          "change_id": {
-            "type": "string",
-            "title": "change_id",
-            "description": "The change this quorum authorizes. Inside the hashed subject, so an approval of one\n change is never a valid signature over another naming the same numbers."
-          },
-          "service": {
-            "type": "string",
-            "title": "service"
-          },
-          "allocation_name": {
-            "type": "string",
-            "title": "allocation_name",
-            "description": "The product's display name, read live from the registry."
-          },
-          "from_configured": {
-            "type": "boolean",
-            "title": "from_configured",
-            "description": "The terms in force when the change was proposed. `from_configured` is false when the\n fund charged nothing — a different fact from a policy whose rates are zero — and the\n `from_*` fields are then zero / default."
-          },
-          "from_management_bps": {
-            "type": "integer",
-            "title": "from_management_bps"
-          },
-          "from_performance_bps": {
-            "type": "integer",
-            "title": "from_performance_bps"
-          },
-          "from_hurdle_bps": {
-            "type": "integer",
-            "title": "from_hurdle_bps"
-          },
-          "from_basis": {
-            "type": "string",
-            "title": "from_basis"
-          },
-          "from_crystallization": {
-            "type": "string",
-            "title": "from_crystallization"
-          },
-          "to_management_bps": {
-            "type": "integer",
-            "title": "to_management_bps"
-          },
-          "to_performance_bps": {
-            "type": "integer",
-            "title": "to_performance_bps"
-          },
-          "to_hurdle_bps": {
-            "type": "integer",
-            "title": "to_hurdle_bps"
-          },
-          "to_basis": {
-            "type": "string",
-            "title": "to_basis"
-          },
-          "to_crystallization": {
-            "type": "string",
-            "title": "to_crystallization"
-          },
-          "effective_from": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "effective_from",
-            "format": "int64",
-            "description": "Unix seconds the requester asked the change to bind from; 0 = as soon as the notice\n allows. The moment actually fixed is never earlier than 24h after the carrying vote\n while anyone holds units."
-          },
-          "holder_count": {
-            "type": "integer",
-            "title": "holder_count",
-            "description": "How many investors hold units right now — who the change binds."
-          },
-          "reason": {
-            "type": "string",
-            "title": "reason",
-            "description": "Why, in the requester's words. Required for this kind, shown verbatim."
-          }
-        },
-        "title": "ConsiliumFeePolicyTerms",
-        "additionalProperties": false,
-        "description": "The immutable subject of a FEE-POLICY consilium — a change of a product's fee terms\n that tightens them beyond the house envelope (docs/FEES.md § \"Changing the terms\").\n Not a money move: carrying it schedules the change, and the fee sweeper promotes it once\n the holders' notice period has run."
-      },
-      "banking.v1.ConsiliumInvitation": {
-        "type": "object",
-        "properties": {
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id"
-          },
-          "state": {
-            "title": "state",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumState"
-          },
-          "payload_hash": {
-            "type": "string",
-            "title": "payload_hash"
-          },
-          "initiator_email": {
-            "type": "string",
-            "title": "initiator_email",
-            "description": "Who opened it, masked."
-          },
-          "voter_email": {
-            "type": "string",
-            "title": "voter_email",
-            "description": "The recipient's own masked address, so they can confirm the mail reached the right\n seat before typing the code."
-          },
-          "threshold": {
-            "type": "integer",
-            "title": "threshold"
-          },
-          "approvals": {
-            "type": "integer",
-            "title": "approvals"
-          },
-          "owner_count": {
-            "type": "integer",
-            "title": "owner_count"
-          },
-          "created_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "created_at",
-            "format": "int64"
-          },
-          "expires_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "expires_at",
-            "format": "int64"
-          },
-          "decision": {
-            "title": "decision",
-            "description": "This seat's own answer, so a reopened link shows what was already said.",
-            "$ref": "#/components/schemas/banking.v1.VoteDecision"
-          },
-          "attempts_remaining": {
-            "type": "integer",
-            "title": "attempts_remaining",
-            "description": "Code attempts left before the token burns."
-          },
-          "payment": {
-            "title": "payment",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumPaymentTerms"
-          },
-          "valuation_override": {
-            "title": "valuation_override",
-            "$ref": "#/components/schemas/banking.v1.ValuationOverrideTerms"
-          },
-          "fee_policy": {
-            "title": "fee_policy",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumFeePolicyTerms"
-          },
-          "holder_grant": {
-            "title": "holder_grant",
-            "$ref": "#/components/schemas/banking.v1.HolderGrantTerms"
-          },
-          "seed_capital": {
-            "title": "seed_capital",
-            "$ref": "#/components/schemas/banking.v1.SeedCapitalTerms"
-          }
-        },
-        "title": "ConsiliumInvitation",
-        "additionalProperties": false,
-        "description": "What the emailed owner is shown BEFORE they vote. Deliberately narrower than\n `Consilium`: no other owner's identity, no vote-by-vote breakdown."
-      },
-      "banking.v1.ConsiliumList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/banking.v1.Consilium"
-            },
-            "title": "items"
-          }
-        },
-        "title": "ConsiliumList",
-        "additionalProperties": false
-      },
-      "banking.v1.ConsiliumPaymentTerms": {
-        "type": "object",
-        "properties": {
-          "payment_id": {
-            "type": "string",
-            "title": "payment_id",
-            "description": "The order this quorum authorizes. Inside the hashed subject too, so an approval of one\n payment is never a valid signature over another with identical terms."
-          },
-          "tier": {
-            "type": "string",
-            "title": "tier",
-            "description": "internal | service | external — DERIVED from the destination, never supplied."
-          },
-          "source": {
-            "type": "string",
-            "title": "source",
-            "description": "Where the money leaves from."
-          },
-          "destination": {
-            "type": "string",
-            "title": "destination",
-            "description": "Where it lands. An external destination is rendered in FULL, address and rail: a\n truncated address in an approval flow is an invitation to approve the wrong one."
-          },
-          "amount": {
-            "type": "string",
-            "title": "amount",
-            "description": "Decimal USDT string, as everywhere else on this wire."
-          },
-          "reason": {
-            "type": "string",
-            "title": "reason",
-            "description": "Why, in the initiator's words. Required, shown verbatim, never interpreted."
-          }
-        },
-        "title": "ConsiliumPaymentTerms",
-        "additionalProperties": false,
-        "description": "The immutable subject of a PAYMENT consilium — the §3 rule that money pooled in an\n allocation (`service:\u003cid\u003e`, the reserved `fee` and `fund` included) moves only on the\n owners' quorum, at every tier.\n\n A PROJECTION OF THE ORDER, not the order. `banking.v1.Payment` (payments.proto) is what\n the payments screen reads; this is what an owner needs in order to judge one request:\n where the money leaves from, where it lands, how much, and why. The two ends are rendered\n as LABELS rather than as `(kind, id)` pairs because the question an owner is answering is\n \"should this money move\", and an account id is not an answer to it."
-      },
-      "banking.v1.ConsiliumState": {
-        "type": "string",
-        "title": "ConsiliumState",
-        "enum": [
-          "CONSILIUM_STATE_UNSPECIFIED",
-          "CONSILIUM_STATE_OPEN",
-          "CONSILIUM_STATE_APPROVED",
-          "CONSILIUM_STATE_REJECTED",
-          "CONSILIUM_STATE_EXPIRED",
-          "CONSILIUM_STATE_CANCELLED",
-          "CONSILIUM_STATE_EXECUTED",
-          "CONSILIUM_STATE_EXECUTION_FAILED"
-        ],
-        "description": "Where a consilium stands. Terminal everywhere except OPEN."
-      },
-      "banking.v1.ConsiliumVoter": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "user_id"
-          },
-          "email": {
-            "type": "string",
-            "title": "email",
-            "description": "Masked (`a***@example.com`) on every surface a non-owner can reach."
-          },
-          "decision": {
-            "title": "decision",
-            "$ref": "#/components/schemas/banking.v1.VoteDecision"
-          },
-          "decided_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "decided_at",
-            "format": "int64",
-            "description": "Unix seconds; 0 while pending."
-          },
-          "notified": {
-            "type": "boolean",
-            "title": "notified",
-            "description": "True once the mail has actually been handed to the delivery queue."
-          }
-        },
-        "title": "ConsiliumVoter",
-        "additionalProperties": false,
-        "description": "One owner's seat in a consilium."
+        "description": "What the investor answered."
       },
       "banking.v1.Deposit": {
         "type": "object",
@@ -10728,162 +9441,11 @@
             "title": "effective_from",
             "format": "int64",
             "description": "Unix seconds since which these terms bind; 0 when unconfigured."
-          },
-          "pending": {
-            "title": "pending",
-            "description": "The change on its way, if any — awaiting the owners or scheduled. Shown to holders\n and non-holders alike: the terms coming are part of deciding whether to stay in.",
-            "$ref": "#/components/schemas/banking.v1.FeePolicyChange"
           }
         },
         "title": "FeePolicy",
         "additionalProperties": false,
         "description": "One fund's fee terms. `configured` is false when the product has no policy at all,\n which is different from a policy whose rates happen to be zero."
-      },
-      "banking.v1.FeePolicyChange": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "id"
-          },
-          "service": {
-            "type": "string",
-            "title": "service"
-          },
-          "version": {
-            "type": "integer",
-            "title": "version"
-          },
-          "state": {
-            "type": "string",
-            "title": "state"
-          },
-          "management_bps": {
-            "type": "integer",
-            "title": "management_bps"
-          },
-          "performance_bps": {
-            "type": "integer",
-            "title": "performance_bps"
-          },
-          "hurdle_bps": {
-            "type": "integer",
-            "title": "hurdle_bps"
-          },
-          "basis": {
-            "type": "string",
-            "title": "basis"
-          },
-          "crystallization": {
-            "type": "string",
-            "title": "crystallization"
-          },
-          "effective_from": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "effective_from",
-            "format": "int64",
-            "description": "Unix seconds the terms bind from. Provisional while awaiting the owners; fixed when\n the change is scheduled."
-          },
-          "requirement": {
-            "type": "string",
-            "title": "requirement"
-          },
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id",
-            "description": "The consilium this change waits on (or waited on); empty for an administrator's change."
-          },
-          "requested_by": {
-            "type": "string",
-            "title": "requested_by"
-          },
-          "requested_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "requested_at",
-            "format": "int64"
-          },
-          "scheduled_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "scheduled_at",
-            "format": "int64",
-            "description": "Unix seconds the notice clock started; 0 while awaiting the owners."
-          },
-          "applied_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "applied_at",
-            "format": "int64",
-            "description": "Unix seconds the terms took effect; 0 until they did."
-          },
-          "reason": {
-            "type": "string",
-            "title": "reason",
-            "description": "Why, in the requester's words; empty when none was given."
-          },
-          "notices_waived_by": {
-            "type": "string",
-            "title": "notices_waived_by",
-            "description": "The operator's acknowledgement of holders who could not be told (see\n AcknowledgeUndeliveredNotices): who took responsibility — the latest to, when the\n record was extended — governance detail, shown to operators and blank for everyone\n else."
-          },
-          "notices_waived_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "notices_waived_at",
-            "format": "int64",
-            "description": "Unix seconds the (latest) acknowledgement was given; 0 when the notices were never\n waived. Public like every other moment on the change."
-          },
-          "notices_waived_users": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "title": "notices_waived_users",
-            "description": "The ids of the holders whose notice the mailer had given up on by that moment — the\n holders the change binds over untold. Operators only; empty for everyone else."
-          },
-          "undelivered_notices": {
-            "type": "integer",
-            "title": "undelivered_notices",
-            "description": "Notices of this change not yet delivered to a CURRENT holder, how many of those the\n mailer has given up on — the figures a tightening waits on — and how many of the\n given-up ones the acknowledgement does not cover (all of them while there is none):\n the holders a (further) AcknowledgeUndeliveredNotices would name, so it is worth\n offering exactly while this is non-zero. Counted only while `scheduled` (0 in every\n other state), and shown to operators only."
-          },
-          "notices_given_up": {
-            "type": "integer",
-            "title": "notices_given_up"
-          },
-          "notices_unacknowledged": {
-            "type": "integer",
-            "title": "notices_unacknowledged"
-          }
-        },
-        "title": "FeePolicyChange",
-        "additionalProperties": false,
-        "description": "One row of a fund's fee-policy history. `state` is one of awaiting_consilium |\n scheduled | active | superseded | rejected | cancelled; `requirement` is admin |\n owner_consilium. See docs/FEES.md § \"Changing the terms\"."
-      },
-      "banking.v1.FeePolicyChangeList": {
-        "type": "object",
-        "properties": {
-          "changes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/banking.v1.FeePolicyChange"
-            },
-            "title": "changes"
-          }
-        },
-        "title": "FeePolicyChangeList",
-        "additionalProperties": false
       },
       "banking.v1.FeePolicyList": {
         "type": "object",
@@ -11084,29 +9646,6 @@
         "title": "GetCompartmentRequest",
         "additionalProperties": false
       },
-      "banking.v1.GetConsentInvitationRequest": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "token",
-            "description": "The opaque single-use token from the mail. Never the code."
-          }
-        },
-        "title": "GetConsentInvitationRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.GetConsiliumRequest": {
-        "type": "object",
-        "properties": {
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id"
-          }
-        },
-        "title": "GetConsiliumRequest",
-        "additionalProperties": false
-      },
       "banking.v1.GetDepositAddressRequest": {
         "type": "object",
         "properties": {
@@ -11155,18 +9694,6 @@
       "banking.v1.GetFundRevenueRequest": {
         "type": "object",
         "title": "GetFundRevenueRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.GetInvitationRequest": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "token",
-            "description": "The opaque single-use token from the mail. Never the code."
-          }
-        },
-        "title": "GetInvitationRequest",
         "additionalProperties": false
       },
       "banking.v1.GetMandateRequestRequest": {
@@ -11315,29 +9842,6 @@
         "additionalProperties": false,
         "description": "The caps are decimal USDT. What counts against them is the client's draws on the caller's\n compartment in the scope — under this mandate and any it replaced, so granting again\n never resets a cap: a hold counts at its full amount from when it is placed, until it is\n voided or expires, when only what was captured of it still counts; a capture of a hold\n placed more than 24 h ago counts from when it is made."
       },
-      "banking.v1.HolderGrantTerms": {
-        "type": "object",
-        "properties": {
-          "allocation": {
-            "type": "string",
-            "title": "allocation",
-            "description": "fee | fund — a reserved allocation only"
-          },
-          "user_id": {
-            "type": "string",
-            "title": "user_id",
-            "description": "On the request: a banking (or concierge) user id, resolved the way every admin RPC\n resolves a target. On a response: the money-plane id the terms stored."
-          },
-          "units": {
-            "type": "string",
-            "title": "units",
-            "description": "decimal units, \u003e 0"
-          }
-        },
-        "title": "HolderGrantTerms",
-        "additionalProperties": false,
-        "description": "The immutable subject of a HOLDER-GRANT consilium (#245): `units` of the reserved\n `allocation` minted to `user_id`, with no cash leg. The units are frozen, not a cash\n figure — what they are worth is the allocation's NAV at execution. Executing it records\n a `UnitIssuance` (`source = \"mint\"`, holder `user`) that `executed_issuance_id` names."
-      },
       "banking.v1.IssueUnitsRequest": {
         "type": "object",
         "properties": {
@@ -11348,7 +9852,7 @@
           "user_id": {
             "type": "string",
             "title": "user_id",
-            "description": "Who receives the units: a banking (or concierge) user id, resolved the way every\n admin RPC resolves a target. Required — a mint to nobody is a malformed request.\n Only a person: the company is not a holder (#245), and a reserved allocation is\n seated by the owners' consilium (`ConsiliumService.OpenHolderGrant`) or by the fee\n accrual, never by an operator's mint — so there is deliberately no arm for either."
+            "description": "Who receives the units: a banking (or concierge) user id, resolved the way every\n admin RPC resolves a target. Required — a mint to nobody is a malformed request.\n Only a person: the company is not a holder (#245), and a reserved allocation is\n seated by the fee accrual, never by an operator's mint — so there is deliberately no\n arm for either."
           },
           "units": {
             "type": "string",
@@ -11503,18 +10007,6 @@
         "title": "ListCompartmentsRequest",
         "additionalProperties": false
       },
-      "banking.v1.ListConsiliaRequest": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "title": "limit",
-            "description": "0 means the server default."
-          }
-        },
-        "title": "ListConsiliaRequest",
-        "additionalProperties": false
-      },
       "banking.v1.ListDepositsRequest": {
         "type": "object",
         "title": "ListDepositsRequest",
@@ -11528,17 +10020,6 @@
       "banking.v1.ListFeePoliciesRequest": {
         "type": "object",
         "title": "ListFeePoliciesRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.ListFeePolicyChangesRequest": {
-        "type": "object",
-        "properties": {
-          "service": {
-            "type": "string",
-            "title": "service"
-          }
-        },
-        "title": "ListFeePolicyChangesRequest",
         "additionalProperties": false
       },
       "banking.v1.ListFundFeeAssessmentsRequest": {
@@ -11657,7 +10138,7 @@
           "fund_owned_only": {
             "type": "boolean",
             "title": "fund_owned_only",
-            "description": "Only orders whose source is an allocation's claim (`service:\u003cid\u003e`) or banking's\n treasury — the ones the owners' consilium gates, i.e. the governance surface."
+            "description": "Only orders whose source is an allocation's claim (`service:\u003cid\u003e`) or banking's\n treasury — the ones the owners gate, i.e. the governance surface."
           }
         },
         "title": "ListPaymentsRequest",
@@ -12121,17 +10602,6 @@
         "additionalProperties": false,
         "description": "Per-rail withdrawal options (the accept-and-queue UX). `withdrawable` is the whole\n available balance (a request beyond `instant` is accepted and queued); `instant` is\n the portion that ships without queueing = min(available, rail liquidity)."
       },
-      "banking.v1.OpenHolderGrantRequest": {
-        "type": "object",
-        "properties": {
-          "terms": {
-            "title": "terms",
-            "$ref": "#/components/schemas/banking.v1.HolderGrantTerms"
-          }
-        },
-        "title": "OpenHolderGrantRequest",
-        "additionalProperties": false
-      },
       "banking.v1.OpenPaymentRequest": {
         "type": "object",
         "properties": {
@@ -12155,17 +10625,6 @@
           }
         },
         "title": "OpenPaymentRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.OpenValuationOverrideRequest": {
-        "type": "object",
-        "properties": {
-          "terms": {
-            "title": "terms",
-            "$ref": "#/components/schemas/banking.v1.ValuationOverrideTerms"
-          }
-        },
-        "title": "OpenValuationOverrideRequest",
         "additionalProperties": false
       },
       "banking.v1.Operation": {
@@ -12648,16 +11107,6 @@
             "type": "string",
             "title": "initiator_email"
           },
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id",
-            "description": "Set exactly when the requirement is the owner consilium."
-          },
-          "consent": {
-            "title": "consent",
-            "description": "Set exactly when the requirement is the subject's consent.",
-            "$ref": "#/components/schemas/banking.v1.PaymentConsent"
-          },
           "created_at": {
             "type": [
               "integer",
@@ -12704,7 +11153,7 @@
           "seat": {
             "type": "string",
             "title": "seat",
-            "description": "The seat that decides the order: `consilium`, `consent` (the emailed token),\n `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in\n the wallet host). Empty only for a row written before seats were recorded."
+            "description": "The seat that decides the order: `concierge_approval` (a `bank:payment` approval) or\n `session` (the investor's answer in the wallet host)."
           },
           "approval_id": {
             "type": "string",
@@ -12802,111 +11251,6 @@
         "title": "PaymentConfirmationList",
         "additionalProperties": false
       },
-      "banking.v1.PaymentConsent": {
-        "type": "object",
-        "properties": {
-          "subject_email": {
-            "type": "string",
-            "title": "subject_email",
-            "description": "Masked (`a***@example.com`)."
-          },
-          "decision": {
-            "title": "decision",
-            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
-          },
-          "notified": {
-            "type": "boolean",
-            "title": "notified",
-            "description": "True once the consent mail has actually been handed to concierge."
-          },
-          "attempts_remaining": {
-            "type": "integer",
-            "title": "attempts_remaining",
-            "description": "Code attempts left before the token burns."
-          },
-          "invalidated": {
-            "type": "boolean",
-            "title": "invalidated",
-            "description": "True when one of the pins recorded at open (the subject's token version, their\n mailbox) has moved: the seat can no longer be answered or executed."
-          },
-          "invalidation_reason": {
-            "type": "string",
-            "title": "invalidation_reason",
-            "description": "Why, when `invalidated` is true."
-          }
-        },
-        "title": "PaymentConsent",
-        "additionalProperties": false,
-        "description": "The consent seat of an investor-sourced order, as the owner surface sees it."
-      },
-      "banking.v1.PaymentConsentInvitation": {
-        "type": "object",
-        "properties": {
-          "payment_id": {
-            "type": "string",
-            "title": "payment_id"
-          },
-          "state": {
-            "title": "state",
-            "$ref": "#/components/schemas/banking.v1.PaymentState"
-          },
-          "tier": {
-            "type": "string",
-            "title": "tier"
-          },
-          "source": {
-            "title": "source",
-            "$ref": "#/components/schemas/banking.v1.PaymentEnd"
-          },
-          "destination": {
-            "title": "destination",
-            "$ref": "#/components/schemas/banking.v1.PaymentEnd"
-          },
-          "amount": {
-            "type": "string",
-            "title": "amount"
-          },
-          "reason": {
-            "type": "string",
-            "title": "reason"
-          },
-          "payload_hash": {
-            "type": "string",
-            "title": "payload_hash"
-          },
-          "initiator_email": {
-            "type": "string",
-            "title": "initiator_email",
-            "description": "Who opened it, masked."
-          },
-          "subject_email": {
-            "type": "string",
-            "title": "subject_email",
-            "description": "The recipient's own masked address, so they can confirm the mail reached the right\n mailbox before typing the code."
-          },
-          "expires_at": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "expires_at",
-            "format": "int64"
-          },
-          "decision": {
-            "title": "decision",
-            "description": "This seat's own answer, so a reopened link shows what was already said.",
-            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
-          },
-          "attempts_remaining": {
-            "type": "integer",
-            "title": "attempts_remaining",
-            "description": "Code attempts left before the token burns."
-          }
-        },
-        "title": "PaymentConsentInvitation",
-        "additionalProperties": false,
-        "description": "What the emailed investor is shown BEFORE they answer. Deliberately narrower than\n `Payment`: the terms they are consenting to, and nothing about the operator beyond a\n masked address."
-      },
       "banking.v1.PaymentDestination": {
         "type": "object",
         "oneOf": [
@@ -12975,7 +11319,7 @@
         },
         "title": "PaymentEnd",
         "additionalProperties": false,
-        "description": "One end of a payment, as a RESPONSE describes it. `label` is the wording every approval\n surface (the owners' mail, the subject's mail, this screen) shares; the structured\n fields let a screen link to the account."
+        "description": "One end of a payment, as a RESPONSE describes it. `label` is the wording every approval\n surface shares; the structured\n fields let a screen link to the account."
       },
       "banking.v1.PaymentList": {
         "type": "object",
@@ -13435,7 +11779,7 @@
         },
         "title": "RecordDepositResponse",
         "additionalProperties": false,
-        "description": "The chain names the owner of the deposit address the transfer landed on, so the\n credited party is always a PERSON: `party_kind` is `user` and `party_id` their banking\n id. A transfer to the treasury address is nobody's until the owners say whose — it is\n refused here and attributed through `SeedCapital`."
+        "description": "The chain names the owner of the deposit address the transfer landed on, so the\n credited party is always a PERSON: `party_kind` is `user` and `party_id` their banking\n id. A transfer to the treasury address is nobody's — it is refused here."
       },
       "banking.v1.RedeemRequest": {
         "type": "object",
@@ -13766,51 +12110,6 @@
         "title": "RotateDepositAddressResponse",
         "additionalProperties": false
       },
-      "banking.v1.ScheduleFeePolicyRequest": {
-        "type": "object",
-        "properties": {
-          "service": {
-            "type": "string",
-            "title": "service"
-          },
-          "management_bps": {
-            "type": "integer",
-            "title": "management_bps"
-          },
-          "performance_bps": {
-            "type": "integer",
-            "title": "performance_bps"
-          },
-          "hurdle_bps": {
-            "type": "integer",
-            "title": "hurdle_bps"
-          },
-          "basis": {
-            "type": "string",
-            "title": "basis"
-          },
-          "crystallization": {
-            "type": "string",
-            "title": "crystallization"
-          },
-          "effective_from": {
-            "type": [
-              "integer",
-              "string"
-            ],
-            "title": "effective_from",
-            "format": "int64",
-            "description": "Unix seconds the change should bind from; 0 = as soon as the notice period allows.\n An earlier request than the notice allows is lifted to the minimum, not refused."
-          },
-          "reason": {
-            "type": "string",
-            "title": "reason",
-            "description": "Why, in the requester's words. Required and non-empty when the owners must approve\n (the approval mail is refused without one); optional otherwise. Shown verbatim."
-          }
-        },
-        "title": "ScheduleFeePolicyRequest",
-        "additionalProperties": false
-      },
       "banking.v1.ScopePolicy": {
         "type": "object",
         "properties": {
@@ -13871,85 +12170,6 @@
         "title": "ScopePolicy",
         "additionalProperties": false,
         "description": "What it takes to move money into a scope, and how far its services may move money\n without an approval. Limits are decimal USDT strings; an empty limit means none."
-      },
-      "banking.v1.SeedCapitalRequest": {
-        "type": "object",
-        "properties": {
-          "network": {
-            "type": "string",
-            "title": "network",
-            "description": "bep20 | polygon | trc20 | ton — the rail the capital lands on"
-          },
-          "tx_ref": {
-            "type": "string",
-            "title": "tx_ref",
-            "description": "`txhash:logIndex` (EVM) | `txhash:recipient` (TON) — verified, and the idempotency key"
-          },
-          "expected_amount": {
-            "type": "string",
-            "title": "expected_amount",
-            "description": "REQUIRED, decimal USDT: what the chain must report for this reference. A seed is\n proposed at a figure the owners approve, not at \"whatever the chain says\" — a\n mistyped reference naming some other real transfer fails here, loudly."
-          },
-          "depositor_user_id": {
-            "type": "string",
-            "title": "depositor_user_id",
-            "description": "Whose money it is: the person booked as depositor and seated as a holder of `fund`.\n A banking (or concierge) user id, resolved the way every admin RPC resolves a\n target. Empty means the caller — an owner attributing their own transfer."
-          }
-        },
-        "title": "SeedCapitalRequest",
-        "additionalProperties": false,
-        "description": "Propose a seed: a transfer that reached a rail's treasury, PROVEN against the chain,\n as `depositor_user_id`'s deposit and subscription into `fund`.\n\n Like RecordDepositRequest the caller supplies only a pointer to a fact: the transfer\n must have landed on the rail's treasury address from a sender outside every wallet we\n control. A transfer to a user's deposit address is that user's deposit, not a seed —\n refused, use RecordDeposit. The sweep consolidating a user's address into the treasury\n is money already on the ledger — refused. Unlike RecordDeposit the amount is UNDER THE\n OWNERS' SIGNATURE: `expected_amount` is required, checked against the chain now, and\n frozen into the terms the owners vote over."
-      },
-      "banking.v1.SeedCapitalResponse": {
-        "type": "object",
-        "properties": {
-          "recorded": {
-            "type": "boolean",
-            "title": "recorded",
-            "description": "always false: the booking is the consilium's execution"
-          },
-          "amount": {
-            "type": "string",
-            "title": "amount",
-            "description": "what the terms carry, decimal USDT — verified against the chain"
-          },
-          "consilium_id": {
-            "type": "string",
-            "title": "consilium_id",
-            "description": "the seed-capital consilium this opened"
-          }
-        },
-        "title": "SeedCapitalResponse",
-        "additionalProperties": false,
-        "description": "A seed is a consilium, not a write: `recorded` is always false here — nothing is\n booked until the owners' quorum executes it — and `consilium_id` is where the\n proposal lives (`ConsiliumService.GetConsilium`)."
-      },
-      "banking.v1.SeedCapitalTerms": {
-        "type": "object",
-        "properties": {
-          "tx_ref": {
-            "type": "string",
-            "title": "tx_ref",
-            "description": "`txhash:logIndex` (EVM) | `txhash:recipient` (TON)"
-          },
-          "network": {
-            "type": "string",
-            "title": "network",
-            "description": "bep20 | polygon | trc20 | ton"
-          },
-          "amount": {
-            "type": "string",
-            "title": "amount",
-            "description": "decimal USDT, as the chain reports it"
-          },
-          "depositor_user_id": {
-            "type": "string",
-            "title": "depositor_user_id",
-            "description": "the money-plane id the terms stored"
-          }
-        },
-        "title": "SeedCapitalTerms",
-        "additionalProperties": false,
-        "description": "The immutable subject of a SEED-CAPITAL consilium (#245): the transfer `tx_ref` names\n on `network`, which the chain must report as exactly `amount` USDT landing on the\n treasury from outside, is `depositor_user_id`'s — booked as their deposit and\n subscribed into `fund` at its price when the quorum executes. The amount is frozen\n into the terms (the owners approve \"this dollar is this person's\"); the units are\n not — they are what the cash buys at execution. Executing it records the fund\n subscription `executed_subscription_id` names. Opened through\n `BalanceService.SeedCapital`, never here."
       },
       "banking.v1.Session": {
         "type": "object",
@@ -14168,100 +12388,6 @@
       "banking.v1.SettleWithdrawalResponse": {
         "type": "object",
         "title": "SettleWithdrawalResponse",
-        "additionalProperties": false
-      },
-      "banking.v1.SubmitConsentRequest": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "token"
-          },
-          "code": {
-            "type": "string",
-            "title": "code",
-            "description": "The secret code from the same mail. Compared in constant time, as a hash."
-          },
-          "decision": {
-            "title": "decision",
-            "description": "APPROVE or REJECT. PENDING is rejected as an invalid argument.",
-            "$ref": "#/components/schemas/banking.v1.ConsentDecision"
-          },
-          "client_ip": {
-            "type": "string",
-            "title": "client_ip",
-            "description": "Audit only — the edge supplies these; they are never trusted for authorization."
-          },
-          "user_agent": {
-            "type": "string",
-            "title": "user_agent"
-          }
-        },
-        "title": "SubmitConsentRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.SubmitConsentResponse": {
-        "type": "object",
-        "properties": {
-          "invitation": {
-            "title": "invitation",
-            "description": "The invitation as it stands after the answer.",
-            "$ref": "#/components/schemas/banking.v1.PaymentConsentInvitation"
-          },
-          "decided": {
-            "type": "boolean",
-            "title": "decided",
-            "description": "True when this answer carried the order out of PENDING."
-          }
-        },
-        "title": "SubmitConsentResponse",
-        "additionalProperties": false
-      },
-      "banking.v1.SubmitDecisionRequest": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "token"
-          },
-          "code": {
-            "type": "string",
-            "title": "code",
-            "description": "The secret code from the same mail. Compared in constant time, as a hash."
-          },
-          "decision": {
-            "title": "decision",
-            "description": "APPROVE or REJECT. PENDING is rejected as an invalid argument.",
-            "$ref": "#/components/schemas/banking.v1.VoteDecision"
-          },
-          "client_ip": {
-            "type": "string",
-            "title": "client_ip",
-            "description": "Audit only — the edge supplies these; they are never trusted for authorization."
-          },
-          "user_agent": {
-            "type": "string",
-            "title": "user_agent"
-          }
-        },
-        "title": "SubmitDecisionRequest",
-        "additionalProperties": false
-      },
-      "banking.v1.SubmitDecisionResponse": {
-        "type": "object",
-        "properties": {
-          "invitation": {
-            "title": "invitation",
-            "description": "The invitation as it stands after the vote.",
-            "$ref": "#/components/schemas/banking.v1.ConsiliumInvitation"
-          },
-          "decided": {
-            "type": "boolean",
-            "title": "decided",
-            "description": "True when this vote carried the consilium to its verdict."
-          }
-        },
-        "title": "SubmitDecisionResponse",
         "additionalProperties": false
       },
       "banking.v1.SubscribeRequest": {
@@ -14873,35 +12999,6 @@
         "title": "UserSummary",
         "additionalProperties": false,
         "description": "Minimal principal snapshot returned with a freshly issued token pair, so the BFF\n can populate a session without a second round trip."
-      },
-      "banking.v1.ValuationOverrideTerms": {
-        "type": "object",
-        "properties": {
-          "service": {
-            "type": "string",
-            "title": "service",
-            "description": "The fund/service id being marked."
-          },
-          "aum": {
-            "type": "string",
-            "title": "aum",
-            "description": "The fund's total AUM to mark it at — decimal USDT string, as everywhere on this wire."
-          }
-        },
-        "title": "ValuationOverrideTerms",
-        "additionalProperties": false,
-        "description": "The immutable subject of a VALUATION-OVERRIDE consilium — a NAV mark the move guard\n refuses (banking#232). The direct `PostFundValuation` caps a move at `MAX_NAV_MOVE_PCT`\n against the previous mark AND the mark anchoring a rolling window, and carries no flag\n to lift it; a genuine re-mark past the cap is put to the owners instead. Executing the\n consilium derives NAV from the LIVE unit supply at that moment and records the mark with\n the initiator as `posted_by`, so the redeem cooldown binds them exactly as a direct post\n would."
-      },
-      "banking.v1.VoteDecision": {
-        "type": "string",
-        "title": "VoteDecision",
-        "enum": [
-          "VOTE_DECISION_UNSPECIFIED",
-          "VOTE_DECISION_PENDING",
-          "VOTE_DECISION_APPROVE",
-          "VOTE_DECISION_REJECT"
-        ],
-        "description": "How one voter answered."
       },
       "banking.v1.Wallet": {
         "type": "object",
@@ -17825,19 +15922,11 @@
     },
     {
       "name": "banking.v1.BalanceService",
-      "description": "BalanceService — the bank's treasury and the platform's own allocations (operator\n surface).\n\n Reads authoritative balances from the TigerBeetle ledger; metadata and events from\n Postgres. Every amount is a decimal USDT STRING (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated\n (allowlist) at the boundary. See docs/ARCHITECTURE.md.\n\n The allocations hold no company money (#245): what they earn is the `fee` allocation's\n and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE\n through units — so the treasury lists every allocation with its holders, and nothing\n here pays \"the fund\" out. Cash leaves a reserved allocation by a holder's redemption\n or by a payment the owners' consilium approved (`PaymentsService`). banking's own money\n is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which\n nothing pays out until concierge's scope approvals decide its spending\n (`bank:treasury_surplus`, D24)."
+      "description": "BalanceService — the bank's treasury and the platform's own allocations (operator\n surface).\n\n Reads authoritative balances from the TigerBeetle ledger; metadata and events from\n Postgres. Every amount is a decimal USDT STRING (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`). All RPCs are admin-gated\n (allowlist) at the boundary. See docs/ARCHITECTURE.md.\n\n The allocations hold no company money (#245): what they earn is the `fee` allocation's\n and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE\n through units — so the treasury lists every allocation with its holders, and nothing\n here pays \"the fund\" out. Cash leaves a reserved allocation by a holder's redemption\n or by a payment the owners approved (`PaymentsService`). banking's own money\n is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which\n nothing pays out until concierge's scope approvals decide its spending\n (`bank:treasury_surplus`, D24)."
     },
     {
       "name": "banking.v1.BookService",
       "description": "BookService — the secondary market in an allocation's units: holders trading with\n each other on a central limit order book, price-time priority, in the shape of a spot\n exchange.\n\n It sits BESIDE the fund's own dealing, never instead of it. FundsService.Subscribe and\n Redeem are dealings with the fund at NAV; the book is holders dealing with holders at\n whatever they agree. NAV stays the accounting price — a position, its P\u0026L and the fee\n high-water mark are measured at it — and the book's last trade is a second, market\n quote shown next to it (`BookSnapshot.nav` carries the mark so a ticker can show both).\n\n Money never leaves the ledger's custody: a resting order is an ESCROW inside it. A sell\n moves its units from the holder's `shares` account into a per-user book escrow, a buy\n moves its worst-case cash — size × price plus the taker fee it might owe — from the\n user's claim into a per-user cash escrow. A fill is ONE linked TigerBeetle batch (units\n to the buyer, cash to the seller, the taker's fee to the fund): delivery versus payment\n or nothing. Whatever the escrow still holds when an order ends is handed back, so a buy\n that filled below its limit, an IOC remainder and a cancel all release the difference.\n The hub records the order and its fills first (Postgres, under one lock per book) and\n the ledger moves follow through the same outbox relay as every other money event, so\n the balances a client reads lag a placement by the relay's latency, exactly as after a\n Subscribe.\n\n Who may trade: any signed-in investor whose effective access on the allocation is\n `invest` — the same gate as Subscribe, EXCEPT that the allocation's `state` does not\n apply (a `closed` product's holders may still trade among themselves; only `book_open`\n on the policy, `hidden` and `view` refuse). Placing is also refused while the money\n plane is in read-only mode or the caller is frozen; cancelling never is, so a frozen\n user can still unwind. The policy (fees, tick, lot, slippage, whether the book is open\n at all) is set by an `AllocationManage` holder; a product with no policy row has a\n closed book.\n\n Every amount, size and price is a decimal STRING (proto3 has no u128; a string is\n lossless and matches proto-loader's `longs: String`). Enumerations are strings too,\n pinned in `evbanking_contracts::book`. See piggybank/core/PATTERNS.md."
-    },
-    {
-      "name": "banking.v1.ConsiliumService",
-      "description": "ConsiliumService — multi-owner authorization over the platform's own money and its\n price: a payment out of a service claim (opened inside `PaymentsService.OpenPayment`),\n a NAV mark past the move guard, a change of fee terms beyond the house envelope, a new\n holder of a reserved allocation (`OpenHolderGrant`), and a seed of the platform's\n capital (`BalanceService.SeedCapital`). One owner opens a request; strictly more than\n half of ALL owners must each confirm it from their mailbox before anything happens.\n\n The kinds, as the `Consilium` message tells them apart (exactly one terms sibling is\n set): `payment`, `valuation_override`, `fee_policy`, `holder_grant`, `seed_capital`.\n (`revenue_payout` was retired by #245 and left the contract with C-9; field 3 of\n `Consilium` and `ConsiliumInvitation` is reserved for it.)\n\n WHY THE MONEY PLANE OWNS THIS. docs/ARCHITECTURE.md rejects letting a\n concierge-signed artifact authorize money movement, and a consilium verdict is\n exactly such an artifact. So the tally is computed, stored and verified here, against\n the owner roster this plane already mirrors (`0016_user_role.sql`). Concierge is used\n only to DELIVER the mail, over a typed payload it renders itself.\n\n QUORUM. `threshold = floor(N / 2) + 1` where N is the owner count at open. The\n initiator is in the denominator but gets NO vote and is never minted a token — so\n opening a request can never lower the bar the initiator has to clear. N \u003c 3 makes\n the threshold unreachable and is refused at open rather than parked forever.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds every approval to the exact\n terms shown in the mail; changing anything means cancel and reopen, and votes are not\n carried over. See docs/CONSILIUM.md for the full policy and threat model."
-    },
-    {
-      "name": "banking.v1.ConsiliumApprovalService",
-      "description": "ConsiliumApprovalService — the surface an emailed owner reaches. Mounted OUTSIDE the\n user-auth layer, exactly as AuthService is: the emailed token IS the credential, and\n the owner clicking it may not be signed in.\n\n The GET is strictly read-only because mail scanners (Gmail, Outlook SafeLinks,\n corporate gateways) issue automatic requests for every URL in a message. The vote is\n a separate call carrying the secret code from the same mail — that is what turns a\n scanned link into a deliberate human act."
     },
     {
       "name": "banking.v1.FeesService",
@@ -17865,15 +15954,11 @@
     },
     {
       "name": "banking.v1.PaymentsService",
-      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments\n for the policy.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e` — a product's, or the platform's own `fee` / `fund`) needs the\n owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is\n no separate RPC. A payment out of an investor's own claim (`user:\u003cid\u003e`) needs THAT\n investor's emailed consent at every tier. There is deliberately no cell in which one\n admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are\n retired (#245) and a request naming them is refused. banking's treasury (`treasury`,\n D17) is the one source beside them that is not an allocation. It collects the withdrawal\n fees and is never a destination; as a source it is CLOSED until its spending is decided\n by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is\n FAILED_PRECONDITION `treasury spending waits for scope approvals`.\n\n HOW THE APPROVAL IS SEATED. Two switches (`PAYMENT_APPROVALS_FUND`, default `consilium`;\n `PAYMENT_APPROVALS_SESSION`, default `concierge`) decide how a NEW order is seated. With\n `concierge`, the owners decide a fund-owned order over a concierge approval of kind\n `bank:payment` — proposed in the initiator's name, which needs their access token of the\n last two minutes in `x-ev-user-token` — and an investor's order is answered by that\n investor, signed in, over PaymentConfirmationService; no token and no mail are involved.\n With `consilium` new orders are seated on banking's consilium and the emailed token. An\n order keeps the seat it was opened with. See `Payment.seat`.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown in the mail; changing anything means cancel and reopen."
-    },
-    {
-      "name": "banking.v1.PaymentConsentService",
-      "description": "PaymentConsentService — the surface an emailed investor reaches. Mounted OUTSIDE the\n user-auth layer, exactly as ConsiliumApprovalService is: the emailed token IS the\n credential, and the investor clicking it may not be signed in.\n\n The GET is strictly read-only because mail scanners issue automatic requests for every\n URL in a message. The consent is a separate call carrying the secret code from the same\n mail — that is what turns a scanned link into a deliberate human act."
+      "description": "PaymentsService — the ORDER that moves money between two named ends of the platform.\n\n Three tiers on one order, DERIVED from the destination and never supplied: an external\n wallet address (L1, settled by the withdrawal saga), a product's pooled claim\n `service:\u003cid\u003e` (L2, one posted transfer), any other internal claim (L3, one posted\n transfer). See domain/src/payments.rs for the aggregate.\n\n AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled\n claim (`service:\u003cid\u003e`) needs the owners' approval at every tier: a concierge approval of\n kind `bank:payment`, proposed in the initiator's name, which needs their access token of\n the last two minutes in `x-ev-user-token`. A payment out of an investor's own claim\n (`user:\u003cid\u003e`) is answered by THAT investor, signed in, over PaymentConfirmationService.\n There is deliberately no cell in which one admin moves pooled money alone. banking's\n treasury (`treasury`, D17) is never a destination; as a source it is CLOSED until its\n spending is decided by concierge's scope approvals (`bank:treasury_surplus`, D24) —\n OpenPayment out of it is FAILED_PRECONDITION `treasury spending waits for scope approvals`.\n\n IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms\n shown to the approver; changing anything means cancel and reopen."
     },
     {
       "name": "banking.v1.PaymentConfirmationService",
-      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and\n code: the session is the credential, and the wallet host's gate asks for a fresh login before\n an approval (a decline asks for none)."
+      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. The session is the credential,\n and the wallet host's gate asks for a fresh login before an approval (a decline asks for none)."
     },
     {
       "name": "banking.v1.PayoutReviewService",

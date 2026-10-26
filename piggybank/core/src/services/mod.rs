@@ -17,11 +17,10 @@ use std::{future::Future, net::SocketAddr};
 use evbanking_auth::{TokenClass, grpc_auth_layer};
 use evbanking_contracts::banking::v1::{
 	allocations_service_server::AllocationsServiceServer, balance_service_server::BalanceServiceServer, book_service_server::BookServiceServer,
-	compartment_service_server::CompartmentServiceServer, consilium_approval_service_server::ConsiliumApprovalServiceServer, consilium_service_server::ConsiliumServiceServer,
-	fees_service_server::FeesServiceServer, funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer,
+	compartment_service_server::CompartmentServiceServer, fees_service_server::FeesServiceServer, funds_service_server::FundsServiceServer, health_service_server::HealthServiceServer,
 	invoice_payment_service_server::InvoicePaymentServiceServer, operations_service_server::OperationsServiceServer, payment_confirmation_service_server::PaymentConfirmationServiceServer,
-	payment_consent_service_server::PaymentConsentServiceServer, payments_service_server::PaymentsServiceServer, payout_review_service_server::PayoutReviewServiceServer,
-	users_service_server::UsersServiceServer, wallet_service_server::WalletServiceServer,
+	payments_service_server::PaymentsServiceServer, payout_review_service_server::PayoutReviewServiceServer, users_service_server::UsersServiceServer,
+	wallet_service_server::WalletServiceServer,
 };
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
@@ -35,13 +34,12 @@ use crate::{
 		balance::BalanceSvc,
 		book::BookSvc,
 		compartments::CompartmentSvc,
-		consilium::{ConsiliumApprovalSvc, ConsiliumSvc},
 		fees::FeesSvc,
 		funds::FundsSvc,
 		health::Health,
 		invoices::InvoicePaymentSvc,
 		operations::OperationsSvc,
-		payments::{PaymentConfirmationSvc, PaymentConsentSvc, PaymentsSvc},
+		payments::{PaymentConfirmationSvc, PaymentsSvc},
 		payout_review::PayoutReviewSvc,
 		users::UsersSvc,
 		wallet::WalletSvc,
@@ -52,7 +50,6 @@ pub mod allocations;
 pub mod balance;
 pub mod book;
 pub mod compartments;
-pub mod consilium;
 pub mod fees;
 pub mod funds;
 pub mod health;
@@ -84,15 +81,6 @@ pub mod wallet;
 /// on a listener of its own that speaks only mTLS under the SERVICE token class
 /// ([`scope_ledger::serve`]).
 ///
-/// `ConsiliumApprovalService` is the one DATA service left unwrapped, for the same reason
-/// the auth service's own routes are: the emailed approval token IS its credential. An owner
-/// answering from their mailbox may not be signed in, and requiring a session would make the
-/// mail useless. Its own surface is what carries the authorization — a single-use hashed
-/// token with a 72h TTL, plus a secret code compared in constant time — and every unusable
-/// token gets one identical `NOT_FOUND`. `ConsiliumService`, the owners' own surface, stays
-/// behind the layer like every other data service. `PaymentConsentService` is the same shape
-/// for the same reason — the emailed investor is its credential — and `PaymentsService`,
-/// the operators' surface, stays behind the layer.
 pub async fn serve(addr: SocketAddr, state: AppState, shutdown: impl Future<Output = ()>) -> Result<(), tonic::transport::Error> {
 	let auth = grpc_auth_layer(state.authorizer.for_class(TokenClass::Client));
 	let health = Health::new(state.pool.clone(), state.ledger.clone(), state.configured_networks.clone());
@@ -114,11 +102,8 @@ pub async fn serve(addr: SocketAddr, state: AppState, shutdown: impl Future<Outp
 			.add_service(auth.layer(BookServiceServer::new(BookSvc::new(state.clone()))))
 		.add_service(auth.layer(FeesServiceServer::new(FeesSvc::new(state.clone()))))
 		.add_service(auth.layer(OperationsServiceServer::new(OperationsSvc::new(state.clone()))))
-		.add_service(auth.layer(ConsiliumServiceServer::new(ConsiliumSvc::new(state.clone()))))
-		.add_service(ConsiliumApprovalServiceServer::new(ConsiliumApprovalSvc::new(state.clone())))
 		.add_service(auth.layer(PaymentsServiceServer::new(PaymentsSvc::new(state.clone()))))
 		.add_service(auth.layer(PaymentConfirmationServiceServer::new(PaymentConfirmationSvc::new(state.clone()))))
-		.add_service(PaymentConsentServiceServer::new(PaymentConsentSvc::new(state.clone())))
 		.add_service(auth.layer(PayoutReviewServiceServer::new(PayoutReviewSvc::new(state.clone()))))
 		.add_service(auth.layer(CompartmentServiceServer::new(CompartmentSvc::new(state.clone()))))
 		.add_service(auth.layer(InvoicePaymentServiceServer::new(InvoicePaymentSvc::new(state.clone()))))

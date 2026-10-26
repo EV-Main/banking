@@ -20,14 +20,11 @@ use async_trait::async_trait;
 use domain::{
 	architecture::Repository,
 	balance::ServiceId,
-	consilium::{Consilium, ConsiliumId},
 	error::DomainError,
-	fees::{ChangeRequirement, FeeAssessment, FeePolicy, FeePolicyChangeId, FeePolicyChangeState, FeePolicySubject, FeeSettlement, Trigger},
+	fees::{FeeAssessment, FeePolicy, FeeSettlement, Trigger},
 	money::{Nav, Shares, Usdt},
 	users::UserId,
 };
-
-use crate::ports::consilium::VoterCredential;
 
 /// The live row of `fee_policies`: the terms in force right now, which version of the
 /// product's history they are, and since when.
@@ -39,10 +36,7 @@ pub struct PolicyRecord {
 	pub updated_at_unix: i64,
 }
 
-/// The policy port is READ-ONLY. There is deliberately no `set`: the only writer of
-/// `fee_policies` is the promotion of a scheduled [`FeePolicyChange`] (see
-/// [`FeePolicyChanges::promote`]), which is what makes the version, the notice period and
-/// the owners' quorum impossible to route around.
+/// The policy port is READ-ONLY.
 #[async_trait]
 pub trait FeePolicies: Send + Sync {
 	/// One fund's terms. `None` means the product charges no fee at all — the safe
@@ -54,129 +48,6 @@ pub trait FeePolicies: Send + Sync {
 
 	/// Every configured policy, ordered by `service` — the operator console's view.
 	async fn list(&self) -> Result<Vec<(ServiceId, PolicyRecord)>, DomainError>;
-}
-
-/// One row of a product's fee-policy history — see `docs/FEES.md` § "Changing the terms".
-#[derive(Clone, Debug)]
-pub struct FeePolicyChange {
-	pub id: FeePolicyChangeId,
-	pub service: ServiceId,
-	pub version: u32,
-	pub policy: FeePolicy,
-	pub state: FeePolicyChangeState,
-	pub requirement: ChangeRequirement,
-	/// When the terms bind. Provisional while `awaiting_consilium`; fixed at scheduling.
-	pub effective_from_unix: i64,
-	pub consilium_id: Option<ConsiliumId>,
-	pub requested_by: String,
-	pub requested_at_unix: i64,
-	/// Why, in the requester's words; empty when none was given on an administrator's change.
-	pub reason: String,
-	pub scheduled_at_unix: Option<i64>,
-	pub applied_at_unix: Option<i64>,
-	/// Notices of this change that have not reached a CURRENT holder, how many of those the
-	/// mailer has given up on — the figures the tightening gate is decided on — and how many
-	/// of the given-up ones no acknowledgement covers yet: what a (further) acknowledgement
-	/// would name, and so whether one is worth offering. Counted only while `scheduled`;
-	/// zero in every other state, where there is nothing to wait for.
-	pub undelivered_notices: u32,
-	pub notices_given_up: u32,
-	pub notices_unacknowledged: u32,
-	/// The operator's acknowledgement of holders who could not be told, if given — see
-	/// [`FeePolicyChanges::acknowledge_undelivered_notices`].
-	pub notices_waiver: Option<NoticeWaiver>,
-}
-
-/// An operator taking responsibility for holders whose notice never arrived: who, when, and
-/// the banking ids of exactly the holders whose notice the mailer had given up on by that
-/// moment — the latest acknowledgement's, which took over the whole list. A tightening
-/// then binds over THESE holders and no other.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoticeWaiver {
-	pub by: String,
-	pub at_unix: i64,
-	pub users: Vec<UserId>,
-}
-
-/// A change as the application proposes it. The id is minted by the caller because a
-/// consilium-gated change hashes it into the subject the owners sign BEFORE the row exists.
-#[derive(Clone, Debug)]
-pub struct NewFeePolicyChange {
-	pub id: FeePolicyChangeId,
-	pub service: ServiceId,
-	pub policy: FeePolicy,
-	pub requirement: ChangeRequirement,
-	/// The operator's requested effective moment; `0` = as soon as the notice allows.
-	pub requested_effective_from_unix: i64,
-	pub requested_by: String,
-	/// Already validated by the application (`domain::fees::validate_reason`).
-	pub reason: String,
-	pub now_unix: i64,
-}
-
-/// The owners' consilium a change waits on, handed to [`FeePolicyChanges::schedule`] so the
-/// change, the consilium, its seats and their approval mails commit in ONE transaction: a
-/// quorum over a change that does not exist, or a change whose quorum was never seated, are
-/// both unrepresentable.
-pub struct ConsiliumOpening<'a> {
-	pub consilium: &'a mut Consilium,
-	pub credentials: &'a [VoterCredential],
-	pub approval_url_base: &'a str,
-}
-
-#[async_trait]
-pub trait FeePolicyChanges: Send + Sync {
-	/// Record a change. Without a consilium it is `scheduled` at once, its `effective_from`
-	/// fixed by the notice rule, and every holder is queued a notice; with one it is
-	/// `awaiting_consilium` and the consilium is opened in the same transaction. Refuses with
-	/// [`DomainError::Conflict`] when another change is already pending for the product.
-	async fn schedule(&self, change: &NewFeePolicyChange, consilium: Option<ConsiliumOpening<'_>>) -> Result<FeePolicyChange, DomainError>;
-
-	/// The owners carried the change: move it to `scheduled`, fix `effective_from` from
-	/// `now_unix`, queue the holders' notices. Idempotent on a change already scheduled by
-	/// this consilium; a conflict when the row no longer matches `subject` or is not the
-	/// consilium's to decide.
-	async fn schedule_approved(&self, subject: &FeePolicySubject, consilium: ConsiliumId, now_unix: i64) -> Result<FeePolicyChange, DomainError>;
-
-	/// Withdraw a pending change. One still awaiting the owners takes its consilium down with
-	/// it. Idempotent on an already-cancelled change; a conflict on any other closed state.
-	async fn cancel(&self, service: &ServiceId, id: FeePolicyChangeId, by: &str, now_unix: i64) -> Result<FeePolicyChange, DomainError>;
-
-	/// Take responsibility for the holders of a scheduled tightening whose notice the mailer
-	/// has GIVEN UP on: record who, when, and the list of those holders on the change, so
-	/// that [`FeePolicyChanges::promote`] binds the tightening over them — and over nobody
-	/// else. A notice still being tried is not waived: it may yet arrive, and until it is
-	/// delivered or given up on its holder keeps holding the change; once given up on, a
-	/// later acknowledgement ADDS them to the list, and its caller and moment replace the
-	/// record's — they take responsibility for the whole list, which never shrinks. A repeat
-	/// that would add nobody returns the record untouched. A conflict on a change that is
-	/// not `scheduled` (unless it carries a record, which the repeat then returns), that
-	/// only loosens the terms (it binds by itself), or that has no notice given up on yet
-	/// — there is nothing to take responsibility for, and an acknowledgement covering
-	/// nobody would be a misleading line in the history.
-	async fn acknowledge_undelivered_notices(&self, service: &ServiceId, id: FeePolicyChangeId, by: &str, now_unix: i64) -> Result<FeePolicyChange, DomainError>;
-
-	async fn find(&self, id: FeePolicyChangeId) -> Result<Option<FeePolicyChange>, DomainError>;
-
-	/// How many investors hold units of the product right now — who a notice is owed to.
-	async fn holder_count(&self, service: &ServiceId) -> Result<u32, DomainError>;
-
-	/// The one change on its way for a product, if any.
-	async fn pending(&self, service: &ServiceId) -> Result<Option<FeePolicyChange>, DomainError>;
-
-	/// A product's whole history, newest version first.
-	async fn list(&self, service: &ServiceId) -> Result<Vec<FeePolicyChange>, DomainError>;
-
-	/// Scheduled changes whose `effective_from` has passed — the sweeper's work list.
-	async fn due(&self, now_unix: i64) -> Result<Vec<FeePolicyChangeId>, DomainError>;
-
-	/// Promote one due change into `fee_policies`, in one transaction: settle every holder's
-	/// accrual at the OLD rate as of `effective_from`, then write the new terms, mark the
-	/// change `active` and the previous active one `superseded`. `Ok(false)` when the change
-	/// is no longer scheduled or not yet due — a sweep racing another is not a failure. A
-	/// conflict while a tightening has an undelivered notice to a current holder the
-	/// operator has not acknowledged.
-	async fn promote(&self, id: FeePolicyChangeId, now_unix: i64) -> Result<bool, DomainError>;
 }
 
 /// The control-plane half of a holding's fee state. `units` is absent on purpose — see
@@ -282,8 +153,6 @@ pub struct SettlementRecord {
 #[derive(Clone)]
 pub struct FeePorts {
 	pub policies: Arc<dyn FeePolicies>,
-	/// The history of the terms and the only path that writes `fee_policies`.
-	pub changes: Arc<dyn FeePolicyChanges>,
 	pub accruals: Arc<dyn PositionAccruals>,
 	pub assessments: Arc<dyn FeeAssessments>,
 	pub settlements: Arc<dyn FeeSettlements>,

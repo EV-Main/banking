@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 
-import type { SessionInfo } from "@/shared/contracts/admin";
+import type { SessionInfo } from "@/shared/contracts/session";
 import { SESSION_UNAVAILABLE, cachedSession, onSessionChange, readSession } from "@/shared/lib/session";
 
 export { SESSION_UNAVAILABLE };

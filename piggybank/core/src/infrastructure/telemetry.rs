@@ -72,12 +72,11 @@ pub fn cash_invariant_timeouts() -> u64 {
 /// Process-lifetime count of USDT arrivals on a treasury hot wallet that no deposit
 /// watcher credited, because the chain names the wallet and not the person (#245): a
 /// claim needs a holder, and the treasury is nobody's. Each one is money the ledger does
-/// not describe until an operator attributes it with `SeedCapital`.
+/// not describe.
 static UNATTRIBUTED_TREASURY_INFLOWS: AtomicU64 = AtomicU64::new(0);
 
 /// Record a treasury arrival the watcher saw and deliberately did not credit. `error!`,
-/// not `warn!`: it reaches Sentry, and it is a money incident with one remedy — the
-/// operator who sent it seeds it under their own name — so the line carries what that
+/// not `warn!`: it reaches Sentry, and it is a money incident, so the line carries what an
 /// operator needs to find the transfer (rail, hash, sender, amount). The treasury drift
 /// watch reports the same dollar as a surplus for as long as it stays unattributed, so
 /// silence here would still not be silence there; this counter is the number to alert on.
@@ -89,12 +88,12 @@ pub fn note_unattributed_treasury_inflow(network: &str, tx: &str, from: &str, am
 		from,
 		amount,
 		total,
-		"treasury received USDT from outside and NOBODY was credited: a treasury arrival is not a deposit — attribute it to its sender with SeedCapital (the deposit is theirs; the units of `fund` follow)"
+		"treasury received USDT from outside and NOBODY was credited: a treasury arrival is not a deposit"
 	);
 }
 
 /// Total unattributed treasury inflows since process start — a number for a dashboard,
-/// where each increment is a pending `SeedCapital`.
+/// where each increment is an unbooked arrival.
 pub fn unattributed_treasury_inflows() -> u64 {
 	UNATTRIBUTED_TREASURY_INFLOWS.load(Ordering::Relaxed)
 }

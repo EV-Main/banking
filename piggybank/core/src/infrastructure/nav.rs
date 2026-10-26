@@ -112,15 +112,6 @@ impl NavMarks for PgNav {
 		Ok(marks)
 	}
 
-	async fn find(&self, id: ValuationId) -> Result<Option<Valuation>, DomainError> {
-		let row = sqlx::query(concat!("SELECT ", valuation_columns!(), " FROM fund_valuations WHERE id = $1"))
-			.bind(id.raw())
-			.fetch_optional(&self.pool)
-			.await
-			.map_err(repo_err)?;
-		row.as_ref().map(valuation_from_row).transpose()
-	}
-
 	async fn record(&self, id: ValuationId, service: &ServiceId, aum: Usdt, units_outstanding: Shares, nav: Nav, posted_by: &str) -> Result<i64, DomainError> {
 		let posted_at_unix = sqlx::query_scalar::<_, i64>(
 			"INSERT INTO fund_valuations (id, service, aum, units_outstanding, nav, posted_by) \

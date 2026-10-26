@@ -29,8 +29,8 @@ use domain::{book::MatchingEngine, money::Network, scope_ledger::Grants};
 use ev::analytics::Analytics;
 use evbanking_auth::Authorizer;
 use ports::{
-	AllocationRegistry, BookStore, CompartmentStore, ConsiliumRepository, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy,
-	PaymentFeed, PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository,
+	AllocationRegistry, BookStore, CompartmentStore, Custody, DepositAddresses, Deposits, FeePorts, FundPositionReader, NavMarks, OperationFeed, OutflowPolicy, PaymentFeed,
+	PaymentRepository, RedemptionRepository, SubscriptionRepository, UnitIssuanceRepository, UserRepository, WithdrawalRepository,
 	ledger::Ledger,
 	scope_invoices::InvoiceStore,
 	scope_mandates::{MandateRequestStore, MandateStore},
@@ -64,12 +64,8 @@ pub struct AppState {
 	pub users: Arc<dyn UserRepository>,
 	/// The `withdrawals` aggregate's driven port (Postgres control plane).
 	pub withdrawals: Arc<dyn WithdrawalRepository>,
-	/// The `consilium` aggregate's driven port — multi-owner authorization for revenue
-	/// payouts. Control plane only; it moves no money itself, and reaches the money plane
-	/// exactly once, through the ordinary payout path, when a request is approved.
-	pub consilia: Arc<dyn ConsiliumRepository>,
 	/// The `payments` aggregate's driven port — the order that moves money between two named
-	/// ends of the platform, plus the consent seat that authorizes an investor-sourced one.
+	/// ends of the platform, plus the seat that authorizes it.
 	/// Control plane only: the money leaves through the relay, from the two events the order
 	/// drains to the outbox.
 	pub payments: Arc<dyn PaymentRepository>,
@@ -145,19 +141,8 @@ pub struct AppState {
 	pub withdrawal_limits: application::withdrawal_limits::WithdrawalLimits,
 	/// Nudges the outbox relay to dispatch right after a command commits.
 	pub relay_notify: Arc<Notify>,
-	/// How a new payment order is seated: over concierge's approvals (the default) or by the
-	/// old consilium and emailed consent. See [`config::PaymentApprovalModes`].
-	pub payment_approvals: config::PaymentApprovalModes,
-	/// What opens a fund payment's approval with the proof of who asked. `None` only where no
-	/// concierge is wired (a test): a fund payment is then refused rather than opened unproposable.
-	pub payment_proposer: Option<Arc<application::payment_approvals::PaymentProposer>>,
-	/// Base URL the emailed consilium approval link is built on (`<base>/<token>`). The
-	/// page it points at is served by the wallet host, not here; the hub only has to mint a
-	/// link an owner's mail client will render.
-	pub consilium_approval_url_base: String,
-	/// Base URL the emailed payment CONSENT link is built on (`<base>/<token>`) — the
-	/// investor-facing twin of the approval base.
-	pub payment_consent_url_base: String,
+	/// What opens a fund payment's approval with the proof of who asked.
+	pub payment_proposer: Arc<application::payment_approvals::PaymentProposer>,
 	/// Whether the TON rail is on testnet — surfaced on its deposit addresses so the client
 	/// renders the correct (testnet-tagged) user-friendly TON address. `false` when TON is
 	/// unconfigured or on mainnet. The other rails have no testnet-specific address form.
@@ -173,7 +158,6 @@ impl AppState {
 		analytics: Analytics,
 		users: Arc<dyn UserRepository>,
 		withdrawals: Arc<dyn WithdrawalRepository>,
-		consilia: Arc<dyn ConsiliumRepository>,
 		payments: Arc<dyn PaymentRepository>,
 		payment_feed: Arc<dyn PaymentFeed>,
 		allocations: Arc<dyn AllocationRegistry>,
@@ -193,8 +177,7 @@ impl AppState {
 		configured_networks: Arc<[Network]>,
 		kyc_gate: config::KycGate,
 		relay_notify: Arc<Notify>,
-		consilium_approval_url_base: String,
-		payment_consent_url_base: String,
+		payment_proposer: Arc<application::payment_approvals::PaymentProposer>,
 		ton_is_testnet: bool,
 		outflow: Arc<dyn OutflowPolicy>,
 		compartments: Arc<dyn CompartmentStore>,
@@ -208,7 +191,6 @@ impl AppState {
 			analytics,
 			users,
 			withdrawals,
-			consilia,
 			payments,
 			payment_feed,
 			allocations,
@@ -228,8 +210,7 @@ impl AppState {
 			configured_networks,
 			kyc_gate,
 			relay_notify,
-			consilium_approval_url_base,
-			payment_consent_url_base,
+			payment_proposer,
 			ton_is_testnet,
 			outflow,
 			compartments,
@@ -238,16 +219,7 @@ impl AppState {
 			mandate_requests: scope_ledger,
 			scope_grants: Arc::new(Grants::default()),
 			withdrawal_limits: application::withdrawal_limits::WithdrawalLimits::default(),
-			payment_approvals: config::PaymentApprovalModes::DEFAULT,
-			payment_proposer: None,
 		}
-	}
-
-	/// The payment-approval switch as the environment set it.
-	pub fn with_payment_approvals(mut self, mode: config::PaymentApprovalModes, proposer: Arc<application::payment_approvals::PaymentProposer>) -> Self {
-		self.payment_approvals = mode;
-		self.payment_proposer = Some(proposer);
-		self
 	}
 
 	pub fn with_withdrawal_limits(mut self, limits: application::withdrawal_limits::WithdrawalLimits) -> Self {

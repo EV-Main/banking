@@ -29,9 +29,8 @@ pub trait Deposits: Send + Sync {
 	/// the idempotency-gate rows where `party_kind = 'user'`.
 	async fn list_by_user(&self, user: UserId) -> Result<Vec<DepositRecord>, DomainError>;
 
-	/// Whether `tx_ref` has already passed the gate — under any party. A seed consilium asks
-	/// before opening, so the owners are not sent to vote over a transfer somebody already
-	/// booked; the gate itself, not this read, is what keeps a double credit impossible.
+	/// Whether `tx_ref` has already passed the gate — under any party. The gate itself, not
+	/// this read, is what keeps a double credit impossible.
 	async fn is_recorded(&self, tx_ref: &TxRef) -> Result<bool, DomainError>;
 
 	/// Does `user` still have a credited deposit on `network` that no sweep cycle has

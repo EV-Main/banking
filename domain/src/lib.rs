@@ -27,7 +27,6 @@ pub mod auth;
 pub mod authz;
 pub mod balance;
 pub mod book;
-pub mod consilium;
 pub mod fees;
 pub mod issuance;
 pub mod money;
@@ -45,8 +44,8 @@ pub mod withdrawals;
 
 /// Append one length-prefixed field to a canonical encoding.
 ///
-/// Shared by every hashed subject in this crate ([`payments::PaymentTerms`],
-/// [`consilium::HolderGrantTerms`] and the rest) because the rule it encodes is the same one in each: a
+/// Shared by every hashed subject in this crate ([`payments::PaymentTerms`]
+/// and the rest) because the rule it encodes is the same one in each: a
 /// variable-length part is prefixed with its length so no two distinct values can
 /// concatenate to the same bytes. Duplicating four lines would be cheap; duplicating the
 /// *rule* is how two subjects end up with subtly different framings and one of them

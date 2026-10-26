@@ -106,8 +106,8 @@ export function formatNav(value: string | number | undefined, locale: Locale = D
  *
  * That matters on exactly one surface and it matters absolutely. `payload_hash` is computed
  * over the exact decimal string and re-verified before the money moves, so what an owner
- * approves must be what the hash covers, character for character (docs/CONSILIUM.md,
- * policy 12). An approval screen that rounds is an approval of something else.
+ * approves must be what the hash covers, character for character. An approval screen that
+ * rounds is an approval of something else.
  *
  * No float anywhere: the integer part is grouped through `BigInt`, which has no precision
  * ceiling, and the fraction is passed through untouched apart from being padded to the two

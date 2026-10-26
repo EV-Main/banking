@@ -8,8 +8,7 @@ requests to two gRPC planes:
 - **concierge** (identity) — `UserDirectory` `GetMe`, and the ownership plane's emailed
   removal answer.
 - **piggybank** (money) — `WalletService`, `CompartmentService`, `InvoicePaymentService`,
-  `OperationsService`, `PaymentConfirmationService`, `HealthService`, and the two emailed
-  approval services `ConsiliumApprovalService` and `PaymentConsentService`.
+  `OperationsService`, `PaymentConfirmationService` and `HealthService`.
 
 ## Auth is shell-owned
 
@@ -44,25 +43,6 @@ in production.
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
 | `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`, `approval`; `ws` holds the `Origin` check of the first-party gate |
 
-## The governance surface
-
-Nothing about the platform's own money is one person's decision, and neither is taking an
-owner's seat away. Both are gated by a **consilium**; `docs/CONSILIUM.md` is the policy and
-the threat model. A **payment** — an order between two named ends of the platform — is
-gated the same way: the plane seats the one approval the order needs on open (the owners'
-consilium for a source that is an allocation's claim, the investor's own consent for a
-user-owned one). This BFF opens none of them. It carries only the answer, which comes from
-a mailbox through `/api/approval/**`.
-
-| Route | Plane | Token |
-| ----- | ----- | ----- |
-| `GET`/`POST /api/approval/{payout,removal,consent}/{token}` | money / ownership / money | none — the emailed token |
-
-The split is architectural: the money plane must be able to audit its own authorization, so
-its tally is computed against the owner roster it already mirrors; ownership is a
-concierge-owned fact, so only that plane may mutate it. Each handler calls its own plane
-and forwards no user token: the emailed token is the whole credential.
-
 ## The wallet surface and the scope hosts
 
 A scope's own host (`sa.evinvest.ltd`, `invest.evinvest.ltd`) shows the user's balances
@@ -84,7 +64,9 @@ make that hold at the BFF:
 
 ## The approval surface
 
-**`/api/approval/{payout,removal}/{token}`** is the surface an emailed owner reaches. It
+**`GET`/`POST /api/approval/removal/{token}`** is the surface an emailed owner reaches when
+another owner moves to remove them; ownership is a concierge-owned fact, so it calls that
+plane and forwards no user token. It
 carries no session and requires none — the emailed token is the credential — so it is the
 one part of this service with no cookie and no CSRF check. The `GET` is strictly read-only
 because mail scanners fetch every URL in a message; the vote is a `POST` carrying the

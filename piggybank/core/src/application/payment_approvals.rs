@@ -37,9 +37,8 @@ use crate::{
 		payments::{self, PaymentPorts},
 		scope_operations::{CatalogGate, backoff, sha256_hex},
 	},
-	config::PaymentApprovalMode,
 	ports::{
-		payments::{PaymentApprovalStore, PaymentView},
+		payments::{ConciergeSeatView, PaymentApprovalStore, PaymentView, SeatView},
 		scope_operations::{ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof},
 	},
 };
@@ -120,14 +119,18 @@ async fn set_aside(ports: &ApprovalRoundPorts<'_>, id: PaymentId, step: &str, er
 	}
 }
 
+fn concierge_seat(view: &PaymentView) -> Option<&ConciergeSeatView> {
+	match &view.seat {
+		SeatView::Concierge(seat) => Some(seat),
+		SeatView::Session(_) => None,
+	}
+}
+
 /// The payload banking proposes an order under, re-rendered from the stored order and the
 /// destination as it was shown — and checked against the hash stored at open, so a row whose
 /// content and hash disagree is never proposed and never executed.
 fn proposed_payload(view: &PaymentView) -> Result<(Proposal, String), DomainError> {
-	let seat = view
-		.concierge
-		.as_ref()
-		.ok_or_else(|| DomainError::Conflict(format!("payment {} is not decided by a concierge approval", view.order.id())))?;
+	let seat = concierge_seat(view).ok_or_else(|| DomainError::Conflict(format!("payment {} is not decided by a concierge approval", view.order.id())))?;
 	let order = &view.order;
 	let fields = order.terms().approval_fields(&seat.destination)?;
 	let hash = sha256_hex(&order.approval_payload(&seat.destination)?);
@@ -148,12 +151,11 @@ fn proposed_payload(view: &PaymentView) -> Result<(Proposal, String), DomainErro
 	))
 }
 
-/// Open a payment as the RPC does: a fund-owned order under concierge's approvals needs the
-/// proof of who asked — their token, minted for this request — and is proposed with it right
-/// after it is stored; every other order opens as [`payments::open`] does and needs neither.
+/// Open a payment as the RPC does: a fund-owned order needs the proof of who asked — their
+/// token, minted for this request — and is proposed with it right after it is stored; every
+/// other order opens as [`payments::open`] does and needs neither.
 pub async fn open_with_proof(ports: &ApprovalRoundPorts<'_>, initiator: UserId, terms: PaymentTerms, proof_token: Option<&str>, now: i64) -> Result<PaymentView, DomainError> {
-	let needs_proof = ports.payments.approvals.fund == PaymentApprovalMode::Concierge && terms.requirement() == PaymentApproval::OwnerConsilium;
-	if !needs_proof {
+	if terms.requirement() != PaymentApproval::OwnerConsilium {
 		return payments::open(ports.payments, initiator, terms, now).await;
 	}
 	// Before the order is written: nothing to undo when the proof is missing.
@@ -293,7 +295,7 @@ async fn void(ports: &ApprovalRoundPorts<'_>, pulled: &ApprovalView, why: &str) 
 /// Why a passed decision is not the order's, if it is not.
 fn mismatch(view: &PaymentView, approval: &ApprovalView) -> Option<&'static str> {
 	let order = &view.order;
-	let seat = view.concierge.as_ref()?;
+	let seat = concierge_seat(view)?;
 	if approval.kind != PAYMENT_KIND {
 		return Some("kind");
 	}
@@ -330,7 +332,7 @@ async fn carry_out(ports: &ApprovalRoundPorts<'_>, pulled: &ApprovalView, round:
 		// Concierge serves it again on the next pull; the other decisions go on.
 		Err(err) => return Err(err),
 	};
-	let Some(seat) = view.concierge.as_ref() else {
+	let Some(seat) = concierge_seat(&view) else {
 		error!(approval_id = %pulled.id, payment_id = %id, "payment approvals: a passed approval names a payment that no approval decides");
 		void(ports, pulled, "this payment is not decided by an approval").await?;
 		round.voided += 1;
@@ -435,7 +437,7 @@ async fn report_final(ports: &ApprovalRoundPorts<'_>, view: &PaymentView, approv
 async fn report_ended(ports: &ApprovalRoundPorts<'_>, round: &mut ApprovalRound) -> Result<(), DomainError> {
 	for id in ports.store.due_to_report(BATCH).await? {
 		let view = payments::find(ports.payments.payments, id).await?;
-		let Some(approval_id) = view.concierge.as_ref().and_then(|seat| seat.approval_id.clone()) else {
+		let Some(approval_id) = concierge_seat(&view).and_then(|seat| seat.approval_id.clone()) else {
 			continue;
 		};
 		if report_final(ports, &view, &approval_id, round).await? {
@@ -458,7 +460,7 @@ async fn settle_decided(ports: &ApprovalRoundPorts<'_>, round: &mut ApprovalRoun
 
 async fn settle_one(ports: &ApprovalRoundPorts<'_>, id: PaymentId, attempts: u32, round: &mut ApprovalRound, now: i64) -> Result<Flow, DomainError> {
 	let view = payments::find(ports.payments.payments, id).await?;
-	let Some(approval_id) = view.concierge.as_ref().and_then(|seat| seat.approval_id.clone()) else {
+	let Some(approval_id) = concierge_seat(&view).and_then(|seat| seat.approval_id.clone()) else {
 		return Ok(Flow::Next);
 	};
 	let approval = match ports.approvals.get(&approval_id).await {

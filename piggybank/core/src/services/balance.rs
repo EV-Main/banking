@@ -1,6 +1,5 @@
 //! `balance` context — company-money RPCs (all admin-gated): treasury reads,
-//! chain-proven arrival recording (a deposit; a seed of the `fund` allocation opens the
-//! owners' consilium instead of booking), the operator withdrawal lifecycle, and fund
+//! chain-proven arrival recording (a deposit), the operator withdrawal lifecycle, and fund
 //! valuation + redemption settlement.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large
@@ -10,7 +9,6 @@
 use concierge_domain::authz::bank;
 use domain::{
 	balance::{Party, ServiceId},
-	consilium::SeedCapitalTerms,
 	money::{Network, TxRef, Usdt},
 };
 use evbanking_auth::claims_of;
@@ -21,16 +19,14 @@ use crate::{
 	AppState,
 	application::{
 		balance::{self as balance_app, AllocationTreasury},
-		consilium as consilium_app, funds as funds_app,
+		funds as funds_app,
 		ownership::AllocationClaim,
 		wallet as wallet_app, withdrawals as withdrawal_app,
 	},
 	services::{
 		allocations::holding_to_proto,
 		funds::redemption_to_proto,
-		support::{
-			caller_id, map_err, optional, parse_redemption_id, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_not_paused, require_permission, resolve_target_user, unix_now,
-		},
+		support::{caller_id, map_err, optional, parse_redemption_id, parse_user_id, parse_withdrawal_id, rail_is_testnet, require_not_paused, require_permission, unix_now},
 	},
 };
 
@@ -107,54 +103,6 @@ impl BalanceService for BalanceSvc {
 		}))
 	}
 
-	/// Propose a seed of the platform's capital: the caller's chain-proven transfer into
-	/// the treasury, to be booked as THEIR deposit and subscribed into the `fund`
-	/// allocation once the owners' quorum executes it (#245).
-	///
-	/// This OPENS A CONSILIUM and books nothing. The chain proves the dollar arrived on the
-	/// treasury; it cannot say whose it is, and the first administrator to name a reference
-	/// must not be the one who decides — so the attribution is the owners' call, and the
-	/// caller must hold a seat (`Consilium::open` refuses anyone else, whatever permission
-	/// admitted them here). The arrival is verified now, against `expected_amount`, so the
-	/// owners vote over a transfer that exists and is worth what the terms say.
-	///
-	/// The depositor is `depositor_user_id` — resolved the way every admin RPC resolves a
-	/// target, so an owner can attribute another person's transfer — or the caller when
-	/// the field is empty. `expected_amount` is REQUIRED: the amount is under the owners'
-	/// signature, so "whatever the chain says" is not a proposal. The response reports
-	/// `recorded = false` — nothing is booked until the quorum executes — the amount the
-	/// terms carry, and the consilium the proposal lives in.
-	async fn seed_capital(&self, request: Request<pb::SeedCapitalRequest>) -> Result<Response<pb::SeedCapitalResponse>, Status> {
-		require_permission(&self.state, &request, bank::Capital::Manage).await?;
-		let initiator = caller_id(&request)?;
-		let req = request.into_inner();
-		let tx_ref = TxRef::parse(&req.tx_ref).map_err(map_err)?;
-		let network = Network::parse(&req.network).map_err(map_err)?;
-		let amount = optional(&req.expected_amount)
-			.ok_or_else(|| Status::invalid_argument("expected_amount is required: a seed is proposed at the amount the chain reports, and the owners approve that figure"))
-			.and_then(|raw| Usdt::parse_decimal(raw).map_err(map_err))?;
-		let depositor = match optional(&req.depositor_user_id) {
-			Some(raw) => resolve_target_user(&self.state, raw).await?,
-			None => initiator,
-		};
-		let terms = SeedCapitalTerms::new(tx_ref, network, amount, depositor).map_err(map_err)?;
-		let opened = consilium_app::open_seed_capital(&self.state.consilium_ports(), initiator, terms, unix_now())
-			.await
-			.map_err(map_err)?;
-		tracing::info!(
-			consilium_id = %opened.consilium.id(),
-			%initiator,
-			%depositor,
-			amount = %amount.to_decimal_string(),
-			"seed consilium opened: the treasury arrival is booked only once the owners' quorum executes it"
-		);
-		Ok(Response::new(pb::SeedCapitalResponse {
-			recorded: false,
-			amount: amount.to_decimal_string(),
-			consilium_id: opened.consilium.id().to_string(),
-		}))
-	}
-
 	async fn record_deposit(&self, request: Request<pb::RecordDepositRequest>) -> Result<Response<pb::RecordDepositResponse>, Status> {
 		require_permission(&self.state, &request, bank::Capital::Manage).await?;
 		let req = request.into_inner();
@@ -174,7 +122,7 @@ impl BalanceService for BalanceSvc {
 		.await
 		.map_err(map_err)?;
 		// Always a person: the chain names a deposit address's owner, and a treasury
-		// arrival is refused upstream (it is attributed by hand, through `SeedCapital`).
+		// arrival is refused upstream.
 		let party = Party::User(arrival.user);
 		Ok(Response::new(pb::RecordDepositResponse {
 			recorded: arrival.recorded,
@@ -412,7 +360,7 @@ impl BalanceService for BalanceSvc {
 
 	/// The `fee` allocation as its owners read it (#245): the same line the treasury
 	/// lists it as — cash, supply, price and holders. Nothing here pays it out: a holder
-	/// is paid by redeeming, and a payment out of its claim is the owners' consilium.
+	/// is paid by redeeming, and a payment out of its claim is the owners' to approve.
 	async fn get_fund_revenue(&self, request: Request<pb::GetFundRevenueRequest>) -> Result<Response<pb::AllocationTreasury>, Status> {
 		require_permission(&self.state, &request, bank::Consilium::Manage).await?;
 		let (fee, treasury) = tokio::try_join!(

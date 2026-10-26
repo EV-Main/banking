@@ -70,8 +70,7 @@ pub struct UserProfile {
 	pub kyc_level: u32,
 	pub role: String,
 	/// True when `role` came from the OWNER_SUBJECTS emergency allowlist rather than
-	/// the persisted `users.role`. A client must say so: an "owner" the consilium
-	/// has never heard of is exactly the divergence this whole change removes.
+	/// the persisted `users.role`; a client must say so.
 	pub role_is_break_glass: bool,
 	/// WHY the account is disabled — and therefore which control a client may offer.
 	/// `"admin_hold"` lapses and one admin lifts it; `"governance"` never lapses and only
@@ -532,7 +531,7 @@ list_dto! {
 	}
 }
 
-// ── consilium: multi-owner authorization (money plane) ───────────────────────
+// ── shared by the redacted surfaces ──────────────────────────────────────────
 
 /// A proto enum on the browser wire: the generated `as_str_name()` minus its
 /// `SCREAMING_PREFIX_`, lowercased. Derived rather than hand-matched so a variant added
@@ -546,7 +545,7 @@ fn enum_label(name: &str, prefix: &str) -> String {
 /// stays a second line of defense rather than a substitute for the plane's own. A value
 /// with no `@`, or with no local part, is replaced wholesale — something that is not an
 /// address is not something to reveal a prefix of.
-pub fn mask_email(email: &str) -> String {
+fn mask_email(email: &str) -> String {
 	if email.is_empty() {
 		return String::new();
 	}
@@ -561,223 +560,10 @@ pub fn mask_email(email: &str) -> String {
 	}
 }
 
-/// The immutable subject of a PAYMENT consilium — a projection of the order, not the
-/// order. The plane renders both ends as LABELS (the wording the approval mail carries),
-/// so each is delivered as a [`PaymentEnd`] with only `label` populated: the consilium
-/// screen and the payments screen then read one shape, and the label is the only part of
-/// it an approval is bound to.
-#[derive(Serialize)]
-pub struct ConsiliumPaymentTerms {
-	pub payment_id: String,
-	pub tier: String,
-	pub source: PaymentEnd,
-	pub destination: PaymentEnd,
-	pub amount: String,
-	pub reason: String,
-}
-
-impl From<bk::ConsiliumPaymentTerms> for ConsiliumPaymentTerms {
-	fn from(t: bk::ConsiliumPaymentTerms) -> Self {
-		Self {
-			payment_id: t.payment_id,
-			tier: t.tier,
-			source: PaymentEnd::labelled(t.source),
-			destination: PaymentEnd::labelled(t.destination),
-			amount: t.amount,
-			reason: t.reason,
-		}
-	}
-}
-
-/// The immutable subject of a VALUATION-OVERRIDE consilium (banking#232): the fund and the
-/// AUM to mark it at, past the NAV-move guard. Both are covered by `payload_hash`.
-#[derive(Serialize)]
-pub struct ValuationOverrideTerms {
-	pub service: String,
-	pub aum: String,
-}
-
-impl From<bk::ValuationOverrideTerms> for ValuationOverrideTerms {
-	fn from(t: bk::ValuationOverrideTerms) -> Self {
-		Self { service: t.service, aum: t.aum }
-	}
-}
-
-/// One set of fee terms as a consilium states them.
-#[derive(Serialize)]
-pub struct FeeTerms {
-	pub management_bps: u32,
-	pub performance_bps: u32,
-	pub hurdle_bps: u32,
-	pub basis: String,
-	pub crystallization: String,
-}
-
-/// The immutable subject of a FEE-POLICY consilium: which change, over which fund, from
-/// what terms (`null` when the fund charged nothing) to what terms, and why. `holder_count`
-/// and `allocation_name` are read live beside the hashed subject.
-#[derive(Serialize)]
-pub struct ConsiliumFeePolicyTerms {
-	pub change_id: String,
-	pub service: String,
-	pub allocation_name: String,
-	pub from: Option<FeeTerms>,
-	pub to: FeeTerms,
-	/// Unix seconds the requester asked the change to bind from; `"0"` = as soon as allowed.
-	pub effective_from: String,
-	pub holder_count: u32,
-	pub reason: String,
-}
-
-impl From<bk::ConsiliumFeePolicyTerms> for ConsiliumFeePolicyTerms {
-	fn from(t: bk::ConsiliumFeePolicyTerms) -> Self {
-		Self {
-			change_id: t.change_id,
-			service: t.service,
-			allocation_name: t.allocation_name,
-			from: t.from_configured.then_some(FeeTerms {
-				management_bps: t.from_management_bps,
-				performance_bps: t.from_performance_bps,
-				hurdle_bps: t.from_hurdle_bps,
-				basis: t.from_basis,
-				crystallization: t.from_crystallization,
-			}),
-			to: FeeTerms {
-				management_bps: t.to_management_bps,
-				performance_bps: t.to_performance_bps,
-				hurdle_bps: t.to_hurdle_bps,
-				basis: t.to_basis,
-				crystallization: t.to_crystallization,
-			},
-			effective_from: t.effective_from.to_string(),
-			holder_count: t.holder_count,
-			reason: t.reason,
-		}
-	}
-}
-
-/// The immutable subject of a holder-grant consilium (#245): `units` of the reserved
-/// `allocation` (`fee` | `fund`) for `user_id` — the money-plane id the terms stored.
-#[derive(Serialize)]
-pub struct HolderGrantTerms {
-	pub allocation: String,
-	pub user_id: String,
-	pub units: String,
-}
-
-impl From<bk::HolderGrantTerms> for HolderGrantTerms {
-	fn from(t: bk::HolderGrantTerms) -> Self {
-		Self {
-			allocation: t.allocation,
-			user_id: t.user_id,
-			units: t.units,
-		}
-	}
-}
-
-/// The immutable subject of a seed-capital consilium (#245): the chain transfer
-/// `tx_ref` on `network`, worth `amount`, is `depositor_user_id`'s — booked as their
-/// deposit and subscription into `fund` once the quorum carries. The reference is
-/// carried in FULL, as a payout's address is.
-#[derive(Serialize)]
-pub struct SeedCapitalTerms {
-	pub tx_ref: String,
-	pub network: String,
-	pub amount: String,
-	pub depositor_user_id: String,
-}
-
-impl From<bk::SeedCapitalTerms> for SeedCapitalTerms {
-	fn from(t: bk::SeedCapitalTerms) -> Self {
-		Self {
-			tx_ref: t.tx_ref,
-			network: t.network,
-			amount: t.amount,
-			depositor_user_id: t.depositor_user_id,
-		}
-	}
-}
-
-/// What the emailed owner is shown before voting: no other owner's identity and no
-/// vote-by-vote breakdown — and both addresses are masked, because this is the one surface
-/// reachable with no session.
-///
-/// Exactly one of `payment`, `valuation_override`, `fee_policy`, `holder_grant` and
-/// `seed_capital` describes the subject; the others are `null` — never an empty object,
-/// which the invitation page treats as unrenderable — so a screen tells the kinds apart by
-/// which sibling is set.
-#[derive(Default, Serialize)]
-pub struct ConsiliumInvitation {
-	pub consilium_id: String,
-	pub state: String,
-	/// Set exactly when this is a PAYMENT consilium.
-	pub payment: Option<ConsiliumPaymentTerms>,
-	/// Set exactly when this is a VALUATION-OVERRIDE consilium.
-	pub valuation_override: Option<ValuationOverrideTerms>,
-	/// Set exactly when this is a FEE_POLICY consilium.
-	pub fee_policy: Option<ConsiliumFeePolicyTerms>,
-	/// Set exactly when this is a HOLDER_GRANT consilium.
-	pub holder_grant: Option<HolderGrantTerms>,
-	/// Set exactly when this is a SEED_CAPITAL consilium.
-	pub seed_capital: Option<SeedCapitalTerms>,
-	pub payload_hash: String,
-	pub initiator_email: String,
-	pub voter_email: String,
-	pub threshold: u32,
-	pub approvals: u32,
-	pub owner_count: u32,
-	pub created_at: String,
-	pub expires_at: String,
-	pub decision: String,
-	pub attempts_remaining: u32,
-}
-
-impl From<bk::ConsiliumInvitation> for ConsiliumInvitation {
-	fn from(i: bk::ConsiliumInvitation) -> Self {
-		let state = enum_label(i.state().as_str_name(), "CONSILIUM_STATE_");
-		let decision = enum_label(i.decision().as_str_name(), "VOTE_DECISION_");
-		Self {
-			consilium_id: i.consilium_id,
-			state,
-			payment: i.payment.map(ConsiliumPaymentTerms::from),
-			valuation_override: i.valuation_override.map(ValuationOverrideTerms::from),
-			fee_policy: i.fee_policy.map(ConsiliumFeePolicyTerms::from),
-			holder_grant: i.holder_grant.map(HolderGrantTerms::from),
-			seed_capital: i.seed_capital.map(SeedCapitalTerms::from),
-			payload_hash: i.payload_hash,
-			initiator_email: mask_email(&i.initiator_email),
-			voter_email: mask_email(&i.voter_email),
-			threshold: i.threshold,
-			approvals: i.approvals,
-			owner_count: i.owner_count,
-			created_at: i.created_at.to_string(),
-			expires_at: i.expires_at.to_string(),
-			decision,
-			attempts_remaining: i.attempts_remaining,
-		}
-	}
-}
-
-/// The invitation as it stands after a vote, plus whether this vote carried the verdict.
-#[derive(Serialize)]
-pub struct ConsiliumDecision {
-	pub invitation: ConsiliumInvitation,
-	pub decided: bool,
-}
-
-impl From<bk::SubmitDecisionResponse> for ConsiliumDecision {
-	fn from(r: bk::SubmitDecisionResponse) -> Self {
-		Self {
-			invitation: r.invitation.map(ConsiliumInvitation::from).unwrap_or_default(),
-			decided: r.decided,
-		}
-	}
-}
-
 // ── payments: the order that moves money between two named ends ──────────────
 //
 // The one family on this wire whose browser contract was fixed BEFORE the DTOs were
-// written — the payments and consent screens are built to it in parallel — and it differs
+// written — the payments screen was built to it in parallel — and it differs
 // from the older passthroughs in two ways a reader of the neighbours will notice: unix
 // stamps cross as RFC 3339 strings rather than as unix-seconds strings, and the proto's
 // "empty means unset" sentinels cross as `null`. Both are deliberate: the screen renders
@@ -816,13 +602,6 @@ pub struct PaymentEnd {
 	/// What a person recognises this end BY: the receiving investor's masked mailbox, the
 	/// product's title. Never part of the digest.
 	pub detail: String,
-}
-
-impl PaymentEnd {
-	/// An end the plane rendered as words only — the consilium projection.
-	fn labelled(label: String) -> Self {
-		Self { label, ..Default::default() }
-	}
 }
 
 impl From<bk::PaymentEnd> for PaymentEnd {
@@ -881,67 +660,6 @@ impl From<bk::PaymentConfirmation> for PaymentConfirmation {
 }
 
 list_dto! { PaymentConfirmationList from bk::PaymentConfirmationList { items: Vec<PaymentConfirmation> } }
-
-/// What the emailed investor is shown before answering. Deliberately narrow: the terms
-/// they are consenting to and nothing about the operator beyond a
-/// masked address — and both addresses are masked here as well as by the plane, because
-/// this is the one payments surface reachable with no session.
-#[derive(Default, Serialize)]
-pub struct PaymentConsentInvitation {
-	pub payment_id: String,
-	pub state: String,
-	pub tier: String,
-	pub source: PaymentEnd,
-	pub destination: PaymentEnd,
-	pub amount: String,
-	pub reason: String,
-	pub payload_hash: String,
-	pub initiator_email: String,
-	pub subject_email: String,
-	pub expires_at: String,
-	/// This seat's own answer, so a reopened link shows what was already said.
-	pub decision: String,
-	pub attempts_remaining: u32,
-}
-
-impl From<bk::PaymentConsentInvitation> for PaymentConsentInvitation {
-	fn from(i: bk::PaymentConsentInvitation) -> Self {
-		let state = enum_label(i.state().as_str_name(), "PAYMENT_STATE_");
-		let decision = enum_label(i.decision().as_str_name(), "CONSENT_DECISION_");
-		Self {
-			payment_id: i.payment_id,
-			state,
-			tier: i.tier,
-			source: i.source.map(PaymentEnd::from).unwrap_or_default(),
-			destination: i.destination.map(PaymentEnd::from).unwrap_or_default(),
-			amount: i.amount,
-			reason: i.reason,
-			payload_hash: i.payload_hash,
-			initiator_email: mask_email(&i.initiator_email),
-			subject_email: mask_email(&i.subject_email),
-			expires_at: rfc3339(i.expires_at),
-			decision,
-			attempts_remaining: i.attempts_remaining,
-		}
-	}
-}
-
-/// The invitation as it stands after an answer, plus whether this answer decided the
-/// order.
-#[derive(Serialize)]
-pub struct PaymentConsentDecision {
-	pub invitation: PaymentConsentInvitation,
-	pub decided: bool,
-}
-
-impl From<bk::SubmitConsentResponse> for PaymentConsentDecision {
-	fn from(r: bk::SubmitConsentResponse) -> Self {
-		Self {
-			invitation: r.invitation.map(PaymentConsentInvitation::from).unwrap_or_default(),
-			decided: r.decided,
-		}
-	}
-}
 
 // ── governance: an owner's removal, answered from the mailbox (ownership plane) ──
 
@@ -1032,38 +750,6 @@ mod tests {
 		);
 	}
 
-	/// The two #245 kinds cross as their own siblings, `null` on every other kind.
-	#[test]
-	fn a_holder_grant_and_a_seed_are_their_own_terms_siblings() {
-		let grant = ConsiliumInvitation::from(bk::ConsiliumInvitation {
-			holder_grant: Some(bk::HolderGrantTerms {
-				allocation: "fund".into(),
-				user_id: "d4d6".into(),
-				units: "1000".into(),
-			}),
-			..Default::default()
-		});
-		let terms = grant.holder_grant.as_ref().expect("the grant terms");
-		assert_eq!((terms.allocation.as_str(), terms.user_id.as_str(), terms.units.as_str()), ("fund", "d4d6", "1000"));
-		assert!(grant.seed_capital.is_none() && grant.payment.is_none() && grant.valuation_override.is_none() && grant.fee_policy.is_none());
-
-		let seed = ConsiliumInvitation::from(bk::ConsiliumInvitation {
-			seed_capital: Some(bk::SeedCapitalTerms {
-				tx_ref: "0xabc:0".into(),
-				network: "bep20".into(),
-				amount: "250.5".into(),
-				depositor_user_id: "d4d6".into(),
-			}),
-			..Default::default()
-		});
-		let terms = seed.seed_capital.as_ref().expect("the seed terms");
-		assert_eq!(
-			(terms.tx_ref.as_str(), terms.network.as_str(), terms.amount.as_str(), terms.depositor_user_id.as_str()),
-			("0xabc:0", "bep20", "250.5", "d4d6")
-		);
-		assert!(seed.holder_grant.is_none());
-	}
-
 	/// `/api/users` carries the caller's permissions from GetMe, so the wallet host can offer
 	/// the panel link without a second round trip.
 	#[test]
@@ -1086,35 +772,22 @@ mod tests {
 	/// arrives as itself rather than through a stale hand-written arm.
 	#[test]
 	fn enum_labels_are_the_proto_name_without_its_prefix() {
-		assert_eq!(enum_label(bk::ConsiliumState::Open.as_str_name(), "CONSILIUM_STATE_"), "open");
-		assert_eq!(enum_label(bk::ConsiliumState::ExecutionFailed.as_str_name(), "CONSILIUM_STATE_"), "execution_failed");
-		assert_eq!(enum_label(bk::VoteDecision::Approve.as_str_name(), "VOTE_DECISION_"), "approve");
+		assert_eq!(enum_label(bk::PaymentState::Pending.as_str_name(), "PAYMENT_STATE_"), "pending");
+		assert_eq!(enum_label(bk::PaymentState::ExecutionFailed.as_str_name(), "PAYMENT_STATE_"), "execution_failed");
+		assert_eq!(enum_label(bk::ConsentDecision::Approve.as_str_name(), "CONSENT_DECISION_"), "approve");
 	}
 
 	/// The redacted invitation is the one surface a stranger holding a link can read: no
 	/// address on it may be renderable back to a real mailbox.
 	#[test]
 	fn the_public_invitation_masks_both_addresses() {
-		let invitation = ConsiliumInvitation::from(bk::ConsiliumInvitation {
+		let invitation = OwnerRemovalInvitation::from(cc::OwnerRemovalInvitation {
 			initiator_email: "ada@example.com".into(),
-			voter_email: "grace@example.com".into(),
+			target_email: "grace@example.com".into(),
 			..Default::default()
 		});
 		assert_eq!(invitation.initiator_email, "a***@example.com");
-		assert_eq!(invitation.voter_email, "g***@example.com");
-	}
-
-	/// The same rule on the consent page: the initiator and the subject are the only two
-	/// addresses on it, and a stranger with the link may read neither.
-	#[test]
-	fn the_consent_invitation_masks_both_addresses() {
-		let invitation = PaymentConsentInvitation::from(bk::PaymentConsentInvitation {
-			initiator_email: "ada@example.com".into(),
-			subject_email: "grace@example.com".into(),
-			..Default::default()
-		});
-		assert_eq!(invitation.initiator_email, "a***@example.com");
-		assert_eq!(invitation.subject_email, "g***@example.com");
+		assert_eq!(invitation.target_email, "g***@example.com");
 	}
 
 	/// The hand-written layout against known dates, including a leap day and the end of a
@@ -1125,45 +798,5 @@ mod tests {
 		assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
 		assert_eq!(rfc3339(1_757_669_400), "2025-09-12T09:30:00Z");
 		assert_eq!(rfc3339(4_102_444_799), "2099-12-31T23:59:59Z");
-	}
-
-	/// A payment consilium's ends arrive from the plane as words; they land in `label`,
-	/// and the structured fields stay empty rather than invented.
-	#[test]
-	fn a_payment_consilium_carries_its_terms_as_labelled_ends() {
-		let invitation = ConsiliumInvitation::from(bk::ConsiliumInvitation {
-			payment: Some(bk::ConsiliumPaymentTerms {
-				payment_id: "p-1".into(),
-				tier: "external".into(),
-				source: "the fund's pooled capital".into(),
-				destination: "0xabc on BEP20".into(),
-				amount: "10.00".into(),
-				reason: "rent".into(),
-			}),
-			..Default::default()
-		});
-		let terms = invitation.payment.expect("a payment consilium carries its terms");
-		assert_eq!(terms.source.label, "the fund's pooled capital");
-		assert_eq!(terms.destination.label, "0xabc on BEP20");
-		assert_eq!(terms.destination.kind, "");
-
-		assert!(ConsiliumInvitation::from(bk::ConsiliumInvitation::default()).payment.is_none());
-	}
-
-	/// The third sibling: set on a valuation override, `null` — never an empty object, which
-	/// the invitation page treats as unrenderable — on every other kind.
-	#[test]
-	fn a_valuation_override_consilium_carries_its_terms_and_nulls_elsewhere() {
-		let invitation = ConsiliumInvitation::from(bk::ConsiliumInvitation {
-			valuation_override: Some(bk::ValuationOverrideTerms {
-				service: "svc-arb".into(),
-				aum: "16250".into(),
-			}),
-			..Default::default()
-		});
-		let terms = invitation.valuation_override.expect("a valuation override carries its terms");
-		assert_eq!((terms.service.as_str(), terms.aum.as_str()), ("svc-arb", "16250"));
-		assert!(invitation.payment.is_none());
-		assert!(ConsiliumInvitation::from(bk::ConsiliumInvitation::default()).valuation_override.is_none());
 	}
 }

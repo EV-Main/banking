@@ -442,9 +442,8 @@ impl TxRef {
 		if trimmed.len() > 128 {
 			return Err(DomainError::Validation("tx ref too long".into()));
 		}
-		// A seed ref is printed into the owners' approval mail, and concierge refuses a
-		// link there — which would leave that consilium waiting for an invitation that is
-		// never sent. No chain's hash, nor the `hash:recipient` form, contains one.
+		// No chain's hash, nor the `hash:recipient` form, contains a link, so one is a typo
+		// or a paste of something else.
 		if contains_url(trimmed) {
 			return Err(DomainError::Validation("tx ref must not contain a link".into()));
 		}

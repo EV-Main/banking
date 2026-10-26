@@ -34,12 +34,10 @@ pub mod allocations;
 pub mod audit;
 pub mod book;
 pub mod compartments;
-pub mod consilium;
 pub mod custody;
 pub mod deposit_addresses;
 pub mod deposits;
 pub mod fees;
-pub mod governance_mail;
 pub mod issuance;
 pub mod ledger;
 pub mod nav;
@@ -62,7 +60,6 @@ pub use allocations::{AllocationAccessGrant, AllocationRecord, AllocationRegistr
 use async_trait::async_trait;
 pub use book::{BookDepth, BookLevel, BookPolicyRecord, BookStore, CancelOutcome, Candle, OrderRecord, PlaceOutcome, TradeRecord, UserTrade};
 pub use compartments::CompartmentStore;
-pub use consilium::ConsiliumRepository;
 pub use custody::{BroadcastRequest, Custody, CustodyError};
 pub use deposit_addresses::DepositAddresses;
 pub use deposits::Deposits;
@@ -72,11 +69,7 @@ use domain::{
 	error::DomainError,
 	users::{ConciergeUserId, Email, ProfileFields, User, UserId},
 };
-pub use fees::{
-	AssessmentRecord, ConsiliumOpening, FeeAssessments, FeePolicies, FeePolicyChange, FeePolicyChanges, FeePorts, FeeSettlements, NewFeePolicyChange, PolicyRecord, PositionAccrual,
-	PositionAccruals, SettlementRecord,
-};
-pub use governance_mail::GovernanceMailer;
+pub use fees::{AssessmentRecord, FeeAssessments, FeePolicies, FeePorts, FeeSettlements, PolicyRecord, PositionAccrual, PositionAccruals, SettlementRecord};
 pub use issuance::{IssueOutcome, UnitIssuanceRecord, UnitIssuanceRepository};
 pub use ledger::{CompletionKind, Ledger, LedgerBalance, LedgerError, LedgerTransfer, PendingCompletion};
 pub use nav::{NavMarks, Valuation};

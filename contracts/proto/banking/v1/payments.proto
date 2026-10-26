@@ -7,32 +7,20 @@ package banking.v1;
 // Three tiers on one order, DERIVED from the destination and never supplied: an external
 // wallet address (L1, settled by the withdrawal saga), a product's pooled claim
 // `service:<id>` (L2, one posted transfer), any other internal claim (L3, one posted
-// transfer). See domain/src/payments.rs for the aggregate and docs/CONSILIUM.md § Payments
-// for the policy.
+// transfer). See domain/src/payments.rs for the aggregate.
 //
 // AUTHORIZATION IS A FUNCTION OF THE SOURCE. A payment out of an allocation's pooled
-// claim (`service:<id>` — a product's, or the platform's own `fee` / `fund`) needs the
-// owners' consilium at every tier — the consilium is opened INSIDE OpenPayment, there is
-// no separate RPC. A payment out of an investor's own claim (`user:<id>`) needs THAT
-// investor's emailed consent at every tier. There is deliberately no cell in which one
-// admin moves pooled money alone. The singleton `piggybank` / `revenue` sources are
-// retired (#245) and a request naming them is refused. banking's treasury (`treasury`,
-// D17) is the one source beside them that is not an allocation. It collects the withdrawal
-// fees and is never a destination; as a source it is CLOSED until its spending is decided
-// by concierge's scope approvals (`bank:treasury_surplus`, D24) — OpenPayment out of it is
-// FAILED_PRECONDITION `treasury spending waits for scope approvals`.
-//
-// HOW THE APPROVAL IS SEATED. Two switches (`PAYMENT_APPROVALS_FUND`, default `consilium`;
-// `PAYMENT_APPROVALS_SESSION`, default `concierge`) decide how a NEW order is seated. With
-// `concierge`, the owners decide a fund-owned order over a concierge approval of kind
-// `bank:payment` — proposed in the initiator's name, which needs their access token of the
-// last two minutes in `x-ev-user-token` — and an investor's order is answered by that
-// investor, signed in, over PaymentConfirmationService; no token and no mail are involved.
-// With `consilium` new orders are seated on banking's consilium and the emailed token. An
-// order keeps the seat it was opened with. See `Payment.seat`.
+// claim (`service:<id>`) needs the owners' approval at every tier: a concierge approval of
+// kind `bank:payment`, proposed in the initiator's name, which needs their access token of
+// the last two minutes in `x-ev-user-token`. A payment out of an investor's own claim
+// (`user:<id>`) is answered by THAT investor, signed in, over PaymentConfirmationService.
+// There is deliberately no cell in which one admin moves pooled money alone. banking's
+// treasury (`treasury`, D17) is never a destination; as a source it is CLOSED until its
+// spending is decided by concierge's scope approvals (`bank:treasury_surplus`, D24) —
+// OpenPayment out of it is FAILED_PRECONDITION `treasury spending waits for scope approvals`.
 //
 // IMMUTABILITY. There is no edit RPC. `payload_hash` binds the approval to the exact terms
-// shown in the mail; changing anything means cancel and reopen.
+// shown to the approver; changing anything means cancel and reopen.
 service PaymentsService {
   // Open a payment order (Admin/Owner). Refused when the source cannot cover the amount
   // right now, when the shape could never execute (an unconfigured rail, a sub-minimum
@@ -51,28 +39,10 @@ service PaymentsService {
   rpc CancelPayment(CancelPaymentRequest) returns (Payment);
 }
 
-// PaymentConsentService — the surface an emailed investor reaches. Mounted OUTSIDE the
-// user-auth layer, exactly as ConsiliumApprovalService is: the emailed token IS the
-// credential, and the investor clicking it may not be signed in.
-//
-// The GET is strictly read-only because mail scanners issue automatic requests for every
-// URL in a message. The consent is a separate call carrying the secret code from the same
-// mail — that is what turns a scanned link into a deliberate human act.
-service PaymentConsentService {
-  // The redacted invitation behind an emailed token. Side-effect free. Unknown, expired,
-  // spent, burned and closed tokens all return the SAME NOT_FOUND.
-  rpc GetConsentInvitation(GetConsentInvitationRequest) returns (PaymentConsentInvitation);
-
-  // Answer the consent. Requires the token AND the secret code from the mail. Five failed
-  // code attempts burn the token permanently — and, with one seat, fail the payment closed.
-  rpc SubmitConsent(SubmitConsentRequest) returns (SubmitConsentResponse);
-}
-
 // PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.
 // Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has
-// no such seat or does not exist is the same NOT_FOUND. It replaces the emailed token and
-// code: the session is the credential, and the wallet host's gate asks for a fresh login before
-// an approval (a decline asks for none).
+// no such seat or does not exist is the same NOT_FOUND. The session is the credential,
+// and the wallet host's gate asks for a fresh login before an approval (a decline asks for none).
 service PaymentConfirmationService {
   // The caller's orders waiting for their answer, newest first.
   rpc ListPaymentConfirmations(ListPaymentConfirmationsRequest) returns (PaymentConfirmationList);
@@ -101,7 +71,7 @@ enum PaymentState {
   // Approved, but the effect could not be created. `failure_reason` says why. Nothing
   // retries silently; an L2/L3 reservation is released.
   PAYMENT_STATE_EXECUTION_FAILED = 4;
-  // The approver refused, their token burned, or their consent was voided.
+  // The approver refused, or their consent was voided.
   PAYMENT_STATE_REJECTED = 5;
   // The 72h window closed with no answer.
   PAYMENT_STATE_EXPIRED = 6;
@@ -109,7 +79,7 @@ enum PaymentState {
   PAYMENT_STATE_CANCELLED = 7;
 }
 
-// What the emailed investor answered.
+// What the investor answered.
 enum ConsentDecision {
   CONSENT_DECISION_UNSPECIFIED = 0;
   CONSENT_DECISION_PENDING = 1;
@@ -149,7 +119,7 @@ message PaymentDestination {
 }
 
 // One end of a payment, as a RESPONSE describes it. `label` is the wording every approval
-// surface (the owners' mail, the subject's mail, this screen) shares; the structured
+// surface shares; the structured
 // fields let a screen link to the account.
 message PaymentEnd {
   string label = 1;
@@ -165,22 +135,6 @@ message PaymentEnd {
   // MASKED mailbox for `user`, the product's title for `service`. Empty otherwise. Never
   // part of the digest — the label is what an approval binds.
   string detail = 6;
-}
-
-// The consent seat of an investor-sourced order, as the owner surface sees it.
-message PaymentConsent {
-  // Masked (`a***@example.com`).
-  string subject_email = 1;
-  ConsentDecision decision = 2;
-  // True once the consent mail has actually been handed to concierge.
-  bool notified = 3;
-  // Code attempts left before the token burns.
-  uint32 attempts_remaining = 4;
-  // True when one of the pins recorded at open (the subject's token version, their
-  // mailbox) has moved: the seat can no longer be answered or executed.
-  bool invalidated = 5;
-  // Why, when `invalidated` is true.
-  string invalidation_reason = 6;
 }
 
 message Payment {
@@ -199,10 +153,8 @@ message Payment {
   // Hex SHA-256 over the canonical terms, re-verified at execution.
   string payload_hash = 9;
   string initiator_email = 10;
-  // Set exactly when the requirement is the owner consilium.
-  string consilium_id = 11;
-  // Set exactly when the requirement is the subject's consent.
-  PaymentConsent consent = 12;
+  reserved 11, 12;
+  reserved "consilium_id", "consent";
   int64 created_at = 13;
   int64 expires_at = 14;
   // Unix seconds; 0 while pending.
@@ -213,9 +165,8 @@ message Payment {
   string failure_reason = 17;
   // Monotonic per order.
   uint64 version = 18;
-  // The seat that decides the order: `consilium`, `consent` (the emailed token),
-  // `concierge_approval` (a `bank:payment` approval) or `session` (the investor's answer in
-  // the wallet host). Empty only for a row written before seats were recorded.
+  // The seat that decides the order: `concierge_approval` (a `bank:payment` approval) or
+  // `session` (the investor's answer in the wallet host).
   string seat = 19;
   // Concierge's id of the approval, once banking has opened it; set for `concierge_approval`.
   string approval_id = 20;
@@ -245,7 +196,7 @@ message ListPaymentsRequest {
   // Either end. Unset means every party.
   Party party = 3;
   // Only orders whose source is an allocation's claim (`service:<id>`) or banking's
-  // treasury — the ones the owners' consilium gates, i.e. the governance surface.
+  // treasury — the ones the owners gate, i.e. the governance surface.
   bool fund_owned_only = 4;
 }
 
@@ -255,53 +206,6 @@ message GetPaymentRequest {
 
 message CancelPaymentRequest {
   string payment_id = 1;
-}
-
-message GetConsentInvitationRequest {
-  // The opaque single-use token from the mail. Never the code.
-  string token = 1;
-}
-
-// What the emailed investor is shown BEFORE they answer. Deliberately narrower than
-// `Payment`: the terms they are consenting to, and nothing about the operator beyond a
-// masked address.
-message PaymentConsentInvitation {
-  string payment_id = 1;
-  PaymentState state = 2;
-  string tier = 3;
-  PaymentEnd source = 4;
-  PaymentEnd destination = 5;
-  string amount = 6;
-  string reason = 7;
-  string payload_hash = 8;
-  // Who opened it, masked.
-  string initiator_email = 9;
-  // The recipient's own masked address, so they can confirm the mail reached the right
-  // mailbox before typing the code.
-  string subject_email = 10;
-  int64 expires_at = 11;
-  // This seat's own answer, so a reopened link shows what was already said.
-  ConsentDecision decision = 12;
-  // Code attempts left before the token burns.
-  uint32 attempts_remaining = 13;
-}
-
-message SubmitConsentRequest {
-  string token = 1;
-  // The secret code from the same mail. Compared in constant time, as a hash.
-  string code = 2;
-  // APPROVE or REJECT. PENDING is rejected as an invalid argument.
-  ConsentDecision decision = 3;
-  // Audit only — the edge supplies these; they are never trusted for authorization.
-  string client_ip = 4;
-  string user_agent = 5;
-}
-
-message SubmitConsentResponse {
-  // The invitation as it stands after the answer.
-  PaymentConsentInvitation invitation = 1;
-  // True when this answer carried the order out of PENDING.
-  bool decided = 2;
 }
 
 // One order as the investor it spends is shown it: the terms they answer and nothing about

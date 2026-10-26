@@ -23,9 +23,8 @@
 //! already there, and who holds the owners' money is the owners' call, not one
 //! administrator's. [`issue_units`] and [`retire_units`] therefore refuse a reserved
 //! `service` outright, and the one door that mints reserved units — [`grant_units`] — is
-//! reached only as the effect of an executed holder-grant consilium (and by the one-off
-//! data migration that seats the first holders). A holder LEAVES a reserved allocation by
-//! redemption at its NAV, never by an operator's burn.
+//! reached by no RPC. A holder LEAVES a reserved allocation by redemption at its NAV, never
+//! by an operator's burn.
 //!
 //! A mint also flips the product's backing to `in_kind` (see
 //! [`AllocationBacking`](domain::allocations::AllocationBacking)): the units it creates
@@ -136,8 +135,7 @@ pub struct UnitHolding {
 /// (#245, L-1): the `fee` allocation's units of a product are its fee class, minted by
 /// the fee accrual as the charge earns them, and an operator minting product units into
 /// `fee` by hand would be inflating the owners' allocation at the product's investors'
-/// expense with no fee behind it. The relay, the consilium and the data migration reach
-/// [`mint`] through [`grant_units`], never through here.
+/// expense with no fee behind it.
 pub async fn issue_units(
 	ports: &FundPorts<'_>,
 	issuances: &dyn UnitIssuanceRepository,
@@ -147,7 +145,7 @@ pub async fn issue_units(
 ) -> Result<UnitIssuanceRecord, DomainError> {
 	if request.service.is_reserved() {
 		return Err(DomainError::Forbidden(format!(
-			"'{}' is a reserved allocation: its units are granted by the owners' consilium (a holder grant), never issued by hand",
+			"'{}' is a reserved allocation: its units are never issued by hand",
 			request.service
 		)));
 	}
@@ -159,12 +157,9 @@ pub async fn issue_units(
 	mint(ports, issuances, users, request, now_unix).await
 }
 
-/// Mint units of a RESERVED allocation to a person — the effect of an executed
-/// holder-grant consilium, and the door the one-off data migration seats the first
-/// holders through. Everything [`issue_units`] checks is checked here too (the key, the
-/// holder graph, the registry row, a fresh NAV, the cap); what differs is who may reach
-/// it: no RPC does, and the consilium's execution path arrives with an idempotency key
-/// derived from the consilium, so a retried execution finds its own row.
+/// Mint units of a RESERVED allocation to a person. Everything [`issue_units`] checks is
+/// checked here too (the key, the holder graph, the registry row, a fresh NAV, the cap);
+/// what differs is who may reach it: no RPC does.
 ///
 /// The backing stays `cash`, deliberately (see [`mint`]): a reserved allocation's units
 /// are backed by the cash on its own claim, and its holders are paid out of exactly that.

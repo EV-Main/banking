@@ -202,8 +202,8 @@ test("a refusal suppresses the repeat, never the error", async () => {
   state.fail = new Forbidden();
   const owners = defineResource({ name: "t.owners", fetch, revalidate: 0 });
 
-  // The screens branch on this — the consilium renders its "you cannot see this room"
-  // state off exactly this error. Swallowing it would trade a noisy console for a blank
+  // The screens branch on this — a "you cannot see this" state renders off exactly this
+  // error. Swallowing it would trade a noisy console for a blank
   // page that never explains itself.
   await assert.rejects(() => owners.read(), /access/);
   assert.equal(state.calls, 1);

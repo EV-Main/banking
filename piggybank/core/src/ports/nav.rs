@@ -34,11 +34,6 @@ pub trait NavMarks: Send + Sync {
 	/// drop something drops the deep past, never the current price).
 	async fn history(&self, service: &ServiceId, from_unix: i64, to_unix: i64, limit: usize) -> Result<Vec<Valuation>, DomainError>;
 
-	/// One mark by its caller-minted id, or `None`. The consilium execution path derives
-	/// the id from the consilium and re-reads it here, so a retried execution finds the
-	/// mark it already recorded instead of filing a phantom failure.
-	async fn find(&self, id: ValuationId) -> Result<Option<Valuation>, DomainError>;
-
 	/// Append a new mark — `id` is caller-minted, `posted_at` is DB-stamped. Returns the
 	/// stamped `posted_at` (unix seconds) so the caller can report the recorded mark.
 	async fn record(&self, id: ValuationId, service: &ServiceId, aum: Usdt, units_outstanding: Shares, nav: Nav, posted_by: &str) -> Result<i64, DomainError>;

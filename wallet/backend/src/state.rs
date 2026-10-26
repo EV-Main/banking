@@ -95,16 +95,8 @@ impl Grpc {
 		bk::health_service_client::HealthServiceClient::new(self.piggybank.clone())
 	}
 
-	fn consilium_approval(&self) -> bk::consilium_approval_service_client::ConsiliumApprovalServiceClient<Channel> {
-		bk::consilium_approval_service_client::ConsiliumApprovalServiceClient::new(self.piggybank.clone())
-	}
-
 	fn payment_confirmations(&self) -> bk::payment_confirmation_service_client::PaymentConfirmationServiceClient<Channel> {
 		bk::payment_confirmation_service_client::PaymentConfirmationServiceClient::new(self.piggybank.clone())
-	}
-
-	fn payment_consent(&self) -> bk::payment_consent_service_client::PaymentConsentServiceClient<Channel> {
-		bk::payment_consent_service_client::PaymentConsentServiceClient::new(self.piggybank.clone())
 	}
 
 	fn removal_approval(&self) -> cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient<Channel> {
@@ -252,40 +244,6 @@ impl Grpc {
 
 	pub async fn submit_self_decision(&self, req: cc::SubmitSelfDecisionRequest) -> Result<cc::SubmitSelfDecisionResponse, Status> {
 		Ok(self.removal_approval().submit_self_decision(req).await?.into_inner())
-	}
-
-	// ── consilium: an owner's vote on a payout, answered from the mailbox ────────
-	// The two below carry NO bearer, deliberately: the emailed token IS the credential and
-	// the owner clicking it may not be signed in. Attaching a user token here would invent
-	// an authorization the flow does not have.
-
-	/// The redacted invitation behind an emailed token. Side-effect free — mail scanners
-	/// issue automatic GETs for every URL in a message.
-	pub async fn consilium_invitation(&self, token: &str) -> Result<bk::ConsiliumInvitation, Status> {
-		let req = bk::GetInvitationRequest { token: token.to_string() };
-		Ok(self.consilium_approval().get_invitation(req).await?.into_inner())
-	}
-
-	/// Cast the emailed owner's vote. `client_ip`/`user_agent` on the request are AUDIT
-	/// fields only; the plane never treats them as authorization.
-	pub async fn submit_consilium_decision(&self, req: bk::SubmitDecisionRequest) -> Result<bk::SubmitDecisionResponse, Status> {
-		Ok(self.consilium_approval().submit_decision(req).await?.into_inner())
-	}
-
-	// ── payments: the subject's consent to an order ─────────────────────────────
-	// No bearer on the two below, for the same reason as the consilium approval pair: the
-	// emailed token is the credential, and the investor clicking it may not be signed in.
-
-	/// The redacted consent invitation behind an emailed token. Side-effect free.
-	pub async fn payment_consent_invitation(&self, token: &str) -> Result<bk::PaymentConsentInvitation, Status> {
-		let req = bk::GetConsentInvitationRequest { token: token.to_string() };
-		Ok(self.payment_consent().get_consent_invitation(req).await?.into_inner())
-	}
-
-	/// Record the emailed investor's answer. `client_ip`/`user_agent` are AUDIT fields
-	/// only; the plane never treats them as authorization.
-	pub async fn submit_payment_consent(&self, req: bk::SubmitConsentRequest) -> Result<bk::SubmitConsentResponse, Status> {
-		Ok(self.payment_consent().submit_consent(req).await?.into_inner())
 	}
 }
 

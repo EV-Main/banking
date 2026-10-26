@@ -1,7 +1,7 @@
-//! The concierge endpoint both cross-plane seams dial — the lifecycle bridge and the
-//! governance-mail relay, which share one address and one shared secret, and so must
+//! The concierge endpoint every cross-plane seam dials — the lifecycle bridge, the scope
+//! inbox and the approvals, which share one address and one shared secret, and so must
 //! share one channel configuration: building it twice is how an `https://` bridge once
-//! left the mail seam on a channel that never negotiated TLS.
+//! left a seam on a channel that never negotiated TLS.
 //!
 //! What the channel proves is decided here and nowhere else. The address's scheme picks
 //! the transport (through [`config::bridge_transport`], the same reader the boot gate

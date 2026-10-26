@@ -3823,7 +3823,6 @@ dependencies = [
  "evbanking_auth",
  "evbanking_contracts",
  "evconcierge_contracts",
- "getrandom 0.3.4",
  "hex",
  "jiff",
  "reqwest 0.12.28",

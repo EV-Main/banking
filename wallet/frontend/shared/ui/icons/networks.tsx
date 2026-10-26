@@ -10,9 +10,8 @@
 // a barrel would let any future icon set drag them along.
 //
 // For the same reason the mapping lives here rather than as a field on `RailMeta` in
-// `@/shared/lib/rail`: the payout-approval and consilium views import that module for
-// `networkLabel` alone, and a component reference on the meta object would pull every path
-// below into their route bundles for a mark they never draw. `@/shared/lib/rail` also
+// `@/shared/lib/rail`: a surface importing that module for `networkLabel` alone would
+// otherwise pull every path below into its route bundle for a mark it never draws. `@/shared/lib/rail` also
 // stays a plain data module with no React in it.
 //
 // Paths: BNB Chain, TON and Polygon from simple-icons (CC0-1.0); TRON from

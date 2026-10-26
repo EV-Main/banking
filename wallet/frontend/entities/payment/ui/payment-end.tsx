@@ -8,7 +8,7 @@
 // wrong person. An external end shows its rail and a shortened address here, with the
 // whole one a tap away in a toggletip — never only in a `title`, which a keyboard or a
 // touch screen cannot open; the surfaces where the address is the thing being approved
-// render it whole through `FullAddress` instead (docs/CONSILIUM.md, policy 13).
+// render it whole through `FullAddress` instead.
 
 import { useT } from "@evinvest/i18n/react";
 import { InfoTip, InfoTipContent, InfoTipTrigger } from "@evinvest/uikit";

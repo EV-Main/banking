@@ -22,11 +22,8 @@
 //!   charge, the bulk settlement of accumulated fee units).
 //! - [`fee_accrual`] — the obligation the fee plane places on everyone who moves a cost
 //!   basis: settle what the old basis accrued before writing the new one.
-//! - [`fee_policy_changes`] — the history of a product's fee terms and the only writer of
-//!   `fee_policies`: a change waits out the holders' notice (and the owners' quorum when it
-//!   tightens the terms beyond the house envelope) before it is promoted.
 //! - [`fee_sweeper`] — the periodic worker that assesses management + performance fees
-//!   against every unit-holding position that is due, and promotes due policy changes.
+//!   against every unit-holding position that is due.
 //! - [`book`] — Postgres adapter for the allocation book: the single-writer placement
 //!   transaction (advisory lock, the pure matcher, orders + trades + outbox facts), the
 //!   depth/tape/candle reads, and the per-product policy.
@@ -58,9 +55,6 @@ pub mod book;
 pub mod bridge;
 pub mod claims;
 pub mod compartments;
-pub mod consilium;
-pub mod consilium_mailer;
-pub mod consilium_sweeper;
 pub mod custody;
 pub mod db;
 pub mod deposit_watcher;
@@ -68,10 +62,8 @@ pub mod deposits;
 pub mod dispatcher;
 pub mod evm_rpc;
 pub mod fee_accrual;
-pub mod fee_policy_changes;
 pub mod fee_sweeper;
 pub mod fees;
-pub mod governance_mail;
 pub mod issuance;
 pub mod ledger;
 pub mod money_events;
@@ -81,6 +73,7 @@ pub mod operations;
 pub mod outbox;
 pub mod outflow;
 pub mod payments;
+pub mod payments_sweeper;
 pub mod payout_review;
 pub mod positions;
 pub mod rails;

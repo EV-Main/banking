@@ -26,8 +26,8 @@
 //! no money, and its `require_subscribable` gate is what every subscribe runs before one
 //! does.
 //! [`payments`] is the order that moves money between two named ends of the platform —
-//! authorized by the owners' [`consilium`] when the source is fund-owned, by the investor's
-//! own emailed consent when it is theirs — and the execution that turns an approved order
+//! authorized by the owners' concierge approval when the source is fund-owned, by the
+//! investor's own answer in the wallet host when it is theirs — and the execution that turns an approved order
 //! into a withdrawal or one settled transfer.
 //! [`fees`] assesses a fund's management + performance terms against a holding. It is the
 //! one money use case that never moves cash while charging: a fee is collected by moving
@@ -52,8 +52,6 @@ pub mod auth_sync;
 pub mod balance;
 pub mod book;
 pub mod compartments;
-pub mod consilium;
-pub(crate) mod credentials;
 pub mod fees;
 pub mod funds;
 pub mod issuance;

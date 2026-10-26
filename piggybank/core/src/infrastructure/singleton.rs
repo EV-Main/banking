@@ -2,7 +2,7 @@
 //!
 //! The outbox relay has held one of these since it was written, because multi-replica is an
 //! anticipated shape of this deployment rather than a hypothetical: a second replica draining
-//! the same queue is not a slowdown, it is two workers racing the same rows. The governance
+//! the same queue is not a slowdown, it is two workers racing the same rows. Other
 //! workers drain shared queues too and had no such guard, so this lifts the relay's pattern
 //! into one place every such worker uses.
 //!
@@ -18,10 +18,9 @@ use sqlx::{PgPool, Postgres, pool::PoolConnection};
 /// changing one would let two cohorts run concurrently across a deploy that mixed old and
 /// new keys. The ASCII spelling is a debugging affordance — these show up in `pg_locks`.
 pub mod keys {
-	/// ASCII `EVBKCSW_` — the consilium sweeper.
-	pub const CONSILIUM_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64;
-	/// ASCII `EVBKCML_` — the consilium mailer.
-	pub const CONSILIUM_MAILER: i64 = 0x4556_424b_434d_4c5f_u64 as i64;
+	/// The payments sweeper.
+	pub const PAYMENTS_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64; // `EVBKCSW_`, the consilium sweeper's key: an older pod running that sweeper excludes this one
+
 	/// ASCII `EVBKSCN_` — the scope-inbox notification worker.
 	pub const SCOPE_NOTIFICATIONS: i64 = 0x4556_424b_5343_4e5f_u64 as i64;
 	/// ASCII `EVBKSCE_` — the consumer of concierge's scope stream.

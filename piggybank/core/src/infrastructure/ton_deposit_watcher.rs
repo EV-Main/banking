@@ -13,9 +13,7 @@
 //! USDT arriving at the **treasury** from outside is watched but never credited (#245):
 //! the chain names the wallet, not the person, and every claim needs a holder. It is
 //! reported at `error!` with a counter (`telemetry`) — and by the treasury drift watch
-//! as a surplus until an operator attributes it with `SeedCapital` (a deposit to that
-//! person, and their subscription into `fund`), quoting `<hash>:piggybank` as the
-//! reference — the same shape the custody adapter resolves back to the treasury.
+//! as a surplus.
 //!
 //! **Finality.** TON is fast and categorical: toncenter only surfaces transactions from
 //! committed masterchain blocks, so anything `/jetton/transfers` returns is already final —

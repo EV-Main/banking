@@ -28,20 +28,8 @@
 //! carried as debt rather than drawn from units the holder cannot spare; only a charge
 //! that is not owed at all (it floors to nothing) persists nothing, and then the accrual
 //! simply continues (see [`domain::fees::FeeCharge::is_empty`]).
-//!
-//! ## The second clock: promoting a change of terms
-//!
-//! A scheduled [`FeePolicyChange`](crate::ports::fees::FeePolicyChange) becomes the live
-//! policy at its `effective_from`, and that moment needs a worker to notice it. It rides
-//! this task on a tighter cadence ([`PROMOTION_INTERVAL`]) than the hourly charge: a minute
-//! late is invisible against a 24h notice, an hour late is a holder charged the old rate
-//! for an hour longer than they were told.
 
-use std::{
-	collections::HashMap,
-	sync::Arc,
-	time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use domain::fees::Trigger;
 use tokio::sync::Notify;
@@ -52,7 +40,7 @@ use crate::{
 	application::fees as fee_app,
 	infrastructure::rails::now_unix_i64,
 	ports::{
-		fees::{FeeAssessments, FeePolicies, FeePolicyChanges, PositionAccruals},
+		fees::{FeeAssessments, FeePolicies, PositionAccruals},
 		ledger::Ledger,
 		nav::NavMarks,
 		outflow::OutflowPolicy,
@@ -62,10 +50,6 @@ use crate::{
 /// How often the sweeper wakes. Frequent enough that a missed cycle is invisible, rare
 /// enough that it is not a load source.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60 * 60);
-
-/// How often due policy changes are promoted. A change scheduled to bind at a moment is
-/// promoted within a minute of it.
-const PROMOTION_INTERVAL: Duration = Duration::from_secs(60);
 
 /// A position is only assessed once its last accrual is this old — a daily cadence.
 /// Purely an efficiency knob: the fee owed is decided by elapsed seconds, so lengthening
@@ -77,7 +61,6 @@ const BATCH: i64 = 500;
 
 pub struct FeeSweeper {
 	policies: Arc<dyn FeePolicies>,
-	changes: Arc<dyn FeePolicyChanges>,
 	accruals: Arc<dyn PositionAccruals>,
 	assessments: Arc<dyn FeeAssessments>,
 	ledger: Arc<dyn Ledger>,
@@ -93,7 +76,6 @@ impl FeeSweeper {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new(
 		policies: Arc<dyn FeePolicies>,
-		changes: Arc<dyn FeePolicyChanges>,
 		accruals: Arc<dyn PositionAccruals>,
 		assessments: Arc<dyn FeeAssessments>,
 		ledger: Arc<dyn Ledger>,
@@ -103,7 +85,6 @@ impl FeeSweeper {
 	) -> Self {
 		Self {
 			policies,
-			changes,
 			accruals,
 			assessments,
 			ledger,
@@ -114,28 +95,16 @@ impl FeeSweeper {
 	}
 
 	pub async fn run(self, shutdown: CancellationToken) {
-		info!("fee sweeper: assessing due positions every {SWEEP_INTERVAL:?}, promoting due policy changes every {PROMOTION_INTERVAL:?}");
-		// One loop on the tighter cadence; the hourly sweep runs on the ticks where it is due.
-		let mut last_sweep: Option<Instant> = None;
-		let mut promotion_failures = HashMap::new();
+		info!("fee sweeper: assessing due positions every {SWEEP_INTERVAL:?}");
 		loop {
-			let now = now_unix_i64();
-			if last_sweep.is_none_or(|at| at.elapsed() >= SWEEP_INTERVAL) {
-				match self.sweep(now).await {
-					Ok(charged) if charged > 0 => info!(charged, "fee sweeper: charged management/performance fees"),
-					Ok(_) => {}
-					Err(err) => warn!("fee sweeper: sweep failed (will retry): {err}"),
-				}
-				last_sweep = Some(Instant::now());
-			}
-			match self.promote(now, &mut promotion_failures).await {
-				Ok(promoted) if promoted > 0 => info!(promoted, "fee sweeper: promoted scheduled fee-policy changes"),
+			match self.sweep(now_unix_i64()).await {
+				Ok(charged) if charged > 0 => info!(charged, "fee sweeper: charged management/performance fees"),
 				Ok(_) => {}
-				Err(err) => warn!("fee sweeper: could not list due fee-policy changes (will retry): {err}"),
+				Err(err) => warn!("fee sweeper: sweep failed (will retry): {err}"),
 			}
 			tokio::select! {
 				() = shutdown.cancelled() => return,
-				() = tokio::time::sleep(PROMOTION_INTERVAL) => {},
+				() = tokio::time::sleep(SWEEP_INTERVAL) => {},
 			}
 		}
 	}
@@ -150,15 +119,6 @@ impl FeeSweeper {
 				true
 			}
 		}
-	}
-
-	/// Promote due fee-policy changes; a no-op in maintenance.
-	pub async fn promote(&self, now_unix: i64, failures: &mut HashMap<domain::fees::FeePolicyChangeId, u32>) -> Result<usize, domain::error::DomainError> {
-		if self.paused().await {
-			info!("fee sweeper: maintenance is on, not promoting fee-policy changes");
-			return Ok(0);
-		}
-		fee_app::promote_due(self.changes.as_ref(), now_unix, failures).await
 	}
 
 	/// One sweep; returns how many positions it actually charged. Public and

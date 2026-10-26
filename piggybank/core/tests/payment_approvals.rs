@@ -9,7 +9,7 @@
 //! What they pin is the money: a decision approves an order once, however many times and from
 //! however many places it is served; a decision that is not the stored order's, or about an
 //! order that ended otherwise, moves nothing; and an investor's answer inside the wallet host is
-//! the old emailed consent's equal — the same pins, the same execution, the same outcome.
+//! pinned to their standing at open and executes once.
 
 use std::{
 	collections::HashMap,
@@ -31,15 +31,15 @@ use piggybank_core::{
 		payments as payments_app,
 		scope_operations::CatalogGate,
 	},
-	config::{KycGate, PaymentApprovalModes},
+	config::KycGate,
 	infrastructure::{
-		allocations::PgAllocations, consilium::PgConsilia, custody::StubCustody, operations, outflow::PgOutflowPolicy, payments::PgPayments, relay::Relay,
-		scope_notifications::ScopeNotificationWorker, users::PgUsers, withdrawals::PgWithdrawals,
+		allocations::PgAllocations, custody::StubCustody, operations, outflow::PgOutflowPolicy, payments::PgPayments, relay::Relay, scope_notifications::ScopeNotificationWorker,
+		users::PgUsers, withdrawals::PgWithdrawals,
 	},
 	ports::{
 		LedgerTransfer, UserRepository,
 		ledger::Ledger,
-		payments::{ConsentAudit, ConsentDecision, ExecutionOutcome, PaymentRepository},
+		payments::{ConsentAudit, ConsentDecision, ExecutionOutcome, PaymentRepository, PaymentView, SeatView},
 		scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier},
 		scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof},
 	},
@@ -310,7 +310,6 @@ impl Approvals for Concierge {
 struct App {
 	pool: PgPool,
 	payments: PgPayments,
-	consilia: PgConsilia,
 	users: PgUsers,
 	withdrawals: PgWithdrawals,
 	outflow: PgOutflowPolicy,
@@ -328,7 +327,6 @@ async fn app(skipping: &str) -> Option<App> {
 	let notify = Arc::new(Notify::new());
 	Some(App {
 		payments: PgPayments::new(pool.clone()),
-		consilia: PgConsilia::new(pool.clone()),
 		users: PgUsers::new(pool.clone()),
 		withdrawals: PgWithdrawals::new(pool.clone()),
 		outflow: PgOutflowPolicy::new(pool.clone()),
@@ -345,7 +343,6 @@ async fn app(skipping: &str) -> Option<App> {
 fn ports(a: &App) -> payments_app::PaymentPorts<'_> {
 	payments_app::PaymentPorts {
 		payments: &a.payments,
-		consilia: &a.consilia,
 		users: &a.users,
 		withdrawals: &a.withdrawals,
 		ledger: a.ledger.as_ref(),
@@ -355,11 +352,6 @@ fn ports(a: &App) -> payments_app::PaymentPorts<'_> {
 		relay: &a.notify,
 		configured: &[Network::Bep20],
 		kyc: KycGate::LIFTED,
-		approval_url_base: "https://example.test/approve",
-		consent_url_base: "https://example.test/consent",
-		// Unwired on purpose: the new path must not need the governance mailer at all.
-		governance_mail_wired: false,
-		approvals: PaymentApprovalModes::ALL_CONCIERGE,
 	}
 }
 
@@ -434,19 +426,11 @@ async fn relayed_kinds(pool: &PgPool, order: PaymentId) -> Vec<String> {
 		.expect("read the outbox")
 }
 
-async fn mail_rows(pool: &PgPool, order: PaymentId) -> i64 {
-	sqlx::query_scalar("SELECT COUNT(*) FROM consilium_mail WHERE payment_id = $1")
-		.bind(order.raw())
-		.fetch_one(pool)
-		.await
-		.unwrap()
-}
-
 /// The proof of who asked, as a request carries it. The fake concierge accepts any token it is
 /// not told is stale; what matters on this side is that it is passed and never kept.
 const PROOF: &str = "initiator-access-token";
 
-async fn open_fund(a: &App, initiator: UserId, terms: PaymentTerms, token: Option<&str>) -> Result<piggybank_core::ports::payments::PaymentView, DomainError> {
+async fn open_fund(a: &App, initiator: UserId, terms: PaymentTerms, token: Option<&str>) -> Result<PaymentView, DomainError> {
 	let payment_ports = ports(a);
 	open_with_proof(
 		&ApprovalRoundPorts {
@@ -476,14 +460,17 @@ async fn state_of(a: &App, id: PaymentId) -> PaymentState {
 	payments_app::find(&a.payments, id).await.unwrap().order.state()
 }
 
+/// The order's concierge seat; a test that asks for it opened a fund payment.
+fn concierge_seat(view: &PaymentView) -> &piggybank_core::ports::payments::ConciergeSeatView {
+	match &view.seat {
+		SeatView::Concierge(seat) => seat,
+		SeatView::Session(_) => panic!("payment {} is answered in the wallet host, not over an approval", view.order.id()),
+	}
+}
+
 async fn approval_id_of(a: &App, id: PaymentId) -> String {
-	payments_app::find(&a.payments, id)
-		.await
-		.unwrap()
-		.concierge
-		.expect("a concierge seat")
-		.approval_id
-		.expect("the proposal was opened")
+	let view = payments_app::find(&a.payments, id).await.unwrap();
+	concierge_seat(&view).approval_id.clone().expect("the proposal was opened")
 }
 
 /// Open a fund payment, fund its source, and run the round that proposes it. Returns the
@@ -530,13 +517,11 @@ async fn a_fund_payment_is_decided_over_a_concierge_approval_and_moves_money_onc
 
 	let view = open_fund(&a, initiator, fund_to_fee("250"), Some(PROOF)).await.expect("open the payment");
 	let id = view.order.id();
-	// Seated on the approval and on nothing of the old path: no consilium, no governance mail,
-	// and the window is the approval's, not the 72 hours the old quorum had.
-	assert!(view.concierge.is_some() && view.consilium_id.is_none() && view.consent.is_none() && view.session.is_none());
+	// Seated on the approval, and the window is the approval's, not the 72 hours a consent has.
+	assert!(matches!(view.seat, SeatView::Concierge(_)));
 	// `created_at` is the database's clock and `expires_at` the caller's, a second apart at most.
 	assert!((view.order.expires_at() - view.order.created_at() - CONCIERGE_TTL_SECS).abs() <= 2);
 	const { assert!(CONCIERGE_TTL_SECS > TTL_SECS) };
-	assert_eq!(mail_rows(&a.pool, id).await, 0, "no governance mail is written");
 	// The request that wrote the order opened the proposal, publishing the catalog first.
 	assert_eq!(round(&a).await.proposed, 0, "the executor opens nothing");
 	let (version, kinds, topics) = a.concierge.with(|s| s.catalog.clone()).expect("the catalog was published");
@@ -743,7 +728,7 @@ async fn a_concierge_outage_at_open_closes_the_order_and_a_retry_opens_it() {
 	// The catalog gate backs off after a failed publish; a fresh process publishes at once.
 	a.catalog = CatalogGate::new();
 	let again = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await.expect("the source is free again");
-	assert!(again.concierge.is_some_and(|seat| seat.approval_id.is_some()));
+	assert!(concierge_seat(&again).approval_id.is_some());
 	assert_eq!(again.order.state(), PaymentState::Pending);
 
 	reset(&a.pool).await;
@@ -764,14 +749,14 @@ async fn the_initiator_does_not_vote_on_their_own_payment() {
 	a.concierge.with(|s| s.owners = vec!["owner-a".into(), subject.clone(), "owner-b".into(), "owner-c".into()]);
 
 	let view = open_fund(&a, initiator, fund_to_fee("10"), Some(PROOF)).await.unwrap();
-	let approval = view.concierge.unwrap().approval_id.unwrap();
+	let approval = concierge_seat(&view).approval_id.clone().unwrap();
 	assert_eq!(
 		a.concierge.voters(&approval),
 		vec!["owner-a".to_owned(), "owner-b".to_owned(), "owner-c".to_owned()],
 		"the initiator holds no seat"
 	);
 	assert_eq!(a.concierge.requested_by(&approval), Some(subject));
-	payments_app::cancel(&ports(&a), view.order.id(), initiator, now()).await.unwrap();
+	payments_app::cancel(&a.payments, view.order.id(), initiator, now()).await.unwrap();
 
 	// No proof, no order.
 	for missing in [None, Some("")] {
@@ -858,7 +843,7 @@ async fn a_decision_past_its_execute_by_fails_the_order_closed() {
 		"{:?}",
 		view.order.failure_reason()
 	);
-	assert!(view.concierge.is_some_and(|seat| seat.execute_by.is_some()));
+	assert!(concierge_seat(&view).execute_by.is_some());
 	assert_eq!(relayed_kinds(&a.pool, open.id).await, vec!["reserved".to_owned(), "released".to_owned()]);
 	let (reported, note): (bool, Option<String>) = sqlx::query_as("SELECT reported_at IS NOT NULL, last_error FROM payment_concierge_approval WHERE payment_id = $1")
 		.bind(open.id.raw())
@@ -949,7 +934,7 @@ async fn a_withdrawn_payment_takes_its_proposal_back() {
 	let initiator = an_investor(&a.pool).await;
 	let open = a_proposed_fund_payment(&a, initiator, "12").await;
 
-	let cancelled = payments_app::cancel(&ports(&a), open.id, initiator, now()).await.unwrap();
+	let cancelled = payments_app::cancel(&a.payments, open.id, initiator, now()).await.unwrap();
 	assert_eq!(cancelled.order.state(), PaymentState::Cancelled);
 	let first = round(&a).await;
 	assert_eq!(first.withdrawn, 1);
@@ -965,60 +950,25 @@ async fn a_withdrawn_payment_takes_its_proposal_back() {
 	reset(&a.pool).await;
 }
 
-/// The rollback switch still routes a new order to the old path: asked for the consilium it
-/// wants the governance mailer the new path does not need, and the default seats the same
-/// order on a concierge approval with the mailer unwired.
+/// An investor's money is answered by that investor, signed in, so nobody's proof of who
+/// asked is needed for it — and nothing is proposed to concierge.
 #[tokio::test]
-async fn the_consilium_mode_still_routes_a_fund_payment_to_the_old_path() {
+async fn an_investors_payment_needs_no_proof_of_who_asked() {
 	let _guard = exclusive().await;
-	let Some(a) = app("payment approvals rollback").await else { return };
-	reset(&a.pool).await;
-	let initiator = an_investor(&a.pool).await;
-	let rollback = payments_app::PaymentPorts {
-		approvals: PaymentApprovalModes::ALL_CONSILIUM,
-		..ports(&a)
-	};
-	let refused = payments_app::open(&rollback, initiator, fund_to_fee("5"), now()).await;
-	assert!(
-		matches!(refused, Err(DomainError::Conflict(ref why)) if why.contains("governance mail")),
-		"the old path needs its mailer: {refused:?}"
-	);
-	let seated = open_fund(&a, initiator, fund_to_fee("5"), Some(PROOF))
-		.await
-		.expect("the default path needs no governance mailer");
-	assert!(seated.concierge.is_some() && seated.consilium_id.is_none());
-
-	reset(&a.pool).await;
-}
-
-/// The defaults: fund money stays on the old path (no proof of who asked is needed or asked
-/// for), an investor's goes to their own answer in the wallet host.
-#[tokio::test]
-async fn by_default_fund_money_stays_on_the_consilium_and_an_investors_is_answered_in_the_wallet_host() {
-	let _guard = exclusive().await;
-	let Some(a) = app("payment approvals defaults").await else { return };
+	let Some(a) = app("payment approvals investor proof").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
 	fund(&a, LedgerAccountKey::UserClaim(investor), "100").await;
-	let defaults = payments_app::PaymentPorts {
-		approvals: PaymentApprovalModes::DEFAULT,
-		..ports(&a)
-	};
+	let payment_ports = ports(&a);
 	let round_ports = ApprovalRoundPorts {
-		payments: &defaults,
+		payments: &payment_ports,
 		store: &a.payments,
 		approvals: &a.concierge,
 		catalog: &a.catalog,
 	};
-
-	// Fund money: the old path, even with no token — and nothing is proposed to concierge.
-	let fund_order = open_with_proof(&round_ports, investor, fund_to_fee("5"), None, now()).await;
-	assert!(matches!(fund_order, Err(DomainError::Conflict(ref why)) if why.contains("governance mail")), "{fund_order:?}");
-	assert!(a.concierge.with(|s| s.approvals.is_empty()));
-
-	// An investor's money: their own answer, with no token of anyone's.
 	let own = open_with_proof(&round_ports, investor, investor_payment(investor, "5"), None, now()).await.unwrap();
-	assert!(own.session.is_some() && own.consent.is_none() && own.concierge.is_none());
+	assert!(matches!(own.seat, SeatView::Session(_)));
+	assert!(a.concierge.with(|s| s.approvals.is_empty()));
 
 	reset(&a.pool).await;
 }
@@ -1085,9 +1035,8 @@ async fn an_investors_payment_is_answered_in_the_wallet_host_and_settles_once() 
 
 	let view = payments_app::open(&ports(&a), stranger, investor_payment(investor, "30"), now()).await.expect("open the order");
 	let id = view.order.id();
-	assert!(view.session.is_some() && view.consent.is_none() && view.concierge.is_none() && view.consilium_id.is_none());
-	assert!((view.order.expires_at() - view.order.created_at() - TTL_SECS).abs() <= 2, "the consent window is the old one");
-	assert_eq!(mail_rows(&a.pool, id).await, 0, "no token, no code, no governance mail");
+	assert!(matches!(view.seat, SeatView::Session(_)));
+	assert!((view.order.expires_at() - view.order.created_at() - TTL_SECS).abs() <= 2, "a consent has 72 hours");
 	let queued = notices(&a.pool, id).await;
 	assert_eq!(queued.len(), 1);
 	let concierge_id: Uuid = sqlx::query_scalar("SELECT concierge_user_id FROM users WHERE id = $1")
@@ -1204,7 +1153,7 @@ async fn an_operators_reason_with_a_link_stays_out_of_the_notice() {
 				.fetch_one(&a.pool)
 				.await
 				.unwrap();
-			payments_app::cancel(&ports(a), id, investor, now()).await.unwrap();
+			payments_app::cancel(&a.payments, id, investor, now()).await.unwrap();
 			body
 		}
 	};
@@ -1240,7 +1189,7 @@ async fn an_expired_order_cannot_be_approved_by_a_late_answer() {
 	reset(&a.pool).await;
 }
 
-/// The pins of the emailed consent hold for the session one: sessions revoked after the order
+/// The pins hold for the session seat: sessions revoked after the order
 /// opened void it at the answer — the order fails closed and both audiences are told, through
 /// the inbox — and a revocation after the answer but before the money moves fails the
 /// execution and gives the reservation back.

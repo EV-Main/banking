@@ -364,12 +364,12 @@ async fn fund_valuation_derives_nav_and_guards_fat_finger() {
 	assert_eq!(v.nav, Nav::parse_decimal("1.5").unwrap());
 	assert_eq!(nav_repo.current(&service).await.unwrap().map(|v| v.nav).unwrap_or(Nav::SEED), Nav::parse_decimal("1.5").unwrap());
 
-	// A 10x fat-finger (AUM 1500 → NAV 15, +900%) is rejected, and the refusal names the
-	// only way past the guard. There is no flag on this path that lifts it (banking#232).
+	// A 10x fat-finger (AUM 1500 → NAV 15, +900%) is rejected. There is no flag on this
+	// path that lifts it (banking#232).
 	let err = funds_app::post_fund_valuation(&h.allocations, &nav_repo, h.ledger.as_ref(), service.clone(), usdt("1500"), "op", now_unix())
 		.await
 		.unwrap_err();
-	assert!(matches!(&err, DomainError::Validation(reason) if reason.contains("valuation-override consilium")), "got {err:?}");
+	assert!(matches!(&err, DomainError::Validation(reason) if reason.contains("exceeds 50%")), "got {err:?}");
 	assert_eq!(
 		nav_repo.current(&service).await.unwrap().unwrap().nav,
 		Nav::parse_decimal("1.5").unwrap(),
@@ -675,8 +675,7 @@ async fn queued_short_redemption(
 	funds_app::subscribe(&fund_ports, subs, user, service.clone(), usdt("100"), now).await.unwrap();
 	common::drain_to_quiescence(&h.relay, &h.pool).await;
 	// Any AUM over the 100-unit supply moves the NAV past the guard here, and the guarded
-	// post has no flag to lift it any more — the mark is written through the shared writer
-	// the owners' override uses, which is exactly what an executed override would do.
+	// post has no flag to lift it — the mark is written through the unguarded shared writer.
 	funds_app::record_valuation(nav_repo, h.ledger.as_ref(), ValuationId::new(), service.clone(), usdt(aum), "op")
 		.await
 		.unwrap();
@@ -927,8 +926,8 @@ async fn back_to_back_settles_compound_the_cost_basis_reduction() {
 	assert_eq!(cost_basis(&positions, user, &service).await, Some(usdt("100")), "basis seeded by the subscribe");
 	assert_eq!(tracked_units(&h.pool, user, &service).await, Some(shares("100")), "units tracked on the projection");
 
-	// Mark NAV to 4 (AUM 400 / 100 units, a +300% move written through the shared writer —
-	// what an executed owners' override records) so each 30-unit redemption prices to 120
+	// Mark NAV to 4 (AUM 400 / 100 units, a +300% move written through the unguarded shared
+	// writer) so each 30-unit redemption prices to 120
 	// cash — above the fund's 100 claim — and stays Queued (no auto-settle).
 	funds_app::record_valuation(&nav_repo, h.ledger.as_ref(), ValuationId::new(), service.clone(), usdt("400"), "op")
 		.await

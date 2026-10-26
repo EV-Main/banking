@@ -1,44 +1,4 @@
 {
-  "admin.fees.basis.investedCapital": {
-    "en": "Invested capital",
-    "t": "Vốn đã đầu tư"
-  },
-  "admin.fees.basis.marketValue": {
-    "en": "Market value",
-    "t": "Giá trị thị trường"
-  },
-  "admin.fees.chargedOn": {
-    "en": "Charged on",
-    "t": "Tính trên"
-  },
-  "admin.fees.field.hurdle": {
-    "en": "Hurdle",
-    "t": "Ngưỡng sinh lời"
-  },
-  "admin.fees.field.management": {
-    "en": "Management",
-    "t": "Phí quản lý"
-  },
-  "admin.fees.field.performance": {
-    "en": "Performance",
-    "t": "Phí hiệu suất"
-  },
-  "admin.fees.period.annual": {
-    "en": "Annually",
-    "t": "Hằng năm"
-  },
-  "admin.fees.period.monthly": {
-    "en": "Monthly",
-    "t": "Hằng tháng"
-  },
-  "admin.fees.period.quarterly": {
-    "en": "Quarterly",
-    "t": "Hằng quý"
-  },
-  "admin.fees.period.semiAnnual": {
-    "en": "Every 6 months",
-    "t": "Mỗi 6 tháng"
-  },
   "approval.amount": {
     "en": "Amount",
     "t": "Số tiền"
@@ -70,14 +30,6 @@
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Bạn đã trả lời trước đó, và câu trả lời đó vẫn giữ nguyên. Một câu trả lời không thể thay đổi sau khi đã đưa ra."
-  },
-  "approval.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose.",
-    "t": "Cả hai câu trả lời đều cần mã từ email của bạn. Nhập mã một lần, rồi chọn."
-  },
-  "approval.decisionTitle": {
-    "en": "Your decision",
-    "t": "Quyết định của bạn"
   },
   "approval.expired.title": {
     "en": "The deadline for this request has passed",
@@ -135,61 +87,25 @@
     "en": "Opened",
     "t": "Mở lúc"
   },
-  "approval.openedBy": {
-    "en": "Opened by",
-    "t": "Người mở"
-  },
   "approval.payloadHash": {
     "en": "Request fingerprint",
     "t": "Dấu vân tay của yêu cầu"
-  },
-  "approval.payment.approve": {
-    "en": "Approve this payment",
-    "t": "Phê duyệt khoản thanh toán này"
-  },
-  "approval.payment.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Bạn đã phê duyệt khoản thanh toán này"
-  },
-  "approval.payment.decided.freshBody": {
-    "en": "Your answer has been recorded. There is nothing further to do here — the payment goes ahead once enough owners have agreed.",
-    "t": "Câu trả lời của bạn đã được ghi nhận. Không cần làm gì thêm ở đây — khoản thanh toán sẽ được thực hiện khi đủ chủ sở hữu đồng ý."
-  },
-  "approval.payment.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Bạn đã từ chối khoản thanh toán này"
   },
   "approval.payment.from": {
     "en": "From",
     "t": "Từ"
   },
-  "approval.payment.lead": {
-    "en": "{initiator} has asked to move money the fund owns, as set out below. Moving the fund's own money is never one person's decision, so it needs the owners to agree.",
-    "t": "{initiator} yêu cầu chuyển tiền thuộc sở hữu của quỹ như mô tả bên dưới. Việc chuyển tiền của quỹ không bao giờ là quyết định của một người, nên cần các chủ sở hữu đồng ý."
-  },
   "approval.payment.payloadHashHint": {
     "en": "The fingerprint is taken over the amount, both ends and the reason above. It is checked again before any money moves, so a request cannot be edited after you have agreed to it.",
     "t": "Dấu vân tay được tính trên số tiền, hai đầu và lý do ở trên. Nó được kiểm tra lại trước khi tiền được chuyển, nên yêu cầu không thể bị chỉnh sửa sau khi bạn đã đồng ý."
-  },
-  "approval.payment.reasonLabel": {
-    "en": "Reason given",
-    "t": "Lý do đưa ra"
   },
   "approval.payment.tier": {
     "en": "Tier",
     "t": "Cấp"
   },
-  "approval.payment.title": {
-    "en": "Approve a fund payment",
-    "t": "Phê duyệt một khoản thanh toán của quỹ"
-  },
   "approval.payment.to": {
     "en": "To",
     "t": "Tới"
-  },
-  "approval.reject": {
-    "en": "Reject",
-    "t": "Từ chối"
   },
   "approval.removal.about": {
     "en": "About",
@@ -267,38 +183,6 @@
     "en": "A request to end your ownership",
     "t": "Một yêu cầu kết thúc quyền sở hữu của bạn"
   },
-  "approval.retired.body": {
-    "en": "This kind of request is no longer handled on this page, so nothing here can be approved or rejected. If you expected to decide something, ask whoever opened the request.",
-    "t": "Loại yêu cầu này không còn được xử lý trên trang này, nên không có gì để phê duyệt hoặc từ chối ở đây. Nếu bạn đang chờ một yêu cầu cần quyết định, hãy hỏi người đã mở yêu cầu."
-  },
-  "approval.retired.title": {
-    "en": "This request is no longer available",
-    "t": "Yêu cầu này không còn khả dụng"
-  },
-  "approval.tally": {
-    "en": "{approvals} of {threshold, plural, one {# approval} other {# approvals}} so far",
-    "t": "{approvals} trên {threshold, plural, one {# chấp thuận} other {# chấp thuận}} cho đến nay"
-  },
-  "approval.tallyHint": {
-    "en": "More than half of the owners must approve before any money moves. You are one of them.",
-    "t": "Hơn một nửa số chủ sở hữu phải chấp thuận trước khi bất kỳ khoản tiền nào được chuyển. Bạn là một trong số họ."
-  },
-  "approval.tallyOwners": {
-    "en": "{owners, plural, one {# owner} other {# owners}} in total",
-    "t": "Tổng cộng {owners, plural, one {# chủ sở hữu} other {# chủ sở hữu}}"
-  },
-  "approval.unavailableBody": {
-    "en": "The terms of this payout didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Các điều khoản của khoản chi trả này chưa tới, nên ở đây không có gì để đồng ý và không có quyết định nào được đưa ra. Đây là sự cố phía chúng tôi, không phải liên kết của bạn. Hãy thử lại sau một lát."
-  },
-  "approval.unavailableTitle": {
-    "en": "We can't show this request",
-    "t": "Chúng tôi không thể hiển thị yêu cầu này"
-  },
-  "approval.votingAs": {
-    "en": "You are answering as {email}.",
-    "t": "Bạn đang trả lời với tư cách {email}."
-  },
   "auth.cabinet": {
     "en": "Cabinet",
     "t": "Cabinet"
@@ -342,82 +226,6 @@
   "auth.signedOutSub": {
     "en": "You've been signed out of your cabinet.",
     "t": "Bạn đã đăng xuất khỏi tài khoản của mình."
-  },
-  "consent.approve": {
-    "en": "Approve — move my money",
-    "t": "Đồng ý — chuyển tiền của tôi"
-  },
-  "consent.askedBy": {
-    "en": "Asked by",
-    "t": "Yêu cầu bởi"
-  },
-  "consent.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed. Nothing was approved and your money has not moved. Whoever asked can open a new request.",
-    "t": "Mã đã bị nhập sai quá nhiều lần nên liên kết đã bị đóng. Không có gì được phê duyệt và tiền của bạn chưa được chuyển. Người yêu cầu có thể mở một yêu cầu mới."
-  },
-  "consent.decided.approvedFresh": {
-    "en": "Your answer has been recorded and the payment goes ahead. There is nothing further to do here.",
-    "t": "Câu trả lời của bạn đã được ghi nhận và khoản thanh toán sẽ được thực hiện. Không cần làm gì thêm ở đây."
-  },
-  "consent.decided.approvedTitle": {
-    "en": "You approved this payment",
-    "t": "Bạn đã đồng ý khoản thanh toán này"
-  },
-  "consent.decided.rejectedFresh": {
-    "en": "Your answer has been recorded. Your money stays exactly where it is, and whoever asked has been told.",
-    "t": "Câu trả lời của bạn đã được ghi nhận. Tiền của bạn vẫn ở nguyên chỗ cũ, và người yêu cầu đã được thông báo."
-  },
-  "consent.decided.rejectedTitle": {
-    "en": "You rejected this payment",
-    "t": "Bạn đã từ chối khoản thanh toán này"
-  },
-  "consent.decisionLead": {
-    "en": "Both answers need the code from your email. Enter it once, then choose. Rejecting keeps your money exactly where it is.",
-    "t": "Cả hai câu trả lời đều cần mã trong email của bạn. Nhập một lần rồi chọn. Từ chối sẽ giữ nguyên tiền của bạn ở nơi hiện tại."
-  },
-  "consent.decisionTitle": {
-    "en": "Your decision",
-    "t": "Quyết định của bạn"
-  },
-  "consent.lead": {
-    "en": "{initiator} is asking for it to be moved as set out below. Nothing happens unless you agree — nobody else is asked, and nobody else can answer for you.",
-    "t": "{initiator} yêu cầu chuyển số tiền này như mô tả bên dưới. Không có gì xảy ra nếu bạn không đồng ý — không ai khác được hỏi, và không ai có thể trả lời thay bạn."
-  },
-  "consent.leadOwn": {
-    "en": "This is your money.",
-    "t": "Đây là tiền của bạn."
-  },
-  "consent.reasonLabel": {
-    "en": "Reason given by {initiator}",
-    "t": "Lý do do {initiator} đưa ra"
-  },
-  "consent.reject": {
-    "en": "Reject — keep my money",
-    "t": "Từ chối — giữ lại tiền của tôi"
-  },
-  "consent.title": {
-    "en": "Your money is asked to move",
-    "t": "Có yêu cầu chuyển tiền của bạn"
-  },
-  "consent.unavailableBody": {
-    "en": "The terms of this payment didn't arrive, so there is nothing here to agree to and no decision is offered. This is a problem on our side, not with your link. Try again in a moment.",
-    "t": "Các điều khoản của khoản thanh toán này chưa tải được, nên ở đây không có gì để đồng ý và không có quyết định nào được đưa ra. Đây là sự cố phía chúng tôi, không phải do liên kết của bạn. Hãy thử lại sau giây lát."
-  },
-  "consent.yourMoney": {
-    "en": "Whose money",
-    "t": "Tiền của ai"
-  },
-  "consilium.feePolicy.nothingCharged": {
-    "en": "Nothing charged",
-    "t": "Không thu phí"
-  },
-  "consilium.feePolicy.now": {
-    "en": "Now",
-    "t": "Hiện tại"
-  },
-  "consilium.feePolicy.proposed": {
-    "en": "Proposed",
-    "t": "Đề xuất"
   },
   "err.authNotConfigured": {
     "en": "Sign-in is unavailable right now. Please try again shortly.",
@@ -486,18 +294,6 @@
   "err.verificationRequired": {
     "en": "Verify your identity to continue.",
     "t": "Xác minh danh tính để tiếp tục."
-  },
-  "invest.lockedIn": {
-    "en": "Locked in",
-    "t": "Đã chốt"
-  },
-  "invest.ofTheGain": {
-    "en": "{pct} of the gain",
-    "t": "{pct} của phần lãi"
-  },
-  "invest.perAnnum": {
-    "en": "{pct} p.a.",
-    "t": "{pct}/năm"
   },
   "kyc.chip.attention": {
     "en": "Needs attention",
@@ -659,77 +455,9 @@
     "en": "Queued",
     "t": "Đang chờ"
   },
-  "payment.consent.approve": {
-    "en": "Consented",
-    "t": "Đã đồng ý"
-  },
-  "payment.consent.invalidated": {
-    "en": "Consent void",
-    "t": "Sự đồng ý đã vô hiệu"
-  },
-  "payment.consent.pending": {
-    "en": "Awaiting the investor",
-    "t": "Đang chờ nhà đầu tư"
-  },
-  "payment.consent.reject": {
-    "en": "Declined",
-    "t": "Đã từ chối"
-  },
-  "payment.consent.unsent": {
-    "en": "Email not yet sent",
-    "t": "Email chưa được gửi"
-  },
   "payment.end.fullAddress": {
     "en": "Show the full address",
     "t": "Hiện địa chỉ đầy đủ"
-  },
-  "payment.requirement.hint.owner_consilium": {
-    "en": "Fund-owned money: more than half of the owners must confirm from their mailboxes.",
-    "t": "Tiền của quỹ: hơn một nửa chủ sở hữu phải xác nhận từ hộp thư của họ."
-  },
-  "payment.requirement.hint.subject_consent": {
-    "en": "An investor's own money: that investor alone is emailed and must agree.",
-    "t": "Tiền riêng của nhà đầu tư: chỉ nhà đầu tư đó nhận email và phải đồng ý."
-  },
-  "payment.requirement.owner_consilium": {
-    "en": "Owners' consilium",
-    "t": "Hội đồng chủ sở hữu"
-  },
-  "payment.requirement.subject_consent": {
-    "en": "The investor's consent",
-    "t": "Sự đồng ý của nhà đầu tư"
-  },
-  "payment.state.approved": {
-    "en": "Approved",
-    "t": "Đã duyệt"
-  },
-  "payment.state.cancelled": {
-    "en": "Cancelled",
-    "t": "Đã huỷ"
-  },
-  "payment.state.executed": {
-    "en": "Executed",
-    "t": "Đã thực hiện"
-  },
-  "payment.state.execution_failed": {
-    "en": "Execution failed",
-    "t": "Thực hiện thất bại"
-  },
-  "payment.state.expired": {
-    "en": "Expired",
-    "t": "Đã hết hạn"
-  },
-  "payment.state.pending": {
-    "en": "Pending",
-    "t": "Đang chờ"
-  },
-  "payment.state.rejected": {
-    "en": "Rejected",
-    "t": "Bị từ chối"
-  },
-  "payment.tier.external": {
-    "en": "External",
-    "t": "Bên ngoài"
   },
   "payment.tier.hint.external": {
     "en": "Out to an on-chain address. Ships as a withdrawal once approved.",
@@ -742,14 +470,6 @@
   "payment.tier.hint.service": {
     "en": "Into one of the fund's products, as its pooled claim.",
     "t": "Vào một sản phẩm của quỹ, dưới dạng tài khoản gộp của nó."
-  },
-  "payment.tier.internal": {
-    "en": "Internal",
-    "t": "Nội bộ"
-  },
-  "payment.tier.service": {
-    "en": "To a product",
-    "t": "Vào sản phẩm"
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

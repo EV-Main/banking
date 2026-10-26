@@ -38,7 +38,7 @@ use crate::ports::allocations::{AllocationAccessGrant, AllocationRecord, Allocat
 pub(crate) fn refuse_on_reserved(service: &ServiceId) -> Result<(), DomainError> {
 	if service.is_reserved() {
 		return Err(DomainError::Forbidden(format!(
-			"'{service}' is a reserved allocation: its holders are seated by the owners' consilium, and its state, access, backing and cap are not an operator's to change"
+			"'{service}' is a reserved allocation: its state, access, backing and cap are not an operator's to change"
 		)));
 	}
 	Ok(())

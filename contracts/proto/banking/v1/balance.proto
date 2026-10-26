@@ -17,7 +17,7 @@ import "banking/v1/funds.proto";
 // and what they were seeded with is the `fund` allocation's, and both are held by PEOPLE
 // through units — so the treasury lists every allocation with its holders, and nothing
 // here pays "the fund" out. Cash leaves a reserved allocation by a holder's redemption
-// or by a payment the owners' consilium approved (`PaymentsService`). banking's own money
+// or by a payment the owners approved (`PaymentsService`). banking's own money
 // is its treasury, `scope_account:main:treasury` (D17): the withdrawal fees it keeps, which
 // nothing pays out until concierge's scope approvals decide its spending
 // (`bank:treasury_surplus`, D24).
@@ -25,18 +25,6 @@ service BalanceService {
   // The treasury: per-rail on-chain liquidity (Layer 2) and the claims it backs
   // (Layer 1), read live from TigerBeetle (Read-First).
   rpc GetTreasury(GetTreasuryRequest) returns (Treasury);
-
-  // Propose a seed of the platform's capital: a transfer that reached a rail's treasury
-  // address from outside, PROVEN against the chain, to be booked as the depositor's
-  // deposit and subscribed into the `fund` allocation — units of `fund` for the person
-  // whose money it was. This OPENS A CONSILIUM and books nothing: the chain proves the
-  // dollar arrived, it cannot say whose it is, and the first administrator to name a
-  // reference must not be the one who decides. The caller must hold an owner seat. The
-  // arrival is verified now (same verification as RecordDeposit, against
-  // `expected_amount`); a transfer to a user's deposit address is that user's deposit
-  // and is refused (record it with RecordDeposit); the sweep is refused; a reference
-  // already recorded is a conflict.
-  rpc SeedCapital(SeedCapitalRequest) returns (SeedCapitalResponse);
 
   // Record a settled on-chain deposit, crediting a party's claim. Idempotent by
   // `tx_ref` — recording the same chain tx twice credits once.
@@ -59,9 +47,7 @@ service BalanceService {
   // Post a fund's total AUM; NAV is derived = AUM / units_outstanding (units read live
   // from TigerBeetle). Rejects zero units and a NAV move beyond the safety threshold —
   // measured against BOTH the previous mark and the mark that anchored the rolling
-  // window, so the cap cannot be walked past in steps. There is NO per-request override:
-  // a move past the cap is put to the owners through
-  // `ConsiliumService.OpenValuationOverride`, and only an executed consilium records it.
+  // window, so the cap cannot be walked past in steps. There is NO override.
   rpc PostFundValuation(PostFundValuationRequest) returns (FundNav);
 
   // Settle a queued fund redemption once the fund's claim is liquid (the treasury
@@ -310,42 +296,6 @@ message Treasury {
   string held_in_compartments = 11;     // Σ users' scope compartments — still people's
 }
 
-// Propose a seed: a transfer that reached a rail's treasury, PROVEN against the chain,
-// as `depositor_user_id`'s deposit and subscription into `fund`.
-//
-// Like RecordDepositRequest the caller supplies only a pointer to a fact: the transfer
-// must have landed on the rail's treasury address from a sender outside every wallet we
-// control. A transfer to a user's deposit address is that user's deposit, not a seed —
-// refused, use RecordDeposit. The sweep consolidating a user's address into the treasury
-// is money already on the ledger — refused. Unlike RecordDeposit the amount is UNDER THE
-// OWNERS' SIGNATURE: `expected_amount` is required, checked against the chain now, and
-// frozen into the terms the owners vote over.
-message SeedCapitalRequest {
-  string network = 1;  // bep20 | polygon | trc20 | ton — the rail the capital lands on
-  // The amount was once caller-supplied — a free credit of `fund` with no dedup key
-  // (issue #234). The chain is the only source for it now.
-  reserved 2;
-  reserved "amount";
-  string tx_ref = 3;  // `txhash:logIndex` (EVM) | `txhash:recipient` (TON) — verified, and the idempotency key
-  // REQUIRED, decimal USDT: what the chain must report for this reference. A seed is
-  // proposed at a figure the owners approve, not at "whatever the chain says" — a
-  // mistyped reference naming some other real transfer fails here, loudly.
-  string expected_amount = 4;
-  // Whose money it is: the person booked as depositor and seated as a holder of `fund`.
-  // A banking (or concierge) user id, resolved the way every admin RPC resolves a
-  // target. Empty means the caller — an owner attributing their own transfer.
-  string depositor_user_id = 5;
-}
-
-// A seed is a consilium, not a write: `recorded` is always false here — nothing is
-// booked until the owners' quorum executes it — and `consilium_id` is where the
-// proposal lives (`ConsiliumService.GetConsilium`).
-message SeedCapitalResponse {
-  bool recorded = 1;        // always false: the booking is the consilium's execution
-  string amount = 2;        // what the terms carry, decimal USDT — verified against the chain
-  string consilium_id = 3;  // the seed-capital consilium this opened
-}
-
 // Record an arrival that reached a rail out of band, PROVEN against the chain.
 //
 // The caller supplies only a pointer to a fact: the reference is read back from the chain
@@ -367,8 +317,7 @@ message RecordDepositRequest {
 
 // The chain names the owner of the deposit address the transfer landed on, so the
 // credited party is always a PERSON: `party_kind` is `user` and `party_id` their banking
-// id. A transfer to the treasury address is nobody's until the owners say whose — it is
-// refused here and attributed through `SeedCapital`.
+// id. A transfer to the treasury address is nobody's — it is refused here.
 message RecordDepositResponse {
   bool recorded = 1;      // false if `tx_ref` was already recorded (idempotent no-op)
   string amount = 2;      // what the CHAIN reported, decimal USDT — never the caller's number

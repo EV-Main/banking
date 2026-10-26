@@ -37,46 +37,6 @@ service FeesService {
   // Every configured policy, ordered by service. Readable by any authenticated user.
   rpc ListFeePolicies(ListFeePoliciesRequest) returns (FeePolicyList);
 
-  // Propose a change of a fund's terms (AllocationManage — the same trust seam as
-  // bringing the product into existence or posting its valuation). The service must
-  // already be a registered allocation. Rates are basis points, capped at 500
-  // (management, 5% p.a.) and 5000 (performance, 50% of the gain); the hurdle at 10000.
-  //
-  // A policy is never edited in place. The change is recorded with a version and takes
-  // effect no earlier than 24h after it was scheduled while anyone holds units (at once
-  // for a fund with no holders); `effective_from` may ask for later, never earlier. A
-  // change that TIGHTENS the terms beyond the house envelope (2-and-20 on invested
-  // capital, annual) needs the owners' consilium, which the caller must be an owner to
-  // open, and `reason` is then required; every other change is scheduled at once. The
-  // holders are mailed when the change is scheduled. One pending change per fund: a
-  // second is refused with ALREADY_EXISTS until the first is cancelled.
-  rpc ScheduleFeePolicy(ScheduleFeePolicyRequest) returns (FeePolicyChange);
-
-  // Withdraw a pending change (AllocationManage). One still awaiting the owners takes its
-  // consilium down with it. Idempotent on an already-cancelled change.
-  rpc CancelFeePolicyChange(CancelFeePolicyChangeRequest) returns (FeePolicyChange);
-
-  // Take responsibility for the holders of a scheduled change who could not be told
-  // (AllocationManage, AND the caller must be the one who requested the change or a fund
-  // owner). A change that TIGHTENS the terms does not bind while a holder's notice is
-  // undelivered; for a holder the identity plane can never reach that is forever. This
-  // records who acknowledged, when, and exactly which holders' notices the mailer had
-  // GIVEN UP on by that moment (`notices_given_up`, never a notice still being tried), and
-  // the change then binds over those holders — and over nobody else who turns out untold
-  // later. A later call ADDS the holders given up on since (`notices_unacknowledged`) and
-  // stands as the latest: its caller and moment replace the record's, taking
-  // responsibility for the whole list. A repeat that would add nobody returns the record
-  // unchanged. ALREADY_EXISTS when the change is not scheduled, only loosens the terms (it
-  // binds by itself), or has no notice given up on yet that is not already covered —
-  // there is nothing to take responsibility for; PERMISSION_DENIED for a caller who is
-  // neither the requester nor an owner.
-  rpc AcknowledgeUndeliveredNotices(AcknowledgeUndeliveredNoticesRequest) returns (FeePolicyChange);
-
-  // A fund's whole history of terms, newest version first. Readable by any
-  // authenticated user — the terms one is on, and how they came to be, are public
-  // information about a product.
-  rpc ListFeePolicyChanges(ListFeePolicyChangesRequest) returns (FeePolicyChangeList);
-
   // The caller's own fee statement, newest first — every charge, what it was for, and
   // anything that deferred.
   rpc ListFeeAssessments(ListFeeAssessmentsRequest) returns (FeeAssessmentList);
@@ -126,9 +86,8 @@ message FeePolicy {
   uint32 version = 9;
   // Unix seconds since which these terms bind; 0 when unconfigured.
   int64 effective_from = 10;
-  // The change on its way, if any — awaiting the owners or scheduled. Shown to holders
-  // and non-holders alike: the terms coming are part of deciding whether to stay in.
-  FeePolicyChange pending = 11;
+  reserved 11;
+  reserved "pending";
 }
 
 message FeePolicyList {
@@ -140,88 +99,6 @@ message GetFeePolicyRequest {
 }
 
 message ListFeePoliciesRequest {}
-
-message ScheduleFeePolicyRequest {
-  string service = 1;
-  uint32 management_bps = 2;
-  uint32 performance_bps = 3;
-  uint32 hurdle_bps = 4;
-  string basis = 5;
-  string crystallization = 6;
-  // Unix seconds the change should bind from; 0 = as soon as the notice period allows.
-  // An earlier request than the notice allows is lifted to the minimum, not refused.
-  int64 effective_from = 7;
-  // Why, in the requester's words. Required and non-empty when the owners must approve
-  // (the approval mail is refused without one); optional otherwise. Shown verbatim.
-  string reason = 8;
-}
-
-message CancelFeePolicyChangeRequest {
-  string service = 1;
-  string change_id = 2;
-}
-
-message AcknowledgeUndeliveredNoticesRequest {
-  string service = 1;
-  string change_id = 2;
-}
-
-message ListFeePolicyChangesRequest {
-  string service = 1;
-}
-
-// One row of a fund's fee-policy history. `state` is one of awaiting_consilium |
-// scheduled | active | superseded | rejected | cancelled; `requirement` is admin |
-// owner_consilium. See docs/FEES.md § "Changing the terms".
-message FeePolicyChange {
-  string id = 1;
-  string service = 2;
-  uint32 version = 3;
-  string state = 4;
-  uint32 management_bps = 5;
-  uint32 performance_bps = 6;
-  uint32 hurdle_bps = 7;
-  string basis = 8;
-  string crystallization = 9;
-  // Unix seconds the terms bind from. Provisional while awaiting the owners; fixed when
-  // the change is scheduled.
-  int64 effective_from = 10;
-  string requirement = 11;
-  // The consilium this change waits on (or waited on); empty for an administrator's change.
-  string consilium_id = 12;
-  string requested_by = 13;
-  int64 requested_at = 14;
-  // Unix seconds the notice clock started; 0 while awaiting the owners.
-  int64 scheduled_at = 15;
-  // Unix seconds the terms took effect; 0 until they did.
-  int64 applied_at = 16;
-  // Why, in the requester's words; empty when none was given.
-  string reason = 17;
-  // The operator's acknowledgement of holders who could not be told (see
-  // AcknowledgeUndeliveredNotices): who took responsibility — the latest to, when the
-  // record was extended — governance detail, shown to operators and blank for everyone
-  // else.
-  string notices_waived_by = 18;
-  // Unix seconds the (latest) acknowledgement was given; 0 when the notices were never
-  // waived. Public like every other moment on the change.
-  int64 notices_waived_at = 19;
-  // The ids of the holders whose notice the mailer had given up on by that moment — the
-  // holders the change binds over untold. Operators only; empty for everyone else.
-  repeated string notices_waived_users = 20;
-  // Notices of this change not yet delivered to a CURRENT holder, how many of those the
-  // mailer has given up on — the figures a tightening waits on — and how many of the
-  // given-up ones the acknowledgement does not cover (all of them while there is none):
-  // the holders a (further) AcknowledgeUndeliveredNotices would name, so it is worth
-  // offering exactly while this is non-zero. Counted only while `scheduled` (0 in every
-  // other state), and shown to operators only.
-  uint32 undelivered_notices = 21;
-  uint32 notices_given_up = 22;
-  uint32 notices_unacknowledged = 23;
-}
-
-message FeePolicyChangeList {
-  repeated FeePolicyChange changes = 1;
-}
 
 // One charge against one holding. `due` and `charged_cash` differ exactly when the
 // holding could not cover the charge and the rest deferred into `debt_carried`.

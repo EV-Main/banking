@@ -1,14 +1,10 @@
-//! `payments` context — the two gRPC surfaces of the payment order.
+//! `payments` context — the two gRPC surfaces of the payment order, both behind the user-auth
+//! layer.
 //!
-//! [`PaymentsSvc`] sits **behind** the user-auth layer and is Admin/Owner-only: opening,
-//! reading and withdrawing an order are things a signed-in operator does. What an order then
-//! NEEDS — the owners' quorum, or the investor's consent — is seated by the application layer
-//! from the order's source; there is no RPC that skips it.
-//!
-//! [`PaymentConsentSvc`] is mounted **outside** it, exactly as `ConsiliumApprovalService` is.
-//! The emailed token IS the credential there, and the investor clicking a link in their
-//! mailbox may well not be signed in. Everything that surface returns is deliberately narrow,
-//! and every unusable token leaves by the same door.
+//! [`PaymentsSvc`] is Admin/Owner-only: opening, reading and withdrawing an order are things a
+//! signed-in operator does. What an order then NEEDS — the owners' approval, or the investor's
+//! consent — is seated by the application layer from the order's source; there is no RPC that
+//! skips it. [`PaymentConfirmationSvc`] is the investor's side: the caller is the subject.
 //!
 //! `Result<_, Status>` is tonic's mandated handler signature; `Status` is a large type we
 //! don't control, so the large-err lint does not apply in this module.
@@ -22,16 +18,14 @@ use domain::{
 	payments::{PaymentDestination, PaymentId, PaymentReason, PaymentState, PaymentTerms},
 	users::{ConciergeUserId, UserId, mask_email},
 };
-use evbanking_contracts::banking::v1::{
-	self as pb, payment_confirmation_service_server::PaymentConfirmationService, payment_consent_service_server::PaymentConsentService, payments_service_server::PaymentsService,
-};
+use evbanking_contracts::banking::v1::{self as pb, payment_confirmation_service_server::PaymentConfirmationService, payments_service_server::PaymentsService};
 use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use crate::{
 	AppState,
 	application::{payment_approvals, payments as payments_app},
-	ports::payments::{ConsentAudit, ConsentDecision, ConsentInvitation, EndDetail, PaymentFilter, PaymentView},
+	ports::payments::{ConsentAudit, ConsentDecision, EndDetail, PaymentFilter, PaymentView, SeatView},
 	services::support::{MAX_AUDIT_IP_BYTES, MAX_AUDIT_USER_AGENT_BYTES, caller_id, clamp, map_err, require_permission, unfrozen_caller, unix_now},
 };
 
@@ -61,22 +55,10 @@ impl PaymentConfirmationSvc {
 	}
 }
 
-#[derive(Clone)]
-pub struct PaymentConsentSvc {
-	pub state: AppState,
-}
-
-impl PaymentConsentSvc {
-	pub fn new(state: AppState) -> Self {
-		Self { state }
-	}
-}
-
 impl AppState {
 	fn payment_ports(&self) -> payments_app::PaymentPorts<'_> {
 		payments_app::PaymentPorts {
 			payments: self.payments.as_ref(),
-			consilia: self.consilia.as_ref(),
 			users: self.users.as_ref(),
 			withdrawals: self.withdrawals.as_ref(),
 			ledger: self.ledger.as_ref(),
@@ -86,10 +68,6 @@ impl AppState {
 			relay: &self.relay_notify,
 			configured: &self.configured_networks,
 			kyc: self.kyc_gate,
-			approval_url_base: &self.consilium_approval_url_base,
-			consent_url_base: &self.payment_consent_url_base,
-			governance_mail_wired: crate::infrastructure::governance_mail::is_wired(),
-			approvals: self.payment_approvals,
 		}
 	}
 
@@ -247,40 +225,25 @@ fn payment_to_proto(view: &PaymentView) -> pb::Payment {
 		requirement: order.requirement().as_str().to_owned(),
 		payload_hash: order.payload_hash_hex(),
 		initiator_email: view.initiator_email.clone(),
-		consilium_id: view.consilium_id.map(|id| id.to_string()).unwrap_or_default(),
-		consent: view.consent.as_ref().map(|consent| pb::PaymentConsent {
-			subject_email: mask_email(&consent.email),
-			decision: decision_to_proto(consent.decision),
-			notified: consent.notified,
-			attempts_remaining: consent.attempts_remaining,
-			invalidated: consent.invalidated.is_some(),
-			invalidation_reason: consent.invalidated.map(|cause| cause.to_string()).unwrap_or_default(),
-		}),
 		created_at: order.created_at(),
 		expires_at: order.expires_at(),
 		decided_at: order.decided_at().unwrap_or_default(),
 		executed_withdrawal_id: order.executed_withdrawal_id().map(|id| id.to_string()).unwrap_or_default(),
 		failure_reason: order.failure_reason().unwrap_or_default().to_owned(),
 		version: order.version(),
-		seat: seat_name(view).to_owned(),
-		approval_id: view.concierge.as_ref().and_then(|seat| seat.approval_id.clone()).unwrap_or_default(),
-		session_decision: view.session.as_ref().map(|session| decision_to_proto(session.decision)).unwrap_or_default(),
-	}
-}
-
-/// Which seat decides the order — the wire's `Payment.seat`. A row with none is one written
-/// before seats were recorded.
-fn seat_name(view: &PaymentView) -> &'static str {
-	if view.consilium_id.is_some() {
-		"consilium"
-	} else if view.consent.is_some() {
-		"consent"
-	} else if view.concierge.is_some() {
-		"concierge_approval"
-	} else if view.session.is_some() {
-		"session"
-	} else {
-		""
+		seat: match view.seat {
+			SeatView::Concierge(_) => "concierge_approval",
+			SeatView::Session(_) => "session",
+		}
+		.to_owned(),
+		approval_id: match &view.seat {
+			SeatView::Concierge(seat) => seat.approval_id.clone().unwrap_or_default(),
+			SeatView::Session(_) => String::new(),
+		},
+		session_decision: match &view.seat {
+			SeatView::Session(session) => decision_to_proto(session.decision),
+			SeatView::Concierge(_) => pb::ConsentDecision::Unspecified as i32,
+		},
 	}
 }
 
@@ -300,35 +263,19 @@ fn confirmation_to_proto(view: &PaymentView) -> pb::PaymentConfirmation {
 		payload_hash: order.payload_hash_hex(),
 		initiator_email: mask_email(&view.initiator_email),
 		expires_at: order.expires_at(),
-		decision: view.session.as_ref().map(|session| decision_to_proto(session.decision)).unwrap_or_default(),
-		invalidated: view.session.as_ref().is_some_and(|session| session.invalidated.is_some()),
+		decision: match &view.seat {
+			SeatView::Session(session) => decision_to_proto(session.decision),
+			SeatView::Concierge(_) => pb::ConsentDecision::Unspecified as i32,
+		},
+		invalidated: view.consent_invalidated().is_some(),
 		// Empty on purpose: the order's reason is the operators' wording (a domain error, a
 		// pin), not text for the person whose money it is; the page words the failure itself.
 		failure_reason: String::new(),
 	}
 }
 
-fn invitation_to_proto(view: &ConsentInvitation) -> pb::PaymentConsentInvitation {
-	let terms = view.order.terms();
-	pb::PaymentConsentInvitation {
-		payment_id: view.payment_id.to_string(),
-		state: state_to_proto(view.state),
-		tier: terms.tier().as_str().to_owned(),
-		source: Some(source_to_proto(terms)),
-		destination: Some(destination_to_proto(terms, view.destination_detail.as_ref())),
-		amount: terms.amount().to_decimal_string(),
-		reason: terms.reason().as_str().to_owned(),
-		payload_hash: view.payload_hash.clone(),
-		initiator_email: mask_email(&view.initiator_email),
-		subject_email: mask_email(&view.subject_email),
-		expires_at: view.expires_at,
-		decision: decision_to_proto(view.decision),
-		attempts_remaining: view.attempts_remaining,
-	}
-}
-
-/// The single answer every unusable token gets. Unknown, expired, spent, burned and closed
-/// are one response with one message, so the surface cannot be probed for live tokens.
+/// The single answer for an order the caller cannot answer: not theirs, not seated on their
+/// answer, or not there are one response with one message, so the surface cannot be probed.
 fn consent_err(err: DomainError) -> Status {
 	match err {
 		DomainError::NotFound { .. } => Status::not_found("invitation"),
@@ -351,19 +298,16 @@ impl PaymentsService for PaymentsSvc {
 		let reason = PaymentReason::new(req.reason).map_err(map_err)?;
 		let terms = PaymentTerms::new(source, destination, amount, reason).map_err(map_err)?;
 		let payment_ports = self.state.payment_ports();
-		let view = match &self.state.payment_proposer {
-			Some(proposer) => {
-				let ports = payment_approvals::ApprovalRoundPorts {
-					payments: &payment_ports,
-					store: proposer.store.as_ref(),
-					approvals: proposer.approvals.as_ref(),
-					catalog: proposer.catalog.as_ref(),
-				};
-				payment_approvals::open_with_proof(&ports, initiator, terms, proof_token.as_deref(), unix_now()).await
-			}
-			None => payments_app::open(&payment_ports, initiator, terms, unix_now()).await,
-		}
-		.map_err(map_err)?;
+		let proposer = &self.state.payment_proposer;
+		let ports = payment_approvals::ApprovalRoundPorts {
+			payments: &payment_ports,
+			store: proposer.store.as_ref(),
+			approvals: proposer.approvals.as_ref(),
+			catalog: proposer.catalog.as_ref(),
+		};
+		let view = payment_approvals::open_with_proof(&ports, initiator, terms, proof_token.as_deref(), unix_now())
+			.await
+			.map_err(map_err)?;
 		// WARN on success on purpose: a proposal to move money between two named ends is
 		// worth an audit line that stands out, the same way a payout proposal is.
 		tracing::warn!(
@@ -409,7 +353,7 @@ impl PaymentsService for PaymentsSvc {
 		require_permission(&self.state, &request, bank::Payment::Open).await?;
 		let caller = caller_id(&request)?;
 		let id = parse_payment_id(&request.get_ref().payment_id)?;
-		let view = payments_app::cancel(&self.state.payment_ports(), id, caller, unix_now()).await.map_err(map_err)?;
+		let view = payments_app::cancel(self.state.payments.as_ref(), id, caller, unix_now()).await.map_err(map_err)?;
 		Ok(Response::new(payment_to_proto(&view)))
 	}
 }
@@ -458,54 +402,6 @@ impl PaymentConfirmationService for PaymentConfirmationSvc {
 	}
 }
 
-#[tonic::async_trait]
-impl PaymentConsentService for PaymentConsentSvc {
-	async fn get_consent_invitation(&self, request: Request<pb::GetConsentInvitationRequest>) -> Result<Response<pb::PaymentConsentInvitation>, Status> {
-		// STRICTLY side-effect free. Mail scanners fetch every URL in a message; if this
-		// counted an attempt or spent the token, a corporate gateway would destroy an
-		// investor's consent before they ever read the mail.
-		let view = payments_app::invitation(self.state.payments.as_ref(), &request.get_ref().token, unix_now())
-			.await
-			.map_err(consent_err)?;
-		Ok(Response::new(invitation_to_proto(&view)))
-	}
-
-	async fn submit_consent(&self, request: Request<pb::SubmitConsentRequest>) -> Result<Response<pb::SubmitConsentResponse>, Status> {
-		let req = request.into_inner();
-		let decision = decision_from_proto(req.decision)?;
-		let audit = ConsentAudit {
-			client_ip: clamp(req.client_ip, MAX_AUDIT_IP_BYTES),
-			user_agent: clamp(req.user_agent, MAX_AUDIT_USER_AGENT_BYTES),
-		};
-		let outcome = payments_app::submit_consent(&self.state.payment_ports(), &req.token, &req.code, decision, &audit, unix_now())
-			.await
-			.map_err(consent_err)?;
-		let payment = &outcome.payment;
-		let terms = payment.order.terms();
-		// The answered seat, rendered as the invitation the same page showed before — with
-		// the state the answer left the order in.
-		let invitation = pb::PaymentConsentInvitation {
-			payment_id: payment.order.id().to_string(),
-			state: state_to_proto(payment.order.state()),
-			tier: terms.tier().as_str().to_owned(),
-			source: Some(source_to_proto(terms)),
-			destination: Some(destination_to_proto(terms, payment.destination_detail.as_ref())),
-			amount: terms.amount().to_decimal_string(),
-			reason: terms.reason().as_str().to_owned(),
-			payload_hash: payment.order.payload_hash_hex(),
-			initiator_email: mask_email(&payment.initiator_email),
-			subject_email: payment.consent.as_ref().map(|consent| mask_email(&consent.email)).unwrap_or_default(),
-			expires_at: payment.order.expires_at(),
-			decision: payment.consent.as_ref().map(|consent| decision_to_proto(consent.decision)).unwrap_or_default(),
-			attempts_remaining: payment.consent.as_ref().map(|consent| consent.attempts_remaining).unwrap_or_default(),
-		};
-		Ok(Response::new(pb::SubmitConsentResponse {
-			invitation: Some(invitation),
-			decided: outcome.decided,
-		}))
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -527,7 +423,7 @@ mod tests {
 	}
 
 	#[test]
-	fn every_unusable_token_produces_one_identical_answer() {
+	fn every_unanswerable_order_produces_one_identical_answer() {
 		let one = consent_err(crate::ports::payments::consent_not_found());
 		let two = consent_err(DomainError::NotFound {
 			entity: "consent",
