@@ -36,14 +36,10 @@ the withdrawal and it stays `queued` (and cancellable) until the treasury covers
 a rare check-then-act residue (the on-chain balance dropped between the dispatch-time read
 and the broadcast), not the norm — but the recovery below stays the same.
 
-Every queued or processing row is **a person's** withdrawal. The revenue payout that once
-rode this saga (the fund paying its own earnings out) was retired in #245 and removed in C-9:
-`WithdrawalSource::User` is the only source (`domain/src/withdrawals.rs`), the `withdrawals.source`
-CHECK admits only `user` (`0047_ownership_contract.sql`), and production held no revenue row
-when it was narrowed. The platform's earnings are the `fee` allocation; cash leaves it by a
-holder's redemption and their own withdrawal, or an owners' payment order from
-`service:fee` to an internal `user:` (`PaymentsService`), and a payment order's L1 withdrawal (opened
-out of an investor's own claim) is an ordinary user row here.
+A queued or processing row is **a person's** withdrawal (`WithdrawalSource::User`), or the
+treasury's for an approved payment order (`WithdrawalSource::Treasury`, named in
+`withdrawals.payment_id`) — none until D24 decides treasury spending. A payment order's L1
+withdrawal out of an investor's own claim is an ordinary user row here.
 
 ## A queued withdrawal that does not move: the new-address hold
 

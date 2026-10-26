@@ -5,13 +5,14 @@ the identities, the contracts, and the client shell; every other service lives i
 its own repo and talks **only to the hub, over gRPC**. Services never talk to each
 other — not directly, not even via a hub round trip.
 
-This repo began as a **scaffold**; the **money plane** is now implemented end to end —
-the `balance`, `withdrawals`, `subscriptions`, and `redemptions` bounded contexts, the
-TigerBeetle `Ledger` gateway (cash + a **fund-units / service-currency** ledger), and the
-transactional outbox + single-worker saga relay (see
-[`piggybank/core/PATTERNS.md`](../piggybank/core/PATTERNS.md)). Clients invest by buying
-fund **units** priced at NAV (value = units × NAV); the remaining domain/application areas
-stay documented placeholders until a feature explicitly asks.
+The hub is a **cash-only money plane**: its parties are people (`user:`), scope accounts,
+banking's own treasury and `clearing`. Units, allocations and valuations belong to the
+scopes' services (invest), which move their money through the scope ledger; every approval
+is concierge's or the investor's own. Implemented end to end: the `balance`, `withdrawals`,
+`payments` and `scopes` bounded contexts, the TigerBeetle `Ledger` gateway (one cash ledger),
+and the transactional outbox + single-worker saga relay (see
+[`piggybank/core/PATTERNS.md`](../piggybank/core/PATTERNS.md)); the remaining
+domain/application areas stay documented placeholders until a feature explicitly asks.
 
 ## Topology
 
@@ -27,7 +28,7 @@ stay documented placeholders until a feature explicitly asks.
    └──────────────────────────────────────────────────────────────────────────────┘
    browser ─HTTP─▶ wallet/frontend (Next.js) ─/api rewrite─▶ wallet/backend
      (the BFF) ─gRPC─▶ piggybank core (money) + concierge (identity, separate repo)
-   other service repos (separate): own logic, registered as allocations ─gRPC (evbanking_contracts)─▶ piggybank;
+   other service repos (separate): own logic, their scope's money in scope accounts ─gRPC (evbanking_contracts)─▶ piggybank;
      verify client tokens locally via evbanking_auth; own microfrontends mount into the wallet host.
 ```
 
@@ -62,7 +63,7 @@ cabinet-backend   → evbanking_contracts, evconcierge_contracts (git: EV-invest
 
 | Crate                                | Role                                                                                                                                            | wasm-safe |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `domain/`                            | Pure DDD types over `ev::architecture`; the bounded contexts (`balance`, `scopes`, `users`, `withdrawals`, `subscriptions`, `redemptions`, `book`, `auth`). Source of truth across platform. | **yes**   |
+| `domain/`                            | Pure DDD types over `ev::architecture`; the bounded contexts (`balance`, `scopes`, `scope_ledger`, `users`, `withdrawals`, `payments`, `auth`). Source of truth across platform. | **yes**   |
 | `evbanking_contracts` (`contracts/`) | gRPC wire contracts: tonic client+server stubs from `proto/`. Other repos import it for the client stubs.                                       | no        |
 | `evbanking_auth` (`piggybank/auth/`) | The auth **service** (issuance gRPC + in-process `Authorizer` channel) **and** the shared verification flow (JWKS verify + interceptor).        | no        |
 | `piggybank-core` (`piggybank/core/`) | The hub server: composition root that runs the core gRPC services and the auth service as in-process tasks; data-plane services + infra.        | no        |
@@ -77,13 +78,11 @@ dependency of `domain` — so `domain` stays wasm-safe for service frontends.
 
 | Context       | Owns                                                    | Authoritative store        |
 | ------------- | ------------------------------------------------------- | -------------------------- |
-| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. The allocations' money is the reserved `fee` / `fund` allocations, held by people through units (#245); banking's own is its treasury, `scope_account:main:treasury`, where the withdrawal fees land and the fees of every scope but invest are swept; it pays nothing out until concierge's scope approvals decide its spending (`bank:treasury_surplus`, D24) | TigerBeetle              |
+| `balance`       | the chart of accounts and the parties; the treasury/deposit reads. Banking's own money is its treasury, `scope_account:main:treasury`, where the withdrawal fees land and the fees of every scope but invest are swept; it pays nothing out until concierge's scope approvals decide its spending (`bank:treasury_surplus`, D24) | TigerBeetle              |
 | `scopes`        | a user's wallet split by scope: `main` (the user's claim) and a compartment per scope entered (`scope_claim`), moved between only by the user (`CompartmentService`); the scope registry and policies; scope accounts `(scope, label)` and who owns them | Postgres + TigerBeetle     |
-| `users`         | investor accounts and their investments                 | Postgres + TigerBeetle     |
+| `users`         | the bridge-mirrored person: concierge link, freeze, KYC tier, permissions | Postgres          |
 | `withdrawals`   | withdrawals to chain (accept-and-queue saga): a user's, or the treasury's for an approved payment | Postgres + TigerBeetle     |
-| `subscriptions` | buying fund units at NAV (the service currency, mint)   | Postgres + TigerBeetle     |
-| `redemptions`   | redeeming fund units to cash (accept-and-queue saga)    | Postgres + TigerBeetle     |
-| `book`          | the secondary market: holders trading an allocation's units with each other (orders, price-time matching, DvP settlement) | Postgres + TigerBeetle     |
+| `payments`      | payment orders out of a user's claim (their own consent in the wallet host) or the treasury (a concierge `bank:payment` approval) | Postgres + TigerBeetle     |
 | `auth`          | identities + token issuance/verification                | Postgres + Redis (central) |
 
 ## Contracts pipeline
@@ -192,7 +191,7 @@ the auth refresh Redis), the browser holds only the opaque session id + a readab
 (double-submit on mutations).
 
 **Wallet mutations: first-party, plus one host surface.** Every mutating wallet route
-(`/api/wallet/**`, `/api/funds/**`, the book) accepts only the first-party origin
+(`/api/wallet/**`) accepts only the first-party origin
 (`CABINET_WS_ORIGIN`) with the cookie double-submit. A scope host (`invest.`, `sa.`) may read
 the wallet cross-origin (`WALLET_CORS_ORIGINS`), and it acts only through the intent routes
 `GET /api/wallet/csrf`, `POST /api/wallet/intents` and `POST /api/wallet/intents/{id}/confirm`.
@@ -206,7 +205,7 @@ limits: [`WALLET-INTENTS.md`](./WALLET-INTENTS.md).
 which sign tokens under **separate** issuers and **distinct `aud`** (concierge `aud=concierge`
 vs. banking `aud=banking-core`). So the BFF keeps a token pair **per plane** in its session:
 the concierge pair authorizes identity RPCs (`UserDirectory`), the banking pair authorizes
-money RPCs (`WalletService`/`FundsService`/`OperationsService`). It forwards each plane its **own** token and never
+money RPCs (`WalletService`/`CompartmentService`/`OperationsService`). It forwards each plane its **own** token and never
 forwards one plane's token to the other — a leaked identity token therefore cannot move money.
 The trust direction is **exchange-based**: after the concierge sign-in, the BFF calls banking
 `AuthService.IssueUserToken` (authenticated by the shared `BANKING_ISSUANCE_TOKEN`, NOT a user
@@ -295,8 +294,7 @@ also allows direct gRPC-Web when latency demands it).
 
 Two consistency boundaries, never joined in one transaction:
 
-- **TigerBeetle = data plane** — authoritative money + fund units (balances,
-  transfers). Never bookkept a second time in Postgres.
+- **TigerBeetle = data plane** — authoritative money (balances, transfers). Never bookkept a second time in Postgres.
 - **Postgres = control plane** — metadata, the UUID↔u128 id-mapping, the domain
   event log + transactional outbox, and CQRS read projections.
 
@@ -364,27 +362,20 @@ is a **hard prerequisite** for any cross-plane token-trust: it must land **first
 
 **Money model.** Cash lives in TigerBeetle on one USDT ledger, in **two layers**:
 **treasury/custody** (debit-normal wallets, **per rail**) and **claims** (credit-normal
-`user:<id>` / `service:<id>` / `clearing` / `book_cash`, **network-agnostic** — one
-fungible balance per party). Every claim has a holder (#245): a person's directly, or an
-allocation's whose units people hold — the platform's own capital and earnings are the
-reserved `fund` and `fee` allocations (`service:fund`, `service:fee`), and the old
-singleton `fund` / `fee` claims are retired, replay-only until the ownership data
-migration empties them. The invariant is **global**: `sum(custody) == sum(claims)`; a deposit is a single
+`user:<id>` / `scope_claim:<scope>:<id>` / `scope_account:<scope>:<label>` / `clearing`,
+**network-agnostic** — one fungible balance per party and compartment). Every claim has a
+holder: a person, or a scope through its own accounts, banking's treasury among them. A
+retired kind's codes are data, not variants (`AccountCode::RETIRED`,
+`TransferCode::RETIRED`): TigerBeetle keeps its accounts and transfers forever, so the
+numbers are never reused, and value on a retired claim fails reconciliation. History of the
+removed paths is archived in schema `retired`. The invariant is **global**: `sum(custody) == sum(claims)`; a deposit is a single
 `Dr wallet:<net> / Cr claim` transfer (no external account). Network lives only at the
 custody + transaction edges. Per-rail liquidity is a treasury concern: a withdrawal on a
 short rail is **accepted and queued** (reserved against a `clearing` account, decoupled
 from any rail) until the treasury tops the rail up. Non-negativity is enforced by TB
-account flags.
-
-The **service currency** — fund **units** — lives on a separate TigerBeetle ledger
-(independent of cash; the two can't imbalance each other). A client subscribes cash and
-receives units priced at **NAV** (derived from an operator-posted AUM); value = units ×
-NAV, so profit is a rising NAV. Redemption is the same accept-and-queue shape as withdrawal
-(reserve a pending burn, price + pay the cash at settle-time NAV when the fund is liquid).
-Saga moves are idempotent by a stable `event_id` (deterministic TB transfer ids;
-reservations are two-phase pending with `timeout = 0`). Full chart of accounts, the
-fund-shares/NAV model, the queued withdrawal + redemption sagas, idempotency, and the
-authorization matrix: [`piggybank/core/PATTERNS.md`](../piggybank/core/PATTERNS.md).
+account flags. Saga moves are idempotent by a stable `event_id` (deterministic TB transfer
+ids; reservations are two-phase pending with `timeout = 0`). Full chart of accounts, the
+queued withdrawal saga, idempotency, and the authorization matrix: [`piggybank/core/PATTERNS.md`](../piggybank/core/PATTERNS.md).
 
 ## Run matrix
 

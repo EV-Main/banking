@@ -114,7 +114,7 @@ impl GasRunway {
 /// caller compares them without decoding anything.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InboundTransfer {
-	/// Who sent it. The only thing separating the fund's own capital injection from the
+	/// Who sent it. The only thing separating an outside arrival on the treasury from the
 	/// sweep consolidating money already on the ledger.
 	pub from: String,
 	/// Who received it — the address that decides which party gets credited.

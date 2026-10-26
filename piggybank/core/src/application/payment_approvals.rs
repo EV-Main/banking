@@ -20,7 +20,14 @@
 //! and the money each cost nothing.
 //!
 //! A step concierge does not answer is left for the next round; nothing here fails an order
-//! because concierge is away.
+//! because concierge is away. The decision's `execute_by` is stored with the seat, and an
+//! order is failed rather than executed past it.
+//!
+//! Concierge accepts the proof only if the token was minted within 120 seconds, and the
+//! wallet session renews its token only near expiry, so the console needs a forced renewal
+//! before it can open one. Until D24 decides treasury spending, `payments::open` refuses the
+//! order anyway. An investor's own money is never proposed here: it is seated on them and
+//! answered in the wallet host ([`payments::answer_consent`]).
 
 use std::sync::Arc;
 
@@ -151,7 +158,7 @@ fn proposed_payload(view: &PaymentView) -> Result<(Proposal, String), DomainErro
 	))
 }
 
-/// Open a payment as the RPC does: a fund-owned order needs the proof of who asked — their
+/// Open a payment as the RPC does: a treasury order needs the proof of who asked — their
 /// token, minted for this request — and is proposed with it right after it is stored; every
 /// other order opens as [`payments::open`] does and needs neither.
 pub async fn open_with_proof(ports: &ApprovalRoundPorts<'_>, initiator: UserId, terms: PaymentTerms, proof_token: Option<&str>, now: i64) -> Result<PaymentView, DomainError> {
@@ -176,7 +183,7 @@ pub async fn open_with_proof(ports: &ApprovalRoundPorts<'_>, initiator: UserId, 
 	propose_on_open(ports, &view, &proof, now).await
 }
 
-/// Open the approval of a fund-owned order that was just written, with the proof of who
+/// Open the approval of a treasury order that was just written, with the proof of who
 /// asked. Called by the request that wrote it, after the order is stored.
 ///
 /// Anything short of an opened, matching proposal closes the order and answers why: the

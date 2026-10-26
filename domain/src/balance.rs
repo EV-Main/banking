@@ -38,7 +38,7 @@ use crate::{
 	users::UserId,
 };
 
-/// A holder of value in (or a claim against) the fund — the party a deposit credits
+/// A holder of value on the platform — the party a deposit credits
 /// and a claim belongs to. Tagged for a self-describing JSON shape in event payloads
 /// and projections.
 ///
@@ -107,8 +107,8 @@ impl Party {
 /// The `*_id` column value of [`Party::Treasury`].
 const TREASURY_ID: &str = "main:treasury";
 
-/// Standalone ledger facts not tied to a Postgres aggregate — the fund's accounts
-/// live in TigerBeetle, so a deposit is recorded straight to
+/// Standalone ledger facts not tied to a Postgres aggregate — the accounts live in
+/// TigerBeetle, so a deposit is recorded straight to
 /// the outbox for the relay to move. Internally tagged for a self-describing payload.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -280,7 +280,7 @@ impl TransferCode {
 /// time: `ledger`, `code`, and the non-negative flag (all immutable in TB once set).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerAccountKey {
-	/// The fund's on-chain custody wallet for a rail (debit-normal asset). The only
+	/// The platform's on-chain custody wallet for a rail (debit-normal asset). The only
 	/// network-bearing account — per-rail liquidity (the treasury layer).
 	CryptoWallet(Network),
 	/// A user's single, network-agnostic claim (credit-normal). One account per user.
@@ -414,9 +414,8 @@ mod tests {
 
 	#[test]
 	fn the_retired_party_kinds_no_longer_read() {
-		// `piggybank` / `revenue` were the fund's own singleton claims (#245), `service` an
-		// allocation's pooled claim: none of them is a party any more, so a stray one is
-		// corrupt data and must say so rather than be mapped onto some live claim.
+		// Retired kinds: a stray one is corrupt data and must say so rather than be mapped
+		// onto some live claim.
 		for kind in ["piggybank", "revenue", "service"] {
 			assert!(Party::from_parts(kind, None).is_err(), "{kind} read as a party");
 			assert!(Party::from_parts(kind, Some("fee")).is_err(), "{kind} read as a party");

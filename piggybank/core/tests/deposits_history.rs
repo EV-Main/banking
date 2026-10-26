@@ -4,7 +4,7 @@
 //! so runs are isolated on shared infra.
 //!
 //! What's proven: only the caller's `party_kind='user'` rows are listed (another
-//! user's and the fund's own deposits are excluded), newest first, with amounts
+//! user's deposits are excluded), newest first, with amounts
 //! round-tripping through `Usdt`; an idempotent duplicate `record` does not duplicate
 //! the listing.
 
@@ -48,8 +48,7 @@ async fn list_by_user_returns_only_the_users_deposits_newest_first() {
 		.expect("age the older row");
 	assert!(deposits.record(newer.clone(), user, Network::Ton, usdt("7.25")).await.expect("record newer"));
 
-	// Another user's deposit may not appear in this user's history. (The seed's historical
-	// `piggybank` rows are the same case, pinned over a pre-0047 schema in `ownership_contract`.)
+	// Another user's deposit may not appear in this user's history.
 	assert!(deposits.record(unique_tx_ref(), other, Network::Bep20, usdt("3")).await.expect("record other user"));
 
 	let listed = deposits.list_by_user(user).await.expect("list");

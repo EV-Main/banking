@@ -9,9 +9,7 @@
 //! chain transaction and the amount and the credited party are read back from it. There
 //! is no path that credits a claim from a number an operator typed.
 //!
-//! Nothing here credits a claim nobody holds (#245). A deposit is always a person's:
-//! [`record_deposit`] takes a user, and the `deposits` CHECK says the same since migration
-//! 0047. USDT that reaches a treasury hot wallet from outside is somebody's, but WHOSE the
+//! A deposit is always a person's: [`record_deposit`] takes a user. USDT that reaches a treasury hot wallet from outside is somebody's, but WHOSE the
 //! chain cannot say, so it is refused rather than attributed by one administrator.
 
 use domain::{
@@ -34,7 +32,7 @@ use crate::ports::{
 /// enriched best-effort — `None` when the rail is unconfigured or the read failed.
 pub struct RailLiquidity {
 	pub network: Network,
-	/// Liquid on-chain USDT the fund holds in this rail's custody wallet.
+	/// Liquid on-chain USDT in this rail's custody wallet.
 	pub custody: Usdt,
 	/// The rail's treasury hot wallet — the operator funds USDT + gas here.
 	pub treasury_address: Option<String>,

@@ -35,8 +35,7 @@
 //! > out of banking's treasury requires the owners' approval, at every tier.
 //!
 //! [`PaymentTerms::requirement`] is that rule, and it is total over [`Party`] by
-//! construction. There is **no** "an admin may move money between fund-owned claims
-//! alone" cell: a security review found it turns three pre-existing single-actor
+//! construction. There is **no** "an admin may move treasury money alone" cell: a security review found it turns three pre-existing single-actor
 //! holes into a treasury-wide one, and deleting it is what makes payments add no new
 //! capability to an attacker. Do not reintroduce it.
 //!
@@ -315,7 +314,7 @@ impl PaymentState {
 	}
 
 	/// Whether the order still holds (or may yet take) its source claim — the predicate the
-	/// "one open payment per fund-owned source" index is written over.
+	/// "one open payment per treasury source" index is written over.
 	pub fn is_open(self) -> bool {
 		matches!(self, Self::Pending | Self::Approved)
 	}

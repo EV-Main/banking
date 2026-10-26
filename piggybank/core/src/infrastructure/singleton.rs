@@ -19,7 +19,7 @@ use sqlx::{PgPool, Postgres, pool::PoolConnection};
 /// new keys. The ASCII spelling is a debugging affordance — these show up in `pg_locks`.
 pub mod keys {
 	/// The payments sweeper.
-	pub const PAYMENTS_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64; // `EVBKCSW_`, the consilium sweeper's key: an older pod running that sweeper excludes this one
+	pub const PAYMENTS_SWEEPER: i64 = 0x4556_424b_4353_575f_u64 as i64; // `EVBKCSW_`, the key of the sweeper this replaced, so an older pod running that one excludes this one
 
 	/// ASCII `EVBKSCN_` — the scope-inbox notification worker.
 	pub const SCOPE_NOTIFICATIONS: i64 = 0x4556_424b_5343_4e5f_u64 as i64;

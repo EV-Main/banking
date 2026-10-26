@@ -574,7 +574,7 @@ async fn a_redelivered_half_applied_settle_completes_instead_of_parking() {
 	assert!(is_dispatched, "a redelivered half-applied settle must complete, not park (last_error = {last_error:?})");
 	assert!(!is_parked, "no spurious liquidity park on redelivery");
 
-	// All three legs recorded — the fee reached fee-revenue instead of stranding in clearing.
+	// All three legs recorded — the fee reached the treasury instead of stranding in clearing.
 	let legs: i64 = sqlx::query_scalar("SELECT count(*) FROM saga_steps WHERE event_id = (SELECT event_id FROM outbox WHERE aggregate_id = $1 AND payload->>'type' = 'settled')")
 		.bind(withdrawal.id().raw())
 		.fetch_one(&h.pool)

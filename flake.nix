@@ -247,7 +247,7 @@
         # string reaches `config.ts` as "unset", and the cabinet's analytics stays a no-op
         # (no posthog-js loaded, no `identify`, no events) rather than talking to a wrong
         # project. Must be the SAME key the site (site_conductor) uses, so one PostHog
-        # person carries a visitor from the landing to the first subscription.
+        # person carries a visitor from the landing to the first deposit.
         posthogKey = "phc_sBwWEgdgockVmfyucBRkTTo6iZ4Y2eApSGorD22WLzj3";
 
         # ── cabinet production image (Next.js standalone, npm workspace build) ──

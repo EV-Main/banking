@@ -389,7 +389,7 @@ async fn create_withdrawal(ports: &PaymentPorts<'_>, order: &PaymentOrder) -> Re
 }
 
 /// What the initiator and the approver are told when the effect could not be created — the
-/// fund's own vocabulary verbatim, an infrastructure detail replaced by one fixed sentence
+/// domain's own wording verbatim, an infrastructure detail replaced by one fixed sentence
 /// and logged where an operator will look for it.
 fn failure_reason(err: &DomainError) -> String {
 	match err {

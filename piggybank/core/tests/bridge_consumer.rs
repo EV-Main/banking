@@ -427,7 +427,7 @@ async fn redelivery_is_idempotent() {
 /// `Role::Owner` inside `require_permission`, ahead of this lookup. That produced a second
 /// UUID list an operator had to keep in sync with concierge's by hand. The override is gone: a subject
 /// with no row in the local projection holds nothing — least of all the permission that
-/// governs the fund's own money.
+/// governs the treasury.
 #[tokio::test]
 async fn a_subject_absent_from_the_projection_is_never_an_owner() {
 	let Some(pool) = pool().await else {

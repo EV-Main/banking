@@ -1,14 +1,10 @@
-//! `withdrawals` bounded context — on-chain withdrawals out of the fund.
+//! `withdrawals` bounded context — on-chain withdrawals out of the platform.
 //!
 //! The claim debited is an investor's own ([`WithdrawalSource::User`]) or, for an L1
 //! payment the owners approved, banking's treasury ([`WithdrawalSource::Treasury`],
-//! D17). The fund's
-//! earnings used to leave by a second source — the revenue payout — which #245 retired:
-//! an allocation fee is the `fee` allocation's, held by people, and cash leaves it only
-//! through a holder's redemption onto their own claim and then their own withdrawal. The
-//! withdrawal fee itself is banking's own and lands in its treasury (D17).
+//! D17). The withdrawal fee is banking's own and lands in its treasury (D17).
 //!
-//! A withdrawal moves that claim out of the fund and onto an external
+//! A withdrawal moves that claim out of the platform and onto an external
 //! address. It is the **dangerous direction** (value leaves the system), so it is a
 //! saga with an explicit queue. The gross amount is *reserved* against the user's
 //! claim the instant the request is recorded — into the network-agnostic
@@ -135,7 +131,7 @@ impl TryFrom<String> for WithdrawalSource {
 	}
 }
 
-/// Per-network withdrawal policy — the flat network fee the fund retains and the
+/// Per-network withdrawal policy — the flat network fee banking's treasury retains and the
 /// minimum gross a user may withdraw. **Placeholder constants** standing in for a
 /// real fee oracle (gas/energy/bandwidth fluctuate per chain); kept here so the rule
 /// stays pure and testable. Both are whole-USDT, hence representable at every chain's
@@ -143,7 +139,7 @@ impl TryFrom<String> for WithdrawalSource {
 pub struct WithdrawalPolicy;
 
 impl WithdrawalPolicy {
-	/// The flat fee retained by the fund on a withdrawal (1 USDT).
+	/// The flat fee banking's treasury retains on a withdrawal (1 USDT).
 	pub const fn fee(_network: Network) -> Usdt {
 		Usdt::from_base_units(1_000_000_000_000_000_000)
 	}
@@ -653,7 +649,7 @@ mod tests {
 		let source = WithdrawalSource::User(uid);
 		assert_eq!(WithdrawalSource::parse(&source.as_wire()).unwrap(), source);
 		// Not UUID-shaped ⇒ refused, never a silent default — the retired `revenue` literal
-		// included (#245).
+		// included.
 		assert!(WithdrawalSource::parse("revenue").is_err());
 		assert!(WithdrawalSource::parse("fund").is_err());
 		assert!(WithdrawalSource::parse("").is_err());
@@ -669,7 +665,7 @@ mod tests {
 
 	#[test]
 	fn a_pre_payout_event_payload_still_deserializes() {
-		// An outbox/event_log row written before revenue payouts existed spells the field
+		// An outbox/event_log row written before `source` existed spells the field
 		// `user` and holds a bare UUID. If this regressed, a parked row from before the
 		// upgrade could never be unparked — it would fail to deserialize forever.
 		let uid = UserId::new();

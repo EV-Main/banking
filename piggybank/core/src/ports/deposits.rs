@@ -1,5 +1,5 @@
 //! The deposit-log port — the control-plane record behind every on-chain arrival, always
-//! a person's (no fund-owned party since #245).
+//! a person's.
 //!
 //! These are the aggregate-less standalone [`LedgerEvent`](domain::balance::LedgerEvent)
 //! facts (see [`domain::balance`]) — there is no aggregate to hang a `Repository`

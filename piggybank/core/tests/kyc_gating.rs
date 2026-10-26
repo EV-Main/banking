@@ -19,9 +19,7 @@
 //! - tier 1 does both;
 //! - the refusals are told apart at the wire: an unconfigured rail is `Ok(None)` ("this
 //!   rail cannot fund you"), an unverified caller is `Forbidden` ("finish verification");
-//! - a **payment out of the fee allocation is not gated** — its source is the platform's
-//!   own money, held by people through units, with no user behind it to verify; what
-//!   gates it is the owners' quorum.
+//! - a **payment is gated on its source**, never on a tier-0 recipient or initiator.
 
 use std::sync::{
 	Arc,
@@ -88,12 +86,9 @@ struct Harness {
 	address_calls: Arc<AtomicUsize>,
 	relay: Relay,
 	notify: Arc<Notify>,
-	/// This suite is exposed to the shared-outbox race the same way `allocation_registry`
-	/// was (#294/#298): every test deposits and drains, and the since-retired `a_revenue_payout_is_not_gated_on_kyc`
-	/// drains five times. It has failed for it in CI — run 34894158429, `a_revenue_payout_is_not_gated_on_kyc`
-	/// panicking on `fund the fee claim: Validation("insufficient available balance to
-	/// withdraw")`: the 200 USDT this test had just deposited and drained was not on the
-	/// ledger when the next line spent it. The user is freshly provisioned per test, so no
+	/// This suite is exposed to the shared-outbox race (#294/#298): every test deposits and
+	/// drains. It has failed for it in CI (run 34894158429): the 200 USDT a test had just
+	/// deposited and drained was not on the ledger when the next line spent it. The user is freshly provisioned per test, so no
 	/// sibling could have moved that claim — the single `drain()` returned before applying
 	/// the test's own row, which is the early return this guard and `drain_to_quiescence`
 	/// close between them. (The local repro attempt did not land it: 60 runs at eight threads

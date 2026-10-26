@@ -81,10 +81,6 @@ service BalanceService {
   // drained. The signer independently refuses a dead key, an already-migrated row, and
   // an address other than the one this hub cleared.
   rpc MigrateDepositAddressToCustodian(MigrateDepositAddressToCustodianRequest) returns (MigrateDepositAddressToCustodianResponse);
-
-  // The cancel and list RPCs of the revenue payout #245 retired lived here;
-  // none ever reached production (`withdrawals.source = 'revenue'`: 0 rows), and both RPCs
-  // went with the contract step (C-9).
 }
 
 message ListParkedEventsRequest {}

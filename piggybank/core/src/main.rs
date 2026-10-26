@@ -228,11 +228,10 @@ async fn run(config: config::AppConfig) -> color_eyre::Result<()> {
 	let tigerbeetle = Arc::new(TigerBeetle::connect(tigerbeetle_cluster_id, &config.tigerbeetle_address).context("failed to connect to TigerBeetle")?);
 
 	// The data-plane money gateway over TigerBeetle (it also holds the pool for the
-	// `tb_accounts` id-map — its own non-transactional concern). Seed the fund's
-	// singleton accounts (a custody wallet + capital claim per network, plus the bank
-	// mock) at boot; idempotent.
+	// `tb_accounts` id-map — its own non-transactional concern). Seed the singleton
+	// accounts (a custody wallet per rail, `clearing`, the bank mock) at boot; idempotent.
 	let ledger: Arc<dyn Ledger> = Arc::new(TbLedger::new(tigerbeetle, pool.clone()));
-	ledger::seed_singletons(ledger.as_ref()).await.context("failed to seed the fund's ledger accounts")?;
+	ledger::seed_singletons(ledger.as_ref()).await.context("failed to seed the singleton ledger accounts")?;
 
 	// Product-analytics capture (native PostHog). A `None` key makes capture a
 	// silent no-op, so this is safe to construct unconfigured.
@@ -812,10 +811,8 @@ enum Command {
 impl Command {
 	fn from_args(mut args: impl Iterator<Item = String>) -> color_eyre::Result<Self> {
 		const FLAG: &str = "--print-required-vars";
-		// The one-off ownership data migration (#245) ran in production on 2026-09-27 and
-		// was removed with the contract step (C-9). Refused by name rather than falling
-		// through to `serve`: an operator repeating the runbook must not start a second
-		// server inside the pod.
+		// A removed one-off data migration, refused by name rather than falling through to
+		// `serve`: an operator repeating it must not start a second server inside the pod.
 		const REMOVED: &str = "migrate-ownership";
 
 		let Some(arg) = args.next() else {
@@ -829,10 +826,7 @@ impl Command {
 		if arg == FLAG {
 			return Ok(Self::PrintRequiredVars(args.next().unwrap_or_else(|| "production".to_string())));
 		}
-		ensure!(
-			arg != REMOVED,
-			"`{REMOVED}` was a one-off data migration; it ran on 2026-09-27 and has been removed (see docs/RUNBOOK-ownership-migration.md)"
-		);
+		ensure!(arg != REMOVED, "`{REMOVED}` was a one-off data migration; it ran on 2026-09-27 and has been removed");
 		Ok(Self::Serve)
 	}
 }
