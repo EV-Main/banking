@@ -924,8 +924,7 @@ fn plan(row: &OutboxRow) -> Result<Vec<PlannedOp>, String> {
 			let event: ChargeEvent = serde_json::from_str(&row.payload).map_err(|e| e.to_string())?;
 			Ok(vec![plan_charge(event, row.aggregate_id, reference)])
 		}
-		// A non-money event reached the outbox (shouldn't happen) — a benign no-op.
-		_ => Ok(Vec::new()),
+		kind => Err(format!("no plan for outbox kind `{kind}`")),
 	}
 }
 
@@ -1670,6 +1669,24 @@ mod tests {
 
 	// A charge is one posted leg out of the user's compartment into the client's account, and an
 	// undispatched one counts against that compartment — and only that one — in every spend check.
+	// A kind with no plan is never treated as done: a v2.20 unit event, or a typo, would
+	// otherwise be marked dispatched with nothing on the ledger.
+	#[test]
+	fn an_outbox_kind_without_a_plan_is_unplannable() {
+		for kind in ["subscriptions", "redemptions", "fees", "issuances", "book", "users", ""] {
+			let row = OutboxRow {
+				seq: 1,
+				event_id: Uuid::new_v4(),
+				aggregate: kind.into(),
+				aggregate_id: Uuid::new_v4(),
+				kind: kind.into(),
+				payload: "{}".into(),
+				attempts: 0,
+			};
+			assert!(plan(&row).is_err(), "`{kind}` planned");
+		}
+	}
+
 	#[test]
 	fn a_charge_posts_once_out_of_the_compartment() {
 		let (charge, user) = (Uuid::new_v4(), UserId::new());
