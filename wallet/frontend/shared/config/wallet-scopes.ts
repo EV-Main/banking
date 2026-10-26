@@ -17,5 +17,6 @@ export interface WalletScopeHost {
 
 export const WALLET_SCOPE_HOSTS: Readonly<Record<string, WalletScopeHost>> = {
   invest: { origins: ["https://invest.evinvest.ltd"], returnPaths: [] },
-  sa: { origins: ["https://sa.evinvest.ltd"], returnPaths: [] },
+  // The panel's static export serves every screen with a trailing slash.
+  sa: { origins: ["https://sa.evinvest.ltd"], returnPaths: ["/invoices/"] },
 };
