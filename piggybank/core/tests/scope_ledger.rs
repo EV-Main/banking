@@ -667,6 +667,8 @@ async fn the_automatic_ceilings_hold_per_operation_and_per_client_over_24_hours(
 		.await
 		.unwrap();
 	ledger_app::transfer(&p, &client, sweep(&scope, "alloc:two", "500", &key())).await.unwrap();
+	// Landed here, not in whichever test drains next: the treasury's delta is that test's assertion.
+	common::drain_to_quiescence(&h.relay, &h.pool).await;
 }
 
 #[tokio::test]
