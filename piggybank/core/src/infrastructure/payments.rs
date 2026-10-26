@@ -37,7 +37,7 @@ use uuid::Uuid;
 use crate::{
 	infrastructure::{
 		consilium_mailer::{MailSubject, enqueue, withdraw_undelivered_consent},
-		outbox, scope_notifications, window_tool, withdrawals,
+		outbox, scope_notifications, withdrawals,
 	},
 	ports::{
 		governance_mail::{GovernanceMail, PaymentConsent, PaymentOutcome},
@@ -439,9 +439,7 @@ fn payment_link_scope(terms: &PaymentTerms) -> Result<String, DomainError> {
 		(Party::Service(service), _) | (_, PaymentDestination::Internal(Party::Service(service))) => service,
 		(Party::User(_) | Party::Treasury, PaymentDestination::Internal(Party::User(_) | Party::Treasury) | PaymentDestination::External { .. }) => return Ok(String::new()),
 	};
-	window_tool::remap::scope_of(product)
-		.map(|scope| scope.to_string())
-		.map_err(|err| DomainError::Validation(format!("the scope of allocation `{product}`: {err}")))
+	Ok(if product.as_str() == "service_arb" { "sa" } else { "invest" }.to_owned())
 }
 
 /// How a consent died without being answered — the pair concierge's `PaymentOutcomeMail`
