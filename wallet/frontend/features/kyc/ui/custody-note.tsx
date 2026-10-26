@@ -8,8 +8,7 @@ import { cn } from "@/shared/lib/cn";
 /**
  * The one line under a money input that says how the money is protected: held in custody,
  * booked to a verified identity, and moved only under it. Facts the wallet host can stand
- * behind today — custody and KYC — and no more: the reconciliation claim ("every unit
- * has a holder") waits for #245's phase 1. The custodian (Turnkey) and the verifier
+ * behind today — custody and KYC — and no more. The custodian (Turnkey) and the verifier
  * (Didit) are named: the owner allows naming client-facing services, and a named
  * counterparty is a checkable claim where "in custody" alone is not (#385).
  *

@@ -440,8 +440,8 @@
     "t": "Ra ngoài tới một địa chỉ on-chain. Được gửi như một lệnh rút sau khi duyệt."
   },
   "payment.tier.hint.internal": {
-    "en": "Between two claims inside the fund. No money leaves the ledger.",
-    "t": "Giữa hai tài khoản trong quỹ. Không có tiền rời khỏi sổ cái."
+    "en": "Between two claims on the platform. No money leaves the ledger.",
+    "t": "Giữa hai tài khoản trên nền tảng. Không có tiền rời khỏi sổ cái."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

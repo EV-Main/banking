@@ -260,15 +260,14 @@ client's, written by `OpenAccount`.
 The scope list behind listings and totals is cached per process for 30 s; a move reads the
 scope row itself. `GetWallet` (`in_compartments`, inside `total`) and `GetBalance` / `GetUserBalance`
 (`amount = main + in_compartments`) count the compartments; `GetTreasury` shows
-`held_in_compartments` and `banking_treasury`. Mandates are not served yet
-(`GrantMandate`/`RevokeMandate` UNIMPLEMENTED, `ListMandates` empty): the per-client grants
-they need exist now (below), the mandates themselves come with the scope ledger's next part.
+`held_in_compartments` and `banking_treasury`. A user grants, revokes and lists their
+mandates through `CompartmentService` (`GrantMandate` / `RevokeMandate` / `ListMandates`).
 
 ## Scope ledger — the service-facing money surface (`domain::scope_ledger`, `ScopeLedgerService`)
 
 `scope/v1/ledger.proto` is how a scope's own service (invest, the SA panel) moves money in
 its scope. Served: `OpenAccount`, `GetBalances`, `Transfer`, the holds, `Payout`, the requested
-operations and `MoneyEvents.Pull`; `Charge` is UNIMPLEMENTED until users can grant mandates.
+operations, `Charge` and `MoneyEvents.Pull`.
 
 **Its own listener, mTLS only** (`services::scope_ledger`, `config::ScopeLedgerSettings`):
 `SCOPE_LEDGER_BIND` turns it on, and then the server certificate, the client CA and the
@@ -397,9 +396,8 @@ a capture's chain counts net of the void it carries, `relay::chain_debit`). `Cap
 caller's own, never banking's. Into another user: the `compartments` flag, `scope_frozen`,
 BOOK_FILL on the hold's own mandate, and the holder not frozen. A due hold is not capturable;
 voiding it expires it; the reaper releases due holds (`scope_holds::expire_due_holds`).
-**No user can grant a mandate yet**: production wires `NoMandates`, so every `Reserve` is
-`mandate_required` until `GrantMandate` lands — the caps (`cap_per_op`, `cap_24h`,
-`cap_outstanding`) are that part's, under the mandate row's lock. A reservation the ledger
+A `Reserve` without the user's mandate is `mandate_required`; the mandate's caps
+(`cap_per_op`, `cap_24h`, `cap_outstanding`) are checked under its row's lock. A reservation the ledger
 refused parks like any refused reserve; the relay parks a later capture or release of that
 hold at once rather than retrying a void of nothing.
 

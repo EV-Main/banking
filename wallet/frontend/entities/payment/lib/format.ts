@@ -11,7 +11,7 @@ import type { Translate } from "@evinvest/i18n";
 import { wordFor } from "@/shared/lib/wire-words";
 
 const tierHints = (t: Translate): Readonly<Record<string, string>> => ({
-  internal: t("payment.tier.hint.internal", "Between two claims inside the fund. No money leaves the ledger."),
+  internal: t("payment.tier.hint.internal", "Between two claims on the platform. No money leaves the ledger."),
   external: t("payment.tier.hint.external", "Out to an on-chain address. Ships as a withdrawal once approved."),
 });
 

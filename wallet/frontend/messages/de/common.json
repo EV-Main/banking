@@ -440,8 +440,8 @@
     "t": "Nach außen an eine On-Chain-Adresse. Wird nach Genehmigung als Auszahlung versendet."
   },
   "payment.tier.hint.internal": {
-    "en": "Between two claims inside the fund. No money leaves the ledger.",
-    "t": "Zwischen zwei Ansprüchen innerhalb des Fonds. Kein Geld verlässt das Hauptbuch."
+    "en": "Between two claims on the platform. No money leaves the ledger.",
+    "t": "Zwischen zwei Ansprüchen auf der Plattform. Kein Geld verlässt das Hauptbuch."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

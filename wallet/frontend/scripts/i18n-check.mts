@@ -50,9 +50,6 @@ const hasNoProse = (text: string): boolean =>
 // environment names, chain and network names, crypto jargon that no locale
 // translates ("gas", "tx", "memo", maker/taker), and column abbreviations.
 const SHARED_TERMS: ReadonlySet<string> = new Set([
-  "NAV",
-  "AUM (USDT)",
-  "P&L",
   "KYC",
   "KYC L{n}",
   "L{n}",
@@ -137,9 +134,6 @@ const LOANWORDS: Readonly<Record<Translated, ReadonlySet<string>>> = {
     "Actions",
     "Admin",
     "Admissions",
-    // The fund term is the same word in French; the catalogue already says "allocation"
-    // in every sentence about one.
-    "Allocation",
     "Arbitrage",
     "Code",
     "Documents",

@@ -156,7 +156,7 @@
   "ops.state.queued": "Queued",
   "payment.end.fullAddress": "Show the full address",
   "payment.tier.hint.external": "Out to an on-chain address. Ships as a withdrawal once approved.",
-  "payment.tier.hint.internal": "Between two claims inside the fund. No money leaves the ledger.",
+  "payment.tier.hint.internal": "Between two claims on the platform. No money leaves the ledger.",
   "paymentConfirm.approve": "Approve this payment",
   "paymentConfirm.approved.fresh": "Your answer has been recorded and the payment goes ahead.",
   "paymentConfirm.approved.title": "You approved this payment",

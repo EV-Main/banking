@@ -811,23 +811,17 @@ enum Command {
 impl Command {
 	fn from_args(mut args: impl Iterator<Item = String>) -> color_eyre::Result<Self> {
 		const FLAG: &str = "--print-required-vars";
-		// A removed one-off data migration, refused by name rather than falling through to
-		// `serve`: an operator repeating it must not start a second server inside the pod.
-		const REMOVED: &str = "migrate-ownership";
 
 		let Some(arg) = args.next() else {
 			return Ok(Self::Serve);
 		};
-		match arg.split_once('=') {
-			Some((FLAG, profile)) => return Ok(Self::PrintRequiredVars(profile.to_string())),
-			Some(_) => return Ok(Self::Serve),
-			None => {}
+		if let Some((FLAG, profile)) = arg.split_once('=') {
+			return Ok(Self::PrintRequiredVars(profile.to_string()));
 		}
-		if arg == FLAG {
-			return Ok(Self::PrintRequiredVars(args.next().unwrap_or_else(|| "production".to_string())));
-		}
-		ensure!(arg != REMOVED, "`{REMOVED}` was a one-off data migration; it ran on 2026-09-27 and has been removed");
-		Ok(Self::Serve)
+		// An unknown argument never falls through to `serve`: an operator running a command
+		// this build lacks must not start a second server inside the pod.
+		ensure!(arg == FLAG, "unknown argument `{arg}`: the hub takes none, or `{FLAG}[=PROFILE]`");
+		Ok(Self::PrintRequiredVars(args.next().unwrap_or_else(|| "production".to_string())))
 	}
 }
 
@@ -937,7 +931,8 @@ mod tests {
 		assert!(matches!(parse(&["--print-required-vars"]).unwrap(), Command::PrintRequiredVars(p) if p == "production"));
 		assert!(matches!(parse(&["--print-required-vars=dev"]).unwrap(), Command::PrintRequiredVars(p) if p == "dev"));
 		assert!(matches!(parse(&["--print-required-vars", "dev"]).unwrap(), Command::PrintRequiredVars(p) if p == "dev"));
-		// The removed one-off command is refused, never served.
-		assert!(parse(&["migrate-ownership", "--holders", "h.json"]).is_err());
+		for unknown in [&["migrate-ownership", "--holders", "h.json"][..], &["--port=1"], &["serve"]] {
+			assert!(parse(unknown).is_err(), "{unknown:?} is refused, never served");
+		}
 	}
 }

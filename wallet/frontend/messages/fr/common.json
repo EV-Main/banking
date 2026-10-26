@@ -440,8 +440,8 @@
     "t": "Vers une adresse on-chain. Part comme un retrait une fois approuvé."
   },
   "payment.tier.hint.internal": {
-    "en": "Between two claims inside the fund. No money leaves the ledger.",
-    "t": "Entre deux créances au sein du fonds. Aucun argent ne quitte le registre."
+    "en": "Between two claims on the platform. No money leaves the ledger.",
+    "t": "Entre deux créances sur la plateforme. Aucun argent ne quitte le registre."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

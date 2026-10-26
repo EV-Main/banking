@@ -440,8 +440,8 @@
     "t": "Наружу, на адрес в сети. После одобрения уходит как вывод."
   },
   "payment.tier.hint.internal": {
-    "en": "Between two claims inside the fund. No money leaves the ledger.",
-    "t": "Между двумя счетами внутри фонда. Деньги не покидают реестр."
+    "en": "Between two claims on the platform. No money leaves the ledger.",
+    "t": "Между двумя счетами на платформе. Деньги не покидают реестр."
   },
   "paymentConfirm.approve": {
     "en": "Approve this payment",

@@ -566,7 +566,7 @@ pub struct KindSpec {
 /// The version of [`BANK_CATALOG`]: unix seconds of the day it last changed. BUMP IT with
 /// every change to the catalog — concierge refuses a catalog of the version it stores with
 /// other content, and one more than a day ahead of its clock.
-pub const BANK_CATALOG_VERSION: u64 = 1_792_368_000;
+pub const BANK_CATALOG_VERSION: u64 = 1_792_972_800;
 
 /// [`BANK_CATALOG`] rendered field by field, one line per item — what a test pins, beside
 /// [`BANK_CATALOG_VERSION`], so the catalog cannot change without the version moving.
@@ -752,8 +752,8 @@ pub const BANK_CATALOG: &[KindSpec] = &[
 	},
 	KindSpec {
 		kind: PAYMENT_KIND,
-		label: "Payment from fund money",
-		description: "A payment out of an allocation's pooled claim or banking's treasury, to an internal claim or an address; the platform owners decide it.",
+		label: "Payment from banking's treasury",
+		description: "A payment out of banking's treasury, to a person's claim or an address; the platform owners decide it.",
 		level: KindLevel::Platform,
 		fields: PAYMENT_FIELDS,
 		escalations: &[],
