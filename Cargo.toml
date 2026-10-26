@@ -30,8 +30,8 @@ chacha20poly1305 = "0.10"
 color-eyre = "0.6"
 # What a concierge seat means, `bank:*` included: the gates ask for these names. At the contracts'
 # rev; `concierge_iam` must match the domain's, or its `Permission` trait is another crate's.
-concierge_domain = { package = "domain", git = "https://github.com/EV-Main/concierge.git", rev = "27290ee04cdd035174cdd84cb222d007111b26eb" }
-concierge_iam = { git = "https://github.com/EV-Main/concierge.git", rev = "27290ee04cdd035174cdd84cb222d007111b26eb" }
+concierge_domain = { package = "domain", git = "https://github.com/EV-Main/concierge.git", rev = "1befc55cfe71b4250442418069a7bb88c8373939" }
+concierge_iam = { git = "https://github.com/EV-Main/concierge.git", rev = "1befc55cfe71b4250442418069a7bb88c8373939" }
 # Hub-internal crates. Other service repos depend on `evbanking_contracts` (and,
 # transitively, `evbanking_auth`) by git, so they get the wire stubs and the shared
 # auth verification flow from one place.
@@ -43,11 +43,11 @@ evbanking_auth = { path = "piggybank/auth" }
 evbanking_contracts = { path = "contracts" }
 # The shared verify-side flow (JWKS-cached local verification of concierge access
 # JWTs) — the BFF's request credential is the shell-set `ev_access` cookie.
-evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "27290ee04cdd035174cdd84cb222d007111b26eb" }
+evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "1befc55cfe71b4250442418069a7bb88c8373939" }
 # The concierge identity plane's wire contracts: the wallet backend and piggybank-core's
 # bridge consumer and approvals client. Moves with `evconcierge_auth`; `nix run .#concierge-pin-check`
 # guards the pin, and `git log -p Cargo.toml` says what each bump brought.
-evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "27290ee04cdd035174cdd84cb222d007111b26eb" }
+evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "1befc55cfe71b4250442418069a7bb88c8373939" }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 hex = "0.4"
 http = "1"
