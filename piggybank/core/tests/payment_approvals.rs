@@ -636,6 +636,11 @@ async fn a_treasury_payment_is_decided_over_a_concierge_approval_and_closes_fail
 	);
 	assert!(a.concierge.reports().iter().all(|(_, outcome)| *outcome == ApprovalOutcome::Failed));
 
+	// A second executor that read the order pending records the decision after the first one
+	// failed it: the same decision, already acted on — not a conflict to report void.
+	let again = a.payments.record_concierge_approval(id, &approval, 0, now()).await.expect("the same decision, recorded again");
+	assert_eq!(again.order.state(), PaymentState::ExecutionFailed);
+
 	reset(&a.pool).await;
 }
 

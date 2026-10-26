@@ -270,7 +270,7 @@ pub async fn answer_consent(ports: &PaymentPorts<'_>, subject: UserId, id: Payme
 pub async fn execute(ports: &PaymentPorts<'_>, id: PaymentId, now: i64) -> Result<PaymentView, DomainError> {
 	let view = find(ports.payments, id).await?;
 	let order = &view.order;
-	if order.state() == PaymentState::Executed {
+	if matches!(order.state(), PaymentState::Executed | PaymentState::ExecutionFailed) {
 		return Ok(view);
 	}
 	if order.state() != PaymentState::Approved {

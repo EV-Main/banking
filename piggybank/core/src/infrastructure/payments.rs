@@ -887,7 +887,7 @@ impl PaymentRepository for PgPayments {
 		// A decision served again after it was acted on: approved once, reserved once. An order
 		// that ended otherwise is refused by `approve` — a late decision never reaches money —
 		// and one whose own window ran out is refused here, whether or not the sweep reached it.
-		if !matches!(order.state(), PaymentState::Approved | PaymentState::Executed) {
+		if !matches!(order.state(), PaymentState::Approved | PaymentState::Executed | PaymentState::ExecutionFailed) {
 			if order.expires_at() <= at {
 				return Err(DomainError::Conflict("the payment's window ended before the decision was carried out".into()));
 			}

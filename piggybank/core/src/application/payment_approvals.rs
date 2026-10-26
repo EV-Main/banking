@@ -168,7 +168,7 @@ pub async fn open_with_proof(ports: &ApprovalRoundPorts<'_>, initiator: UserId, 
 	// Before the order is written: nothing to undo when the proof is missing.
 	let Some(token) = proof_token.filter(|token| !token.is_empty()) else {
 		return Err(DomainError::Precondition(
-			"a payment out of fund money is proposed to the owners in the name of the person who opens it: sign in again and retry".into(),
+			"a payment out of banking's treasury is proposed to the owners in the name of the person who opens it: sign in again and retry".into(),
 		));
 	};
 	let user = ports.payments.users.find_by_id(initiator).await?.ok_or_else(|| DomainError::NotFound {
