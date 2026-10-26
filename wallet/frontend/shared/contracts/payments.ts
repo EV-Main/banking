@@ -1,20 +1,17 @@
 // The payments surface: a payment ORDER out of the caller's own claim, as they answer it
 // signed in.
 //
-// Hand-written like `./governance`: these are the BFF's DTOs, shaped for this wallet host, not
-// the proto messages `./gen` projects (`PaymentEnd.detail`, the lowercase states and the
-// string timestamps are all the BFF's doing). When the surface is ever served straight off
-// the proto, this file is what `./gen` replaces.
+// Hand-written: these are the BFF's DTOs, shaped for this wallet host, not the proto messages
+// `./gen` projects (`PaymentEnd.detail`, the lowercase states and the string timestamps are
+// all the BFF's doing). When the surface is ever served straight off the proto, this file is
+// what `./gen` replaces.
 //
 // `tier` is a fact the money plane derives from the destination (`external` for an address,
 // `internal` otherwise) and is carried here READ-ONLY.
 //
-// Lifecycle states travel as plain strings, for the reason `./governance` gives: the state
-// machine lives in the money plane, and a closed union here would turn a backend addition
-// into a client type error. Views label the states they know and fall back to the wire
-// word.
-
-import type { Decimal, Timestamp } from "./governance";
+// Lifecycle states travel as plain strings: the state machine lives in the money plane, and a
+// closed union here would turn a backend addition into a client type error. Views label the
+// states they know and fall back to the wire word.
 
 // ── An end as the plane renders it back ────────────────────────────────────────
 
@@ -60,12 +57,12 @@ export interface PaymentConfirmation {
   tier: PaymentTier | string;
   source: PaymentEnd;
   destination: PaymentEnd;
-  amount: Decimal;
+  amount: string; // an exact decimal, never a number
   reason: string;
   payload_hash: string;
   /** Masked by the plane. */
   initiator_email: string;
-  expires_at: Timestamp;
+  expires_at: string; // unix seconds, parsed only by `shared/lib/datetime.ts`
   decision: string;
   invalidated: boolean;
   failure_reason: string | null;

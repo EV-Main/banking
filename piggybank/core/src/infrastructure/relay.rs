@@ -1545,10 +1545,7 @@ mod tests {
 		assert!(plan_payment(event, aggregate_id, aggregate_id.as_u128()).is_empty());
 	}
 
-	// A deposit credits the person's claim and nothing else. The retired
-	// `capital_seeded` event has no plan at all: production's outbox holds none pending,
-	// and a stray one is a payload this build cannot read, never a credit to a claim
-	// nobody holds.
+	// A deposit credits the person's claim and nothing else; a v2.20 seed payload is unreadable, never a credit.
 	#[test]
 	fn a_deposit_credits_the_depositor_and_a_retired_seed_payload_does_not_read() {
 		let depositor = UserId::new();
@@ -1564,14 +1561,14 @@ mod tests {
 		);
 		let LedgerAction::Post(leg) = &deposit.action else { panic!("a deposit is one posted leg") };
 		assert_eq!(deposit.role, "deposit");
-		assert_eq!(leg.credit, LedgerAccountKey::UserClaim(depositor), "the depositor's own claim, never the fund's");
+		assert_eq!(leg.credit, LedgerAccountKey::UserClaim(depositor), "the depositor's own claim");
 		assert_eq!(leg.debit, LedgerAccountKey::CryptoWallet(domain::money::Network::Bep20));
 		assert_eq!(leg.code, TransferCode::Deposit);
 
 		let legacy = r#"{"type":"capital_seeded","network":"bep20","amount":"1000"}"#;
 		assert!(serde_json::from_str::<LedgerEvent>(legacy).is_err(), "a retired seed payload must not read as anything");
 		let legacy_deposit = r#"{"type":"deposited","party":{"kind":"piggybank"},"network":"bep20","amount":"1000"}"#;
-		assert!(serde_json::from_str::<LedgerEvent>(legacy_deposit).is_err(), "nor a deposit onto the retired fund claim");
+		assert!(serde_json::from_str::<LedgerEvent>(legacy_deposit).is_err(), "nor a deposit onto the retired piggybank claim");
 	}
 
 	// The retained withdrawal fee lands in banking's treasury (D17).
@@ -1667,10 +1664,8 @@ mod tests {
 		assert!(plan(&cancelled).unwrap().is_empty(), "only a payment moves money");
 	}
 
-	// A charge is one posted leg out of the user's compartment into the client's account, and an
-	// undispatched one counts against that compartment — and only that one — in every spend check.
-	// A kind with no plan is never treated as done: a v2.20 unit event, or a typo, would
-	// otherwise be marked dispatched with nothing on the ledger.
+	// A kind with no plan is never treated as done: it would otherwise be marked dispatched with
+	// nothing on the ledger.
 	#[test]
 	fn an_outbox_kind_without_a_plan_is_unplannable() {
 		for kind in ["subscriptions", "redemptions", "fees", "issuances", "book", "users", ""] {
@@ -1687,6 +1682,8 @@ mod tests {
 		}
 	}
 
+	// A charge is one posted leg out of the user's compartment into the client's account, and an
+	// undispatched one counts against that compartment — and only that one — in every spend check.
 	#[test]
 	fn a_charge_posts_once_out_of_the_compartment() {
 		let (charge, user) = (Uuid::new_v4(), UserId::new());

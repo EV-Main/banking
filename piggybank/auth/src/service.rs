@@ -427,7 +427,7 @@ mod tests {
 		let signer = grpc.engine.signer.as_ref().unwrap();
 
 		let (access, _) = signer.mint_access("00000000-0000-0000-0000-000000000001", 0).unwrap();
-		let (hub, _) = signer.mint_hub_service("allocations").unwrap();
+		let (hub, _) = signer.mint_hub_service("piggybank-hub").unwrap();
 		let (scope, _) = grpc.mint_service_token("invest").unwrap();
 
 		let client_claims = grpc.authorize_token(&access, TokenClass::Client).unwrap();

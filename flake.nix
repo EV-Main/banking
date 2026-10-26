@@ -570,7 +570,7 @@
             # agnostic, so a testnet deposit would withdraw as real USDT). Mainnet defaults
             # (chain 137, native USDT 0xc213…58e8F @ 6-dp, 128 confs) need no override. Flip Amoy→
             # mainnet on a FRESH database — the rail's state is keyed by network, not chain, so an
-            # in-place re-point is refused by the rail_chain_identity guard. Keep the fund-moving
+            # in-place re-point is refused by the rail_chain_identity guard. Keep the money-moving
             # sweep off (POLYGON_SWEEP_ENABLED unset) until the treasury + gas station are funded
             # with USDT + POL — see docs/RUNBOOK-polygon-rail.md.
             # Cross-plane lifecycle bridge consumer (one-way concierge → banking). Both vars
@@ -702,7 +702,7 @@
         #
         # WHICH concierge protos: contracts/concierge-protos.txt — the same list
         # `concierge-pin-check` guards, so a proto cannot be generated from without
-        # its bytes being pinned (#293: governance.proto was fed here but not checked).
+        # its bytes being pinned (#293).
         runGenApi = pkgs.writeShellApplication {
           name = "run-gen-api";
           runtimeInputs = with pkgs; [ protobuf protocGenConnectOpenapi nodejs git cargo jq ];
@@ -727,7 +727,7 @@
 
         # ── cross-repo concierge pin guard ──────────────────────────────────
         # `nix run .#concierge-pin-check` — assert the pinned `evconcierge_contracts`
-        # rev (the identity + governance wire contract banking compiles and re-aliases
+        # rev (the directory + auth wire contract banking compiles and re-aliases
         # its cabinet TS from) is an ancestor of concierge origin/main, and that every
         # proto in contracts/concierge-protos.txt has the same bytes at the pin, on
         # origin/main and in the local cargo checkout gen-api reads. CI entry point for

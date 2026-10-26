@@ -438,7 +438,7 @@ async fn a_subject_absent_from_the_projection_is_never_an_owner() {
 
 	let held = bridge::permissions_of(&pool, stranger).await.unwrap();
 	assert!(
-		!held.may(bank::Treasury::Read) && !held.may(bank::Consilium::Manage),
+		!held.may(bank::Treasury::Read) && !held.may(bank::Payment::Open),
 		"no local row ⇒ nothing, not an inherited privilege"
 	);
 }

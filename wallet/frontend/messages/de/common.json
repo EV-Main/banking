@@ -152,8 +152,8 @@
     "t": "Die Annahme ist endgültig. Ihr Eigentum endet, sobald sie festgehalten ist, und lässt sich weder von dieser noch von einer anderen Seite rückgängig machen."
   },
   "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.",
-    "t": "{initiator} hat vorgeschlagen, dass Sie nicht länger Eigentümer des Fonds sind. Sie haben dabei ein Mitspracherecht, und es gibt eine Frist."
+    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
+    "t": "{initiator} hat vorgeschlagen, dass Sie nicht länger Eigentümer der Plattform sind. Sie haben dabei ein Mitspracherecht, und es gibt eine Frist."
   },
   "approval.removal.noReason": {
     "en": "No reason was given.",
@@ -356,8 +356,8 @@
     "t": "Prüfung starten"
   },
   "meta.description": {
-    "en": "Your investor cabinet — portfolio, funds and wallet.",
-    "t": "Ihr Investorenportal — Portfolio, Fonds und Wallet."
+    "en": "Your investor cabinet — wallet, deposits and withdrawals.",
+    "t": "Ihr Investorenportal — Wallet, Einzahlungen und Auszahlungen."
   },
   "meta.title": {
     "en": "EV Investment — Cabinet",
@@ -672,8 +672,8 @@
     "t": "Über: {title}"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
-    "t": "Sie haben ein einziges USDT-Guthaben — Netzwerke sind nur der Weg, auf dem Sie ein- und auszahlen. Diese Karte teilt es auf: Gesamt = Verfügbar + In Orders + Investiert + Offene Auszahlung + In Fächern."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments.",
+    "t": "Sie haben ein einziges USDT-Guthaben — Netzwerke sind nur der Weg, auf dem Sie ein- und auszahlen. Diese Karte teilt es auf: Gesamt = Verfügbar + Auszahlung ausstehend + In Unterkonten."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",

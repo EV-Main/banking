@@ -295,7 +295,7 @@ impl Rails {
 		// The sweep moves user funds on-chain, so it runs only when explicitly enabled AND a chain
 		// is configured — opt-in, never implied by the deposit/withdraw seams. `SWEEP_ENABLED` is
 		// the global default; a per-rail `<RAIL>_SWEEP_ENABLED` overrides it so a freshly-configured
-		// rail can run deposits+withdrawals WITHOUT arming its fund-moving sweep before its treasury
+		// rail can run deposits+withdrawals WITHOUT arming its money-moving sweep before its treasury
 		// and gas station are funded — the sequenced bring-up BEP20 used. An unset per-rail var
 		// inherits the global; an unconfigured rail simply has no sweep.
 		let sweep_enabled = bool_env("SWEEP_ENABLED", false);

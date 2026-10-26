@@ -1291,9 +1291,9 @@ mod tests {
 		let mut order = opened(investor(), external());
 		order.approve(NOW).unwrap();
 		order.drain_events();
-		order.mark_execution_failed("payout exceeds the fund's available revenue".into(), NOW).unwrap();
+		order.mark_execution_failed("payout exceeds the treasury's available balance".into(), NOW).unwrap();
 		assert_eq!(order.state(), PaymentState::ExecutionFailed);
-		assert_eq!(order.failure_reason(), Some("payout exceeds the fund's available revenue"));
+		assert_eq!(order.failure_reason(), Some("payout exceeds the treasury's available balance"));
 		let events = order.drain_events();
 		// An L1 order reserved nothing, so it has nothing to release: the failure is audit only.
 		assert!(matches!(events.as_slice(), [PaymentEvent::ExecutionFailed { .. }]));

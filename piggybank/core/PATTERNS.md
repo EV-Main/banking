@@ -834,7 +834,7 @@ consequences that are easy to get wrong:
 
 Both gates sit **above** the [`DepositAddresses`] port for the same reason the rail gate
 does: the first `address` call provisions a signer keypair, and a key minted for an
-unverified user is an address the fund must watch, sweep and account for forever. The two
+unverified user is an address banking must watch, sweep and account for forever. The two
 refusals stay distinguishable at the wire — an unconfigured rail is `Ok(None)` ("this rail
 cannot fund you"), an unverified caller is `Forbidden`/`permission_denied` ("finish
 verification") — because the cabinet has to pick a different screen for each. `GetWallet`

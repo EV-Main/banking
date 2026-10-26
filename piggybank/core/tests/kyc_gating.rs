@@ -12,7 +12,7 @@
 //!
 //! - tier 0 gets **no deposit address**, and the address gateway is never reached — the
 //!   gate sits above the port precisely because the first call there mints a signer
-//!   keypair, and a key issued to an unverified user is an address the fund must watch,
+//!   keypair, and a key issued to an unverified user is an address banking must watch,
 //!   sweep and account for forever;
 //! - tier 0 **cannot withdraw**, with a funded claim, so the refusal is the gate and not
 //!   insolvency;

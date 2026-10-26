@@ -6,11 +6,11 @@
 // Nobody arrives here pleased, and the writing is the design: plain sentences, no exclamation, no
 // reassurance nobody asked for, and no urgency the deadline does not actually create. It
 // says who proposed it, what reason they gave, how long there is, and what each answer
-// does. It does not editorialise about the proposal, because this page is not the fund's
+// does. It does not editorialise about the proposal, because this page is not the platform's
 // argument — it is the notice.
 //
 // The asymmetry between the two answers is structural rather than decorative. Accepting
-// ends an ownership stake and cannot be undone from here or anywhere else, so it is the
+// ends an owner seat and cannot be undone from here or anywhere else, so it is the
 // smaller, colder control AND it goes through a second, explicit confirmation. Refusing is
 // the reversible answer and takes one press. Neither is preselected, and refusing is not
 // dressed up as the "safe" choice — the copy says plainly that refusing does not end the
@@ -140,7 +140,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
         <CardHeader>
           <ApprovalTitle>{t("approval.removal.title", "A request to end your ownership")}</ApprovalTitle>
           <CardDescription className="text-balance">
-            {t("approval.removal.lead", "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.", { initiator: invitation.initiator_email })}
+            {t("approval.removal.lead", "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.", { initiator: invitation.initiator_email })}
           </CardDescription>
         </CardHeader>
 
@@ -149,7 +149,7 @@ export function RemovalApprovalView({ token }: { token: string }) {
             <FieldCaption>{t("approval.removal.reasonLabel", "Reason given")}</FieldCaption>
             {/* The reason is someone else's words about the reader. It is shown whole, in
                 their own phrasing, with no summarising and no quotation marks that would
-                let the fund distance itself from it. */}
+                let the platform distance itself from it. */}
             <p className="whitespace-pre-line rounded-lg bg-secondary px-3.5 py-3 text-sm leading-relaxed text-ink">
               {invitation.reason?.trim() || t("approval.removal.noReason", "No reason was given.")}
             </p>

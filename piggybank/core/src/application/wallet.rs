@@ -16,7 +16,7 @@
 //! not merely "address pending" — because a deposit sent to an address no watcher
 //! scans is stranded, not credited. The **verification** gate sits in exactly the same
 //! place and for the same reason: the first [`DepositAddresses::address`] call provisions
-//! a signer keypair, so a key minted for an unverified user is an address the fund must
+//! a signer keypair, so a key minted for an unverified user is an address banking must
 //! then watch, sweep and account for forever — money the platform is not allowed to take
 //! yet. Both gates therefore run ABOVE the port, never after it.
 //!
@@ -214,7 +214,7 @@ pub async fn get_wallet(ports: &WalletPorts<'_>, configured: &[Network], gate: K
 /// Both gates sit ABOVE the port, in that order: the rail check is free and answers
 /// without touching the control plane, and the first `DepositAddresses::address` call
 /// provisions a signer keypair — a key minted here for an unverified user is an address
-/// the fund must watch and sweep forever. A lifted `gate` removes the second refusal
+/// banking must watch and sweep forever. A lifted `gate` removes the second refusal
 /// entirely (the rail one always stands): every caller is served an address.
 pub async fn get_deposit_address(ports: &DepositAddressPorts<'_>, configured: &[Network], gate: KycGate, user: UserId, network: Network) -> Result<Option<WalletAddress>, DomainError> {
 	if !configured.contains(&network) {

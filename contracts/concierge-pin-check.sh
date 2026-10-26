@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # FB-24 / CROSS-5: guard the cross-repo concierge pin.
 #
-# Banking compiles the identity + governance wire contract from the `evconcierge_contracts`
+# Banking compiles the directory + auth wire contract from the `evconcierge_contracts`
 # git dep (Cargo.toml) and re-aliases the wallet frontend's TS from concierge's proto. This
 # asserts that pin is trustworthy:
 #   1. the pinned rev is an ANCESTOR of concierge `origin/main` (not an orphaned /
@@ -13,7 +13,7 @@
 #      a contract nobody pinned).
 #
 # WHICH protos: contracts/concierge-protos.txt — the same list `gen-api` feeds protoc,
-# so a proto cannot be generated without being guarded (issue #293: governance.proto).
+# so a proto cannot be generated without being guarded (issue #293).
 #
 # Run in CI (.github/workflows/drift.yml) and locally before bumping the pin. Needs
 # network access to the concierge remote and a resolvable cargo workspace (`cargo

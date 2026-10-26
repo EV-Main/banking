@@ -28,10 +28,9 @@ export const PAGE_TITLE = "text-2xl font-semibold leading-tight text-ink";
 export const PAGE_DESCRIPTION = "text-sm text-ink-soft";
 
 /**
- * The tracked-uppercase label above a figure, a group or a section. `muted` is the
- * section label (the settings groups, a day in the timeline); `accent` announces a
- * hero figure (the portfolio value, the invested band). Not the uikit's `Eyebrow`, and
- * not named after it: that one is the landing's — a 10–11.5px brand-coloured label with
+ * The tracked-uppercase label above a title, a group or a section. `muted` is the
+ * section label (the settings groups, a day in the timeline); `accent` is the page
+ * eyebrow above the title. Not the uikit's `Eyebrow`, and not named after it: that one is the landing's — a 10–11.5px brand-coloured label with
  * `tracking-[0.15em]` and no `uppercase` of its own — so adopting it would have meant
  * overriding four of its five utilities, and a same-named local would shadow the export.
  */

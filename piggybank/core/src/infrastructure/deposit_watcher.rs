@@ -782,7 +782,7 @@ mod tests {
 
 	/// The invariant-critical case. A sweep arrives at the treasury exactly like an operator
 	/// top-up does — same recipient, same token, same event — and only the sender tells them
-	/// apart. Credit a sweep and one dollar is booked twice, inventing fund capital and
+	/// apart. Credit a sweep and one dollar is booked twice, inventing capital and
 	/// breaking `sum(custody) == sum(claims)`.
 	#[test]
 	fn only_a_source_outside_our_own_wallets_is_new_capital() {

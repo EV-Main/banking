@@ -1687,7 +1687,7 @@ impl Custody for TestCustody {
 }
 
 // ── Test-only deposit-address stub ──────────────────────────────────────────────
-// Stands in for HD derivation from the fund's xpub so the saga runs without the
+// Stands in for HD derivation from banking's xpub so the saga runs without the
 // separate signer process. It deterministically derives a *structurally valid* (not
 // spendable) per-(user, network) address and caches it. Production wires the
 // signer-backed `SignerDepositAddresses`; this double lives only here.

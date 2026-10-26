@@ -6,8 +6,8 @@
 // Precision is a policy per unit of measure, not a per-screen choice, because the same
 // amount used to render differently depending on which screen you were on:
 //
-//   summary money (USD)   exactly 2 dp  — a fund that rounds a P&L to the dollar reads
-//                                         as an estimate rather than a statement
+//   summary money (USD)   exactly 2 dp  — a figure rounded to the dollar reads as an
+//                                         estimate rather than a statement
 //   ledger money (USDT)   2–6 dp        — a wallet row has to show what actually moved
 //
 // Separators follow the reader's locale; the precision policy does not. A German reader
@@ -38,8 +38,8 @@ function intlTag(locale: Locale): string {
 }
 
 // `Intl.NumberFormat` is expensive to construct — hundreds of microseconds and a fresh
-// locale-data lookup each time — and the order book, the tape and the holders table call
-// these formatters per row on every tick. One instance per (locale, options) pair, built on
+// locale-data lookup each time — and the activity lists call these formatters per row on
+// every render. One instance per (locale, options) pair, built on
 // first use and kept for the life of the module; the key space is five locales times a
 // handful of option shapes, so the cache never needs eviction.
 const FORMATTERS = new Map<string, Intl.NumberFormat>();

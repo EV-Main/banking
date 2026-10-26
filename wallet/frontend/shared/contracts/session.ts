@@ -16,9 +16,8 @@ export interface SessionUser {
    * `role` above came from the `OWNER_SUBJECTS` emergency allowlist, not from the
    * persisted `users.role`.
    *
-   * True only while the fund has no persisted owner — the window closes on the first
-   * genesis seeding and cannot reopen. Render it as a warning, never as ownership: it is
-   * real authority over the console and it seats nobody.
+   * True only while the platform has no persisted owner. Render it as a warning, never as
+   * ownership: it is real authority over the console and it seats nobody.
    */
   roleIsBreakGlass: boolean;
 }

@@ -1,6 +1,6 @@
 //! Shared money kernel — crypto value objects, all pure and wasm-safe.
 //!
-//! The fund accounts internally in a **single canonical unit**: 18-decimal USDT
+//! Banking accounts internally in a **single canonical unit**: 18-decimal USDT
 //! ("base units"), matching BEP20's on-chain scale. TRC20, TON, and Polygon carry
 //! USDT at 6 decimals on-chain, so amounts are scaled **up** by `10^12` when they enter the
 //! ledger and **down** (rejecting non-representable dust) when they leave. Keeping
@@ -19,7 +19,7 @@ use crate::error::DomainError;
 /// `10^-18` USDT, so amounts are exact (no floating point ever touches money).
 pub const CANONICAL_DECIMALS: u32 = 18;
 const BASE58_ALPHABET: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-/// The chains the fund custodies USDT on. The on-chain decimal scale differs per
+/// The chains banking custodies USDT on. The on-chain decimal scale differs per
 /// chain, which is the whole reason [`Usdt`] normalizes to a canonical unit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -106,7 +106,7 @@ impl core::fmt::Display for Network {
 	}
 }
 
-/// Tokens the fund handles. USDT only for now — a stablecoin we treat 1:1 across
+/// Tokens banking handles. USDT only for now — a stablecoin we treat 1:1 across
 /// chains for *value* accounting (chain liquidity is tracked separately in custody).
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

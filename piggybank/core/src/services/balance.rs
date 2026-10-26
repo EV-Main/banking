@@ -54,10 +54,6 @@ impl BalanceSvc {
 impl BalanceService for BalanceSvc {
 	/// The treasury: every claim on the custody is somebody's (#245) — a person's, or
 	/// banking's own.
-	///
-	/// The retired singleton claims have no field: once the data migration has run they
-	/// are zero, and until then a non-zero balance on them is a fact for the operator's
-	/// log, not a figure on a screen that would have to explain a fourth kind of owner.
 	async fn get_treasury(&self, request: Request<pb::GetTreasuryRequest>) -> Result<Response<pb::Treasury>, Status> {
 		require_permission(&self.state, &request, bank::Treasury::Read).await?;
 		let t = balance_app::treasury(self.state.ledger.as_ref(), self.state.custody.as_ref()).await.map_err(map_err)?;

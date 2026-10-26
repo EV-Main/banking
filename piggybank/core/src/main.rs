@@ -5,7 +5,7 @@
 //! [`Authorizer`](evbanking_auth::Authorizer) channel:
 //!   - the **auth service** ([`evbanking_auth::AuthService`]) — issuance gRPC routes
 //!     + the authorize channel, on `auth_grpc_addr`;
-//!   - the **core** gRPC services (health/users/balance/funds/wallet) on `grpc_addr`,
+//!   - the **core** gRPC services on `grpc_addr`,
 //!     authorizing each request via the `Authorizer` core got from auth.
 
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
@@ -931,7 +931,7 @@ mod tests {
 		assert!(matches!(parse(&["--print-required-vars"]).unwrap(), Command::PrintRequiredVars(p) if p == "production"));
 		assert!(matches!(parse(&["--print-required-vars=dev"]).unwrap(), Command::PrintRequiredVars(p) if p == "dev"));
 		assert!(matches!(parse(&["--print-required-vars", "dev"]).unwrap(), Command::PrintRequiredVars(p) if p == "dev"));
-		for unknown in [&["migrate-ownership", "--holders", "h.json"][..], &["--port=1"], &["serve"]] {
+		for unknown in [&["reconcile", "--all"][..], &["--port=1"], &["serve"]] {
 			assert!(parse(unknown).is_err(), "{unknown:?} is refused, never served");
 		}
 	}

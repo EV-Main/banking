@@ -152,8 +152,8 @@
     "t": "Chấp nhận là quyết định cuối cùng. Quyền sở hữu của bạn kết thúc ngay khi được ghi nhận, và không thể hoàn tác từ trang này hay bất kỳ trang nào khác."
   },
   "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.",
-    "t": "{initiator} đã đề xuất rằng bạn không còn là chủ sở hữu của quỹ. Bạn có tiếng nói trong việc này, và có một hạn chót."
+    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
+    "t": "{initiator} đã đề xuất rằng bạn không còn là chủ sở hữu của nền tảng. Bạn có tiếng nói trong việc này, và có một hạn chót."
   },
   "approval.removal.noReason": {
     "en": "No reason was given.",
@@ -356,8 +356,8 @@
     "t": "Bắt đầu xác minh"
   },
   "meta.description": {
-    "en": "Your investor cabinet — portfolio, funds and wallet.",
-    "t": "Cổng nhà đầu tư của bạn — danh mục, quỹ và ví."
+    "en": "Your investor cabinet — wallet, deposits and withdrawals.",
+    "t": "Cổng nhà đầu tư của bạn — ví, nạp và rút tiền."
   },
   "meta.title": {
     "en": "EV Investment — Cabinet",
@@ -672,8 +672,8 @@
     "t": "Giới thiệu: {title}"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
-    "t": "Bạn chỉ có một số dư USDT duy nhất — các mạng chỉ là cách bạn nạp và rút. Thẻ này chia số dư đó thành Tổng = Khả dụng + Trong lệnh + Đã đầu tư + Đang chờ rút + Trong ngăn."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments.",
+    "t": "Bạn chỉ có một số dư USDT duy nhất — các mạng chỉ là cách bạn nạp và rút. Thẻ này chia số dư đó thành Tổng = Khả dụng + Đang chờ rút + Trong các ngăn."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",

@@ -72,10 +72,9 @@ Three reasons, in the order they will bite:
    but it is exactly what the number encodes and what a future `>=` reads back out. A
    `u32` cannot warn the next gate author that its ordering is decorative.
 3. **The axis already exists.** `string role = 17` sits in the same message
-   (`contracts/proto/banking/v1/users.proto:86`), with its own RPC
+   (`contracts/proto/banking/v1/users.proto:87`), with its own RPC
    (`concierge` `contracts/proto/concierge/v1/directory.proto:67`, `SetRole`), its own
-   admin vocabulary (`ASSIGNABLE_ROLES` / `ROLES` at
-   `wallet/frontend/views/admin/lib/format.ts:52,62`) and an owners' approval behind it.
+   admin vocabulary in concierge's admin and an owners' approval behind it.
    Partner, company partner and service are answers to "what kind of subject is this",
    which is the question `role` is for.
 

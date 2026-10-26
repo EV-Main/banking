@@ -10,16 +10,8 @@
 // Lifecycle states travel as plain strings on purpose: a closed union here would turn a
 // backend addition into a client type error and tempt a view into an exhaustive switch that
 // renders nothing for a state it has not met yet.
-
-/** An amount as it crossed the wire: an exact decimal string, never a number. */
-export type Decimal = string;
-
-/**
- * Unix SECONDS as a decimal string, `"0"` while unset — what the BFF actually sends (see
- * `shared/lib/datetime.ts`, which is the one place it is parsed). The name is kept for its
- * meaning, not its encoding.
- */
-export type Timestamp = string;
+//
+// Stamps are unix seconds as a decimal string, parsed only by `shared/lib/datetime.ts`.
 
 export type RemovalDecision = "remove" | "keep";
 
@@ -35,8 +27,8 @@ export interface RemovalApproval {
   /** The owner whose seat this is about — the reader. */
   target_email: string;
   reason: string;
-  created_at: Timestamp;
-  expires_at: Timestamp;
+  created_at: string;
+  expires_at: string;
   /**
    * This seat's answer as the wire spells it — NOT a nullable `RemovalDecision`. An
    * unanswered seat arrives as `"pending"` and an absent one as `""`, both truthy, so it is

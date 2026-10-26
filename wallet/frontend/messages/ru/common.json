@@ -152,8 +152,8 @@
     "t": "Согласие окончательно. Ваше владение прекращается сразу после записи ответа, и отменить это ни с этой страницы, ни с какой-либо другой нельзя."
   },
   "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.",
-    "t": "{initiator} предлагает лишить вас статуса владельца фонда. Ваш голос учитывается, и у ответа есть срок."
+    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
+    "t": "{initiator} предлагает лишить вас статуса владельца платформы. Ваш голос учитывается, и у ответа есть срок."
   },
   "approval.removal.noReason": {
     "en": "No reason was given.",
@@ -356,8 +356,8 @@
     "t": "Начать проверку"
   },
   "meta.description": {
-    "en": "Your investor cabinet — portfolio, funds and wallet.",
-    "t": "Ваш инвесторский кабинет — портфель, фонды и кошелёк."
+    "en": "Your investor cabinet — wallet, deposits and withdrawals.",
+    "t": "Ваш инвесторский кабинет — кошелёк, пополнения и выводы."
   },
   "meta.title": {
     "en": "EV Investment — Cabinet",
@@ -672,8 +672,8 @@
     "t": "О чём это: {title}"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
-    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + в заявках + инвестировано + в ожидании вывода + в отсеках."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments.",
+    "t": "У вас единый баланс USDT — сети лишь способ пополнения и вывода. Эта карточка раскладывает его так: всего = доступно + ожидает вывода + в отсеках."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",

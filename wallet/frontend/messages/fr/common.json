@@ -152,8 +152,8 @@
     "t": "Accepter est définitif. Votre propriété prend fin dès l'enregistrement, et cela ne peut être annulé ni depuis cette page ni depuis aucune autre."
   },
   "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the fund. You have a say in it, and there is a deadline.",
-    "t": "{initiator} a proposé que vous cessiez d'être propriétaire du fonds. Vous avez votre mot à dire, et il y a un délai."
+    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
+    "t": "{initiator} a proposé que vous cessiez d'être propriétaire de la plateforme. Vous avez votre mot à dire, et il y a un délai."
   },
   "approval.removal.noReason": {
     "en": "No reason was given.",
@@ -356,8 +356,8 @@
     "t": "Lancer la vérification"
   },
   "meta.description": {
-    "en": "Your investor cabinet — portfolio, funds and wallet.",
-    "t": "Votre espace investisseur — portefeuille, fonds et wallet."
+    "en": "Your investor cabinet — wallet, deposits and withdrawals.",
+    "t": "Votre espace investisseur — wallet, dépôts et retraits."
   },
   "meta.title": {
     "en": "EV Investment — Cabinet",
@@ -672,8 +672,8 @@
     "t": "À propos : {title}"
   },
   "tips.wallet.balance.model.body": {
-    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + In orders + Invested + Pending withdrawal + In compartments.",
-    "t": "Vous avez un solde USDT unique — les réseaux ne sont que la manière dont vous déposez et retirez. Cette carte le décompose en Total = Disponible + En ordres + Investi + Retrait en attente + En compartiments."
+    "en": "You have a single USDT balance — networks are just how you deposit and withdraw. This card splits it into Total = Available + Pending withdrawal + In compartments.",
+    "t": "Vous avez un solde USDT unique — les réseaux ne sont que la manière dont vous déposez et retirez. Cette carte le décompose en Total = Disponible + Retrait en attente + Dans les compartiments."
   },
   "tips.wallet.balance.model.title": {
     "en": "One balance, many networks",
