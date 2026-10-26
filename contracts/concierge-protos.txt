@@ -8,8 +8,7 @@
 #     here has its bytes compared pin ↔ concierge origin/main ↔ local cargo checkout.
 #
 # Add a proto here when the wallet frontend starts consuming it; it is then generated AND
-# guarded in one move (issue #293: governance.proto was generated but not guarded).
+# guarded in one move.
 # Paths are relative to concierge's contracts/proto/. One per line; `#` comments.
 concierge/v1/directory.proto
 concierge/v1/auth.proto
-concierge/v1/governance.proto

@@ -692,7 +692,6 @@ impl DeferredEvent {
 			email_verified: self.email_verified,
 			token_version: self.token_version as u64,
 			role: self.role,
-			permissions: Vec::new(),
 			seat_permissions: self.permissions.map(|bank| SeatPermissions { bank }),
 		}
 	}

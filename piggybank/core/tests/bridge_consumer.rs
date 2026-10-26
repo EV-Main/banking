@@ -102,7 +102,6 @@ fn event(subject: &str, kind: Kind, sequence: u64) -> UserLifecycleEvent {
 		// Base events carry no role (empty → the consumer mirrors it as Investor); a
 		// ROLE_CHANGED test overrides this field explicitly.
 		role: String::new(),
-		permissions: Vec::new(),
 		seat_permissions: None,
 	}
 }

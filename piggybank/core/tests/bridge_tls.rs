@@ -152,7 +152,6 @@ fn created(subject: &str) -> UserLifecycleEvent {
 		email_verified: true,
 		token_version: 0,
 		role: String::new(),
-		permissions: Vec::new(),
 		seat_permissions: None,
 	}
 }
