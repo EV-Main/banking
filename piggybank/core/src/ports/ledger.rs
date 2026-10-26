@@ -180,51 +180,44 @@ impl SpendGuard for ClaimCovers<'_> {
 	}
 }
 
-/// Which side of the cash invariant a USDT-ledger account counts on, by its kind — the
+/// Which side of the cash invariant a USDT-ledger account counts on, by its code — the
 /// domain's chart of accounts read as a conservation statement. The claims sides are
 /// the answer to "who is owed the custody": people directly (their `main` claim and their
-/// scope compartments), allocations (whose holders are people), scopes' own accounts, the
-/// withdrawal transit, the book's cash escrow, and the retired singleton claims (#245),
-/// which the data migration emptied but which still exist.
+/// scope compartments), scopes' own accounts, the withdrawal transit, and the retired
+/// claims, which hold nothing but still exist.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CashSide {
 	/// `wallet:<net>` — the asset side.
 	Custody,
 	/// `user:<id>` — a person's own claim.
 	UserClaims,
-	/// `service:<svc>` — an allocation's claim, a product's or a reserved one's.
-	ServiceClaims,
 	/// `clearing` — in flight between a claim and a rail.
 	Clearing,
-	/// `book_cash:<user>` — a person's cash resting in a buy order.
-	BookCash,
 	/// `scope_claim:<scope>:<user>` — a person's money in one scope's compartment.
 	ScopeClaims,
 	/// `scope_account:<scope>:<label>` — a scope's own money, banking's treasury included.
 	ScopeAccounts,
-	/// The retired `fund` (code 1) and `fee` (code 40) claims (#245). Zero since the
-	/// ownership data migration moved them onto the reserved allocations; still a side,
-	/// because TigerBeetle cannot delete an account and the conservation check must count
-	/// whatever is on every one of them.
+	/// A claim of a retired code ([`AccountCode::RETIRED`]): emptied when its kind was
+	/// retired, so anything on one is a finding.
 	RetiredClaims,
 }
 
 impl CashSide {
-	/// The side an account of kind `code` counts on; `None` for a kind that is not on
-	/// the USDT ledger at all (custody in the mocked bank, the retired unit accounts).
-	pub fn of(code: AccountCode) -> Option<Self> {
-		match code {
+	/// The side an account of `code` counts on; `None` for a code no kind has carried and
+	/// for a live kind off the USDT ledger (custody in the mocked bank).
+	pub fn of(code: u16) -> Option<Self> {
+		if AccountCode::is_retired(code) {
+			return Some(Self::RetiredClaims);
+		}
+		match AccountCode::from_code(code)? {
 			AccountCode::CryptoWallet => Some(Self::Custody),
 			AccountCode::UserClaim => Some(Self::UserClaims),
-			AccountCode::ServiceClaim => Some(Self::ServiceClaims),
 			// Holds are pending only, so nothing posted ever sits on it; should something
 			// ever, it is in-flight value like the withdrawal transit, not anybody's claim.
 			AccountCode::WithdrawalClearing | AccountCode::HoldClearing => Some(Self::Clearing),
-			AccountCode::BookCash => Some(Self::BookCash),
 			AccountCode::ScopeClaim => Some(Self::ScopeClaims),
 			AccountCode::ScopeAccount => Some(Self::ScopeAccounts),
-			AccountCode::RetiredFundClaim | AccountCode::RetiredFeeClaim => Some(Self::RetiredClaims),
-			AccountCode::BankCustody | AccountCode::UserShares | AccountCode::SharesOutstanding | AccountCode::FeeShares | AccountCode::RetiredCompanyStake | AccountCode::BookShares => None,
+			AccountCode::BankCustody => None,
 		}
 	}
 }
@@ -242,17 +235,13 @@ pub struct CashInvariant {
 	pub claims: u128,
 	/// Σ `user:<id>` — held by people directly.
 	pub user_claims: u128,
-	/// Σ `service:<svc>` — held by allocations, whose units people hold.
-	pub service_claims: u128,
 	/// `clearing` — the posted withdrawal transit.
 	pub clearing: u128,
-	/// Σ `book_cash:<user>` — resting in buy orders.
-	pub book_cash: u128,
 	/// Σ `scope_claim:<scope>:<user>` — people's money in scope compartments.
 	pub scope_claims: u128,
 	/// Σ `scope_account:<scope>:<label>` — scopes' own money, banking's treasury included.
 	pub scope_accounts: u128,
-	/// The retired `fund` + `fee` singleton claims (#245).
+	/// Σ claims of retired codes — zero, or reconciliation is not clean.
 	pub retired_claims: u128,
 }
 
@@ -266,9 +255,7 @@ impl CashInvariant {
 	pub fn unclassified(self) -> u128 {
 		self.claims
 			.saturating_sub(self.user_claims)
-			.saturating_sub(self.service_claims)
 			.saturating_sub(self.clearing)
-			.saturating_sub(self.book_cash)
 			.saturating_sub(self.scope_claims)
 			.saturating_sub(self.scope_accounts)
 			.saturating_sub(self.retired_claims)
@@ -393,9 +380,9 @@ pub struct PendingCompletion {
 mod tests {
 	use super::*;
 
-	// Every kind on the USDT ledger has a side, and the retired singletons count as
-	// CLAIMS: the accounts `fund` (1) and `fee` (40) exist for good, and whatever were on
-	// them would be owed to somebody. A kind on another ledger has none.
+	// Every kind on the USDT ledger has a side, and every retired code counts as a CLAIM:
+	// its accounts exist for good, and whatever were on them would be owed to somebody. A
+	// kind on another ledger has none.
 	#[test]
 	fn every_usdt_ledger_kind_has_a_side_and_the_retired_claims_are_claims() {
 		use domain::{balance::Ledger as Plane, money::Network, users::UserId};
@@ -410,13 +397,13 @@ mod tests {
 			LedgerAccountKey::ScopeAccount(domain::scopes::ScopeId::main(), domain::scopes::ScopeAccountLabel::treasury()),
 		];
 		for key in keys {
-			let side = CashSide::of(key.account_code());
+			let side = CashSide::of(key.account_code().code());
 			assert_eq!(side.is_some(), key.ledger() == Plane::Usdt, "{}: a side iff on the USDT ledger", key.logical_key());
 		}
-		assert_eq!(CashSide::of(AccountCode::RetiredFundClaim), Some(CashSide::RetiredClaims));
-		assert_eq!(CashSide::of(AccountCode::RetiredFeeClaim), Some(CashSide::RetiredClaims));
-		assert_eq!(CashSide::of(AccountCode::RetiredCompanyStake), None, "a unit account, off the cash plane");
-		assert_eq!(CashSide::of(AccountCode::CryptoWallet), Some(CashSide::Custody));
+		for code in AccountCode::RETIRED {
+			assert_eq!(CashSide::of(code), Some(CashSide::RetiredClaims), "retired code {code}");
+		}
+		assert_eq!(CashSide::of(2), None, "a number no kind carries has no side");
 	}
 
 	// The named parts never exceed the whole, and what they leave over is the value on
@@ -426,10 +413,8 @@ mod tests {
 		let inv = CashInvariant {
 			custody: 100,
 			claims: 100,
-			user_claims: 50,
-			service_claims: 20,
+			user_claims: 73,
 			clearing: 5,
-			book_cash: 3,
 			scope_claims: 10,
 			scope_accounts: 5,
 			retired_claims: 7,

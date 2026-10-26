@@ -9,9 +9,9 @@
 //!
 //!   1. **Global cash invariant** — `sum(custody) == sum(claims)` on the USDT ledger,
 //!      read straight from TigerBeetle ([`Ledger::cash_invariant`]), the claims broken
-//!      down by whose they are, every kind counted by its code — retired kinds included,
-//!      since their accounts still exist in TigerBeetle — and value on an account of no
-//!      known kind is its own finding.
+//!      down by whose they are, every kind counted by its code. Value on a retired code's
+//!      account (they still exist in TigerBeetle, emptied) and value on an account of no
+//!      known kind are each their own finding.
 //!   2. **Clearing vs control-plane** — the `clearing` account's reserved (pending +
 //!      posted) balance vs the gross of every `queued`/`processing` withdrawal in
 //!      Postgres; a mismatch means a withdrawal whose reserve parked (nothing locked) or a
@@ -102,6 +102,8 @@ pub struct ReconReport {
 	/// Claims on accounts of a kind the breakdown does not name — value the chart of
 	/// accounts cannot attribute to anyone.
 	pub unclassified_claims: u128,
+	/// Value on accounts of a retired code — emptied when their kind was retired.
+	pub retired_claims: u128,
 	/// Σ users' scope compartments and Σ scopes' own accounts — named parts of `claims`,
 	/// reported so a reader sees how much of the custody sits in scopes.
 	pub scope_claims: u128,
@@ -148,6 +150,7 @@ impl ReconReport {
 	pub fn clean(&self) -> bool {
 		self.custody == self.claims
 			&& self.unclassified_claims == 0
+			&& self.retired_claims == 0
 			&& self.clearing_reserved == self.clearing_expected
 			&& self.parked_rows == 0
 			&& self.treasury_debits == self.treasury_debits_approved
@@ -202,6 +205,7 @@ impl Reconciliation {
 				report.custody = inv.custody;
 				report.claims = inv.claims;
 				report.unclassified_claims = inv.unclassified();
+				report.retired_claims = inv.retired_claims;
 				report.scope_claims = inv.scope_claims;
 				report.scope_accounts = inv.scope_accounts;
 				if !inv.balanced() {
@@ -209,9 +213,7 @@ impl Reconciliation {
 						custody = %inv.custody,
 						claims = %inv.claims,
 						user_claims = %inv.user_claims,
-						service_claims = %inv.service_claims,
 						clearing = %inv.clearing,
-						book_cash = %inv.book_cash,
 						scope_claims = %inv.scope_claims,
 						scope_accounts = %inv.scope_accounts,
 						retired_claims = %inv.retired_claims,
@@ -222,6 +224,12 @@ impl Reconciliation {
 					error!(
 						unclassified = %report.unclassified_claims,
 						"reconciliation: CLAIMS OF UNKNOWN KIND — value on a USDT-ledger account the chart of accounts cannot attribute to anyone"
+					);
+				}
+				if report.retired_claims != 0 {
+					error!(
+						retired = %report.retired_claims,
+						"reconciliation: VALUE ON A RETIRED CLAIM — an account whose kind was retired (AccountCode::RETIRED) holds money no live path can move"
 					);
 				}
 			}

@@ -14,7 +14,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use domain::{
 	architecture::Gateway,
-	balance::{AccountCode, LedgerAccountKey, Normal},
+	balance::{LedgerAccountKey, Normal},
 };
 use sqlx::{PgConnection, PgPool};
 use tigerbeetle as tb;
@@ -480,7 +480,7 @@ impl Ledger for TbLedger {
 		for (bytes, code) in &rows {
 			let id = u128_from_be(bytes)?;
 			ids.push(id);
-			let side = u16::try_from(*code).ok().and_then(AccountCode::from_code).and_then(CashSide::of);
+			let side = u16::try_from(*code).ok().and_then(CashSide::of);
 			side_of.insert(id, side);
 		}
 		// One `lookup_accounts` is capped at `LOOKUP_ACCOUNTS_MAX`; the cash plane grows
@@ -511,9 +511,7 @@ impl Ledger for TbLedger {
 				inv.claims = inv.claims.saturating_add(posted);
 				let bucket = match side {
 					Some(CashSide::UserClaims) => &mut inv.user_claims,
-					Some(CashSide::ServiceClaims) => &mut inv.service_claims,
 					Some(CashSide::Clearing) => &mut inv.clearing,
-					Some(CashSide::BookCash) => &mut inv.book_cash,
 					Some(CashSide::ScopeClaims) => &mut inv.scope_claims,
 					Some(CashSide::ScopeAccounts) => &mut inv.scope_accounts,
 					Some(CashSide::RetiredClaims) => &mut inv.retired_claims,

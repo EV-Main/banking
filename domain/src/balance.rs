@@ -16,9 +16,10 @@
 //!   (`WithdrawalClearing`). USDT is one fungible pool, so a user has ONE claim per
 //!   compartment, not one per chain.
 //!
-//! **Retired accounts.** Codes no live key derives any more — the `fund` (1) and `fee`
-//! (40) claims, the company stake (63) — name accounts that stay in TigerBeetle and in
-//! `tb_accounts` for good, so their codes are reserved forever ([`AccountCode::is_retired`]).
+//! **Retired accounts.** Accounts no live key derives any more — the singleton `fund` and
+//! `fee` claims, the allocations' `service:` claims, the Share ledger's unit accounts, the
+//! book's cash escrow — stay in TigerBeetle and in `tb_accounts` for good, so their codes
+//! are reserved forever ([`AccountCode::RETIRED`]).
 //!
 //! Two layers, one invariant: **`sum(custody) == sum(claims)`** globally on the USDT
 //! ledger. Per-rail backing is a *treasury* concern (a withdrawal on a short rail is
@@ -140,93 +141,59 @@ impl Ledger {
 	}
 }
 
-/// Account type (TigerBeetle `code`).
-///
-/// Codes are immutable on the accounts that carry them and part of TigerBeetle's
-/// history, so a retired code is **reserved forever, never reused**: `1`, `40` and `63`
-/// name the retired accounts (#245), which still exist — a TigerBeetle account cannot be
-/// deleted — and hold zero since the ownership data migration emptied them. No
-/// [`LedgerAccountKey`] derives them any more; they stay here so a scan of `tb_accounts`
-/// can still say what those rows are, and a new account kind takes a fresh number
-/// (`retired_codes_are_never_derived_by_a_live_key` guards the derivation).
+/// Account type (TigerBeetle `code`) — only the kinds a live key derives. A retired kind
+/// is a number in [`Self::RETIRED`], never a variant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccountCode {
-	/// Retired (#245) — reserved, never reuse. The `fund` singleton claim.
-	RetiredFundClaim,
 	CryptoWallet,
 	BankCustody,
 	UserClaim,
-	ServiceClaim,
-	/// Retired (#245) — reserved, never reuse. The `fee` singleton claim.
-	RetiredFeeClaim,
-	WithdrawalClearing,
-	UserShares,
-	SharesOutstanding,
-	FeeShares,
-	/// Retired (#245) — reserved, never reuse. The company's in-kind stake
-	/// (`shares_company:<svc>`).
-	RetiredCompanyStake,
-	BookShares,
-	BookCash,
 	/// A user's compartment in a non-main scope.
 	ScopeClaim,
 	/// A scope's own account `(scope, label)`, `(main, treasury)` included.
 	ScopeAccount,
+	WithdrawalClearing,
 	/// The credit side of every hold a scope's service places on a user's compartment.
 	HoldClearing,
 }
 
 impl AccountCode {
+	/// Codes of accounts no live key derives: `1`/`40` the singleton `fund`/`fee` claims,
+	/// `30` an allocation's `service:` claim, `65` the book's cash escrow (USDT ledger);
+	/// `60`/`61`/`62`/`63`/`64` the Share ledger's unit accounts. TigerBeetle cannot delete
+	/// an account, so their rows stay and the numbers are reserved forever
+	/// (`every_account_and_transfer_code_is_unique`).
+	pub const RETIRED: [u16; 9] = [1, 30, 40, 60, 61, 62, 63, 64, 65];
+
 	pub const fn code(self) -> u16 {
 		match self {
-			Self::RetiredFundClaim => 1,
 			Self::CryptoWallet => 10,
 			Self::BankCustody => 11,
 			Self::UserClaim => 20,
 			Self::ScopeClaim => 21,
-			Self::ServiceClaim => 30,
 			Self::ScopeAccount => 31,
-			Self::RetiredFeeClaim => 40,
 			Self::WithdrawalClearing => 50,
 			Self::HoldClearing => 51,
-			Self::UserShares => 60,
-			Self::SharesOutstanding => 61,
-			Self::FeeShares => 62,
-			Self::RetiredCompanyStake => 63,
-			Self::BookShares => 64,
-			Self::BookCash => 65,
 		}
 	}
 
-	/// The inverse of [`Self::code`]: the kind a `tb_accounts` row's number names, or
-	/// `None` for a number no kind has ever carried. Total over the retired codes — the
-	/// rows exist and a scan of the map must be able to say what each one is.
+	/// The inverse of [`Self::code`]; `None` for a retired number and for one no kind has
+	/// ever carried — a scan tells the two apart with [`Self::is_retired`].
 	pub const fn from_code(code: u16) -> Option<Self> {
 		Some(match code {
-			1 => Self::RetiredFundClaim,
 			10 => Self::CryptoWallet,
 			11 => Self::BankCustody,
 			20 => Self::UserClaim,
 			21 => Self::ScopeClaim,
-			30 => Self::ServiceClaim,
 			31 => Self::ScopeAccount,
-			40 => Self::RetiredFeeClaim,
 			50 => Self::WithdrawalClearing,
 			51 => Self::HoldClearing,
-			60 => Self::UserShares,
-			61 => Self::SharesOutstanding,
-			62 => Self::FeeShares,
-			63 => Self::RetiredCompanyStake,
-			64 => Self::BookShares,
-			65 => Self::BookCash,
 			_ => return None,
 		})
 	}
 
-	/// Whether this kind is one #245 retired: a row of it names an account that exists
-	/// and holds zero, but that no live key resolves to.
-	pub const fn is_retired(self) -> bool {
-		matches!(self, Self::RetiredFundClaim | Self::RetiredFeeClaim | Self::RetiredCompanyStake)
+	pub fn is_retired(code: u16) -> bool {
+		Self::RETIRED.contains(&code)
 	}
 }
 
@@ -243,25 +210,13 @@ pub enum Normal {
 }
 
 /// Transfer type (TigerBeetle `code`) — classifies a money movement for audit and
-/// reconciliation. Never load-bearing for correctness, only for forensics.
+/// reconciliation. Never load-bearing for correctness, only for forensics. Only the kinds
+/// the hub still posts; a retired kind is a number in [`Self::RETIRED`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransferCode {
 	Deposit,
 	Withdraw,
 	WithdrawFee,
-	UserAllocate,
-	UserRevoke,
-	ServiceReserve,
-	ServiceSettle,
-	ServiceCancel,
-	ServiceTransfer,
-	Bridge,
-	Subscribe,
-	Redeem,
-	ShareMint,
-	ShareBurn,
-	FeeClawback,
-	FeeSettle,
 	/// A [`crate::payments::PaymentOrder`] moving value between two claims — both the
 	/// reservation into `clearing` and its settlement out of it.
 	///
@@ -269,32 +224,6 @@ pub enum TransferCode {
 	/// from the claim pair a transfer names; a code per tier would encode the same fact
 	/// twice and let the two disagree.
 	PaymentTransfer,
-	/// An in-kind unit issuance: a mint with no cash leg behind it. Its own code rather
-	/// than [`Self::ShareMint`] because the two explain `SharesOutstanding` growth in
-	/// opposite ways — a `ShareMint` is always paired with a `Subscribe` cash leg into
-	/// the service claim, an issuance never is — and reconciliation reading the Share
-	/// ledger alone must be able to tell which mints the fund's cash should account for.
-	UnitIssue,
-	/// A book order committing what it may spend: units into `BookShares` for a sell,
-	/// cash into `BookCash` for a buy.
-	BookLock,
-	/// The unspent part of a book order handed back on cancel, on an unfilled IOC
-	/// remainder, or on the price improvement a buy filled below its limit.
-	BookRelease,
-	/// One trade's units leg (`Dr UserShares(buyer) / Cr BookShares(seller)`) and cash leg
-	/// (`Dr BookCash(buyer) / Cr UserClaim(seller)`) — posted linked, so a fill is
-	/// delivery-versus-payment or nothing.
-	BookFill,
-	/// The taker's fee on a trade, into the event's `payee` (`service:fee`), in the same
-	/// linked batch as the fill.
-	BookFee,
-	/// In-kind units retired: `Dr SharesOutstanding / Cr <holder shares>` — supply
-	/// shrinks, no cash moves. The mirror of [`Self::UnitIssue`], and its own code rather
-	/// than [`Self::ShareBurn`] for the same reason: a `ShareBurn` is always paired with
-	/// a `Redeem` payout out of the service claim, a retirement never is, so
-	/// reconciliation reading the Share ledger alone can tell which burns the fund's
-	/// cash should account for.
-	UnitRetire,
 	/// A user moving their own money between `main` and a scope compartment, either way.
 	/// One code for both directions: the claim pair says which way it went.
 	CompartmentMove,
@@ -317,52 +246,30 @@ pub enum TransferCode {
 	/// (`ScopeLedgerService.Charge`): `Dr scope_claim:<scope>:<user> / Cr
 	/// scope_account:<scope>:<label>`, posted at once.
 	ScopeCharge,
-	/// A move the migration window's operator tool posted directly (`window-tool`): an
-	/// allocation's cash onto its scope account, or a unit holding closed against the supply.
-	/// Its own code so the window's postings are told apart from every saga's on the ledger
-	/// alone; the claim pair says which of the two it was.
-	WindowMigration,
 }
 
 impl TransferCode {
-	/// Codes carried by posted transfers whose kinds #245 retired: `1` the seed onto the
-	/// retired `fund` claim, `52` a hand-over out of the company stake, `54` the one-off
-	/// ownership data migration. TigerBeetle keeps those transfers forever, so their codes
-	/// are reserved and never handed to a new kind (`every_account_and_transfer_code_is_unique`).
-	pub const RETIRED: [u16; 3] = [1, 52, 54];
+	/// Codes of kinds the hub no longer posts: `1` the seed onto the singleton `fund` claim,
+	/// `10`/`11` user allocate/revoke, `20`–`23` the allocations' service-claim sagas, `30`
+	/// the bridge, `40`–`45` subscriptions, redemptions, share mint/burn and the unit fees,
+	/// `47`/`53` in-kind issue/retire, `48`–`51` the book, `52` a hand-over out of the
+	/// company stake, `54` the ownership data migration, `61` the migration window's moves.
+	/// TigerBeetle keeps those transfers forever, so the numbers are reserved and never
+	/// handed to a new kind (`every_account_and_transfer_code_is_unique`).
+	pub const RETIRED: [u16; 23] = [1, 10, 11, 20, 21, 22, 23, 30, 40, 41, 42, 43, 44, 45, 47, 48, 49, 50, 51, 52, 53, 54, 61];
 
 	pub const fn code(self) -> u16 {
 		match self {
 			Self::Deposit => 2,
 			Self::Withdraw => 3,
 			Self::WithdrawFee => 4,
-			Self::UserAllocate => 10,
-			Self::UserRevoke => 11,
-			Self::ServiceReserve => 20,
-			Self::ServiceSettle => 21,
-			Self::ServiceCancel => 22,
-			Self::ServiceTransfer => 23,
-			Self::Bridge => 30,
-			Self::Subscribe => 40,
-			Self::Redeem => 41,
-			Self::ShareMint => 42,
-			Self::ShareBurn => 43,
-			Self::FeeClawback => 44,
-			Self::FeeSettle => 45,
 			Self::PaymentTransfer => 46,
-			Self::UnitIssue => 47,
-			Self::BookLock => 48,
-			Self::BookRelease => 49,
-			Self::BookFill => 50,
-			Self::BookFee => 51,
-			Self::UnitRetire => 53,
 			Self::CompartmentMove => 55,
 			Self::ScopeTransfer => 56,
 			Self::ScopeHold => 57,
-			Self::ScopePayout => 59,
 			Self::InvoicePayment => 58,
+			Self::ScopePayout => 59,
 			Self::ScopeCharge => 60,
-			Self::WindowMigration => 61,
 		}
 	}
 }
@@ -453,8 +360,8 @@ impl LedgerAccountKey {
 	/// silently attributed to an account it is not.
 	///
 	/// A retired row (`fund`, `fee`, `service:<id>`, a unit account) is an error too: no
-	/// live account is named by it, and a scan tells such rows apart by their
-	/// [`AccountCode`] before it parses.
+	/// live account is named by it, and a scan skips such rows by their code
+	/// ([`AccountCode::is_retired`]) before it parses.
 	pub fn parse_logical_key(raw: &str) -> Result<Self, DomainError> {
 		match raw {
 			"clearing" => Ok(Self::WithdrawalClearing),
@@ -535,13 +442,11 @@ mod tests {
 
 	#[test]
 	fn retired_codes_are_never_derived_by_a_live_key() {
-		// Codes 1, 40 and 63 belong to the retired accounts and to TigerBeetle's history.
-		// Every key a live path can build must derive something else — reusing one would
-		// let a new account wear a retired account's forensic identity.
-		const RETIRED: [u16; 3] = [AccountCode::RetiredFundClaim.code(), AccountCode::RetiredFeeClaim.code(), AccountCode::RetiredCompanyStake.code()];
-		assert_eq!(RETIRED, [1, 40, 63]);
-		for code in RETIRED {
-			assert!(AccountCode::from_code(code).is_some_and(AccountCode::is_retired), "code {code} no longer reads as retired");
+		// Reusing a retired code would let a new account wear a retired account's forensic
+		// identity in TigerBeetle's history.
+		for code in AccountCode::RETIRED {
+			assert!(AccountCode::is_retired(code));
+			assert_eq!(AccountCode::from_code(code), None, "retired code {code} reads as a live kind");
 		}
 		let uid = UserId::from_raw(uuid::Uuid::nil());
 		let live = [
@@ -554,8 +459,7 @@ mod tests {
 			LedgerAccountKey::HoldClearing,
 		];
 		for key in live {
-			assert!(!key.account_code().is_retired(), "{key:?} derives a retired kind");
-			assert!(!RETIRED.contains(&key.account_code().code()), "{key:?} derives a retired code");
+			assert!(!AccountCode::is_retired(key.account_code().code()), "{key:?} derives a retired code");
 			assert!(!matches!(key.logical_key().as_str(), "fund" | "fee"), "{key:?} derives a retired logical key");
 			assert!(!key.logical_key().starts_with("shares_company:"), "{key:?} derives a retired logical key");
 		}
@@ -640,73 +544,42 @@ mod tests {
 	// The retired codes are IN the sets on purpose: reserved forever, so a newcomer that
 	// picks one collides here.
 	fn every_account_and_transfer_code_is_unique() {
-		let account_codes = [
-			AccountCode::RetiredFundClaim,
+		let live_account_codes = [
 			AccountCode::CryptoWallet,
 			AccountCode::BankCustody,
 			AccountCode::UserClaim,
-			AccountCode::ServiceClaim,
-			AccountCode::RetiredFeeClaim,
-			AccountCode::WithdrawalClearing,
-			AccountCode::UserShares,
-			AccountCode::SharesOutstanding,
-			AccountCode::FeeShares,
-			AccountCode::RetiredCompanyStake,
-			AccountCode::BookShares,
-			AccountCode::BookCash,
 			AccountCode::ScopeClaim,
 			AccountCode::ScopeAccount,
+			AccountCode::WithdrawalClearing,
 			AccountCode::HoldClearing,
 		]
 		.map(AccountCode::code);
-		let mut sorted = account_codes;
-		sorted.sort_unstable();
-		let mut deduped = sorted.to_vec();
-		deduped.dedup();
-		assert_eq!(deduped.len(), account_codes.len(), "an account code is reused");
-		for code in account_codes {
+		for code in live_account_codes {
 			assert_eq!(AccountCode::from_code(code).map(AccountCode::code), Some(code), "code {code} does not read back as itself");
 		}
 		assert_eq!(AccountCode::from_code(2), None, "a number no kind carries reads back as nothing");
+		assert_unique("an account", live_account_codes.iter().copied().chain(AccountCode::RETIRED).collect());
 
 		let live_transfer_codes = [
 			TransferCode::Deposit,
 			TransferCode::Withdraw,
 			TransferCode::WithdrawFee,
-			TransferCode::UserAllocate,
-			TransferCode::UserRevoke,
-			TransferCode::ServiceReserve,
-			TransferCode::ServiceSettle,
-			TransferCode::ServiceCancel,
-			TransferCode::ServiceTransfer,
-			TransferCode::Bridge,
-			TransferCode::Subscribe,
-			TransferCode::Redeem,
-			TransferCode::ShareMint,
-			TransferCode::ShareBurn,
-			TransferCode::FeeClawback,
-			TransferCode::FeeSettle,
 			TransferCode::PaymentTransfer,
-			TransferCode::UnitIssue,
-			TransferCode::BookLock,
-			TransferCode::BookRelease,
-			TransferCode::BookFill,
-			TransferCode::BookFee,
-			TransferCode::UnitRetire,
 			TransferCode::CompartmentMove,
 			TransferCode::ScopeTransfer,
 			TransferCode::ScopeHold,
-			TransferCode::ScopePayout,
 			TransferCode::InvoicePayment,
+			TransferCode::ScopePayout,
 			TransferCode::ScopeCharge,
-			TransferCode::WindowMigration,
 		]
 		.map(TransferCode::code);
-		let transfer_codes: Vec<u16> = live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect();
-		let mut sorted = transfer_codes.clone();
-		sorted.sort_unstable();
-		let mut deduped = sorted.to_vec();
+		assert_unique("a transfer", live_transfer_codes.iter().copied().chain(TransferCode::RETIRED).collect());
+	}
+
+	fn assert_unique(kind: &str, codes: Vec<u16>) {
+		let mut deduped = codes.clone();
+		deduped.sort_unstable();
 		deduped.dedup();
-		assert_eq!(deduped.len(), transfer_codes.len(), "a transfer code is reused");
+		assert_eq!(deduped.len(), codes.len(), "{kind} code is reused: {codes:?}");
 	}
 }
