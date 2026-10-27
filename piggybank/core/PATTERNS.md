@@ -886,7 +886,8 @@ and **alerts** (Sentry-shipped `error!`, no auto-write); the full list is its mo
    (`AccountCode::RETIRED`) counts as `CashSide::RetiredClaims` (`ports/ledger.rs`), never
    unclassified, and any value on one is a finding;
 2. `clearing`'s reserved (pending + posted) balance vs the gross of every
-   `queued`/`processing` withdrawal in Postgres;
+   `queued`/`processing` withdrawal and every `approved` internal payment (its L3
+   reservation waits there for the execution) in Postgres;
 3. a scan of every `outbox.parked_at` row (with its `last_error` and `compensated_at`).
    The `last_error` column on a parked row is the first place to look when money didn't
    move;
