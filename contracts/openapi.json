@@ -4453,14 +4453,9 @@
             "description": "APPROVE or REJECT. PENDING is rejected as an invalid argument.",
             "$ref": "#/components/schemas/banking.v1.ConsentDecision"
           },
-          "client_ip": {
-            "type": "string",
-            "title": "client_ip",
-            "description": "Audit only — the edge supplies these; they are never trusted for authorization."
-          },
-          "user_agent": {
-            "type": "string",
-            "title": "user_agent"
+          "audit": {
+            "title": "audit",
+            "$ref": "#/components/schemas/banking.v1.AuditContext"
           }
         },
         "title": "AnswerPaymentConfirmationRequest",
@@ -4492,7 +4487,7 @@
           "stepup_method": {
             "type": "string",
             "title": "stepup_method",
-            "description": "fresh_login | passkey | email_code | none (empty = unknown)"
+            "description": "aal\u003cN\u003e | none: the assurance the act was authorised with (empty = unknown)"
           }
         },
         "title": "AuditContext",
@@ -8396,7 +8391,7 @@
     },
     {
       "name": "banking.v1.PaymentConfirmationService",
-      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. The session is the credential,\n and the wallet host's gate asks for a fresh login before an approval (a decline asks for none)."
+      "description": "PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.\n Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has\n no such seat or does not exist is the same NOT_FOUND. The session is the credential;\n an approval is a wallet intent confirmed with a second-factor proof (a decline asks for none)."
     },
     {
       "name": "banking.v1.PayoutReviewService",

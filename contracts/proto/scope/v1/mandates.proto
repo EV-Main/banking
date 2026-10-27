@@ -5,7 +5,7 @@ package scope.v1;
 // MandateRequestService — a scope's service asks a user for a mandate (the consent its
 // holds and charges stand on, `banking.v1.CompartmentService.GrantMandate`). Banking stores
 // the terms and answers with `grant_url`; the user opens it on evinvest.ltd, sees exactly
-// these terms, and grants them after a fresh login. The terms never travel in the URL, so
+// these terms, and grants them with a second factor. The terms never travel in the URL, so
 // nobody can alter what the user is shown.
 //
 // Granting is the user's act and may never happen: a request does not itself let the
