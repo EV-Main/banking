@@ -15,7 +15,9 @@ const eslintConfig = [
     // typed `config` object instead of reaching into process.env. Tests exercise
     // env-driven config paths, so they may set process.env; the mfe/build.mjs
     // esbuild `define` names process.env.NODE_ENV as a replace token, not a read.
-    ignores: ["config.ts", "**/*.test.ts", "mfe/build.mjs"],
+    // next.config.ts cannot import config.ts (see its header), and instrumentation.ts
+    // gates the config.ts import itself on the statically inlined NEXT_RUNTIME.
+    ignores: ["config.ts", "**/*.test.ts", "mfe/build.mjs", "next.config.ts", "instrumentation.ts"],
     rules: {
       "no-restricted-properties": [
         "error",
