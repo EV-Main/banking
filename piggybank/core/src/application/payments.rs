@@ -33,10 +33,11 @@ use crate::{
 	infrastructure::{payments::digest, relay::payment_reserve_id},
 	ports::{
 		Custody, OutflowPolicy, UserRepository, WithdrawalRepository,
+		audit::RequestAudit,
 		ledger::Ledger,
 		payments::{
-			ApprovalSeat, ConsentAudit, ConsentDecision, ConsentOutcome, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, PaymentView, ReservationStatus, SeatView,
-			SessionSeat, already_open, consent_not_found,
+			ApprovalSeat, ConsentDecision, ConsentOutcome, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, PaymentView, ReservationStatus, SeatView, SessionSeat,
+			already_open, consent_not_found,
 		},
 	},
 };
@@ -235,7 +236,7 @@ pub async fn find_for_subject(payments: &dyn PaymentRepository, id: PaymentId, s
 
 /// The investor's own answer, given signed in. An approval is executed inline; a failure there
 /// is the order's to record, and must not undo the answer that was validly given.
-pub async fn answer_consent(ports: &PaymentPorts<'_>, subject: UserId, id: PaymentId, decision: ConsentDecision, audit: &ConsentAudit, now: i64) -> Result<ConsentOutcome, DomainError> {
+pub async fn answer_consent(ports: &PaymentPorts<'_>, subject: UserId, id: PaymentId, decision: ConsentDecision, audit: &RequestAudit, now: i64) -> Result<ConsentOutcome, DomainError> {
 	let outcome = ports.payments.answer_session_consent(id, subject, decision, audit, now).await?;
 	if outcome.approved
 		&& let Err(err) = execute(ports, outcome.payment.order.id(), now).await

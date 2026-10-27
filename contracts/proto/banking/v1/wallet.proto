@@ -96,7 +96,7 @@ message AuditContext {
   string client_ip = 2;       // browser address as seen by the trusted proxy hop
   string user_agent = 3;      // clamped to 256 bytes by the hub
   string intent_id = 4;       // the wallet intent this act executes (empty before intents exist)
-  string stepup_method = 5;   // fresh_login | passkey | email_code | none (empty = unknown)
+  string stepup_method = 5;   // aal<N> | none: the assurance the act was authorised with (empty = unknown)
 }
 
 message RequestWithdrawalRequest {

@@ -25,7 +25,7 @@ use domain::{
 	withdrawals::WithdrawalId,
 };
 
-use super::scope_operations::ApprovalLevel;
+use super::{audit::RequestAudit, scope_operations::ApprovalLevel};
 
 /// The digest length every stored hash is reduced to, named so the schema's
 /// `octet_length(...) = 32` checks and the Rust side cannot drift apart.
@@ -175,12 +175,6 @@ impl PaymentView {
 			SeatView::Concierge(_) => None,
 		}
 	}
-}
-
-/// Audit facts the edge supplies with a consent. Recorded, never trusted for authorization.
-pub struct ConsentAudit {
-	pub client_ip: String,
-	pub user_agent: String,
 }
 
 /// The result of a consent that was actually accepted.
@@ -334,7 +328,7 @@ pub trait PaymentRepository: Send + Sync {
 	/// same door as an order that does not exist. A repeat of the same answer is an idempotent
 	/// no-op; a different one is a [`DomainError::Conflict`]. A seat whose pins have moved is
 	/// refused with a Conflict and the order is rejected with it.
-	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &ConsentAudit, at: i64) -> Result<ConsentOutcome, DomainError>;
+	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &RequestAudit, at: i64) -> Result<ConsentOutcome, DomainError>;
 
 	/// The orders waiting for `subject`'s answer inside the wallet host, newest first.
 	async fn awaiting_session_consent(&self, subject: UserId) -> Result<Vec<PaymentView>, DomainError>;

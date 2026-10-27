@@ -34,7 +34,8 @@ use piggybank_core::{
 	},
 	ports::{
 		LedgerTransfer, UserRepository,
-		payments::{ApprovalSeat, ConsentAudit, ConsentDecision, ConsentInvalidation, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, SeatView, SessionSeat},
+		audit::RequestAudit,
+		payments::{ApprovalSeat, ConsentDecision, ConsentInvalidation, ExecutionOutcome, PaymentFeed, PaymentFilter, PaymentRepository, SeatView, SessionSeat},
 		scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier},
 	},
 };
@@ -279,11 +280,8 @@ fn usdt(decimal: &str) -> Usdt {
 	Usdt::parse_decimal(decimal).unwrap()
 }
 
-fn audit() -> ConsentAudit {
-	ConsentAudit {
-		client_ip: "203.0.113.7".to_owned(),
-		user_agent: "integration-test".to_owned(),
-	}
+fn audit() -> RequestAudit {
+	RequestAudit::new("https://evinvest.ltd", "203.0.113.7", "integration-test", "", "aal2")
 }
 
 fn an_order(from: Party, to: PaymentDestination, initiator: UserId, amount: &str) -> PaymentOrder {
@@ -553,6 +551,7 @@ async fn the_subjects_answer_approves_the_order_and_reserves_its_source() {
 		.await
 		.expect("a retried answer is a no-op");
 	assert!(!repeat.decided, "a repeat must not double-count");
+	assert_eq!(repeat.payment.order.state(), PaymentState::Approved, "a repeat answers with the order as it stands");
 	let contradiction = payments.answer_session_consent(id, investor, ConsentDecision::Reject, &audit(), now()).await;
 	assert!(matches!(contradiction, Err(DomainError::Conflict(_))), "a different answer is refused, never an overwrite");
 
@@ -566,6 +565,73 @@ async fn the_subjects_answer_approves_the_order_and_reserves_its_source() {
 	let view = payments.find(id).await.unwrap().unwrap();
 	assert_eq!(view.order.state(), PaymentState::Executed);
 	assert!(payments.awaiting_execution().await.unwrap().is_empty(), "an executed order is not awaiting execution");
+
+	reset_payments(&pool).await;
+}
+
+#[derive(sqlx::FromRow, Debug, PartialEq)]
+struct ConsentAuditRow {
+	origin: Option<String>,
+	client_ip: Option<String>,
+	user_agent: Option<String>,
+	intent_id: Option<String>,
+	stepup_method: Option<String>,
+}
+
+/// An answer is a wallet intent executed after a step-up (or, for a decline, none): what the
+/// BFF said about it stays beside the seat, and what it left empty stays NULL.
+#[tokio::test]
+async fn an_answer_keeps_the_audit_it_was_given_beside_the_seat() {
+	let _guard = exclusive_payments().await;
+	let Some(pool) = common::pool().await else {
+		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
+		return;
+	};
+	reset_payments(&pool).await;
+	let investor = an_investor(&pool).await;
+	let recipient = an_investor(&pool).await;
+	let payments = PgPayments::new(pool.clone());
+	let stored = async |id: PaymentId| -> ConsentAuditRow {
+		sqlx::query_as("SELECT origin, client_ip, user_agent, intent_id, stepup_method FROM payment_session_consent WHERE payment_id = $1")
+			.bind(id.raw())
+			.fetch_one(&pool)
+			.await
+			.unwrap()
+	};
+	let answered = async |decision: ConsentDecision, audit: RequestAudit| -> PaymentId {
+		let mut order = an_order(Party::User(investor), PaymentDestination::Internal(Party::User(recipient)), investor, "1.00");
+		payments.open(&mut order, a_session_seat(&pool, investor).await).await.unwrap();
+		payments.answer_session_consent(order.id(), investor, decision, &audit, now()).await.expect("a valid answer");
+		order.id()
+	};
+
+	let approved = answered(
+		ConsentDecision::Approve,
+		RequestAudit::new("https://evinvest.ltd", "203.0.113.7", "test-agent/1.0", "intent-1", "aal2"),
+	)
+	.await;
+	assert_eq!(
+		stored(approved).await,
+		ConsentAuditRow {
+			origin: Some("https://evinvest.ltd".into()),
+			client_ip: Some("203.0.113.7".into()),
+			user_agent: Some("test-agent/1.0".into()),
+			intent_id: Some("intent-1".into()),
+			stepup_method: Some("aal2".into()),
+		}
+	);
+
+	let refused = answered(ConsentDecision::Reject, RequestAudit::new("https://evinvest.ltd", "", "", "", "none")).await;
+	assert_eq!(
+		stored(refused).await,
+		ConsentAuditRow {
+			origin: Some("https://evinvest.ltd".into()),
+			client_ip: None,
+			user_agent: None,
+			intent_id: None,
+			stepup_method: Some("none".into()),
+		}
+	);
 
 	reset_payments(&pool).await;
 }
