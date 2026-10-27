@@ -60,7 +60,8 @@ make that hold at the BFF:
   `Origin` must equal `CABINET_WS_ORIGIN` — and an unset value refuses everything — then
   the CSRF pair, then a per-user window of 20 per minute keyed by
   the verified subject (in-process, per replica; the hub's limits and idempotency are the
-  real bound). Locally, set `CABINET_WS_ORIGIN` to the browser origin to move money.
+  real bound). Locally, flake.nix defaults `CABINET_WS_ORIGIN` to `http://localhost:$CABINET_FRONTEND_PORT`;
+  a browser reaching the host by another origin overrides it.
 
 ## The approval surface
 
