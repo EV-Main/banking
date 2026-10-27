@@ -13,8 +13,9 @@
 //!      account (they still exist in TigerBeetle, emptied) and value on an account of no
 //!      known kind are each their own finding.
 //!   2. **Clearing vs control-plane** — the `clearing` account's reserved (pending +
-//!      posted) balance vs the gross of every `queued`/`processing` withdrawal in
-//!      Postgres; a mismatch means a withdrawal whose reserve parked (nothing locked) or a
+//!      posted) balance vs the gross of every `queued`/`processing` withdrawal and every
+//!      `approved` internal payment in Postgres (its reservation waits on `clearing` until
+//!      the payment executes); a mismatch means a reserve that parked (nothing locked) or a
 //!      stranded reservation.
 //!   3. **Parked-row scan** — every `outbox.parked_at` row, surfaced with its
 //!      `last_error` and whether it has been flagged for compensation.
@@ -243,12 +244,16 @@ impl Reconciliation {
 			}
 		}
 
-		// (2) Clearing reservation vs the gross of in-flight withdrawals. `queued`/
-		// `processing` are the in-flight states; their gross should equal what is reserved
-		// (pending + posted-but-not-yet-disbursed) on the clearing claim.
-		let expected: Option<String> = sqlx::query_scalar("SELECT COALESCE(SUM(amount::numeric), 0)::text FROM withdrawals WHERE state IN ('queued', 'processing')")
-			.fetch_one(&self.pool)
-			.await?;
+		// (2) Clearing reservation vs everything in flight through it: `queued`/`processing`
+		// withdrawals, and approved internal payments (`to_kind` set), whose reservation the
+		// approval raised and only their execution settles. Their gross should equal what is
+		// reserved (pending + posted-but-not-yet-disbursed) on the clearing claim.
+		let expected: Option<String> = sqlx::query_scalar(
+			"SELECT (COALESCE((SELECT SUM(amount::numeric) FROM withdrawals WHERE state IN ('queued', 'processing')), 0) \
+			 + COALESCE((SELECT SUM(amount::numeric) FROM payments WHERE to_kind IS NOT NULL AND state = 'approved'), 0))::text",
+		)
+		.fetch_one(&self.pool)
+		.await?;
 		report.clearing_expected = expected.and_then(|s| s.parse().ok()).unwrap_or(0);
 		match self.ledger.balance(&LedgerAccountKey::WithdrawalClearing).await {
 			Ok(bal) => {
@@ -257,7 +262,7 @@ impl Reconciliation {
 					error!(
 						reserved = %report.clearing_reserved,
 						expected = %report.clearing_expected,
-						"reconciliation: CLEARING MISMATCH — reserved on the ledger != gross of in-flight withdrawals (a parked reserve, or a stranded reservation)"
+						"reconciliation: CLEARING MISMATCH — reserved on the ledger != gross of in-flight withdrawals and approved internal payments (a parked reserve, or a stranded reservation)"
 					);
 				}
 			}

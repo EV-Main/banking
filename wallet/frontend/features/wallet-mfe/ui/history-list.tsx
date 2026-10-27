@@ -40,7 +40,7 @@ export function HistoryList({ history, allHref }: { history: WalletHistory; allH
       <Empty>
         <EmptyHeader>
           <EmptyTitle>{t("walletMfe.historyEmpty", "No activity yet")}</EmptyTitle>
-          <EmptyDescription>{t("walletMfe.historyEmptyDesc", "Deposits, withdrawals and moves between compartments will show up here.")}</EmptyDescription>
+          <EmptyDescription>{t("walletMfe.historyEmptyDesc", "Deposits and withdrawals will show up here.")}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );

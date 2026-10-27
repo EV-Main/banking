@@ -11,9 +11,9 @@
 // Two properties of the cache matter here and are worth being explicit about, because this
 // resource is keyed by a credential:
 //
-//   · Memory only. `persist` is off (its default), so nothing is written to
-//     sessionStorage. The token lives exactly as long as the tab does, which is no longer
-//     than it already lives in `window.location` and the browser's history.
+//   · Memory only, like every resource: nothing is written to sessionStorage. The token
+//     lives exactly as long as the tab does, which is no longer than it already lives in
+//     `window.location` and the browser's history.
 //   · Re-reading is free. The GET is strictly inert — mail scanners fetch it before any
 //     human does — so the focus-driven revalidation that comes with the cache costs a
 //     redacted summary and nothing else. It spends no token and casts no vote.

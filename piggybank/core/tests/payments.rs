@@ -1074,7 +1074,7 @@ use domain::money::WalletAddress;
 use piggybank_core::{
 	application::payments as payments_app,
 	config::KycGate,
-	infrastructure::{operations, outflow::PgOutflowPolicy, withdrawals::PgWithdrawals},
+	infrastructure::{operations, outflow::PgOutflowPolicy, reconciliation::Reconciliation, withdrawals::PgWithdrawals},
 	ports::{WithdrawalRepository, ledger::Ledger},
 };
 
@@ -1300,6 +1300,53 @@ async fn an_operator_pause_holds_an_approved_order_without_closing_it() {
 	assert_eq!(view.order.state(), PaymentState::Executed);
 
 	a.relay.drain().await;
+	reset_payments(&a.pool).await;
+}
+
+/// An approved L3 order's reservation sits on `clearing` until the sweeper settles it, and
+/// reconciliation counts it as in flight there rather than as a stranded reservation.
+#[tokio::test]
+async fn an_approved_internal_payment_awaiting_the_sweeper_reconciles_clearing() {
+	let _guard = exclusive_payments().await;
+	let Some(a) = app("payments clearing reconciliation").await else { return };
+	reset_payments(&a.pool).await;
+	let investor = an_investor(&a.pool).await;
+	let recipient = an_investor(&a.pool).await;
+	fund(&a, LedgerAccountKey::UserClaim(investor), "100").await;
+	a.relay.drain().await;
+	let reconciliation = Reconciliation::new(a.pool.clone(), a.ledger.clone());
+	let before = reconciliation.scan().await.unwrap();
+
+	let id = payments_app::open(
+		&ports(&a),
+		investor,
+		terms(Party::User(investor), PaymentDestination::Internal(Party::User(recipient)), "30"),
+		now(),
+	)
+	.await
+	.unwrap()
+	.order
+	.id();
+	// The answer through the PORT, so nothing executes inline: the order waits for the sweeper.
+	a.payments.answer_session_consent(id, investor, ConsentDecision::Approve, &audit(), now()).await.unwrap();
+	a.relay.drain().await;
+
+	let waiting = reconciliation.scan().await.unwrap();
+	assert_eq!(waiting.clearing_reserved - before.clearing_reserved, usdt("30").base_units());
+	assert_eq!(
+		waiting.clearing_expected - before.clearing_expected,
+		usdt("30").base_units(),
+		"the approved order's reservation is expected on clearing"
+	);
+
+	let report = payments_app::sweep(&ports(&a), now()).await.unwrap();
+	assert_eq!(report.executed, 1);
+	a.relay.drain().await;
+
+	let settled = reconciliation.scan().await.unwrap();
+	assert_eq!(settled.clearing_reserved, before.clearing_reserved);
+	assert_eq!(settled.clearing_expected, before.clearing_expected);
+
 	reset_payments(&a.pool).await;
 }
 

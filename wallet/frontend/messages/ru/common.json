@@ -1460,8 +1460,8 @@
     "t": "Операций пока нет"
   },
   "walletMfe.historyEmptyDesc": {
-    "en": "Deposits, withdrawals and moves between compartments will show up here.",
-    "t": "Здесь появятся пополнения, выводы и переводы между отсеками."
+    "en": "Deposits and withdrawals will show up here.",
+    "t": "Здесь появятся пополнения и выводы."
   },
   "walletMfe.main": {
     "en": "Main account",

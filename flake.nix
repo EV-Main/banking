@@ -662,6 +662,8 @@
             # Money-plane token-exchange seam — must match the piggybank hub's BANKING_ISSUANCE_TOKEN.
             export BANKING_ISSUANCE_TOKEN="''${BANKING_ISSUANCE_TOKEN:-dev-issuance-token}"
             export CONCIERGE_GRPC_ADDR="''${CONCIERGE_GRPC_ADDR:-http://127.0.0.1:$CONCIERGE_PORT}"
+            # The first-party gate of the money routes admits only this Origin; unset refuses them all.
+            export CABINET_WS_ORIGIN="''${CABINET_WS_ORIGIN:-http://localhost:$CABINET_FRONTEND_PORT}"
             export AUTH_ISSUER="''${AUTH_ISSUER:-https://auth.concierge.ev}"
             export AUTH_CLIENT_AUDIENCE="''${AUTH_CLIENT_AUDIENCE:-concierge}"
             export APP_ENV="''${APP_ENV:-development}"

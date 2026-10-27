@@ -432,20 +432,8 @@ function renderSeeded<T>(resource: Resource<T, []>, initial: ResourceSeed<T> | u
   }
 }
 
-/** A Map-backed `sessionStorage`, so the persisted half of an entry can be observed. */
-function installSessionStorage(initial: Record<string, string> = {}): Map<string, string> {
-  const store = new Map(Object.entries(initial));
-  Reflect.set(globalThis, "sessionStorage", {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => void store.set(key, value),
-    removeItem: (key: string) => void store.delete(key),
-  });
-  return store;
-}
-
 afterEach(() => {
   mock.timers.reset();
-  Reflect.deleteProperty(globalThis, "sessionStorage");
 });
 
 test("a seed fills an empty entry", () => {
@@ -525,19 +513,6 @@ test("a seed read after a tag invalidation is adopted", async () => {
 
   assert.equal(await balance.read(), "70.00");
   assert.equal(state.calls, 0);
-});
-
-test("a seed beats a snapshot persisted by a previous visit and is persisted at its receipt time", () => {
-  mock.timers.enable({ apis: ["Date"], now: NOW });
-  const store = installSessionStorage({ "ev.cabinet.resource:t.balance()": JSON.stringify({ v: "100.00", t: NOW - 10_000 }) });
-  const { fetch } = counted(() => "from-browser");
-  const balance = defineResource({ name: "t.balance", fetch, revalidate: 60, persist: true });
-
-  // Stamped by the server's clock, which may run anywhere relative to this one.
-  renderSeeded(balance, { data: "70.00", fetchedAt: NOW - 30_000 });
-
-  assert.equal(balance.peek(), "70.00");
-  assert.deepEqual(JSON.parse(store.get("ev.cabinet.resource:t.balance()") ?? "null"), { v: "70.00", t: NOW });
 });
 
 test("a seed stamped by a server clock running ahead ages from its receipt", async () => {

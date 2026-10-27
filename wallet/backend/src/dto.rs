@@ -545,25 +545,8 @@ fn mask_email(email: &str) -> String {
 
 // ── payments: the order that moves money between two named ends ──────────────
 //
-// The one family on this wire whose browser contract was fixed BEFORE the DTOs were
-// written — the payments screen was built to it in parallel — and it differs
-// from the older passthroughs in two ways a reader of the neighbours will notice: unix
-// stamps cross as RFC 3339 strings rather than as unix-seconds strings, and the proto's
-// "empty means unset" sentinels cross as `null`. Both are deliberate: the screen renders
-// what it is given and never has to know which zero means "not yet".
-
-/// Unix seconds → RFC 3339 in UTC (`2025-09-12T09:30:00Z`). Written by hand because this
-/// crate declares `time` without its `formatting` feature: the feature happens to be
-/// unified in through `cookie` and `sentry-types` today, but leaning on a transitive
-/// feature would make one fixed layout hostage to a dependency's own flags.
-fn rfc3339(secs: i64) -> String {
-	let Ok(t) = time::OffsetDateTime::from_unix_timestamp(secs) else {
-		// Unrepresentable stamps cannot come from the plane (it writes `now()`); an
-		// empty string is the honest rendering of one rather than a made-up date.
-		return String::new();
-	};
-	format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", t.year(), u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second())
-}
+// Unlike the older passthroughs, the proto's "empty means unset" sentinels cross as `null`
+// here: the screen renders what it is given and never has to know which zero means "not yet".
 
 /// A string the proto leaves empty when the field does not apply.
 fn non_empty(value: String) -> Option<String> {
@@ -633,7 +616,7 @@ impl From<bk::PaymentConfirmation> for PaymentConfirmation {
 			reason: c.reason,
 			payload_hash: c.payload_hash,
 			initiator_email: mask_email(&c.initiator_email),
-			expires_at: rfc3339(c.expires_at),
+			expires_at: c.expires_at.to_string(),
 			decision,
 			invalidated: c.invalidated,
 			failure_reason: non_empty(c.failure_reason),
@@ -767,13 +750,13 @@ mod tests {
 		assert_eq!(invitation.target_email, "g***@example.com");
 	}
 
-	/// The hand-written layout against known dates, including a leap day and the end of a
-	/// year — the two places a homegrown calendar goes wrong.
+	/// The wallet host parses every stamp as unix seconds (`shared/lib/unix-stamp.ts`).
 	#[test]
-	fn unix_seconds_render_as_rfc3339_utc() {
-		assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
-		assert_eq!(rfc3339(951_782_400), "2000-02-29T00:00:00Z");
-		assert_eq!(rfc3339(1_757_669_400), "2025-09-12T09:30:00Z");
-		assert_eq!(rfc3339(4_102_444_799), "2099-12-31T23:59:59Z");
+	fn a_payment_deadline_crosses_as_unix_seconds() {
+		let confirmation = PaymentConfirmation::from(bk::PaymentConfirmation {
+			expires_at: 1_757_669_400,
+			..Default::default()
+		});
+		assert_eq!(confirmation.expires_at, "1757669400");
 	}
 }

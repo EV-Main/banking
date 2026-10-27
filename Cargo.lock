@@ -554,7 +554,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
- "time",
  "tokio",
  "tokio-stream",
  "tonic 0.14.6",

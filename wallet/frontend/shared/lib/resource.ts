@@ -39,9 +39,6 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 /** Seconds a value stays fresh when a resource doesn't name its own window. */
 const DEFAULT_REVALIDATE_S = 15;
 
-/** sessionStorage namespace for `persist` resources — see `dropPersisted` for the scope rules. */
-const PERSIST_PREFIX = "ev.cabinet.resource:";
-
 export interface ResourceSnapshot<T> {
   /** The last known value, from this page or any earlier one. */
   data: T | undefined;
@@ -66,14 +63,6 @@ export interface ResourceConfig<T, A extends unknown[]> {
   revalidate?: number;
   /** Invalidation groups a mutation can name through `revalidateTag`. */
   tags?: readonly string[];
-  /**
-   * Mirror into sessionStorage so a hard reload also paints from cache.
-   *
-   * NON-PERSONAL data only. A balance, a profile or an operation stays in memory, which
-   * dies with the page. (`entities/user/model/identity-cache.ts` makes the same call for the
-   * three identity fields it needs.)
-   */
-  persist?: boolean;
   /**
    * Whether these arguments describe a read worth making. A resource keyed on a value the
    * screen hasn't chosen yet (no network selected) reports "not loading, no data" instead of
@@ -151,7 +140,6 @@ interface Entry<T> {
   readonly load: () => Promise<T>;
   readonly freshMs: number;
   readonly tags: readonly string[];
-  readonly persistKey: string | null;
   data: T | undefined;
   error: Error | null;
   /**
@@ -260,7 +248,6 @@ function seed<T>(entry: Entry<T>, value: ResourceSeed<T>): void {
   entry.error = null;
   entry.denied = false;
   entry.fetchedAt = fetchedAt;
-  writePersisted(entry);
   entry.snapshot = buildSnapshot(entry);
   entry.unannounced = true;
 }
@@ -303,8 +290,7 @@ function revalidate<T>(entry: Entry<T>): Promise<void> {
       entry.error = null;
       entry.denied = false;
       entry.fetchedAt = Date.now();
-      writePersisted(entry);
-    })
+        })
     .catch((cause: unknown) => {
       // Deliberately non-destructive: the stale value stays, so a timed-out poll never
       // blanks a figure the user is reading.
@@ -336,38 +322,6 @@ function autoRevalidate(entry: Entry<unknown>): void {
   void revalidate(entry);
 }
 
-function writePersisted<T>(entry: Entry<T>): void {
-  if (!entry.persistKey) return;
-  try {
-    sessionStorage.setItem(entry.persistKey, JSON.stringify({ v: entry.data, t: entry.fetchedAt }));
-  } catch {
-    // Private mode, quota, disabled storage — the in-memory cache is unaffected.
-  }
-}
-
-function readPersisted<T>(entry: Entry<T>): void {
-  if (!entry.persistKey) return;
-  try {
-    const raw = sessionStorage.getItem(entry.persistKey);
-    if (!raw) return;
-    const stored = JSON.parse(raw) as { v: T; t: number };
-    entry.data = stored.v;
-    entry.fetchedAt = stored.t;
-    publishSnapshot(entry);
-  } catch {
-    // Unreadable or written by an older shape — fall through to a live read.
-  }
-}
-
-function dropPersisted(entry: Entry<unknown>): void {
-  if (!entry.persistKey) return;
-  try {
-    sessionStorage.removeItem(entry.persistKey);
-  } catch {
-    /* nothing to drop */
-  }
-}
-
 /**
  * Tell the readers that rendered before a seed landed. The snapshot object is already the
  * seeded one, so the component that seeded compares equal and skips this.
@@ -385,7 +339,6 @@ function markStale(entry: Entry<unknown>): void {
   // exactly the kind of event that turns a 403 into a 200 — a seat granted, a role moved.
   // So it lifts the refusal, unlike the clock (see `autoRevalidate`).
   entry.denied = false;
-  dropPersisted(entry);
   // On screen right now: refresh in place, so a mutation's effect lands without the user
   // navigating. Not mounted: the next screen that reads it will find it stale and refresh.
   if (entry.listeners.size > 0) void revalidate(entry);
@@ -411,7 +364,6 @@ export function revalidateTag(...tags: readonly string[]): void {
  */
 export function clearResources(): void {
   for (const entry of REGISTRY.values()) {
-    dropPersisted(entry);
     entry.data = undefined;
     entry.error = null;
     // The next account in this tab is a different caller, so the previous one's refusal
@@ -506,7 +458,6 @@ export function defineResource<T, A extends unknown[] = []>(config: ResourceConf
       load: () => config.fetch(...args),
       freshMs,
       tags,
-      persistKey: config.persist ? `${PERSIST_PREFIX}${key}` : null,
       data: undefined,
       error: null,
       denied: false,
@@ -531,7 +482,6 @@ export function defineResource<T, A extends unknown[] = []>(config: ResourceConf
       return revalidate(entry);
     };
     REGISTRY.set(key, entry as Entry<unknown>);
-    readPersisted(entry);
     publishSnapshot(entry);
     watchFocus();
     if (entry.poll) watchPoll();
@@ -568,8 +518,7 @@ export function defineResource<T, A extends unknown[] = []>(config: ResourceConf
       entry.error = null;
       entry.denied = false;
       entry.fetchedAt = Date.now();
-      writePersisted(entry);
-      publishSnapshot(entry);
+          publishSnapshot(entry);
     },
     watch(listener, ...args: A): () => void {
       if (typeof window === "undefined" || !enabled(...args)) return () => undefined;

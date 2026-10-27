@@ -1460,8 +1460,8 @@
     "t": "Noch keine Aktivitäten"
   },
   "walletMfe.historyEmptyDesc": {
-    "en": "Deposits, withdrawals and moves between compartments will show up here.",
-    "t": "Einzahlungen, Auszahlungen und Verschiebungen zwischen Unterkonten erscheinen hier."
+    "en": "Deposits and withdrawals will show up here.",
+    "t": "Einzahlungen und Auszahlungen erscheinen hier."
   },
   "walletMfe.main": {
     "en": "Main account",
