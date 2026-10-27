@@ -389,7 +389,7 @@
   "walletMfe.expired": "These terms ran out. Get new ones to continue.",
   "walletMfe.history": "Recent activity",
   "walletMfe.historyEmpty": "No activity yet",
-  "walletMfe.historyEmptyDesc": "Deposits, withdrawals and moves between compartments will show up here.",
+  "walletMfe.historyEmptyDesc": "Deposits and withdrawals will show up here.",
   "walletMfe.historyUnavailable": "Your activity could not be loaded.",
   "walletMfe.main": "Main account",
   "walletMfe.mainDesc": "Deposits and withdrawals go through here",

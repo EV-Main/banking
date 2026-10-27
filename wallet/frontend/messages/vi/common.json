@@ -1460,8 +1460,8 @@
     "t": "Chưa có hoạt động nào"
   },
   "walletMfe.historyEmptyDesc": {
-    "en": "Deposits, withdrawals and moves between compartments will show up here.",
-    "t": "Các khoản nạp, rút và chuyển giữa các ngăn sẽ hiển thị tại đây."
+    "en": "Deposits and withdrawals will show up here.",
+    "t": "Các khoản nạp và rút sẽ hiển thị tại đây."
   },
   "walletMfe.main": {
     "en": "Main account",
