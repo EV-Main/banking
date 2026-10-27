@@ -1,31 +1,40 @@
-# Wallet intents — wallet actions inside a host page
+# Wallet intents — every money-out act, on the wallet and inside a host page
 
-A trusted host page (the invest cabinet, the SA panel) runs a wallet action in its own page:
-it asks the BFF for an **intent**, shows the terms the BFF computed, and confirms it. The
+A page asks the BFF for an **intent**, shows the terms the BFF computed, and confirms it. The
 BFF executes the intent only for the same account, page and session that created it, and
-with a concierge step-up proof when the risk class asks for one. This file is the contract
-of the BFF side (controls (a), (b), (d) and (h) of
+with a concierge step-up proof when the risk class asks for one. The pages are the wallet
+itself (`CABINET_WS_ORIGIN`) and the trusted scope hosts (the invest cabinet, the SA panel).
+This file is the contract of the BFF side (controls (a), (b), (d) and (h) of
 [`WALLET-INPAGE-SPEC.md`](./WALLET-INPAGE-SPEC.md)). The proof itself is concierge's
 `docs/STEPUP-PROOF.md`.
 
 The code: `wallet/backend/src/routes/intents/` (routes, CORS, the confirm order) and
-`wallet/backend/src/wallet_intents/` (the host matrix, the risk classes, the key, the proof
+`wallet/backend/src/wallet_intents/` (the pages, the risk classes, the key, the proof
 verifier, the store).
 
-## Off by default
+## The pages
 
-With `WALLET_ACTION_ORIGINS` empty, none of the three routes is mounted: each answers the
-router's `404`, a preflight included, and no response carries a CORS header. The first-party
-wallet routes do not change in any case.
+An intent page is an exact origin with a reach and a kind set:
 
-Before you turn a kind on, know what it switches on:
+| Page | Reach | Kinds |
+| --- | --- | --- |
+| the wallet, `CABINET_WS_ORIGIN` | every scope of the caller | `withdraw`, `pay`, `mandate`, `approve_payment`, fixed in code |
+| a trusted host | its own scope, beside `main` | its matrix entry, narrowed by `WALLET_ACTION_KINDS` |
+
+The wallet moves money between its own compartments on its first-party route; only money out
+of the user's claim is an intent there.
+
+With `WALLET_ACTION_ORIGINS` empty no host is an intent page: a host's request is refused like
+any foreign page's, a preflight included, and no response carries a CORS header.
+
+Before you turn a host kind on, know what it switches on:
 
 - `WALLET_ACTION_KINDS` is one list for every enabled host, `invest` and `sa` alike. Adding
-  `pay`, `mandate` or `withdraw` also turns on their in-page passkey step-up on every enabled
-  host whose matrix entry has the kind.
+  `pay`, `mandate` or `withdraw` turns on its in-page step-up on every enabled host whose
+  matrix entry has the kind.
 - The in-page form runs in the host page's JavaScript realm. A script in the host page can
-  show the person other terms than the ones the passkey signs. Spec control (g) is the
-  defence: a strict CSP, bundle pins or registry SRI, and Trusted Types.
+  show the person other terms than the ones the proof binds. Spec control (g) is the defence:
+  a strict CSP, bundle pins or registry SRI, and Trusted Types.
 - Turn `withdraw` on only after control (g) is live on each enabled host, and after the hub
   holds new withdrawal addresses (`release_at`, banking#559).
 - Each host must exclude `/api/auth/stepup/*` and `/cabinet/api/wallet/intents*` from the
@@ -51,7 +60,8 @@ live, and that is a reviewed change of the matrix, not an env flip.
 The boot refuses (exit 78):
 
 - an origin that is not a matrix entry (in every environment);
-- an origin equal to `CABINET_WS_ORIGIN` (the wallet host's own routes are the first-party ones);
+- an origin equal to `CABINET_WS_ORIGIN` (the wallet is a page without a host entry);
+- `approve_payment` in `WALLET_ACTION_KINDS` (the wallet's own kind);
 - in production: an origin that is not `https`, has a port or a path, or is not a subdomain
   of `evinvest.ltd`. `*`, `null` and a trailing slash do not parse at all;
 - no `WALLET_INTENT_KEY`, or one shorter than 32 bytes;
@@ -62,9 +72,14 @@ The boot refuses (exit 78):
 The host page does not call these routes itself. It mounts the wallet elements from
 `https://evinvest.ltd/wallet/mfe/wallet.js` through `@evinvest/wallet` (banking
 `sdk/wallet`), and the element calls the routes. The code is
-`wallet/frontend/mfe/wallet/entry.tsx` and `wallet/frontend/features/wallet-mfe/`. Each
-element class has `apiVersion = 3`. A host checks it with `>=`, because version 3 only adds
-to version 2.
+`wallet/frontend/mfe/wallet/entry.tsx`, `wallet/frontend/features/wallet-mfe/` and the flow
+both surfaces share, `wallet/frontend/features/wallet-intent/`. Each element class has
+`apiVersion = 3`. A host checks it with `>=`, because version 3 only adds to version 2.
+
+The step-up is concierge's element (`@evinvest/concierge`, `StepupDialog`): the page hands it
+`intent_hash` and `min_aal` and forwards the proof it returns. Which factor the account
+answers with, and enrolling one when it has none, stay inside that element. When the element
+cannot load, a host falls back to the popup below; the wallet shows an error.
 
 ### The elements
 
@@ -141,19 +156,21 @@ The element fires one event for one form. It fires nothing in these cases:
 | `POST /api/wallet/intents` | `{ kind, params }` | the intent, below |
 | `POST /api/wallet/intents/{id}/confirm` | `{ proof? }` | `{ intent_id, status: "executed", stepup_method, result }` |
 
-`result` is the hub's answer in the shape of the matching first-party route: a compartment
-move, a withdrawal, a payable invoice or a mandate. Times are unix seconds, as JSON numbers.
+`stepup_method` is the assurance the act was authorised with: `aal<N>` from the proof's
+claims, or `none`. `result` is the hub's answer in the shape of its matching read: a
+compartment move, a withdrawal, a payable invoice, a mandate or a payment confirmation. Times
+are unix seconds, as JSON numbers.
 
-`kinds` lists the kinds that the calling host may create now: its matrix kinds that
-`WALLET_ACTION_KINDS` leaves on, in the order `move`, `pay`, `mandate`, `withdraw`. The page
-opens an in-page form only for a kind in this list. An empty list, or a `404` because no host
-is on, means the popup. So a rollback is an env change, not a release.
+`kinds` lists the kinds that the calling page may create now, in the order `move`, `pay`,
+`mandate`, `withdraw` for a host, and the wallet's fixed set for the wallet. A host opens an
+in-page form only for a kind in this list. An empty list means the popup, so a rollback is
+an env change, not a release.
 
 ### Checks on every request
 
-1. `Origin` is exactly an enabled host. Otherwise `403 csrf`.
+1. `Origin` is exactly an intent page. Otherwise `403 csrf`.
 2. `Sec-Fetch-Site` is `same-origin` or `same-site`. A missing header is a refusal here,
-   unlike on the first-party routes: `403 csrf`.
+   unlike on the other first-party routes: `403 csrf`.
 3. The `ev_access` cookie verifies: else `401`.
 4. POST only: `x-ev-csrf` is the HMAC token for this account and this origin (`403 csrf`);
    `Content-Type` is exactly `application/json` (`415`); the per-user money budget of the
@@ -163,32 +180,36 @@ is on, means the popup. So a rollback is an env change, not a release.
 
 ### CORS
 
-Only these three routes, only for an enabled host, as a `route_layer` on each route. A
-preflight is answered `204` with `Access-Control-Allow-Methods: POST` (`GET` for the CSRF
-route), `Allow-Headers: content-type, x-ev-csrf`, `Allow-Credentials: true`, `Max-Age: 60`
-and `Vary: Origin`. A preflight from any other origin, or for another method or header, is a
-bare `403`. Every answer carries `Cache-Control: no-store` and `Vary: Origin`.
+Only these three routes, only for an enabled host, as a `route_layer` on each route; the
+wallet is same-origin and gets none. A preflight is answered `204` with
+`Access-Control-Allow-Methods: POST` (`GET` for the CSRF route),
+`Allow-Headers: content-type, x-ev-csrf`, `Allow-Credentials: true`, `Max-Age: 60` and
+`Vary: Origin`. A preflight from any other origin, or for another method or header, is a bare
+`403`. Every answer carries `Cache-Control: no-store` and `Vary: Origin`.
 
 ### The CSRF token
 
 `<window>.<hex HMAC-SHA-256(k_csrf, sub, origin, window)>`, where `window = floor(now / 600)`.
 The token of the current and of the previous window is accepted, so a token lives 10 to 20
-minutes. It is in the response body and never in a URL. The first-party routes keep the
-cookie double-submit.
+minutes. It is in the response body and never in a URL. It is the one CSRF token of these
+routes on both surfaces; the wallet's other first-party routes keep the cookie double-submit.
 
 ## Kinds and params
 
 The server ignores nothing in the body: an unknown field anywhere is `400 invalid_request`,
-so a `scope` in the body is refused, not overridden. The scope is always the host's own.
+so a `scope` in the body is refused, not overridden. Every scope the act touches beside
+`main` must be in the page's reach.
 
 | Kind | Params | What the BFF reads from the hub | Scope rule |
 | --- | --- | --- | --- |
-| `move` | `from_scope`, `to_scope`, `amount` | nothing | one side is the host's scope, the other `main` |
+| `move` | `from_scope`, `to_scope`, `amount` | nothing | one side is `main`, the other in reach |
 | `withdraw` | `network`, `address`, `amount` | `GetWallet`: the rail's fee and minimum | money leaves from `main` |
-| `pay` | `invoice_id`, `pay_from` | `GetPayableInvoice`: amount, scope, state | the invoice's scope is the host's; `pay_from` is `main` or the host's scope |
-| `mandate` | `request_id` | `GetMandateRequest`: caps, scope, expiry | the request's scope is the host's |
+| `pay` | `invoice_id`, `pay_from` | `GetPayableInvoice`: amount, scope, state | the invoice's scope is in reach; `pay_from` is `main` or the invoice's scope |
+| `mandate` | `request_id` | `GetMandateRequest`: caps, scope, expiry | the request's scope is in reach |
+| `approve_payment` | `payment_id` | `GetPaymentConfirmation`: amount, recipient, network, and still open to this seat's answer | out of the caller's claim, `main` |
 
-A refusal of a scope rule is `403 scope_mismatch`.
+A refusal of a scope rule is `403 scope_mismatch`; a payment that can no longer be answered is
+`412 payment_not_answerable`.
 
 ## The intent
 
@@ -196,54 +217,48 @@ A refusal of a scope rule is `403 scope_mismatch`.
 { "intent_id": "<32 hex>", "intent_hash": "<64 hex>",
   "summary": { "amount", "fee", "net", "recipient_full", "network", "scope", "host_origin", "mandate" },
   "expires_at": 1790000120,
-  "stepup": { "required": true, "methods": ["passkey", "email_code"] },
+  "min_aal": 2,
   "new_recipient": null, "release_at": null }
 ```
 
+- `summary.scope` is the act's scope: the invoice's, the request's, the moved compartment's,
+  or `main`. `host_origin` is the page.
 - A `null` in the summary means "the hub does not say": a payment has no fee or net in the
   hub's invoice, and a mandate moves no amount now (its caps are in `summary.mandate`).
+- `min_aal` is the least assurance the confirm's proof must carry; `null` asks for no proof.
 - `new_recipient` and `release_at` are always `null` in this version. The hub decides them
   when the withdrawal opens (the address book and `release_at` of banking#559) and exposes no
   read of them before.
-- The page sends `intent_hash` to concierge's `/auth/stepup/options`.
+- The page hands `intent_hash` and `min_aal` to concierge's step-up element.
 
 ### Risk classes (spec (h))
 
-| Class | When | Step-up |
+| Class | When | `min_aal` |
 | --- | --- | --- |
-| B | a move ≤ 100 USDT, and the user's moves through all hosts in 24 h stay ≤ 300 USDT | none |
-| C | a move over either line, a pay | `passkey` or `email_code` (see the email lines below), else `passkey` |
-| C | a withdrawal, a mandate grant | `passkey` only |
+| B | an in-page move ≤ 100 USDT, while the user's moves through all pages in 24 h stay ≤ 300 USDT | `null` |
+| C | a move over either line, a withdrawal, a pay, a mandate grant, a payment approval | `2` |
 
-`email_code` is offered only when the amount is ≤ 250 USDT **and** the amount plus what the
-user already confirmed by emailed code in the last 24 h, through all hosts, is ≤ 500 USDT.
-The method list is decided at create, so the page knows it before it asks concierge.
+The numbers are `WALLET_MOVE_NO_STEPUP_PER_OP_USDT` (100) and `WALLET_MOVE_NO_STEPUP_24H_USDT`
+(300). The 24 h total is a rolling window, per user, across all pages. It counts every move the
+BFF sent, with or without a step-up. A B move is held to the line again at confirm, atomically:
+of two intents created side by side under it, only the first runs (`409 limit_reached`). An
+operation stays counted when the hub then refuses it (the safe side).
 
-The numbers are `WALLET_MOVE_NO_STEPUP_PER_OP_USDT` (100), `WALLET_MOVE_NO_STEPUP_24H_USDT`
-(300), `WALLET_EMAIL_STEPUP_CAP_USDT` (250) and `WALLET_EMAIL_STEPUP_24H_USDT` (500). Both
-24 h totals are rolling windows, per user, across all hosts:
-
-- The move total counts every move the BFF sent, with or without a step-up. A B move is held
-  to the line again at confirm, atomically: of two intents created side by side under it, only
-  the first runs (`409 limit_reached`).
-- The email total counts every operation confirmed with an `email_code` proof, rounded up to
-  the micro-USDT. It is checked again at confirm, atomically (`409 email_limit_reached`).
-- An operation stays counted when the hub then refuses it (the safe side).
-
-Revoking a mandate and cancelling a withdrawal stay first-party in this version.
+The first-party acts that keep money inside the user's claim or only reduce risk ask for no
+step-up and are not intents: a compartment move, cancelling a withdrawal, revoking a mandate,
+and rejecting a payment (`POST /api/wallet/payments/{id}/reject`).
 
 ## Stored state
 
 | Key | Value | Lifetime |
 | --- | --- | --- |
-| `cabinet:wallet:intent:<intent_id>` | hash: `record` (the JSON bytes), `seal`, `status`, and from `executing` on `method` | 120 s + 300 s; 24 h from the first send once `executing` |
+| `cabinet:wallet:intent:<intent_id>` | hash: `record` (the JSON bytes), `seal`, `status`, and from `executing` on `assurance` | 120 s + 300 s; 24 h from the first send once `executing` |
 | `stepup:jti:<jti>` | `1` (`SET NX EX`) | until the proof's `exp` + 5 s |
 | `cabinet:wallet:moved:<sub>` | sorted set: `<intent_id>:<micro-USDT>`, scored by time | 24 h |
-| `cabinet:wallet:email:<sub>` | the same, for operations confirmed by emailed code | 24 h |
 
 - `record` holds `intent_id` (128 random bits), `sub`, `origin`, `scope`, the action, the
-  summary, the step-up demand, `created_at`, `expires_at` and the session binding
-  (`token_version`, `auth_time`).
+  summary, `min_aal`, `created_at`, `expires_at` and the session binding (`token_version`,
+  `auth_time`).
 - `intent_hash = SHA-256(label, record bytes)`, so it is unique to the intent and covers every
   term the person confirms.
 - `seal = HMAC-SHA-256(k_seal, intent_hash)`. A record edited in Redis fails the seal and is
@@ -255,7 +270,7 @@ Statuses: `created → authorized → executing → executed | cancelled`, `auth
 and `created → expired | cancelled`. Each move is a compare-and-set: one caller wins.
 
 - `cancelled` means the hub refused the first send of the act, the proof's `jti` was already
-  spent, a 24 h line was reached at confirm, or the terms changed since create.
+  spent, the 24 h line was reached at confirm, or the terms changed since create.
 - `executing` means the act was sent to the hub under `idempotency_key = intent_id`. If the
   answer is lost or unclear (a transport error, a timeout, the `→ executed` write failing), the
   intent stays `executing`, and the page **confirms the same intent again**. That confirm
@@ -266,14 +281,15 @@ and `created → expired | cancelled`. Each move is a compare-and-set: one calle
   resend would leave a new intent, with a new key, as the only way on.
 - `executed` is refused (`409 intent_not_pending`): its result was answered once.
 
-What the hub does on a repeated key, per kind (the per-user key is the intent id):
+What the hub does on a repeated send, per kind (the per-user key is the intent id):
 
-| Kind | Repeat with the same key |
+| Kind | Repeat |
 | --- | --- |
 | `withdraw` | `find_by_key` before the gates and limits returns the first withdrawal; two sends at once are serialised on the claim lock, and the second finds the first's row (`open_keyed`) |
 | `move` | `find_move` returns the first move; a send that races it finds it under the key lock (`MoveOutcome::Existing`) |
 | `pay` | under a named lock on the key, the invoice paid with it is returned (`Paid::Earlier`) before the invoice is judged open |
 | `mandate` | the store's `grant` returns the mandate granted with the key (`Granted::Existing`) |
+| `approve_payment` | no key: the seat's answer is the key. The same decision again answers the order as it stands; another one is `ALREADY_EXISTS` |
 
 So two resends at the same time need no guard of their own: both reach the hub under one key
 and get the same act. Both may write `executing → executed`; the second write loses its
@@ -295,42 +311,38 @@ confirm again.
 4. Status `executing`: send the act again and answer (see above). Status `created`: go on.
    Any other status: `409 intent_not_pending`. Past `expires_at`: `created → expired`,
    `410 intent_expired`.
-5. A proof is present exactly when the class asks for one (`403 proof_required`,
+5. A proof is present exactly when `min_aal` is set (`403 proof_required`,
    `400 proof_not_expected`).
 6. `GetMe` re-check; the terms are read from the hub again and must equal the stored summary
    (else `created → cancelled`, `409 terms_changed`).
 7. **Verify the proof** with `evconcierge_auth::stepup::verify_stepup_proof`: the stored hash,
-   the access token's `sub`, the stored origin and the stored methods. An unknown `kid` refreshes
-   the JWKS at most once per 30 s per process. `iat` before the intent's `created_at` is a
-   refusal. Any refusal is `403 stepup_invalid`.
+   the access token's `sub`, the stored origin and the stored `min_aal`. An unknown `kid`
+   refreshes the JWKS at most once per 30 s per process. `iat` before the intent's `created_at`
+   is a refusal. Any refusal is `403 stepup_invalid`.
 8. `expires_at` again: steps 6 and 7 can take seconds (`created → expired`,
    `410 intent_expired`).
 9. **CAS** `created → authorized` (else `409 intent_not_pending`). Every step from here on runs
    on its own task (see above).
 10. **Spend the `jti`**: `SET stepup:jti:<jti> 1 NX EX <exp - now + 5>` (else
     `authorized → cancelled`, `409 proof_replayed`).
-11. An `email_code` proof: count the amount against the email total (else
-    `authorized → cancelled`, `409 email_limit_reached`).
-12. A move: count it against the move total (else `authorized → cancelled`,
+11. A move: count it against the move total (else `authorized → cancelled`,
     `409 limit_reached`).
-13. `authorized → executing`, recording the method and keeping the intent for 24 h.
-14. **Execute** with `idempotency_key = intent_id` and an `AuditContext` of the host origin,
-    the trusted client IP, the user agent, the intent id and the method used (`passkey`,
-    `email_code` or `none`). Then `executing → executed`; a refusal of this first send →
-    `cancelled`; an unclear answer → stays `executing`, `503 intent_executing`.
+12. `authorized → executing`, recording the achieved assurance and keeping the intent for 24 h.
+13. **Execute** with `idempotency_key = intent_id` and an `AuditContext` of the page's origin,
+    the trusted client IP, the user agent, the intent id and the achieved assurance (`aal<N>`
+    or `none`). Then `executing → executed`; a refusal of this first send → `cancelled`; an
+    unclear answer → stays `executing`, `503 intent_executing`.
 
 ## Environment
 
 | Variable | Default | Secret | Note |
 | --- | --- | --- | --- |
-| `WALLET_ACTION_ORIGINS` | empty (off) | no | comma list of matrix hosts |
+| `WALLET_ACTION_ORIGINS` | empty (no host) | no | comma list of matrix hosts |
 | `WALLET_ACTION_KINDS` | `move` | no | `move`, `pay`, `mandate`, `withdraw`; one list for all enabled hosts |
-| `WALLET_INTENT_KEY` | — | **yes** | ≥ 32 bytes; required once a host is on |
-| `REDIS_URL` | — | **yes** | it carries the Redis password; required in production once a host is on. No error message prints it |
+| `WALLET_INTENT_KEY` | — | **yes** | ≥ 32 bytes; always required |
+| `REDIS_URL` | — | **yes** | it carries the Redis password; required in production. No error message prints it |
 | `WALLET_MOVE_NO_STEPUP_PER_OP_USDT` | `100` | no | |
-| `WALLET_MOVE_NO_STEPUP_24H_USDT` | `300` | no | per user, all hosts together |
-| `WALLET_EMAIL_STEPUP_CAP_USDT` | `250` | no | per operation |
-| `WALLET_EMAIL_STEPUP_24H_USDT` | `500` | no | per user, all hosts together |
+| `WALLET_MOVE_NO_STEPUP_24H_USDT` | `300` | no | per user, all pages together |
 
 The JWKS for proofs is read from the same endpoint as for access tokens
 (`AUTH_JWKS_GRPC_ENDPOINT`, else `CONCIERGE_GRPC_ADDR`), and the proof's issuer is
@@ -338,11 +350,6 @@ The JWKS for proofs is read from the same endpoint as for access tokens
 
 ## Not enforced yet
 
-- **"Require a passkey when the account has one."** Concierge exposes no such signal to the
-  bank. So an emailed code is accepted for a pay or a move up to the email cap even when the
-  account has a passkey.
-- **The bank's own words in the step-up mail** (`summary_mac`, concierge#182). Until then the
-  mail quotes the page's summary, and the email cap is the only bound on what it can approve.
 - **A session id.** Concierge's access token carries none; the binding is `token_version` plus
   `auth_time`, which a new sign-in or a re-authentication moves.
 - **The account freeze of the money plane** is checked by the hub when it executes

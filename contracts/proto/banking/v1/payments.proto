@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package banking.v1;
 
+import "banking/v1/wallet.proto";
+
 // PaymentsService — the ORDER that moves money between two named ends of the platform.
 //
 // Two tiers on one order, DERIVED from the destination and never supplied: an external
@@ -39,8 +41,8 @@ service PaymentsService {
 
 // PaymentConfirmationService — the investor's side of a payment out of THEIR claim, signed in.
 // Behind the user-auth layer: the caller is the subject, and an order that is not theirs, has
-// no such seat or does not exist is the same NOT_FOUND. The session is the credential,
-// and the wallet host's gate asks for a fresh login before an approval (a decline asks for none).
+// no such seat or does not exist is the same NOT_FOUND. The session is the credential;
+// an approval is a wallet intent confirmed with a second-factor proof (a decline asks for none).
 service PaymentConfirmationService {
   // The caller's orders waiting for their answer, newest first.
   rpc ListPaymentConfirmations(ListPaymentConfirmationsRequest) returns (PaymentConfirmationList);
@@ -240,7 +242,7 @@ message AnswerPaymentConfirmationRequest {
   string payment_id = 1;
   // APPROVE or REJECT. PENDING is rejected as an invalid argument.
   ConsentDecision decision = 2;
-  // Audit only — the edge supplies these; they are never trusted for authorization.
-  string client_ip = 3;
-  string user_agent = 4;
+  reserved 3, 4;
+  reserved "client_ip", "user_agent";
+  AuditContext audit = 5;
 }

@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 
 import { Button, Skeleton, Spinner } from "@evinvest/uikit";
 
-import { fetchPayableInvoice, payInvoice } from "@/entities/invoice/api/invoice-client";
+import { fetchPayableInvoice } from "@/entities/invoice/api/invoice-client";
 import { invoicePhase, POLL_EVERY_MS, shouldPoll } from "@/entities/invoice/lib/state";
-import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
 import { ActionCancel, ActionFrame, useWalletAction } from "@/features/wallet-action";
+import { ConfirmStep, firstPartyIntentClient, IntentErrorAlert, StepupSurface, useIntentFlow } from "@/features/wallet-intent";
 import type { PayableInvoice } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
 import { cn } from "@/shared/lib/cn";
@@ -37,10 +37,14 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
   const [invoice, setInvoice] = useState<PayableInvoice | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [source, setSource] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  // One key per page load: a second click, or a retry after a dropped answer, repeats the
-  // same payment instead of making another.
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  // The answer is the invoice after the payment; from there its state drives the page, and an
+  // invoice open again offers the choice again.
+  const controls = useIntentFlow<"pay">(firstPartyIntentClient, ({ result }) => {
+    setInvoice(result);
+    if (invoicePhase(result.state) === "paid") onPaid(result);
+  });
+  const { flow } = controls;
+  const choosing = flow.phase === "editing" || flow.phase === "creating" || flow.phase === "done";
   const [gaveUp, setGaveUp] = useState(false);
   // The ledger refused a payment that had been processing: the invoice is open again.
   const [reopened, setReopened] = useState(false);
@@ -107,21 +111,10 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
   ].filter((s) => s.key !== "");
   const chosen = source ?? sources.find((s) => toBaseUnits(s.available) >= amount)?.key ?? "main";
 
-  const pay = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setError(null);
+  const pay = () => {
     setReopened(false);
     setGaveUp(false);
-    try {
-      const paid = await payInvoice(invoiceId, { pay_from: chosen, idempotency_key: idempotencyKey });
-      setInvoice(paid);
-      if (invoicePhase(paid.state) === "paid") onPaid(paid);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSubmitting(false);
-    }
+    controls.submit({ kind: "pay", params: { invoice_id: invoiceId, pay_from: chosen } });
   };
 
   return (
@@ -132,11 +125,13 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
         {invoice.memo ? <p className="text-sm text-ink-soft">{invoice.memo}</p> : null}
       </div>
 
-      {phase === "payable" ? (
+      {phase === "payable" && !choosing ? (
+        <ConfirmStep kind="pay" controls={controls} />
+      ) : phase === "payable" ? (
         <>
           <div role="group" aria-label={t("walletAction.payFrom", "Pay from")} className="flex flex-col gap-2">
             {sources.map((s) => (
-              <Button key={s.key} type="button" variant="outline" aria-pressed={chosen === s.key} disabled={toBaseUnits(s.available) < amount || submitting} onClick={() => setSource(s.key)} className={cn("justify-between", chosen === s.key && "border-ring")}>
+              <Button key={s.key} type="button" variant="outline" aria-pressed={chosen === s.key} disabled={toBaseUnits(s.available) < amount || flow.phase === "creating"} onClick={() => setSource(s.key)} className={cn("justify-between", chosen === s.key && "border-ring")}>
                 <span>{s.label}</span>
                 <span>{formatUsdt(s.available, locale)}</span>
               </Button>
@@ -147,16 +142,12 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
               {t("walletAction.payRefused", "The payment did not go through. Nothing was charged — you can try again.")}
             </p>
           ) : null}
-          {error !== null ? (
-            <p role="alert" className="text-sm text-accent-error">
-              {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
-            </p>
-          ) : null}
+          <IntentErrorAlert error={flow.phase === "editing" ? flow.error : null} />
           <div className="flex gap-2">
-            <Button type="button" onClick={pay} disabled={submitting || toBaseUnits(sources.find((s) => s.key === chosen)?.available) < amount} className="flex-1">
-              {submitting ? <Spinner aria-hidden /> : t("walletAction.payNow", "Pay")}
+            <Button type="button" onClick={pay} disabled={flow.phase === "creating" || toBaseUnits(sources.find((s) => s.key === chosen)?.available) < amount} className="flex-1">
+              {flow.phase === "creating" ? <Spinner aria-hidden /> : t("walletAction.payNow", "Pay")}
             </Button>
-            <ActionCancel disabled={submitting} />
+            <ActionCancel disabled={flow.phase === "creating"} />
           </div>
         </>
       ) : phase === "processing" ? (
@@ -176,6 +167,7 @@ function PayInvoice({ invoiceId, onPaid }: { invoiceId: string | null; onPaid: (
           <ActionCancel />
         </>
       )}
+      <StepupSurface dialog={controls.stepupDialog} scopeHost={null} />
     </div>
   );
 }

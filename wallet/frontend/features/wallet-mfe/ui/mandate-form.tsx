@@ -4,7 +4,9 @@ import type { FormEvent } from "react";
 
 import { Alert, AlertDescription, Button } from "@evinvest/uikit";
 
-import { FormActions, FormError, type ActionFormProps } from "./form-parts";
+import { IntentErrorAlert } from "@/features/wallet-intent";
+
+import { FormActions, type ActionFormProps } from "./form-parts";
 
 /**
  * Granting a mandate a service asked for. Nothing is typed: the caps, the service and the
@@ -34,7 +36,7 @@ export function MandateForm({ request, busy, error, onSubmit, onCancel }: Action
   return (
     <form className="flex flex-col gap-4" onSubmit={submit}>
       <p className="m-0 text-sm text-ink-soft">{t("walletMfe.mandateIntro", "A service asks to use your funds within set limits. Review the limits before you allow it.")}</p>
-      <FormError error={error} />
+      <IntentErrorAlert error={error} />
       <FormActions busy={busy} disabled={false} onCancel={onCancel} />
     </form>
   );

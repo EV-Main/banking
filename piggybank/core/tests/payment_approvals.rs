@@ -38,8 +38,9 @@ use piggybank_core::{
 	},
 	ports::{
 		LedgerTransfer, UserRepository,
+		audit::RequestAudit,
 		ledger::Ledger,
-		payments::{ApprovalSeat, ConsentAudit, ConsentDecision, ExecutionOutcome, PaymentRepository, PaymentView, SeatView},
+		payments::{ApprovalSeat, ConsentDecision, ExecutionOutcome, PaymentRepository, PaymentView, SeatView},
 		scope_notifications::{NoticeError, ScopeNotice, ScopeNotifier},
 		scope_operations::{ApprovalLevel, ApprovalOutcome, ApprovalState, ApprovalView, Approvals, ApprovalsError, Proposal, UserProof},
 	},
@@ -65,11 +66,8 @@ fn usdt(decimal: &str) -> Usdt {
 	Usdt::parse_decimal(decimal).unwrap()
 }
 
-fn audit() -> ConsentAudit {
-	ConsentAudit {
-		client_ip: "203.0.113.7".to_owned(),
-		user_agent: "integration-test".to_owned(),
-	}
+fn audit() -> RequestAudit {
+	RequestAudit::new("https://evinvest.ltd", "203.0.113.7", "integration-test", "", "aal2")
 }
 
 fn sha256_hex(input: &str) -> String {

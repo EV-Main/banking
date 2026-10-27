@@ -25,8 +25,8 @@ use uuid::Uuid;
 use crate::{
 	AppState,
 	application::{payment_approvals, payments as payments_app},
-	ports::payments::{ConsentAudit, ConsentDecision, EndDetail, PaymentFilter, PaymentView, SeatView},
-	services::support::{MAX_AUDIT_IP_BYTES, MAX_AUDIT_USER_AGENT_BYTES, caller_id, clamp, map_err, require_permission, unfrozen_caller, unix_now},
+	ports::payments::{ConsentDecision, EndDetail, PaymentFilter, PaymentView, SeatView},
+	services::support::{audit_of, caller_id, map_err, require_permission, unfrozen_caller, unix_now},
 };
 
 /// The default page size for the payment history.
@@ -377,10 +377,7 @@ impl PaymentConfirmationService for PaymentConfirmationSvc {
 		};
 		let req = request.into_inner();
 		let id = parse_payment_id(&req.payment_id)?;
-		let audit = ConsentAudit {
-			client_ip: clamp(req.client_ip, MAX_AUDIT_IP_BYTES),
-			user_agent: clamp(req.user_agent, MAX_AUDIT_USER_AGENT_BYTES),
-		};
+		let audit = audit_of(req.audit.as_ref());
 		let outcome = payments_app::answer_consent(&self.state.payment_ports(), subject, id, decision, &audit, unix_now())
 			.await
 			.map_err(consent_err)?;
@@ -422,15 +419,6 @@ mod tests {
 		});
 		assert_eq!(one.code(), tonic::Code::NotFound);
 		assert_eq!(one.message(), two.message());
-	}
-
-	#[test]
-	fn audit_strings_are_clamped_on_a_character_boundary() {
-		assert_eq!(clamp("203.0.113.7".to_owned(), MAX_AUDIT_IP_BYTES), "203.0.113.7");
-		assert_eq!(clamp("x".repeat(1000), MAX_AUDIT_USER_AGENT_BYTES).len(), MAX_AUDIT_USER_AGENT_BYTES);
-		// A 4-byte code point straddling the cut is dropped whole rather than split.
-		let clamped = clamp(format!("{}😀", "a".repeat(510)), MAX_AUDIT_USER_AGENT_BYTES);
-		assert_eq!(clamped.len(), 510);
 	}
 
 	#[test]

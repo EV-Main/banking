@@ -2,28 +2,21 @@ import { useT } from "@evinvest/i18n/react";
 
 import type { ReactNode } from "react";
 
-import { Alert, AlertDescription, Button, Spinner } from "@evinvest/uikit";
+import { Button, Spinner } from "@evinvest/uikit";
 
-import type { IntentError, IntentRequest } from "../lib/intent";
-import { intentErrorText } from "./intent-words";
+import type { IntentError, IntentRequestOf } from "@/features/wallet-intent";
+
+import type { WalletAction } from "../lib/wallet-action";
+
+type ActionRequest = IntentRequestOf<WalletAction>;
 
 /** What every action form takes: its last inputs, the create's state, and where to send. */
 export interface ActionFormProps {
-  draft: IntentRequest | null;
+  draft: ActionRequest | null;
   busy: boolean;
   error: IntentError | null;
-  onSubmit: (request: IntentRequest) => void;
+  onSubmit: (request: ActionRequest) => void;
   onCancel: () => void;
-}
-
-export function FormError({ error }: { error: IntentError | null }) {
-  const t = useT();
-  if (error === null) return null;
-  return (
-    <Alert variant="destructive" role="alert">
-      <AlertDescription>{intentErrorText(error, t)}</AlertDescription>
-    </Alert>
-  );
 }
 
 /** A choice of a few values as pressed buttons: no overlay, so it works inside a closed root. */

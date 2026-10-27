@@ -24,16 +24,3 @@ export function visibleMandates<T extends MandateStamps>(list: readonly T[], url
   const narrowed = live.filter((m) => m.scope === urlScope);
   return narrowed.length > 0 ? narrowed : live;
 }
-
-/**
- * The BFF's grant gate (#524) answers 401 `step_up_required` when the session's last
- * interactive sign-in is older than five minutes; the page reads it as "sign in again", not
- * as a broken request. `requestJson` replays a 401 once after refreshing the session, which
- * cannot clear this verdict, so the error that arrives here is the replay's.
- */
-export function isStepUpRequired(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if (Reflect.get(error, "status") !== 401) return false;
-  const body: unknown = Reflect.get(error, "body");
-  return typeof body === "object" && body !== null && Reflect.get(body, "error") === "step_up_required";
-}

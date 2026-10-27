@@ -8,7 +8,9 @@ import { isPositiveWireDecimal } from "@/shared/lib/money";
 import { networkLabel } from "@/shared/lib/rail";
 
 import { fetchWithdrawNetworks } from "../api/wallet-remote";
-import { Choice, FormActions, FormError, type ActionFormProps } from "./form-parts";
+import { IntentErrorAlert } from "@/features/wallet-intent";
+
+import { Choice, FormActions, type ActionFormProps } from "./form-parts";
 
 type Rails = { status: "loading" } | { status: "error" } | { status: "ready"; networks: string[] };
 
@@ -41,7 +43,7 @@ export function WithdrawForm({ origin, draft, busy, error, onSubmit, onCancel }:
 
   if (rails.status === "loading") return <Skeleton className="h-40 w-full" />;
   if (rails.status === "error") return <ResourceError message={t("walletMfe.unavailable", "Your wallet could not be loaded.")} onRetry={reload} />;
-  if (rails.networks.length === 0) return <FormError error={{ code: "network_unavailable" }} />;
+  if (rails.networks.length === 0) return <IntentErrorAlert error={{ code: "network_unavailable" }} />;
 
   const network = picked !== null && rails.networks.includes(picked) ? picked : rails.networks[0];
   const valid = address.trim() !== "" && isPositiveWireDecimal(amount.trim());
@@ -67,7 +69,7 @@ export function WithdrawForm({ origin, draft, busy, error, onSubmit, onCancel }:
         <FieldLabel>{t("walletAction.moveAmount", "Amount, USDT")}</FieldLabel>
         <Input inputMode="decimal" autoComplete="off" placeholder="0.00" value={amount} disabled={busy} aria-invalid={amount !== "" && !isPositiveWireDecimal(amount.trim())} onChange={(event) => setAmount(event.target.value)} />
       </Field>
-      <FormError error={error} />
+      <IntentErrorAlert error={error} />
       <FormActions busy={busy} disabled={!valid} onCancel={onCancel} />
     </form>
   );

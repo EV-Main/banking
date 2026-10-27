@@ -22,9 +22,11 @@
   },
   "dependencies": {
     "@evinvest/analytics": "^0.4.0",
+    "@evinvest/concierge": "^0.3.0",
     "@evinvest/error-monitoring": "^0.1.0",
     "@evinvest/experiments": "^0.4.0",
     "@evinvest/i18n": "^0.10.1",
+    "@evinvest/mfe": "^0.1.0",
     "@evinvest/settings": "^0.5.0",
     "@evinvest/uikit": "^0.29.1",
     "@sentry/nextjs": "^10.58.0",

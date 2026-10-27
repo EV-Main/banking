@@ -1,4 +1,4 @@
-//! One intent: what a host page asked for, the terms the BFF computed for it, and the hash a
+//! One intent: what a page asked for, the terms the BFF computed for it, and the hash a
 //! step-up proof is bound to.
 //!
 //! The record is stored as the exact JSON bytes it was hashed over, so the hash is a
@@ -7,18 +7,18 @@
 //! editing the terms of a pending intent.
 
 use domain::money::Usdt;
-use evconcierge_auth::stepup::StepupMethod;
+use evconcierge_auth::stepup::Aal;
 use serde::{Deserialize, Serialize};
 
 use super::{IntentKind, RiskPolicy, keys};
 
-/// How long a host has to confirm. The step-up proof lives at most as long, so a person who
+/// How long a page has to confirm. The step-up proof lives at most as long, so a person who
 /// takes longer starts again with fresh terms.
 pub const INTENT_TTL_SECS: u64 = 120;
 
-const HASH_LABEL: &[u8] = b"ev.cabinet.wallet.intent.v1";
+const HASH_LABEL: &[u8] = b"ev.cabinet.wallet.intent.v2";
 
-/// What the host asked for, exactly as the body named it. Unknown fields are refused, so a
+/// What the page asked for, exactly as the body named it. Unknown fields are refused, so a
 /// page cannot hide a parameter it hopes a later version reads.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "params", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,6 +27,7 @@ pub enum Action {
 	Withdraw(WithdrawParams),
 	Pay(PayParams),
 	Mandate(MandateParams),
+	ApprovePayment(ApprovePaymentParams),
 }
 
 impl Action {
@@ -36,6 +37,7 @@ impl Action {
 			Self::Withdraw(_) => IntentKind::Withdraw,
 			Self::Pay(_) => IntentKind::Pay,
 			Self::Mandate(_) => IntentKind::Mandate,
+			Self::ApprovePayment(_) => IntentKind::ApprovePayment,
 		}
 	}
 }
@@ -69,6 +71,12 @@ pub struct MandateParams {
 	pub request_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovePaymentParams {
+	pub payment_id: String,
+}
+
 /// What the person is shown and confirms, computed by the BFF from the hub's own records.
 /// `None` is "the hub does not say", never a guess.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -78,6 +86,7 @@ pub struct Summary {
 	pub net: Option<String>,
 	pub recipient_full: String,
 	pub network: Option<String>,
+	/// The act's scope: the invoice's, the request's, the moved compartment's, or `main`.
 	pub scope: String,
 	pub host_origin: String,
 	pub mandate: Option<MandateTerms>,
@@ -97,12 +106,6 @@ pub struct MandateTerms {
 	pub mandate_expires_at: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Stepup {
-	pub required: bool,
-	pub methods: Vec<StepupMethod>,
-}
-
 /// The session that created the intent, as its access token names it. Concierge's access
 /// token carries no session id; `auth_time` is the last interactive sign-in of the session
 /// and survives a refresh, and `token_version` moves when every session is revoked.
@@ -120,10 +123,12 @@ pub struct IntentRecord {
 	pub intent_id: String,
 	pub sub: String,
 	pub origin: String,
+	/// The act's scope, as in [`Summary::scope`].
 	pub scope: String,
 	pub action: Action,
 	pub summary: Summary,
-	pub stepup: Stepup,
+	/// The least assurance a proof must carry; `None` asks for no proof.
+	pub min_aal: Option<Aal>,
 	pub created_at: u64,
 	pub expires_at: u64,
 	pub session: SessionBinding,
@@ -155,50 +160,18 @@ pub fn is_intent_id(raw: &str) -> bool {
 	raw.len() == 32 && raw.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// What the caller already used in the last 24 h, through every host together.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Used24h {
-	/// Moved between compartments, with or without a step-up.
-	pub moved: Usdt,
-	/// Confirmed by emailed code.
-	pub emailed: Usdt,
-}
-
-/// The risk class of spec (h), as the step-up it demands. `amount` is what leaves the
-/// caller's hands (`None` for a mandate, which moves nothing now).
-pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, used: Used24h, policy: &RiskPolicy) -> Stepup {
-	let passkey_only = || Stepup {
-		required: true,
-		methods: vec![StepupMethod::Passkey],
-	};
-	// The email method rests on a mailbox and on a summary the page writes itself, so it
-	// authorises only small amounts, and only so much a day; past either line, and for
-	// anything unreadable, a passkey.
-	let by_amount = |amount: Option<Usdt>| match amount {
-		Some(amount) if amount <= policy.email_cap && used.emailed.checked_add(amount).is_some_and(|total| total <= policy.email_24h) => Stepup {
-			required: true,
-			methods: vec![StepupMethod::Passkey, StepupMethod::EmailCode],
-		},
-		_ => passkey_only(),
-	};
+/// The risk class of spec (h), as the assurance it demands. `amount` is what leaves the
+/// caller's hands (`None` for a mandate, which moves nothing now); `moved` is what the caller
+/// moved between compartments in the last 24 h, through every page together.
+pub fn stepup_for(kind: IntentKind, amount: Option<Usdt>, moved: Usdt, policy: &RiskPolicy) -> Option<Aal> {
+	let within_b = || amount.is_some_and(|amount| amount <= policy.no_stepup_per_op && moved.checked_add(amount).is_some_and(|total| total <= policy.no_stepup_24h));
 	match kind {
-		IntentKind::Withdraw | IntentKind::Mandate => passkey_only(),
-		IntentKind::Pay => by_amount(amount),
-		IntentKind::Move => {
-			let within = amount.is_some_and(|amount| amount <= policy.no_stepup_per_op && used.moved.checked_add(amount).is_some_and(|total| total <= policy.no_stepup_24h));
-			if within {
-				Stepup {
-					required: false,
-					methods: Vec::new(),
-				}
-			} else {
-				by_amount(amount)
-			}
-		}
+		IntentKind::Move if within_b() => None,
+		IntentKind::Move | IntentKind::Withdraw | IntentKind::Pay | IntentKind::Mandate | IntentKind::ApprovePayment => Some(Aal::SECOND_FACTOR),
 	}
 }
 
-/// `amount` in whole micro-USDT, rounded up: the unit the 24 h budgets count in, small
+/// `amount` in whole micro-USDT, rounded up: the unit the 24 h budget counts in, small
 /// enough for Redis's Lua numbers to stay exact.
 pub fn micro_ceil(amount: Usdt) -> u64 {
 	const PER_MICRO: u128 = 1_000_000_000_000;
@@ -227,50 +200,21 @@ mod tests {
 		RiskPolicy {
 			no_stepup_per_op: usdt("100"),
 			no_stepup_24h: usdt("300"),
-			email_cap: usdt("250"),
-			email_24h: usdt("500"),
 		}
 	}
 
 	#[test]
 	fn the_risk_classes_of_the_spec() {
 		let p = policy();
-		let none = Stepup { required: false, methods: vec![] };
-		let either = Stepup {
-			required: true,
-			methods: vec![StepupMethod::Passkey, StepupMethod::EmailCode],
-		};
-		let passkey = Stepup {
-			required: true,
-			methods: vec![StepupMethod::Passkey],
-		};
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100")), moved("200"), &p), none, "exactly at both lines");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100.000001")), Used24h::default(), &p), either, "over the per-op line");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("1")), moved("299.5"), &p), either, "over the 24 h line");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("250.01")), Used24h::default(), &p), passkey, "over the email cap");
-		assert_eq!(stepup_for(IntentKind::Move, None, Used24h::default(), &p), passkey, "an amount nobody could read");
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("1")), Used24h::default(), &p), either, "pay always steps up");
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), Used24h::default(), &p), either);
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("251")), Used24h::default(), &p), passkey);
-		assert_eq!(stepup_for(IntentKind::Withdraw, Some(usdt("1")), Used24h::default(), &p), passkey);
-		assert_eq!(stepup_for(IntentKind::Mandate, None, Used24h::default(), &p), passkey);
-
-		// The day's emailed total: 250 more fits after 250, not after 250.01.
-		let emailed = |raw: &str| Used24h {
-			emailed: usdt(raw),
-			..Used24h::default()
-		};
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), emailed("250"), &p), either, "exactly at the daily line");
-		assert_eq!(stepup_for(IntentKind::Pay, Some(usdt("250")), emailed("250.01"), &p), passkey, "over the daily line");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("150")), emailed("400"), &p), passkey, "a move over the B line too");
-		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("50")), emailed("500"), &p), none, "a B move asks for no code at all");
-	}
-
-	fn moved(raw: &str) -> Used24h {
-		Used24h {
-			moved: usdt(raw),
-			..Used24h::default()
+		let second = Some(Aal::SECOND_FACTOR);
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100")), usdt("200"), &p), None, "exactly at both lines");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("100.000001")), Usdt::ZERO, &p), second, "over the per-op line");
+		assert_eq!(stepup_for(IntentKind::Move, Some(usdt("1")), usdt("299.5"), &p), second, "over the 24 h line");
+		assert_eq!(stepup_for(IntentKind::Move, None, Usdt::ZERO, &p), second, "an amount nobody could read");
+		for kind in [IntentKind::Withdraw, IntentKind::Pay, IntentKind::ApprovePayment] {
+			assert_eq!(stepup_for(kind, Some(usdt("0.01")), Usdt::ZERO, &p), second, "{kind:?} always steps up");
 		}
+		assert_eq!(stepup_for(IntentKind::Mandate, None, Usdt::ZERO, &p), second);
 	}
 
 	#[test]
@@ -289,6 +233,8 @@ mod tests {
 		assert!(parse(r#"{"kind":"move","params":{"from_scope":"main","to_scope":"sa","amount":"1"},"scope":"invest"}"#).is_err());
 		assert!(parse(r#"{"kind":"transfer","params":{}}"#).is_err());
 		assert!(parse(r#"{"kind":"pay","params":{"invoice_id":"i","pay_from":"main","amount":"0.01"}}"#).is_err());
+		assert!(parse(r#"{"kind":"approve_payment","params":{"payment_id":"p"}}"#).is_ok());
+		assert!(parse(r#"{"kind":"approve_payment","params":{"payment_id":"p","decision":"reject"}}"#).is_err());
 	}
 
 	#[test]

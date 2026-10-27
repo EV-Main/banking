@@ -46,4 +46,4 @@ export type {
 } from "./gen";
 
 // Mandates: hand-written for the reason given above.
-export type { GrantMandateBody, Mandate, MandateList, MandateOperation, MandateRequest } from "./mandate";
+export type { Mandate, MandateList, MandateOperation, MandateRequest } from "./mandate";

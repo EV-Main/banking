@@ -24,6 +24,10 @@ host on 0.2.0 refuses an older element and shows its fallback.
 - Integrity helpers: `parseWalletPins`, `pinToSri`, `walletSri`,
   `verifyWalletBundle`, `walletImportMap`.
 - `WALLET_API_VERSION` (3), the wallet's own contract version.
+- `walletCsp({ mode: 'inline' })` allows concierge's bundle directory
+  (`https://evinvest.ltd/api/auth/mfe/`) in `script-src`, `style-src` and
+  `connect-src`, for the step-up element that gives a money action its second
+  factor.
 
 ### Changed
 

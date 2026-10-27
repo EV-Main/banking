@@ -14,8 +14,8 @@ import { useEffect, useState } from "react";
 import { useLocale, useT } from "@evinvest/i18n/react";
 import { Button, Card, CardContent, CardDescription, CardHeader, Spinner } from "@evinvest/uikit";
 
-import { answerPaymentConfirmation, fetchPaymentConfirmation } from "@/entities/payment/api/confirmation-client";
-import { isStepUpRequired } from "@/entities/mandate/lib/mandate";
+import { fetchPaymentConfirmation, rejectPayment } from "@/entities/payment/api/confirmation-client";
+import { ConfirmStep, firstPartyIntentClient, IntentErrorAlert, StepupSurface, useIntentFlow } from "@/features/wallet-intent";
 import type { ConsentDecision, PaymentConfirmation } from "@/shared/contracts/payments";
 import { errorMessage, RequestError } from "@/shared/lib/api-client";
 import { expiresIn, formatMoment, hasExpired } from "@/shared/lib/datetime";
@@ -54,9 +54,17 @@ function PaymentAnswer({ id, hosted, onAnswered }: { id: string; hosted: boolean
   const [missing, setMissing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [reload, setReload] = useState(0);
-  const [pending, setPending] = useState<ConsentDecision | null>(null);
+  const [rejecting, setRejecting] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [justAnswered, setJustAnswered] = useState(false);
+  const answered = (read: PaymentConfirmation, decision: ConsentDecision) => {
+    setPayment(read);
+    setJustAnswered(true);
+    onAnswered(decision);
+  };
+  const controls = useIntentFlow<"approve_payment">(firstPartyIntentClient, ({ result }) => answered(result, "approve"));
+  const { flow } = controls;
+  const answering = flow.phase !== "editing" || rejecting;
 
   useEffect(() => {
     let live = true;
@@ -77,20 +85,23 @@ function PaymentAnswer({ id, hosted, onAnswered }: { id: string; hosted: boolean
     setReload((n) => n + 1);
   };
 
-  const answer = async (decision: ConsentDecision) => {
-    if (pending !== null) return;
-    setPending(decision);
+  const approve = () => {
+    setError(null);
+    controls.submit({ kind: "approve_payment", params: { payment_id: id } });
+  };
+
+  const reject = async () => {
+    if (answering) return;
+    setRejecting(true);
     setError(null);
     try {
-      setPayment(await answerPaymentConfirmation(id, decision));
-      setJustAnswered(true);
-      onAnswered(decision);
+      answered(await rejectPayment(id), "reject");
     } catch (e) {
       setError(e);
       // A refusal that closed the order (a pin moved) is read back, not guessed at.
       setReload((n) => n + 1);
     } finally {
-      setPending(null);
+      setRejecting(false);
     }
   };
 
@@ -149,26 +160,30 @@ function PaymentAnswer({ id, hosted, onAnswered }: { id: string; hosted: boolean
         </CardContent>
       </Card>
 
-      {open && !expired ? (
+      {open && !expired && (flow.phase === "editing" || flow.phase === "creating") ? (
         <div className="flex flex-col gap-3">
           {error !== null ? (
             <p role="alert" className="text-sm text-accent-error">
-              {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
+              {errorMessage(error, t)}
             </p>
           ) : null}
-          <Button type="button" onClick={() => void answer("approve")} disabled={pending !== null}>
-            {pending === "approve" ? <Spinner aria-hidden /> : t("paymentConfirm.approve", "Approve this payment")}
+          <IntentErrorAlert error={flow.phase === "editing" ? flow.error : null} />
+          <Button type="button" onClick={approve} disabled={answering}>
+            {flow.phase === "creating" ? <Spinner aria-hidden /> : t("paymentConfirm.approve", "Approve this payment")}
           </Button>
-          <Button type="button" variant="outline" onClick={() => void answer("reject")} disabled={pending !== null}>
-            {pending === "reject" ? <Spinner aria-hidden /> : t("paymentConfirm.reject", "Decline")}
+          <Button type="button" variant="outline" onClick={() => void reject()} disabled={answering}>
+            {rejecting ? <Spinner aria-hidden /> : t("paymentConfirm.reject", "Decline")}
           </Button>
         </div>
+      ) : open && !expired && flow.phase !== "done" ? (
+        <ConfirmStep kind="approve_payment" controls={controls} />
       ) : (
         <>
           <Outcome payment={payment} settled={settled} expired={expired} fresh={justAnswered} />
           {leave}
         </>
       )}
+      <StepupSurface dialog={controls.stepupDialog} scopeHost={null} />
     </div>
   );
 }

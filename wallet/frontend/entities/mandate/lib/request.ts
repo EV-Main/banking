@@ -62,17 +62,6 @@ export function replacedBy<T extends HeldMandate>(request: { scope: string; clie
   );
 }
 
-/**
- * Whether a failed grant may be retried under the same idempotency key. A 4xx is the server's
- * answer to these terms (final, or a new sign-in away), so the next try is a fresh attempt;
- * a dropped connection or a 5xx may have been applied, and the same key makes the repeat safe.
- */
-export function keepsKeyAfter(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return true;
-  const status: unknown = Reflect.get(error, "status");
-  return !(typeof status === "number" && status >= 400 && status < 500);
-}
-
 /** The server's answer for a request that cannot be shown: 404 for any unreadable id. */
 export function isUnavailable(error: unknown): boolean {
   return typeof error === "object" && error !== null && Reflect.get(error, "status") === 404;

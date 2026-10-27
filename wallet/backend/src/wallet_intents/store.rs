@@ -14,6 +14,8 @@ use std::{
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
 
+use super::Assurance;
+
 /// The life of an intent. `created → authorized` is the one transition a proof buys, and
 /// only one caller wins it. `executing` is the act sent to the hub with the intent id as its
 /// idempotency key: from there on a confirm may only send the same act again.
@@ -56,9 +58,9 @@ pub struct StoredIntent {
 	pub record: Vec<u8>,
 	pub seal: String,
 	pub status: IntentStatus,
-	/// The step-up method the act was authorised with, set on `authorized → executing` so a
+	/// The assurance the act was authorised with, set on `authorized → executing` so a
 	/// re-sent act carries the same audit.
-	pub stepup_method: Option<String>,
+	pub assurance: Option<Assurance>,
 }
 
 #[derive(Debug)]
@@ -70,8 +72,7 @@ impl std::fmt::Display for StoreError {
 	}
 }
 
-/// The rolling window of the per-user budgets (moves without a step-up, emailed-code
-/// confirmations).
+/// The rolling window of the per-user move budget.
 pub const BUDGET_WINDOW_SECS: u64 = 86_400;
 
 #[async_trait]
@@ -84,21 +85,21 @@ pub trait WalletStore: Send + Sync {
 	/// Compare-and-set the status: `true` only for the one caller that found `from`.
 	async fn transition(&self, intent_id: &str, from: IntentStatus, to: IntentStatus) -> Result<bool, StoreError>;
 
-	/// `authorized → executing`, one winner, recording `stepup_method` and keeping the intent
+	/// `authorized → executing`, one winner, recording `assurance` and keeping the intent
 	/// for `keep_secs` from now: the window in which a confirm may send the act again.
-	async fn begin_execution(&self, intent_id: &str, stepup_method: &str, keep_secs: u64) -> Result<bool, StoreError>;
+	async fn begin_execution(&self, intent_id: &str, assurance: Assurance, keep_secs: u64) -> Result<bool, StoreError>;
 
 	/// Spend a step-up proof's `jti`: `true` the first time, `false` for every replay
 	/// until `ttl_secs` pass (concierge doc item 4: `SET stepup:jti:<jti> 1 NX EX`).
 	async fn spend_jti(&self, jti: &str, ttl_secs: u64) -> Result<bool, StoreError>;
 
-	/// Micro-USDT counted under `budget` since `since` (unix seconds).
-	async fn used_since(&self, budget: &str, since: u64) -> Result<u64, StoreError>;
+	/// Micro-USDT `sub` moved since `since` (unix seconds).
+	async fn moved_since(&self, sub: &str, since: u64) -> Result<u64, StoreError>;
 
-	/// Count `micro` against `budget` at `now` under `entry` (unique per intent). With a
+	/// Count a move of `micro` by `sub` at `now` under `entry` (unique per intent). With a
 	/// `cap`, the count is taken only if the window's total stays within it, and the answer
 	/// says whether it was; check and count are one atomic step.
-	async fn count_against(&self, budget: &str, entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError>;
+	async fn count_move(&self, sub: &str, entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError>;
 }
 
 fn intent_key(intent_id: &str) -> String {
@@ -109,15 +110,10 @@ fn jti_key(jti: &str) -> String {
 	format!("stepup:jti:{jti}")
 }
 
-/// What one user moved in 24 h, through every host together: the owners' line is a total
-/// per person, so a second host must not double it.
-pub fn move_budget(sub: &str) -> String {
+/// What one user moved in 24 h, through every page together: the owners' line is a total
+/// per person, so a second page must not double it.
+fn move_budget(sub: &str) -> String {
 	format!("cabinet:wallet:moved:{sub}")
-}
-
-/// What one user confirmed by emailed code in 24 h, through every host together.
-pub fn email_budget(sub: &str) -> String {
-	format!("cabinet:wallet:email:{sub}")
 }
 
 #[derive(Clone)]
@@ -155,13 +151,13 @@ return 0
 	)
 });
 
-/// KEYS[1] = intent hash; ARGV = step-up method, seconds to keep. 1 when the status was
+/// KEYS[1] = intent hash; ARGV = assurance, seconds to keep. 1 when the status was
 /// `authorized` and is now `executing`.
 static BEGIN_EXECUTION: std::sync::LazyLock<redis::Script> = std::sync::LazyLock::new(|| {
 	redis::Script::new(
 		r#"
 if redis.call('HGET', KEYS[1], 'status') == 'authorized' then
-  redis.call('HSET', KEYS[1], 'status', 'executing', 'method', ARGV[1])
+  redis.call('HSET', KEYS[1], 'status', 'executing', 'assurance', ARGV[1])
   redis.call('EXPIRE', KEYS[1], ARGV[2])
   return 1
 end
@@ -210,12 +206,12 @@ impl WalletStore for RedisStore {
 
 	async fn get_intent(&self, intent_id: &str) -> Result<Option<StoredIntent>, StoreError> {
 		let mut conn = self.conn.clone();
-		let (record, seal, status, stepup_method): (Option<Vec<u8>>, Option<String>, Option<String>, Option<String>) = redis::cmd("HMGET")
+		let (record, seal, status, assurance): (Option<Vec<u8>>, Option<String>, Option<String>, Option<String>) = redis::cmd("HMGET")
 			.arg(intent_key(intent_id))
 			.arg("record")
 			.arg("seal")
 			.arg("status")
-			.arg("method")
+			.arg("assurance")
 			.query_async(&mut conn)
 			.await
 			.map_err(redis_err)?;
@@ -223,12 +219,11 @@ impl WalletStore for RedisStore {
 			return Ok(None);
 		};
 		let status = IntentStatus::parse(&status).ok_or_else(|| StoreError(format!("intent {intent_id} has an unknown status {status:?}")))?;
-		Ok(Some(StoredIntent {
-			record,
-			seal,
-			status,
-			stepup_method,
-		}))
+		let assurance = assurance
+			.map(|raw| raw.parse::<Assurance>())
+			.transpose()
+			.map_err(|why| StoreError(format!("intent {intent_id}: {why}")))?;
+		Ok(Some(StoredIntent { record, seal, status, assurance }))
 	}
 
 	async fn transition(&self, intent_id: &str, from: IntentStatus, to: IntentStatus) -> Result<bool, StoreError> {
@@ -243,11 +238,11 @@ impl WalletStore for RedisStore {
 		Ok(won == 1)
 	}
 
-	async fn begin_execution(&self, intent_id: &str, stepup_method: &str, keep_secs: u64) -> Result<bool, StoreError> {
+	async fn begin_execution(&self, intent_id: &str, assurance: Assurance, keep_secs: u64) -> Result<bool, StoreError> {
 		let mut conn = self.conn.clone();
 		let won: i64 = BEGIN_EXECUTION
 			.key(intent_key(intent_id))
-			.arg(stepup_method)
+			.arg(assurance.to_string())
 			.arg(keep_secs.max(1))
 			.invoke_async(&mut conn)
 			.await
@@ -269,16 +264,22 @@ impl WalletStore for RedisStore {
 		Ok(set.is_some())
 	}
 
-	async fn used_since(&self, budget: &str, since: u64) -> Result<u64, StoreError> {
+	async fn moved_since(&self, sub: &str, since: u64) -> Result<u64, StoreError> {
 		let mut conn = self.conn.clone();
-		let members: Vec<String> = redis::cmd("ZRANGEBYSCORE").arg(budget).arg(since).arg("+inf").query_async(&mut conn).await.map_err(redis_err)?;
+		let members: Vec<String> = redis::cmd("ZRANGEBYSCORE")
+			.arg(move_budget(sub))
+			.arg(since)
+			.arg("+inf")
+			.query_async(&mut conn)
+			.await
+			.map_err(redis_err)?;
 		members.iter().map(|member| entry_micro(member)).try_fold(0u64, |total, micro| Ok(total.saturating_add(micro?)))
 	}
 
-	async fn count_against(&self, budget: &str, entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError> {
+	async fn count_move(&self, sub: &str, entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError> {
 		let mut conn = self.conn.clone();
 		let counted: i64 = COUNT_AGAINST
-			.key(budget)
+			.key(move_budget(sub))
 			.arg(now)
 			.arg(now.saturating_sub(BUDGET_WINDOW_SECS))
 			.arg(entry)
@@ -326,7 +327,7 @@ impl WalletStore for MemoryStore {
 			record: record.to_vec(),
 			seal: seal.to_owned(),
 			status: IntentStatus::Created,
-			stepup_method: None,
+			assurance: None,
 		};
 		self.lock().intents.insert(intent_id.to_owned(), (Instant::now() + Duration::from_secs(ttl_secs), stored));
 		Ok(())
@@ -340,7 +341,7 @@ impl WalletStore for MemoryStore {
 			record: stored.record.clone(),
 			seal: stored.seal.clone(),
 			status: stored.status,
-			stepup_method: stored.stepup_method.clone(),
+			assurance: stored.assurance,
 		}))
 	}
 
@@ -355,13 +356,13 @@ impl WalletStore for MemoryStore {
 		}
 	}
 
-	async fn begin_execution(&self, intent_id: &str, stepup_method: &str, keep_secs: u64) -> Result<bool, StoreError> {
+	async fn begin_execution(&self, intent_id: &str, assurance: Assurance, keep_secs: u64) -> Result<bool, StoreError> {
 		let mut memory = self.lock();
 		let now = Instant::now();
 		match memory.intents.get_mut(intent_id) {
 			Some((deadline, stored)) if *deadline > now && stored.status == IntentStatus::Authorized => {
 				stored.status = IntentStatus::Executing;
-				stored.stepup_method = Some(stepup_method.to_owned());
+				stored.assurance = Some(assurance);
 				*deadline = now + Duration::from_secs(keep_secs.max(1));
 				Ok(true)
 			}
@@ -380,11 +381,11 @@ impl WalletStore for MemoryStore {
 		Ok(true)
 	}
 
-	async fn used_since(&self, budget: &str, since: u64) -> Result<u64, StoreError> {
+	async fn moved_since(&self, sub: &str, since: u64) -> Result<u64, StoreError> {
 		let memory = self.lock();
 		let total = memory
 			.moves
-			.get(budget)
+			.get(sub)
 			.into_iter()
 			.flatten()
 			.filter(|(at, _)| *at >= since)
@@ -392,10 +393,10 @@ impl WalletStore for MemoryStore {
 		Ok(total)
 	}
 
-	async fn count_against(&self, budget: &str, _entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError> {
+	async fn count_move(&self, sub: &str, _entry: &str, micro: u64, cap: Option<u64>, now: u64) -> Result<bool, StoreError> {
 		let mut memory = self.lock();
 		let since = now.saturating_sub(BUDGET_WINDOW_SECS);
-		let entries = memory.moves.entry(budget.to_owned()).or_default();
+		let entries = memory.moves.entry(sub.to_owned()).or_default();
 		entries.retain(|(at, _)| *at >= since);
 		let total = entries.iter().fold(0u64, |total, (_, micro)| total.saturating_add(*micro));
 		if cap.is_some_and(|cap| total.saturating_add(micro) > cap) {
@@ -426,28 +427,29 @@ mod tests {
 		assert!(!store.transition("unknown", IntentStatus::Created, IntentStatus::Authorized).await.unwrap());
 		assert_eq!(store.get_intent(&id).await.unwrap().unwrap().status, IntentStatus::Authorized);
 
-		assert!(store.begin_execution(&id, "passkey", 3_600).await.unwrap(), "authorized → executing");
-		assert!(!store.begin_execution(&id, "email_code", 3_600).await.unwrap(), "only from authorized, once");
+		let aal2 = Assurance::from(evconcierge_auth::stepup::Aal::SECOND_FACTOR);
+		assert!(store.begin_execution(&id, aal2, 3_600).await.unwrap(), "authorized → executing");
+		assert!(!store.begin_execution(&id, Assurance::NONE, 3_600).await.unwrap(), "only from authorized, once");
 		let executing = store.get_intent(&id).await.unwrap().unwrap();
-		assert_eq!((executing.status, executing.stepup_method.as_deref()), (IntentStatus::Executing, Some("passkey")));
+		assert_eq!((executing.status, executing.assurance), (IntentStatus::Executing, Some(aal2)));
 		assert!(store.transition(&id, IntentStatus::Executing, IntentStatus::Executed).await.unwrap());
 		let fresh = format!("{tag}-never-authorized");
 		store.put_intent(&fresh, b"{}", "seal", 60).await.unwrap();
-		assert!(!store.begin_execution(&fresh, "none", 3_600).await.unwrap(), "a created intent cannot start executing");
+		assert!(!store.begin_execution(&fresh, Assurance::NONE, 3_600).await.unwrap(), "a created intent cannot start executing");
 
 		let jti = format!("{tag}-jti");
 		assert!(store.spend_jti(&jti, 60).await.unwrap());
 		assert!(!store.spend_jti(&jti, 60).await.unwrap(), "a jti is spent once");
 
-		let budget = format!("{tag}-budget");
+		let sub = format!("{tag}-sub");
 		let now = 1_790_000_000;
-		assert!(store.count_against(&budget, "a", 200, Some(300), now - BUDGET_WINDOW_SECS - 1).await.unwrap());
-		assert_eq!(store.used_since(&budget, now - BUDGET_WINDOW_SECS).await.unwrap(), 0, "outside the window");
-		assert!(store.count_against(&budget, "b", 200, Some(300), now).await.unwrap(), "the old entry fell out of the window");
-		assert!(!store.count_against(&budget, "c", 101, Some(300), now).await.unwrap(), "over the cap");
-		assert!(store.count_against(&budget, "c", 100, Some(300), now).await.unwrap(), "exactly at the cap");
-		assert!(store.count_against(&budget, "d", 1_000, None, now).await.unwrap(), "no cap: always counted");
-		assert_eq!(store.used_since(&budget, now - BUDGET_WINDOW_SECS).await.unwrap(), 1_300);
+		assert!(store.count_move(&sub, "a", 200, Some(300), now - BUDGET_WINDOW_SECS - 1).await.unwrap());
+		assert_eq!(store.moved_since(&sub, now - BUDGET_WINDOW_SECS).await.unwrap(), 0, "outside the window");
+		assert!(store.count_move(&sub, "b", 200, Some(300), now).await.unwrap(), "the old entry fell out of the window");
+		assert!(!store.count_move(&sub, "c", 101, Some(300), now).await.unwrap(), "over the cap");
+		assert!(store.count_move(&sub, "c", 100, Some(300), now).await.unwrap(), "exactly at the cap");
+		assert!(store.count_move(&sub, "d", 1_000, None, now).await.unwrap(), "no cap: always counted");
+		assert_eq!(store.moved_since(&sub, now - BUDGET_WINDOW_SECS).await.unwrap(), 1_300);
 	}
 
 	#[tokio::test]

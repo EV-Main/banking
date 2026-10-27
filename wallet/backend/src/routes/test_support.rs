@@ -5,10 +5,62 @@
 // `Status` is a large error type tonic mandates in handler signatures.
 #![allow(clippy::result_large_err)]
 
-use evconcierge_auth::{Claims, TokenType};
+use std::{collections::HashMap, sync::Arc};
+
+use evconcierge_auth::{Claims, TokenType, Verifier, VerifierConfig};
 use evconcierge_contracts::concierge::v1::{self as cc, auth_service_server::AuthService};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode, get_current_timestamp};
 use tonic::{Request, Response, Status};
+
+use crate::{
+	config::AppConfig,
+	cookies::CookieNames,
+	routes::approval::AttemptLimiter,
+	session::BankingTokens,
+	state::{AppState, Grpc},
+	wallet_intents::{WalletActions, store::WalletStore},
+};
+
+pub const WALLET_KEY: &str = "test-wallet-intent-key-0123456789abcdef";
+
+/// The env a route test boots from, with the hub at `hub` and concierge at `concierge`; a test
+/// adds what it is about.
+pub fn env(concierge: &str, hub: &str) -> HashMap<&'static str, String> {
+	HashMap::from([
+		("PIGGYBANK_GRPC_ADDR", hub.to_owned()),
+		("BANKING_AUTH_GRPC_ADDR", hub.to_owned()),
+		("CONCIERGE_GRPC_ADDR", concierge.to_owned()),
+		("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
+		("AUTH_ISSUER", ISSUER.into()),
+		("AUTH_CLIENT_AUDIENCE", AUDIENCE.into()),
+		("WALLET_INTENT_KEY", WALLET_KEY.into()),
+		("APP_ENV", "development".into()),
+	])
+}
+
+/// The state of a route test booted from `vars`, as `main` builds it.
+pub fn state(vars: &HashMap<&'static str, String>, store: Arc<dyn WalletStore>) -> AppState {
+	let config = AppConfig::from_source(|var| vars.get(var).cloned()).expect("the test env loads");
+	config.check_wallet_actions().expect("the test env passes the boot check");
+	let (concierge, hub) = (&config.concierge_grpc_addr, &config.piggybank_grpc_addr);
+	let verifier = Verifier::try_new(VerifierConfig {
+		issuer: ISSUER.into(),
+		audiences: vec![AUDIENCE.into()],
+		allowed_types: vec![TokenType::Access],
+		jwks_grpc_endpoint: concierge.clone(),
+	})
+	.expect("build the verifier");
+	AppState {
+		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
+		banking: Arc::new(BankingTokens::new()),
+		approvals: Arc::new(AttemptLimiter::default()),
+		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
+		verifier,
+		grpc: Grpc::connect_lazy(hub, hub, concierge, Some("test-issuance".into())).expect("build the lazy channels"),
+		wallet_actions: Arc::new(WalletActions::with_store(&config, store, concierge).expect("the wallet actions build")),
+		config: Arc::new(config),
+	}
+}
 
 /// A throwaway Ed25519 keypair (`openssl genpkey -algorithm ed25519`) — the same one the
 /// concierge verifier's own tests use. It signs nothing outside the tests.
@@ -24,7 +76,7 @@ pub fn access_token() -> String {
 	access_token_at(Some(get_current_timestamp()))
 }
 
-/// [`access_token`] with a chosen `auth_time`, for the step-up gate.
+/// [`access_token`] with a chosen `auth_time`.
 pub fn access_token_at(auth_time: Option<u64>) -> String {
 	access_token_for("user-1", auth_time)
 }

@@ -35,15 +35,9 @@ export type BankingV1AnswerPaymentConfirmationRequest = {
      */
     decision?: BankingV1ConsentDecision;
     /**
-     * client_ip
-     *
-     * Audit only — the edge supplies these; they are never trusted for authorization.
+     * audit
      */
-    client_ip?: string;
-    /**
-     * user_agent
-     */
-    user_agent?: string;
+    audit?: BankingV1AuditContext;
 };
 
 /**
@@ -84,7 +78,7 @@ export type BankingV1AuditContext = {
     /**
      * stepup_method
      *
-     * fresh_login | passkey | email_code | none (empty = unknown)
+     * aal<N> | none: the assurance the act was authorised with (empty = unknown)
      */
     stepup_method?: string;
 };

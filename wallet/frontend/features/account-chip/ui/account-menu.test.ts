@@ -7,14 +7,14 @@
 // a sign-out error is shown under the closed chip and steps aside while the panel is open.
 // The unlocked cases are the control: the same gestures do open it in this harness.
 //
-// react-dom's client renderer runs against the stand-in document in `__tests__/fake-dom.ts`
+// react-dom's client renderer runs against the stand-in document in `shared/__tests__/fake-dom.ts`
 // (the same approach as use-disclosure.test.ts, with the few node methods a rendered tree
 // needs); the component is compiled with esbuild because Node cannot load TSX.
 import assert from "node:assert/strict";
 import test, { after, afterEach, before, beforeEach } from "node:test";
 
-import { bundle } from "../__tests__/bundle.ts";
-import { FakeDocument, FakeElement, click, descendants, installDom, keyDown } from "../__tests__/fake-dom.ts";
+import { bundle } from "../../../shared/__tests__/bundle.ts";
+import { FakeDocument, FakeElement, click, descendants, installDom, keyDown } from "../../../shared/__tests__/fake-dom.ts";
 import type { AccountMenuProps } from "./account-menu.tsx";
 
 type Loaded = Pick<typeof import("react"), "act" | "createElement"> &

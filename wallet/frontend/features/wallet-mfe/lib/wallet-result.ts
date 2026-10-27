@@ -3,7 +3,7 @@
 // with this event, in the same words. Pure so `node --test` runs it as is.
 
 import type { FlowPhase } from "./escape-closes.ts";
-import type { IntentKind } from "./intent.ts";
+import type { WalletAction } from "./wallet-action.ts";
 
 /** Not cancelable; `detail` is a {@link WalletResultDetail}. Same name as the popup's message type. */
 export const WALLET_RESULT_EVENT = "ev:wallet-result";
@@ -19,7 +19,7 @@ export interface ClosedAction {
 
 /** The kind, the outcome, and the hub's reference when there is a usable one. Nothing else. */
 export interface WalletResultDetail {
-  kind: IntentKind;
+  kind: WalletAction;
   outcome: WalletOutcome;
   reference?: string;
 }
@@ -48,7 +48,7 @@ export function closedAction(flow: FlowAtClose): ClosedAction {
  * The event's detail. A reference that is empty or over 128 characters is left out, never cut:
  * a truncated reference names a different payment, or none.
  */
-export function walletResultDetail(kind: IntentKind, closed: ClosedAction): WalletResultDetail {
+export function walletResultDetail(kind: WalletAction, closed: ClosedAction): WalletResultDetail {
   const { outcome, reference } = closed;
   const usable = reference !== null && reference !== "" && reference.length <= MAX_REFERENCE;
   return usable ? { kind, outcome, reference } : { kind, outcome };

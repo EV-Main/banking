@@ -18,9 +18,9 @@ import {
   walletActionHref,
   walletResultDetail,
   type ClosedAction,
-  type IntentKind,
   type WalletAction,
 } from "@/features/wallet-mfe";
+import type { IntentKind } from "@/features/wallet-intent";
 
 import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet";
 

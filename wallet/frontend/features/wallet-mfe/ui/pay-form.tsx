@@ -4,7 +4,9 @@ import { useState, type FormEvent } from "react";
 
 import { Alert, AlertDescription, Button } from "@evinvest/uikit";
 
-import { Choice, FormActions, FormError, type ActionFormProps } from "./form-parts";
+import { IntentErrorAlert } from "@/features/wallet-intent";
+
+import { Choice, FormActions, type ActionFormProps } from "./form-parts";
 
 const MAIN = "main";
 
@@ -47,7 +49,7 @@ export function PayForm({ scope, invoice, draft, busy, error, onSubmit, onCancel
           { value: scope, label: t("walletAction.fromScope", "{scope} balance", { scope }) },
         ]}
       />
-      <FormError error={error} />
+      <IntentErrorAlert error={error} />
       <FormActions busy={busy} disabled={false} onCancel={onCancel} />
     </form>
   );

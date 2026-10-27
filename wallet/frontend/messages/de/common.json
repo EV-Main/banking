@@ -771,10 +771,6 @@
     "en": "Account",
     "t": "Konto"
   },
-  "ui.amount": {
-    "en": "Amount",
-    "t": "Betrag"
-  },
   "ui.back": {
     "en": "Back",
     "t": "Zurück"
@@ -799,10 +795,6 @@
     "en": "Deposit USDT",
     "t": "USDT einzahlen"
   },
-  "ui.destination": {
-    "en": "Destination",
-    "t": "Empfänger"
-  },
   "ui.kycLevel": {
     "en": "KYC level",
     "t": "KYC-Stufe"
@@ -810,10 +802,6 @@
   "ui.max": {
     "en": "Max",
     "t": "Max"
-  },
-  "ui.network": {
-    "en": "Network",
-    "t": "Netzwerk"
   },
   "ui.profile": {
     "en": "Profile",
@@ -842,10 +830,6 @@
   "ui.withdrawUsdt": {
     "en": "Withdraw USDT",
     "t": "USDT auszahlen"
-  },
-  "wallet.acceptedInstantly": {
-    "en": "Accepted; if {network} liquidity is short right now, it queues until topped up — you'll be notified.",
-    "t": "Angenommen; ist die {network}-Liquidität gerade knapp, wartet die Auszahlung, bis sie aufgefüllt ist — Sie werden benachrichtigt."
   },
   "wallet.activitySub": {
     "en": "Deposits and withdrawals — queued, processing, completed",
@@ -882,10 +866,6 @@
   "wallet.chain.unknown": {
     "en": "Network",
     "t": "Netzwerk"
-  },
-  "wallet.confirmWithdrawal": {
-    "en": "Confirm withdrawal",
-    "t": "Jetzt auszahlen"
   },
   "wallet.copyAddress": {
     "en": "Copy address",
@@ -979,14 +959,6 @@
     "en": "{network} · USDT",
     "t": "{network} · USDT"
   },
-  "wallet.receiptQueued": {
-    "en": "{amount} USDT to {address} is queued — it is sent once {network} liquidity is topped up.",
-    "t": "{amount} USDT an {address} warten — sie gehen raus, sobald die {network}-Liquidität aufgefüllt ist."
-  },
-  "wallet.receiptSubmitted": {
-    "en": "{amount} USDT is on its way to {address} — pending on-chain confirmation.",
-    "t": "{amount} USDT sind unterwegs zu {address} — die Bestätigung on-chain steht noch aus."
-  },
   "wallet.reviewWithdrawal": {
     "en": "Review withdrawal",
     "t": "Auszahlung prüfen"
@@ -998,10 +970,6 @@
   "wallet.statusCaps": {
     "en": "STATUS",
     "t": "STATUS"
-  },
-  "wallet.toAddressLine": {
-    "en": "To {address}",
-    "t": "An {address}"
   },
   "wallet.txRef": {
     "en": "tx {ref}",
@@ -1019,21 +987,9 @@
     "en": "Verify your identity to withdraw",
     "t": "Identität bestätigen, um auszuzahlen"
   },
-  "wallet.withdrawalFailed": {
-    "en": "Withdrawal failed",
-    "t": "Auszahlung fehlgeschlagen"
-  },
   "wallet.withdrawalNetwork": {
     "en": "Withdrawal network",
     "t": "Auszahlungsnetzwerk"
-  },
-  "wallet.withdrawalQueued": {
-    "en": "Withdrawal queued",
-    "t": "Auszahlung wartet"
-  },
-  "wallet.withdrawalSubmitted": {
-    "en": "Withdrawal submitted",
-    "t": "Auszahlung eingereicht"
   },
   "wallet.youWillReceive": {
     "en": "You will receive",
@@ -1431,10 +1387,6 @@
     "en": "End this permission",
     "t": "Diese Berechtigung beenden"
   },
-  "walletAction.stepUp": {
-    "en": "For your safety, sign in again to continue.",
-    "t": "Melden Sie sich zur Sicherheit erneut an, um fortzufahren."
-  },
   "walletAction.untilRevoked": {
     "en": "Until you end it",
     "t": "Bis Sie es beenden"
@@ -1531,11 +1483,7 @@
     "en": "Address",
     "t": "Adresse"
   },
-  "walletMfe.change": {
-    "en": "Change",
-    "t": "Ändern"
-  },
-  "walletMfe.checkAgain": {
+  "walletIntent.checkAgain": {
     "en": "Check again",
     "t": "Erneut prüfen"
   },
@@ -1543,71 +1491,67 @@
     "en": "Close",
     "t": "Schließen"
   },
-  "walletMfe.confirm": {
+  "walletIntent.confirm": {
     "en": "Confirm",
     "t": "Bestätigen"
   },
-  "walletMfe.continueOnEv": {
+  "walletIntent.continueOnEv": {
     "en": "Continue on EV Invest",
     "t": "Weiter bei EV Invest"
   },
-  "walletMfe.err.accountNotActive": {
+  "walletIntent.err.accountNotActive": {
     "en": "Your account cannot move money right now. Contact support.",
     "t": "Ihr Konto kann gerade kein Geld bewegen. Wenden Sie sich an den Support."
   },
-  "walletMfe.err.address": {
+  "walletIntent.err.address": {
     "en": "Check the address. It does not match this network.",
     "t": "Prüfen Sie die Adresse. Sie passt nicht zu diesem Netzwerk."
   },
-  "walletMfe.err.amount": {
+  "walletIntent.err.amount": {
     "en": "Enter an amount greater than zero.",
     "t": "Geben Sie einen Betrag größer als null ein."
   },
-  "walletMfe.err.belowFee": {
+  "walletIntent.err.belowFee": {
     "en": "The amount does not cover the network fee.",
     "t": "Der Betrag deckt die Netzwerkgebühr nicht."
   },
-  "walletMfe.err.belowMinimum": {
+  "walletIntent.err.belowMinimum": {
     "en": "The amount is below the minimum withdrawal for this network.",
     "t": "Der Betrag liegt unter der Mindestauszahlung für dieses Netzwerk."
   },
-  "walletMfe.err.emailLimit": {
-    "en": "You have reached today's limit for confirming with an emailed code.",
-    "t": "Sie haben das heutige Limit für Bestätigungen per E-Mail-Code erreicht."
-  },
-  "walletMfe.err.expired": {
+  "walletIntent.err.expired": {
     "en": "These terms are no longer valid. Review them again.",
     "t": "Diese Bedingungen gelten nicht mehr. Prüfen Sie sie erneut."
   },
-  "walletMfe.err.limit": {
+  "walletIntent.err.limit": {
     "en": "You have reached the 24-hour limit for moves without an extra check.",
     "t": "Sie haben das 24-Stunden-Limit für Umbuchungen ohne zusätzliche Prüfung erreicht."
   },
-  "walletMfe.err.network": {
+  "walletIntent.err.network": {
     "en": "Choose a network.",
     "t": "Wählen Sie ein Netzwerk."
   },
-  "walletMfe.err.networkUnavailable": {
+  "walletIntent.err.networkUnavailable": {
     "en": "Withdrawals on this network are paused right now.",
     "t": "Auszahlungen in diesem Netzwerk sind gerade pausiert."
   },
-  "walletMfe.err.notEnabled": {
+  "walletIntent.err.notEnabled": {
     "en": "This action is not available on this page yet.",
     "t": "Diese Aktion ist auf dieser Seite noch nicht verfügbar."
   },
-  "walletMfe.err.notPending": {
+  "walletIntent.err.notPending": {
     "en": "This confirmation was already used. Check your recent activity before you try again.",
     "t": "Diese Bestätigung wurde bereits verwendet. Prüfen Sie Ihre letzten Aktivitäten, bevor Sie es erneut versuchen."
   },
-  "walletMfe.err.proofReplayed": {
+  "walletIntent.err.proofReplayed": {
     "en": "That check was already used. Start again.",
     "t": "Diese Prüfung wurde bereits verwendet. Beginnen Sie von vorn."
   },
-  "walletMfe.err.scopeMismatch": {
+  "walletIntent.err.scopeMismatch": {
     "en": "This action does not belong to this service.",
     "t": "Diese Aktion gehört nicht zu diesem Dienst."
   },
-  "walletMfe.expired": {
+  "walletIntent.expired": {
     "en": "These terms ran out. Get new ones to continue.",
     "t": "Diese Bedingungen sind abgelaufen. Holen Sie neue, um fortzufahren."
   },
@@ -1619,7 +1563,7 @@
     "en": "Allow a service to use your funds",
     "t": "Einem Dienst die Nutzung Ihres Guthabens erlauben"
   },
-  "walletMfe.renew": {
+  "walletIntent.renew": {
     "en": "Get new terms",
     "t": "Neue Bedingungen holen"
   },
@@ -1631,132 +1575,76 @@
     "en": "You see the exact terms before anything moves.",
     "t": "Sie sehen die genauen Bedingungen, bevor etwas bewegt wird."
   },
-  "walletMfe.stepupElsewhere": {
-    "en": "This page cannot ask for it yet, so finish on EV Invest.",
-    "t": "Diese Seite kann sie noch nicht anfordern, schließen Sie den Vorgang daher bei EV Invest ab."
-  },
-  "walletMfe.stepupEmail": {
-    "en": "Confirming this needs a code we email you.",
-    "t": "Zum Bestätigen brauchen Sie einen Code, den wir Ihnen per E-Mail senden."
-  },
-  "walletMfe.stepupPasskey": {
-    "en": "Confirming this needs your passkey.",
-    "t": "Zum Bestätigen brauchen Sie Ihren Passkey."
-  },
-  "walletMfe.stepupPasskeyOrEmail": {
-    "en": "Confirming this needs your passkey or a code we email you.",
-    "t": "Zum Bestätigen brauchen Sie Ihren Passkey oder einen Code, den wir Ihnen per E-Mail senden."
-  },
-  "walletMfe.stepupTitle": {
+  "walletIntent.stepupTitle": {
     "en": "One more check is needed",
     "t": "Eine weitere Prüfung ist nötig"
   },
-  "walletMfe.term.amount": {
+  "walletIntent.term.amount": {
     "en": "Amount",
     "t": "Betrag"
   },
-  "walletMfe.term.fee": {
+  "walletIntent.term.fee": {
     "en": "Fee",
     "t": "Gebühr"
   },
-  "walletMfe.term.host": {
+  "walletIntent.term.host": {
     "en": "Requested by",
     "t": "Angefordert von"
   },
-  "walletMfe.term.net": {
+  "walletIntent.term.net": {
     "en": "Recipient gets",
     "t": "Empfänger erhält"
   },
-  "walletMfe.term.recipient": {
+  "walletIntent.term.recipient": {
     "en": "To",
     "t": "An"
   },
-  "walletMfe.term.scope": {
+  "walletIntent.term.scope": {
     "en": "Account",
     "t": "Konto"
   },
-  "walletMfe.term.service": {
+  "walletIntent.term.service": {
     "en": "Service",
     "t": "Dienst"
   },
-  "walletMfe.termsChanged": {
+  "walletIntent.termsChanged": {
     "en": "The terms changed since you started. Check them again before you confirm.",
     "t": "Die Bedingungen haben sich seit dem Start geändert. Prüfen Sie sie erneut, bevor Sie bestätigen."
   },
-  "walletMfe.unclear": {
+  "walletIntent.unclear": {
     "en": "Still processing. Nothing is lost — check again in a moment.",
     "t": "Wird noch verarbeitet. Nichts geht verloren — prüfen Sie gleich noch einmal."
   },
-  "walletMfe.unclearFinal": {
+  "walletIntent.unclearFinal": {
     "en": "We could not get the result. Check your recent activity before you try again.",
     "t": "Wir konnten das Ergebnis nicht abrufen. Prüfen Sie Ihre letzten Aktivitäten, bevor Sie es erneut versuchen."
   },
-  "walletMfe.validFor": {
+  "walletIntent.validFor": {
     "en": "These terms are valid for {time}",
     "t": "Diese Bedingungen gelten noch {time}"
   },
-  "walletMfe.withdrawHold": {
+  "walletIntent.withdrawHold": {
     "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
     "t": "Eine Auszahlung an eine Adresse, die Sie noch nicht verwendet haben, wird 6 Stunden zurückgehalten. Sie können sie über die E-Mail stornieren, die wir Ihnen senden."
   },
-  "walletMfe.confirmPasskey": {
-    "en": "Confirm with passkey",
-    "t": "Mit Passkey bestätigen"
-  },
-  "walletMfe.err.stepupInvalid": {
+  "walletIntent.err.stepupInvalid": {
     "en": "The check did not match this confirmation. Start again.",
     "t": "Die Prüfung passt nicht zu dieser Bestätigung. Beginnen Sie von vorn."
   },
-  "walletMfe.startAgain": {
+  "walletIntent.startAgain": {
     "en": "Start again",
     "t": "Von vorn beginnen"
   },
-  "walletMfe.stepup.attempts": {
-    "en": "Too many wrong codes. Start again.",
-    "t": "Zu viele falsche Codes. Beginnen Sie von vorn."
+  "walletIntent.stepupOpening": {
+    "en": "Opening the confirmation…",
+    "t": "Bestätigung wird geöffnet…"
   },
-  "walletMfe.stepup.cancelled": {
-    "en": "The passkey prompt was closed. Try again when you are ready.",
-    "t": "Die Passkey-Abfrage wurde geschlossen. Versuchen Sie es erneut, wenn Sie bereit sind."
+  "walletIntent.stepupElsewhere": {
+    "en": "The confirmation cannot open on this page. Finish on EV Invest.",
+    "t": "Die Bestätigung lässt sich auf dieser Seite nicht öffnen. Schließen Sie den Vorgang auf EV Invest ab."
   },
-  "walletMfe.stepup.captcha": {
-    "en": "We could not check that a person is asking. Start again.",
-    "t": "Wir konnten nicht prüfen, dass ein Mensch anfragt. Beginnen Sie von vorn."
-  },
-  "walletMfe.stepup.expired": {
-    "en": "The check ran out of time. Start again.",
-    "t": "Die Zeit für die Prüfung ist abgelaufen. Beginnen Sie von vorn."
-  },
-  "walletMfe.stepup.invalidCode": {
-    "en": "That code is not right. Check it and try again.",
-    "t": "Dieser Code stimmt nicht. Prüfen Sie ihn und versuchen Sie es erneut."
-  },
-  "walletMfe.stepup.noAuthenticator": {
-    "en": "This browser could not ask for your passkey. Continue on EV Invest.",
-    "t": "Dieser Browser konnte Ihren Passkey nicht abfragen. Fahren Sie bei EV Invest fort."
-  },
-  "walletMfe.stepup.noPasskey": {
-    "en": "This account has no passkey that can confirm this here. Continue on EV Invest.",
-    "t": "Dieses Konto hat keinen Passkey, der dies hier bestätigen kann. Fahren Sie bei EV Invest fort."
-  },
-  "walletMfe.stepup.rejected": {
-    "en": "Your passkey was not accepted. Try again.",
-    "t": "Ihr Passkey wurde nicht akzeptiert. Versuchen Sie es erneut."
-  },
-  "walletMfe.stepup.throttled": {
-    "en": "Too many checks in a short time. Wait a few minutes, then start again.",
-    "t": "Zu viele Prüfungen in kurzer Zeit. Warten Sie einige Minuten und beginnen Sie dann von vorn."
-  },
-  "walletMfe.stepup.unavailable": {
-    "en": "This check is not available on this page. Continue on EV Invest.",
-    "t": "Diese Prüfung ist auf dieser Seite nicht verfügbar. Fahren Sie bei EV Invest fort."
-  },
-  "walletMfe.stepupWithPasskey": {
-    "en": "Confirm it with your passkey.",
-    "t": "Bestätigen Sie es mit Ihrem Passkey."
-  },
-  "walletMfe.tryAgain": {
-    "en": "Try again",
-    "t": "Erneut versuchen"
+  "walletIntent.stepupFailed": {
+    "en": "The confirmation could not load. Try again in a moment.",
+    "t": "Die Bestätigung konnte nicht geladen werden. Versuchen Sie es gleich noch einmal."
   }
 }

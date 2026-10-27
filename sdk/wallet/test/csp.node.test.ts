@@ -20,13 +20,18 @@ describe('walletCsp', () => {
     });
   });
 
-  it('should_add_the_intent_and_step_up_directories_in_inline_mode', () => {
-    expect(walletCsp({ mode: 'inline' })['connect-src']).toEqual([
+  it('should_add_the_intent_directory_and_the_step_up_element_in_inline_mode', () => {
+    const csp = walletCsp({ mode: 'inline' });
+
+    expect(csp['script-src']).toEqual(['https://evinvest.ltd/wallet/mfe/', 'https://evinvest.ltd/api/auth/mfe/']);
+    expect(csp['style-src']).toEqual(['https://evinvest.ltd/wallet/mfe/', 'https://evinvest.ltd/api/auth/mfe/']);
+    expect(csp['connect-src']).toEqual([
       'https://evinvest.ltd/wallet/mfe/',
       'https://evinvest.ltd/api/auth/session',
       'https://evinvest.ltd/cabinet/api/wallet',
       'https://evinvest.ltd/cabinet/api/wallet/csrf',
       'https://evinvest.ltd/cabinet/api/operations',
+      'https://evinvest.ltd/api/auth/mfe/',
       'https://evinvest.ltd/cabinet/api/wallet/',
       'https://evinvest.ltd/api/auth/stepup/',
     ]);
@@ -156,7 +161,7 @@ describe('mergeCsp', () => {
     const merged = mergeCsp({ 'default-src': ["'self'"], 'img-src': ['data:'] }, walletCsp({ mode: 'inline' }));
 
     expect(serializeCsp(merged)).toBe(
-      "connect-src 'self' https://evinvest.ltd/wallet/mfe/ https://evinvest.ltd/api/auth/session https://evinvest.ltd/cabinet/api/wallet https://evinvest.ltd/cabinet/api/wallet/csrf https://evinvest.ltd/cabinet/api/operations https://evinvest.ltd/cabinet/api/wallet/ https://evinvest.ltd/api/auth/stepup/; default-src 'self'; img-src data:; script-src 'self' https://evinvest.ltd/wallet/mfe/; style-src 'self' https://evinvest.ltd/wallet/mfe/",
+      "connect-src 'self' https://evinvest.ltd/wallet/mfe/ https://evinvest.ltd/api/auth/session https://evinvest.ltd/cabinet/api/wallet https://evinvest.ltd/cabinet/api/wallet/csrf https://evinvest.ltd/cabinet/api/operations https://evinvest.ltd/api/auth/mfe/ https://evinvest.ltd/cabinet/api/wallet/ https://evinvest.ltd/api/auth/stepup/; default-src 'self'; img-src data:; script-src 'self' https://evinvest.ltd/wallet/mfe/ https://evinvest.ltd/api/auth/mfe/; style-src 'self' https://evinvest.ltd/wallet/mfe/ https://evinvest.ltd/api/auth/mfe/",
     );
   });
 });

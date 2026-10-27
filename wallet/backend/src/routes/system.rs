@@ -42,21 +42,17 @@ pub async fn health(State(st): State<AppState>) -> Response {
 /// The probe path, through the real router and its layers, with every plane unreachable.
 #[cfg(test)]
 mod probe_tests {
-	use std::{collections::HashMap, sync::Arc};
+	use std::sync::Arc;
 
 	use axum::{
 		body::{Body, to_bytes},
 		http::{Request, StatusCode},
 	};
-	use evconcierge_auth::{TokenType, Verifier, VerifierConfig};
 	use tower::ServiceExt;
 
 	use crate::{
-		config::AppConfig,
-		cookies::CookieNames,
-		routes::{approval::AttemptLimiter, router},
-		session::BankingTokens,
-		state::{AppState, Grpc},
+		routes::{router, test_support},
+		wallet_intents::store::MemoryStore,
 	};
 
 	/// Nothing listens here; the channels are lazy, so nothing is dialled until a handler
@@ -64,34 +60,7 @@ mod probe_tests {
 	const BLACK_HOLE: &str = "http://127.0.0.1:1";
 
 	fn app() -> axum::Router {
-		let env = HashMap::from([
-			("PIGGYBANK_GRPC_ADDR", BLACK_HOLE),
-			("BANKING_AUTH_GRPC_ADDR", BLACK_HOLE),
-			("CONCIERGE_GRPC_ADDR", BLACK_HOLE),
-			("BANKING_ISSUANCE_TOKEN", "test-issuance"),
-			("AUTH_ISSUER", "https://auth.test"),
-			("AUTH_CLIENT_AUDIENCE", "concierge"),
-			("APP_ENV", "development"),
-		]);
-		let config = AppConfig::from_source(|var| env.get(var).map(|value| (*value).to_string())).expect("the test env loads");
-		let verifier = Verifier::try_new(VerifierConfig {
-			issuer: config.auth_issuer.clone(),
-			audiences: vec![config.auth_client_audience.clone()],
-			allowed_types: vec![TokenType::Access],
-			jwks_grpc_endpoint: BLACK_HOLE.into(),
-		})
-		.expect("build the verifier");
-
-		router(AppState {
-			cookies: Arc::new(CookieNames::new(config.cookie_secure())),
-			banking: Arc::new(BankingTokens::new()),
-			approvals: Arc::new(AttemptLimiter::default()),
-			money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
-			wallet_actions: None,
-			verifier,
-			grpc: Grpc::connect_lazy(BLACK_HOLE, BLACK_HOLE, BLACK_HOLE, Some("test-issuance".into())).expect("build the lazy channels"),
-			config: Arc::new(config),
-		})
+		router(test_support::state(&test_support::env(BLACK_HOLE, BLACK_HOLE), Arc::new(MemoryStore::default())))
 	}
 
 	async fn get(uri: &str) -> (StatusCode, serde_json::Value) {

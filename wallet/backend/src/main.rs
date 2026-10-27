@@ -129,7 +129,7 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 		approvals: Arc::new(AttemptLimiter::default()),
 		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 		verifier,
-		wallet_actions: wallet_actions.map(Arc::new),
+		wallet_actions: Arc::new(wallet_actions),
 		grpc,
 		config: Arc::new(config),
 	};

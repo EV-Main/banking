@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@evinvest/uikit";
 
 import { fetchMandates, revokeMandate } from "@/entities/mandate/api/mandate-client";
-import { isStepUpRequired, visibleMandates } from "@/entities/mandate/lib/mandate";
+import { visibleMandates } from "@/entities/mandate/lib/mandate";
 import { ActionFrame, useWalletAction } from "@/features/wallet-action";
 import type { Mandate } from "@/shared/contracts";
 import { errorMessage } from "@/shared/lib/api-client";
@@ -63,7 +63,7 @@ function Mandates({ urlScope, onRevoked }: { urlScope: string | null; onRevoked:
   const failure =
     error === null ? null : (
       <p role="alert" className="text-sm text-accent-error">
-        {isStepUpRequired(error) ? t("walletAction.stepUp", "For your safety, sign in again to continue.") : errorMessage(error, t)}
+        {errorMessage(error, t)}
       </p>
     );
 

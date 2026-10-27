@@ -217,27 +217,6 @@ pub(super) fn optional(raw: &str) -> Option<&str> {
 	if raw.is_empty() { None } else { Some(raw) }
 }
 
-/// Bound a caller-supplied audit string to `max_bytes`, cut on a character boundary.
-///
-/// The BFF already clamps what it forwards, but this surface is reachable by any gRPC
-/// client and the value lands in an audit column: a megabyte of "user agent" must not be
-/// what a single unauthenticated request can make the database store.
-pub(super) fn clamp(value: String, max_bytes: usize) -> String {
-	if value.len() <= max_bytes {
-		return value;
-	}
-	let mut cut = max_bytes;
-	while !value.is_char_boundary(cut) {
-		cut -= 1;
-	}
-	value[..cut].to_owned()
-}
-
-/// The widest client IP an audit row keeps — an IPv6 with a zone id fits comfortably.
-pub(super) const MAX_AUDIT_IP_BYTES: usize = 64;
-/// The widest user agent an audit row keeps.
-pub(super) const MAX_AUDIT_USER_AGENT_BYTES: usize = 512;
-
 pub(super) fn unix_now() -> i64 {
 	SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
 }

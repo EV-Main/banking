@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { capRows, endsWhenRevoked, grantStillHolds, isRequestAlive, isShowable, isUnavailable, keepsKeyAfter, replacedBy } from "./request.ts";
+import { capRows, endsWhenRevoked, grantStillHolds, isRequestAlive, isShowable, isUnavailable, replacedBy } from "./request.ts";
 
 test("a request lives until its expires_at and not a second past it", () => {
   assert.equal(isRequestAlive({ expires_at: "101" }, 100), true);
@@ -39,15 +39,6 @@ test("a grant replaces only a live mandate of the same service and scope", () =>
   assert.equal(replacedBy(req, [{ ...held, expires_at: "100" }], 100), null);
   const later = { ...held, expires_at: "101" };
   assert.equal(replacedBy(req, [later], 100), later);
-});
-
-test("the idempotency key survives a lost answer and not the server's refusal", () => {
-  assert.equal(keepsKeyAfter({ status: 400 }), false);
-  assert.equal(keepsKeyAfter({ status: 401 }), false);
-  assert.equal(keepsKeyAfter({ status: 404 }), false);
-  assert.equal(keepsKeyAfter({ status: 502 }), true);
-  assert.equal(keepsKeyAfter(new TypeError("network")), true);
-  assert.equal(keepsKeyAfter("boom"), true);
 });
 
 test("a 404 reads as an unavailable request", () => {

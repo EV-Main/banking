@@ -29,8 +29,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import test, { after, before } from "node:test";
 
-import { bundle } from "../__tests__/bundle.ts";
-import { FakeDocument, FakeElement, click, descendants, installDom } from "../__tests__/fake-dom.ts";
+import { bundle } from "../../../shared/__tests__/bundle.ts";
+import { FakeDocument, FakeElement, click, descendants, installDom } from "../../../shared/__tests__/fake-dom.ts";
 
 // ── 1. no stock utility as a state base (source scan) ───────────────────────
 

@@ -14,7 +14,7 @@ export type CspDirectives = Readonly<Record<string, readonly string[]>>;
 export type WalletCsp = Readonly<Record<'script-src' | 'style-src' | 'connect-src', readonly string[]>>;
 
 export interface WalletCspOptions {
-  /** Default `'popup'`. `'inline'` adds the intent and step-up routes the in-page forms call. */
+  /** Default `'popup'`. `'inline'` adds the intent routes and the step-up element's bundle and routes. */
   mode?: WalletActionMode;
   /** Default {@link WALLET_ORIGIN}. Another value is for a staging stand only, and must be an exact `https:` origin. */
   origin?: string;
@@ -26,9 +26,10 @@ export interface WalletCspOptions {
  * Every mode: the bundle directory for the script, its stylesheet and the registry; the
  * read routes the element calls on every connect — the shell's session, the wallet
  * balance, the CSRF route that also lists the kinds the BFF runs in the page, and the
- * history (fetched with a query, which CSP path matching ignores). Inline mode adds two
+ * history (fetched with a query, which CSP path matching ignores). Inline mode adds
  * directories (a trailing `/` matches every path under it): the wallet API, for the
- * intent routes, and the shell's step-up routes. The element loads no fonts and no
+ * intent routes, the shell's step-up routes, and concierge's bundle directory, which
+ * serves the step-up element and its registry. The element loads no fonts and no
  * images, so there is no `font-src` or `img-src`.
  *
  * Throws a `TypeError` for an `origin` that is not an exact `https:` origin (no path, no
@@ -45,10 +46,15 @@ export function walletCsp({ mode = 'popup', origin = WALLET_ORIGIN }: WalletCspO
     `${base}/cabinet/api/wallet/csrf`,
     `${base}/cabinet/api/operations`,
   ];
-  if (mode === 'inline') connect.push(`${base}/cabinet/api/wallet/`, `${base}/api/auth/stepup/`);
+  const bundles = [prefix];
+  if (mode === 'inline') {
+    const stepup = `${base}/api/auth/mfe/`; // concierge's CONCIERGE_MFE_PREFIX
+    bundles.push(stepup);
+    connect.push(stepup, `${base}/cabinet/api/wallet/`, `${base}/api/auth/stepup/`);
+  }
   return Object.freeze({
-    'script-src': Object.freeze([prefix]),
-    'style-src': Object.freeze([prefix]),
+    'script-src': Object.freeze(bundles),
+    'style-src': Object.freeze([...bundles]),
     'connect-src': Object.freeze(connect),
   });
 }

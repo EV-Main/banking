@@ -34,9 +34,10 @@ use uuid::Uuid;
 use crate::{
 	infrastructure::{outbox, scope_notifications, withdrawals},
 	ports::{
+		audit::RequestAudit,
 		payments::{
-			ApprovalSeat, ConciergeSeatView, ConsentAudit, ConsentDecision, ConsentInvalidation, ConsentOutcome, DIGEST_BYTES, DueApproval, EndDetail, ExecutionOutcome,
-			PaymentApprovalStore, PaymentFeed, PaymentFilter, PaymentRepository, PaymentView, ReservationStatus, SeatView, SessionConsentView, already_open, consent_not_found,
+			ApprovalSeat, ConciergeSeatView, ConsentDecision, ConsentInvalidation, ConsentOutcome, DIGEST_BYTES, DueApproval, EndDetail, ExecutionOutcome, PaymentApprovalStore, PaymentFeed,
+			PaymentFilter, PaymentRepository, PaymentView, ReservationStatus, SeatView, SessionConsentView, already_open, consent_not_found,
 		},
 		scope_notifications::ScopeNotice,
 		scope_operations::ApprovalLevel,
@@ -899,7 +900,7 @@ impl PaymentRepository for PgPayments {
 		Ok(view)
 	}
 
-	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &ConsentAudit, at: i64) -> Result<ConsentOutcome, DomainError> {
+	async fn answer_session_consent(&self, id: PaymentId, subject: UserId, decision: ConsentDecision, audit: &RequestAudit, at: i64) -> Result<ConsentOutcome, DomainError> {
 		if decision == ConsentDecision::Pending {
 			return Err(DomainError::Validation("a consent must approve or reject".into()));
 		}
@@ -946,16 +947,24 @@ impl PaymentRepository for PgPayments {
 			tx.commit().await.map_err(repo_err)?;
 			return Err(DomainError::Conflict(cause.to_string()));
 		}
-		sqlx::query("UPDATE payment_session_consent SET decision = $2, decided_at = to_timestamp($3), client_ip = $4, user_agent = $5, payload_hash = $6 WHERE payment_id = $1")
-			.bind(id.raw())
-			.bind(decision.as_str())
-			.bind(at as f64)
-			.bind(&audit.client_ip)
-			.bind(&audit.user_agent)
-			.bind(order.payload_hash().as_slice())
-			.execute(&mut *tx)
-			.await
-			.map_err(repo_err)?;
+		// Empty means "the caller said nothing", which the table keeps as NULL.
+		let audited = |value: fn(&RequestAudit) -> &String| Some(value(audit)).filter(|v| !v.is_empty());
+		sqlx::query(
+			"UPDATE payment_session_consent SET decision = $2, decided_at = to_timestamp($3), payload_hash = $4, \
+			 origin = $5, client_ip = $6, user_agent = $7, intent_id = $8, stepup_method = $9 WHERE payment_id = $1",
+		)
+		.bind(id.raw())
+		.bind(decision.as_str())
+		.bind(at as f64)
+		.bind(order.payload_hash().as_slice())
+		.bind(audited(|a| &a.origin))
+		.bind(audited(|a| &a.client_ip))
+		.bind(audited(|a| &a.user_agent))
+		.bind(audited(|a| &a.intent_id))
+		.bind(audited(|a| &a.stepup_method))
+		.execute(&mut *tx)
+		.await
+		.map_err(repo_err)?;
 		match decision {
 			ConsentDecision::Approve => order.approve(at)?,
 			ConsentDecision::Reject => order.reject(at)?,

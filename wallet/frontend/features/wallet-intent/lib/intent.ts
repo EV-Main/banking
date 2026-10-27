@@ -2,17 +2,30 @@
 // every term a person confirms, so the page shows only what this parser accepted and never a
 // value it typed itself. A body that does not parse is a malformed answer, not a partial one.
 //
-// Pure and import-free so `node --test` runs it as is.
+// Pure, with type imports only, so `node --test` runs it as is.
 
-export type IntentKind = "move" | "withdraw" | "pay" | "mandate";
+import type { CompartmentMove, Mandate, PayableInvoice, Withdrawal } from "@/shared/contracts";
+import type { PaymentConfirmation } from "@/shared/contracts/payments";
+
+export type IntentKind = "move" | "withdraw" | "pay" | "mandate" | "approve_payment";
 
 export type IntentRequest =
   | { kind: "move"; params: { from_scope: string; to_scope: string; amount: string } }
   | { kind: "withdraw"; params: { network: string; address: string; amount: string } }
   | { kind: "pay"; params: { invoice_id: string; pay_from: string } }
-  | { kind: "mandate"; params: { request_id: string } };
+  | { kind: "mandate"; params: { request_id: string } }
+  | { kind: "approve_payment"; params: { payment_id: string } };
 
-export type StepupMethod = "passkey" | "email_code";
+export type IntentRequestOf<K extends IntentKind> = Extract<IntentRequest, { kind: K }>;
+
+/** What the hub did, per kind: the DTO the matching read route answers. */
+export interface IntentResults {
+  move: CompartmentMove;
+  withdraw: Withdrawal;
+  pay: PayableInvoice;
+  mandate: Mandate;
+  approve_payment: PaymentConfirmation;
+}
 
 export type MandateOperation = "reserve" | "charge" | "book_fill";
 
@@ -48,7 +61,8 @@ export interface Intent {
   summary: IntentSummary;
   /** Unix seconds, on the BFF's clock. */
   expiresAt: number;
-  stepup: { required: boolean; methods: StepupMethod[] };
+  /** The least assurance the confirm's proof must carry; null confirms without one. */
+  minAal: number | null;
 }
 
 export interface CsrfToken {
@@ -58,10 +72,11 @@ export interface CsrfToken {
   kinds: IntentKind[];
 }
 
-export interface ConfirmedIntent {
+export interface ConfirmedIntent<K extends IntentKind> {
   intentId: string;
   /** The hub's id of what it did (the move, the withdrawal), when its answer names one. */
   reference: string | null;
+  result: IntentResults[K];
 }
 
 /** Every refusal the BFF names in `{ error }` on the intent routes. */
@@ -87,7 +102,6 @@ export const INTENT_REFUSALS = [
   "terms_changed",
   "stepup_invalid",
   "proof_replayed",
-  "email_limit_reached",
   "limit_reached",
   "intent_executing",
 ] as const;
@@ -153,14 +167,10 @@ function isRefusal(raw: unknown): raw is IntentRefusal {
   return typeof raw === "string" && INTENT_REFUSALS.some((code) => code === raw);
 }
 
-const KINDS: readonly string[] = ["move", "withdraw", "pay", "mandate"] satisfies IntentKind[];
+const KINDS: readonly string[] = ["move", "withdraw", "pay", "mandate", "approve_payment"] satisfies IntentKind[];
 
 function isKind(raw: unknown): raw is IntentKind {
   return typeof raw === "string" && KINDS.includes(raw);
-}
-
-function isMethod(raw: unknown): raw is StepupMethod {
-  return raw === "passkey" || raw === "email_code";
 }
 
 /** `MANDATE_OPERATION_BOOK_FILL` → `book_fill`; an unknown name stays as the wire wrote it. */
@@ -213,12 +223,11 @@ export function parseIntent(body: unknown): Intent | null {
   const hash = field(body, "intent_hash");
   const expiresAt = seconds(field(body, "expires_at"));
   const summary = parseSummary(field(body, "summary"));
-  const stepup = field(body, "stepup");
-  const required = field(stepup, "required");
-  const methods = field(stepup, "methods");
+  const aal = field(body, "min_aal");
+  const minAal = aal === null ? null : typeof aal === "number" && Number.isSafeInteger(aal) && aal > 0 ? aal : undefined;
   if (typeof id !== "string" || !INTENT_ID.test(id) || typeof hash !== "string" || !INTENT_HASH.test(hash)) return null;
-  if (expiresAt === null || summary === null || typeof required !== "boolean" || !Array.isArray(methods)) return null;
-  return { id, hash, summary, expiresAt, stepup: { required, methods: methods.filter(isMethod) } };
+  if (expiresAt === null || summary === null || minAal === undefined) return null;
+  return { id, hash, summary, expiresAt, minAal };
 }
 
 /**
@@ -234,11 +243,16 @@ export function parseCsrf(body: unknown): CsrfToken | null {
   return { token, expiresAt, kinds: Array.isArray(kinds) ? [...new Set(kinds.filter(isKind))] : [] };
 }
 
-/** `POST /api/wallet/intents/{id}/confirm` → what ran, or null unless it says `executed`. */
-export function parseConfirmed(body: unknown): ConfirmedIntent | null {
+/**
+ * `POST /api/wallet/intents/{id}/confirm` → what ran, or null unless it says `executed`. The
+ * `result` is taken as the kind's DTO on the BFF's word, like every read route's body.
+ */
+export function parseConfirmed<K extends IntentKind>(body: unknown): ConfirmedIntent<K> | null {
   const intentId = field(body, "intent_id");
+  const result = field(body, "result");
   if (typeof intentId !== "string" || !INTENT_ID.test(intentId) || field(body, "status") !== "executed") return null;
-  return { intentId, reference: text(field(field(body, "result"), "id"), 256) };
+  if (typeof result !== "object" || result === null) return null;
+  return { intentId, reference: text(field(result, "id"), 256), result: result as IntentResults[K] };
 }
 
 /** A non-2xx answer as the error it names; anything unnamed falls back to its status. */
@@ -305,7 +319,7 @@ export function confirmAgain(error: IntentError): boolean {
  * leaves the intent `created`, but a proof that failed verification is not retried here.
  */
 export function intentCancelled(error: IntentError): boolean {
-  return error.code === "proof_replayed" || error.code === "stepup_invalid" || error.code === "limit_reached" || error.code === "email_limit_reached";
+  return error.code === "proof_replayed" || error.code === "stepup_invalid" || error.code === "limit_reached";
 }
 
 /** Whether the person has to start from a new intent, with the same inputs. */

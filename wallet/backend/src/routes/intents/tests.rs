@@ -6,7 +6,6 @@
 #![allow(clippy::result_large_err)]
 
 use std::{
-	collections::HashMap,
 	net::SocketAddr,
 	sync::{
 		Arc, Mutex,
@@ -20,10 +19,7 @@ use axum::{
 	http::{HeaderMap, Request, StatusCode, header},
 };
 use evbanking_contracts::banking::v1 as bk;
-use evconcierge_auth::{
-	TokenType, Verifier, VerifierConfig,
-	stepup::{StepupClaims, StepupMethod},
-};
+use evconcierge_auth::stepup::Aal;
 use evconcierge_contracts::concierge::v1::{
 	self as cc,
 	auth_service_server::{AuthService, AuthServiceServer},
@@ -36,32 +32,29 @@ use tonic::{Request as GrpcRequest, Response as GrpcResponse, Status, transport:
 use tower::ServiceExt;
 
 use crate::{
-	config::AppConfig,
-	cookies::CookieNames,
 	routes::{
-		approval::AttemptLimiter,
 		router,
-		test_support::{AUDIENCE, ConciergeJwks, ISSUER, access_token_for, sign, sign_with_kid},
+		test_support::{self, ConciergeJwks, ISSUER, WALLET_KEY as KEY, access_token_for, sign, sign_with_kid},
 	},
-	session::BankingTokens,
-	state::{AppState, Grpc},
+	state::AppState,
 	util::now_secs,
 	wallet_intents::{
-		WalletActions,
-		intent::{self, Action, IntentRecord, MoveParams, SessionBinding, Stepup, Summary},
+		Assurance,
+		intent::{self, Action, IntentRecord, MoveParams, SessionBinding, Summary},
 		keys::{self, IntentKeys},
-		store::{self, BUDGET_WINDOW_SECS, IntentStatus, MemoryStore, WalletStore},
+		store::{BUDGET_WINDOW_SECS, IntentStatus, MemoryStore, WalletStore},
 	},
 };
 
 const BLACK_HOLE: &str = "http://127.0.0.1:1";
+const WALLET: &str = "https://evinvest.ltd";
 const INVEST: &str = "https://invest.evinvest.ltd";
 const SA: &str = "https://sa.evinvest.ltd";
 const BOTH: &str = "https://invest.evinvest.ltd,https://sa.evinvest.ltd";
-const KEY: &str = "test-wallet-intent-key-0123456789abcdef";
 const USER: &str = "user-1";
 const INVOICE: &str = "4f0c2d1e-0000-4000-8000-0123456789ab";
 const MANDATE_REQUEST: &str = "5f0c2d1e-0000-4000-8000-0123456789ab";
+const PAYMENT: &str = "6f0c2d1e-0000-4000-8000-0123456789ab";
 const BEP20: &str = "0x00000000000000000000000000000000000000ab";
 
 fn now() -> u64 {
@@ -196,14 +189,18 @@ struct Seen {
 	withdrawals: Vec<bk::RequestWithdrawalRequest>,
 	payments: Vec<bk::PayInvoiceRequest>,
 	grants: Vec<bk::GrantMandateRequest>,
+	/// The first approval of the order; a repeat of it only answers the order as it stands.
+	approvals: Vec<bk::AnswerPaymentConfirmationRequest>,
 	/// Every key a move or a withdrawal was sent under, repeats included.
 	keys_sent: Vec<String>,
+	/// Every answer sent, repeats included.
+	answers_sent: usize,
 	invoice_reads: usize,
 }
 
 impl Seen {
 	fn acts(&self) -> usize {
-		self.moves.len() + self.withdrawals.len() + self.payments.len() + self.grants.len()
+		self.moves.len() + self.withdrawals.len() + self.payments.len() + self.grants.len() + self.approvals.len()
 	}
 }
 
@@ -212,6 +209,7 @@ struct Hub {
 	seen: Arc<Mutex<Seen>>,
 	invoice: Arc<Mutex<bk::PayableInvoice>>,
 	mandate_request: Arc<Mutex<bk::MandateRequest>>,
+	payment: Arc<Mutex<bk::PaymentConfirmation>>,
 	/// When set, the next move or withdrawal is committed and its answer then lost — what a
 	/// dropped connection or a timeout after the commit looks like to the BFF.
 	lose_next_answer: Arc<AtomicBool>,
@@ -255,7 +253,58 @@ impl Default for Hub {
 				expires_at: now_secs() + 3600,
 				..Default::default()
 			})),
+			payment: Arc::new(Mutex::new(bk::PaymentConfirmation {
+				payment_id: PAYMENT.into(),
+				state: bk::PaymentState::Pending as i32,
+				tier: "external".into(),
+				destination: Some(bk::PaymentEnd {
+					label: "Supplier".into(),
+					kind: "external".into(),
+					network: "bep20".into(),
+					address: BEP20.into(),
+					..Default::default()
+				}),
+				amount: "250".into(),
+				expires_at: now_secs() + 3600,
+				decision: bk::ConsentDecision::Pending as i32,
+				..Default::default()
+			})),
 		}
+	}
+}
+
+/// The hub's answer contract: one answer per seat, the same answer again is the order as it
+/// stands, another one is `ALREADY_EXISTS`.
+#[tonic::async_trait]
+impl bk::payment_confirmation_service_server::PaymentConfirmationService for Hub {
+	async fn list_payment_confirmations(&self, _: GrpcRequest<bk::ListPaymentConfirmationsRequest>) -> Result<GrpcResponse<bk::PaymentConfirmationList>, Status> {
+		not_part_of_the_stub()
+	}
+
+	async fn get_payment_confirmation(&self, _: GrpcRequest<bk::GetPaymentConfirmationRequest>) -> Result<GrpcResponse<bk::PaymentConfirmation>, Status> {
+		Ok(GrpcResponse::new(self.payment.lock().unwrap().clone()))
+	}
+
+	async fn answer_payment_confirmation(&self, request: GrpcRequest<bk::AnswerPaymentConfirmationRequest>) -> Result<GrpcResponse<bk::PaymentConfirmation>, Status> {
+		let request = request.into_inner();
+		let answer = {
+			let mut payment = self.payment.lock().unwrap();
+			let mut seen = self.seen.lock().unwrap();
+			seen.answers_sent += 1;
+			match payment.decision() {
+				bk::ConsentDecision::Pending => {
+					payment.decision = request.decision;
+					payment.state = bk::PaymentState::Approved as i32;
+					seen.approvals.push(request);
+					Ok(payment.clone())
+				}
+				same if same as i32 == request.decision => Ok(payment.clone()),
+				_ => Err(Status::already_exists("answered otherwise")),
+			}
+		};
+		let answer = answer?;
+		self.answer()?;
+		Ok(GrpcResponse::new(answer))
 	}
 }
 
@@ -447,6 +496,7 @@ async fn serve_hub(hub: Hub) -> SocketAddr {
 			.add_service(bk::auth_service_server::AuthServiceServer::new(hub.clone()))
 			.add_service(bk::compartment_service_server::CompartmentServiceServer::new(hub.clone()))
 			.add_service(bk::invoice_payment_service_server::InvoicePaymentServiceServer::new(hub.clone()))
+			.add_service(bk::payment_confirmation_service_server::PaymentConfirmationServiceServer::new(hub.clone()))
 			.add_service(bk::wallet_service_server::WalletServiceServer::new(hub))
 			.serve_with_incoming(TcpListenerStream::new(listener))
 			.await
@@ -458,39 +508,13 @@ async fn serve_hub(hub: Hub) -> SocketAddr {
 // ── the app ──────────────────────────────────────────────────────────────────
 
 fn state(origins: &str, kinds: &str, concierge: &str, hub: &str, store: Arc<MemoryStore>) -> AppState {
-	let vars = HashMap::from([
-		("PIGGYBANK_GRPC_ADDR", hub.to_owned()),
-		("BANKING_AUTH_GRPC_ADDR", hub.to_owned()),
-		("CONCIERGE_GRPC_ADDR", concierge.to_owned()),
-		("BANKING_ISSUANCE_TOKEN", "test-issuance".into()),
-		("AUTH_ISSUER", ISSUER.into()),
-		("AUTH_CLIENT_AUDIENCE", AUDIENCE.into()),
-		("CABINET_WS_ORIGIN", "https://evinvest.ltd".into()),
+	let mut vars = test_support::env(concierge, hub);
+	vars.extend([
+		("CABINET_WS_ORIGIN", WALLET.to_owned()),
 		("WALLET_ACTION_ORIGINS", origins.to_owned()),
 		("WALLET_ACTION_KINDS", kinds.to_owned()),
-		("WALLET_INTENT_KEY", KEY.into()),
-		("APP_ENV", "development".into()),
 	]);
-	let config = AppConfig::from_source(|var| vars.get(var).cloned()).expect("the test env loads");
-	config.check_wallet_actions().expect("the test env passes the boot check");
-	let verifier = Verifier::try_new(VerifierConfig {
-		issuer: ISSUER.into(),
-		audiences: vec![AUDIENCE.into()],
-		allowed_types: vec![TokenType::Access],
-		jwks_grpc_endpoint: concierge.to_owned(),
-	})
-	.expect("build the verifier");
-	let wallet_actions = (!origins.is_empty()).then(|| Arc::new(WalletActions::with_store(&config, store, concierge).expect("the wallet actions build")));
-	AppState {
-		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
-		banking: Arc::new(BankingTokens::new()),
-		approvals: Arc::new(AttemptLimiter::default()),
-		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
-		verifier,
-		grpc: Grpc::connect_lazy(hub, hub, concierge, Some("test-issuance".into())).expect("build the lazy channels"),
-		wallet_actions,
-		config: Arc::new(config),
-	}
+	test_support::state(&vars, store)
 }
 
 struct Harness {
@@ -674,7 +698,9 @@ fn move_in(scope: &str, amount: &str) -> Value {
 struct Proof {
 	sub: String,
 	intent_hash: String,
-	method: StepupMethod,
+	/// The claim that says how strong the proof is: `{"aal": 2}`, or what an older proof
+	/// carried instead.
+	strength: Value,
 	origin: String,
 	iat: u64,
 	exp: u64,
@@ -683,13 +709,14 @@ struct Proof {
 }
 
 impl Proof {
-	fn for_intent(intent: &Value) -> Self {
+	/// A proof made on `origin`, the page the intent was created on.
+	fn on(origin: &str, intent: &Value) -> Self {
 		let iat = now();
 		Self {
 			sub: USER.into(),
 			intent_hash: intent["intent_hash"].as_str().expect("an intent hash").into(),
-			method: StepupMethod::Passkey,
-			origin: INVEST.into(),
+			strength: json!({ "aal": Aal::SECOND_FACTOR }),
+			origin: origin.into(),
 			iat,
 			exp: iat + 120,
 			aud: "banking-bff".into(),
@@ -697,19 +724,26 @@ impl Proof {
 		}
 	}
 
-	fn claims(&self) -> StepupClaims {
-		StepupClaims {
-			sub: self.sub.clone(),
-			iss: ISSUER.into(),
-			aud: self.aud.clone(),
-			exp: self.exp,
-			iat: self.iat,
-			typ: "stepup".into(),
-			intent_hash: self.intent_hash.clone(),
-			method: self.method,
-			origin: self.origin.clone(),
-			jti: self.jti.clone(),
+	fn for_intent(intent: &Value) -> Self {
+		Self::on(INVEST, intent)
+	}
+
+	fn claims(&self) -> Value {
+		let mut claims = json!({
+			"sub": self.sub,
+			"iss": ISSUER,
+			"aud": self.aud,
+			"exp": self.exp,
+			"iat": self.iat,
+			"typ": "stepup",
+			"intent_hash": self.intent_hash,
+			"origin": self.origin,
+			"jti": self.jti,
+		});
+		for (claim, value) in self.strength.as_object().expect("the strength is a claim set") {
+			claims[claim] = value.clone();
 		}
+		claims
 	}
 
 	fn token(&self) -> String {
@@ -745,18 +779,22 @@ fn preflight(uri: &str, origin: &str, method: &str) -> Request<Body> {
 
 // ── the tests ────────────────────────────────────────────────────────────────
 
-/// With no host switched on nothing of this surface exists: every route, preflight included,
-/// is the router's plain 404 with no CORS header.
+/// With no host switched on a host page is refused like any foreign page, preflight included
+/// and with no CORS header, while the wallet's own page still gets its token.
 #[tokio::test]
-async fn nothing_is_served_when_no_host_is_switched_on() {
-	let app = offline("");
+async fn no_host_acts_when_none_is_switched_on() {
+	let h = harness("", "").await;
 	for (method, uri) in ROUTES {
-		let answer = send(&app, Call::post(uri, json!({})).build(&IntentKeys::derive(KEY.as_bytes()))).await;
-		assert_eq!(answer.status, StatusCode::NOT_FOUND, "{method} {uri}");
-		let answer = send(&app, preflight(uri, INVEST, method)).await;
-		assert_eq!(answer.status, StatusCode::NOT_FOUND, "OPTIONS {uri}");
+		let call = if method == "GET" { Call::get(uri) } else { Call::post(uri, json!({})) };
+		let answer = h.send(call).await;
+		assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "csrf"), "{method} {uri}");
+		let answer = send(&h.app, preflight(uri, INVEST, method)).await;
+		assert_eq!(answer.status, StatusCode::FORBIDDEN, "OPTIONS {uri}");
 		assert_eq!(cors_of(&answer.headers), (None, None), "OPTIONS {uri}");
 	}
+	let answer = h.send(Call::get("/api/wallet/csrf").from(Some(WALLET))).await;
+	assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+	assert_eq!(answer.body["kinds"], json!(["withdraw", "pay", "mandate", "approve_payment"]));
 }
 
 /// A preflight is answered for an enabled host with exactly the spec's headers; anything
@@ -790,8 +828,8 @@ async fn a_preflight_is_answered_for_an_enabled_host_only() {
 	}
 }
 
-/// Every page but an enabled host's exact origin is refused before the session is read,
-/// and the refusal carries no CORS header.
+/// Every page but an intent page's exact origin is refused before the session is read, and
+/// the refusal carries no CORS header.
 #[tokio::test]
 async fn a_foreign_page_is_refused_before_the_session() {
 	let h = harness(INVEST, "move").await;
@@ -805,7 +843,8 @@ async fn a_foreign_page_is_refused_before_the_session() {
 		Some("https://invest.evinvest.ltd/"),
 		Some("http://invest.evinvest.ltd"),
 		Some("https://INVEST.evinvest.ltd"),
-		Some("https://evinvest.ltd"),
+		Some("https://evinvest.ltd/"),
+		Some("http://evinvest.ltd"),
 		Some(SA),
 		None,
 	];
@@ -947,7 +986,7 @@ async fn a_kind_outside_the_hosts_kinds_is_refused() {
 async fn a_small_move_runs_without_a_proof_exactly_once() {
 	let h = harness(INVEST, "move").await;
 	let intent = h.intent(INVEST, move_in("invest", "50.50")).await;
-	assert_eq!(intent["stepup"], json!({"required": false, "methods": []}));
+	assert_eq!(intent["min_aal"], Value::Null);
 	assert_eq!(intent["summary"]["amount"], "50.5");
 	assert_eq!(intent["summary"]["scope"], "invest");
 	assert_eq!(intent["summary"]["host_origin"], INVEST);
@@ -972,15 +1011,14 @@ async fn a_small_move_runs_without_a_proof_exactly_once() {
 	assert_eq!(h.acts(), 1);
 }
 
-/// Above the line a move needs a proof, and only one bound to exactly this intent, account,
-/// page and an allowed method; each other proof is refused and leaves the intent pending.
+/// Above the line a move needs a proof of a second factor, and only one bound to exactly
+/// this intent, account and page; each other proof is refused and leaves the intent pending.
 #[tokio::test]
 async fn a_move_over_the_line_needs_a_proof_bound_to_it() {
 	let h = harness(BOTH, "move").await;
 	let small = h.intent(INVEST, move_in("invest", "150")).await;
-	assert_eq!(small["stepup"], json!({"required": true, "methods": ["passkey", "email_code"]}));
+	assert_eq!(small["min_aal"], 2);
 	let large = h.intent(INVEST, move_in("invest", "300")).await;
-	assert_eq!(large["stepup"], json!({"required": true, "methods": ["passkey"]}), "over the email cap");
 
 	let answer = h.confirm(INVEST, &small, json!({})).await;
 	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "proof_required"));
@@ -1031,28 +1069,44 @@ async fn a_move_over_the_line_needs_a_proof_bound_to_it() {
 				..Proof::for_intent(&small)
 			},
 		),
+		(
+			"a method instead of an assurance",
+			Proof {
+				strength: json!({ "method": "passkey" }),
+				..Proof::for_intent(&small)
+			},
+		),
+		(
+			"a single factor",
+			Proof {
+				strength: json!({ "aal": 1 }),
+				..Proof::for_intent(&small)
+			},
+		),
 	];
 	for (why, proof) in &bent {
 		let answer = h.confirm(INVEST, &small, proof.body()).await;
 		assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "stepup_invalid"), "{why}: {}", answer.body);
 	}
-	let email = Proof {
-		method: StepupMethod::EmailCode,
-		..Proof::for_intent(&large)
-	};
-	let answer = h.confirm(INVEST, &large, email.body()).await;
-	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "stepup_invalid"), "an emailed code above the cap");
 	assert_eq!(h.acts(), 0, "no refused proof moved anything");
 
 	let good = Proof::for_intent(&small);
 	let answer = h.confirm(INVEST, &small, good.body()).await;
 	assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
-	assert_eq!(answer.body["stepup_method"], "passkey");
-	assert_eq!(h.hub.seen.lock().unwrap().moves[0].audit.as_ref().unwrap().stepup_method, "passkey");
+	assert_eq!(answer.body["stepup_method"], "aal2");
+	assert_eq!(h.hub.seen.lock().unwrap().moves[0].audit.as_ref().unwrap().stepup_method, "aal2");
+
+	let stronger = Proof {
+		strength: json!({ "aal": 3 }),
+		..Proof::for_intent(&large)
+	};
+	let answer = h.confirm(INVEST, &large, stronger.body()).await;
+	assert_eq!(answer.status, StatusCode::OK, "more assurance than asked: {}", answer.body);
+	assert_eq!(answer.body["stepup_method"], "aal3", "the assurance achieved, not the one asked for");
 
 	let again = h.confirm(INVEST, &small, good.body()).await;
 	assert_eq!((again.status, again.error()), (StatusCode::CONFLICT, "intent_not_pending"), "a proof authorises its intent once");
-	assert_eq!(h.acts(), 1);
+	assert_eq!(h.acts(), 2);
 }
 
 /// A proof whose `jti` another replica already spent is refused after the intent moved, so
@@ -1093,7 +1147,7 @@ async fn plant(h: &Harness, created_at: u64, expires_at: u64) -> Value {
 			host_origin: INVEST.into(),
 			mandate: None,
 		},
-		stepup: Stepup { required: false, methods: vec![] },
+		min_aal: None,
 		created_at,
 		expires_at,
 		session: SessionBinding {
@@ -1211,34 +1265,31 @@ async fn the_24h_budget_holds_across_intents() {
 	}
 	let first = h.intent(INVEST, move_in("invest", "100")).await;
 	let second = h.intent(INVEST, move_in("invest", "100")).await;
-	assert_eq!(second["stepup"]["required"], false, "both were created under the line");
+	assert_eq!(second["min_aal"], Value::Null, "both were created under the line");
 	assert_eq!(h.confirm(INVEST, &first, json!({})).await.status, StatusCode::OK);
 	let answer = h.confirm(INVEST, &second, json!({})).await;
 	assert_eq!((answer.status, answer.error()), (StatusCode::CONFLICT, "limit_reached"));
 	assert_eq!(h.acts(), 3);
 
 	let next = h.intent(INVEST, move_in("invest", "1")).await;
-	assert_eq!(next["stepup"], json!({"required": true, "methods": ["passkey", "email_code"]}));
+	assert_eq!(next["min_aal"], 2);
 }
 
-/// A withdrawal shows the hub's fee and net, asks for a passkey and nothing else, and runs
-/// with the host's origin and the passkey in the audit.
+/// A withdrawal shows the hub's fee and net, asks for a second factor, and runs with the
+/// host's origin and the achieved assurance in the audit.
 #[tokio::test]
-async fn a_withdrawal_needs_a_passkey_and_shows_the_hubs_fee() {
+async fn a_withdrawal_needs_a_second_factor_and_shows_the_hubs_fee() {
 	let h = harness(INVEST, "move,withdraw").await;
 	let body = json!({"kind": "withdraw", "params": {"network": "bep20", "address": BEP20, "amount": "10"}});
 	let intent = h.intent(INVEST, body).await;
-	assert_eq!(intent["stepup"], json!({"required": true, "methods": ["passkey"]}));
+	assert_eq!(intent["min_aal"], 2);
+	assert_eq!(intent["summary"]["scope"], "main", "money leaves from main");
 	let summary = &intent["summary"];
 	assert_eq!((summary["amount"].as_str(), summary["fee"].as_str(), summary["net"].as_str()), (Some("10"), Some("1"), Some("9")));
 	assert_eq!((summary["recipient_full"].as_str(), summary["network"].as_str()), (Some(BEP20), Some("bep20")));
 	assert_eq!((&intent["new_recipient"], &intent["release_at"]), (&Value::Null, &Value::Null), "the hub does not say yet");
 
-	let email = Proof {
-		method: StepupMethod::EmailCode,
-		..Proof::for_intent(&intent)
-	};
-	assert_eq!(h.confirm(INVEST, &intent, email.body()).await.error(), "stepup_invalid");
+	assert_eq!(h.confirm(INVEST, &intent, json!({})).await.error(), "proof_required");
 	let answer = h.confirm(INVEST, &intent, Proof::for_intent(&intent).body()).await;
 	assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
 	{
@@ -1249,7 +1300,7 @@ async fn a_withdrawal_needs_a_passkey_and_shows_the_hubs_fee() {
 			(BEP20, "10", intent["intent_id"].as_str().unwrap())
 		);
 		let audit = withdrawal.audit.as_ref().unwrap();
-		assert_eq!((audit.origin.as_str(), audit.stepup_method.as_str()), (INVEST, "passkey"));
+		assert_eq!((audit.origin.as_str(), audit.stepup_method.as_str()), (INVEST, "aal2"));
 	}
 
 	for (params, why) in [
@@ -1264,39 +1315,27 @@ async fn a_withdrawal_needs_a_passkey_and_shows_the_hubs_fee() {
 	assert_eq!(h.acts(), 1);
 }
 
-/// Paying steps up by the invoice's own amount, and a mandate always asks for a passkey; both
-/// read their terms from the hub and run with the intent as the key.
+/// Paying and granting a mandate always ask for a second factor, however small; both read
+/// their terms from the hub and run with the intent as the key.
 #[tokio::test]
-async fn pay_and_mandate_step_up_by_the_hubs_terms() {
+async fn pay_and_mandate_always_step_up() {
 	let h = harness(INVEST, "move,pay,mandate").await;
-	let pay = json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}});
-	let small = h.intent(INVEST, pay.clone()).await;
-	assert_eq!(small["stepup"], json!({"required": true, "methods": ["passkey", "email_code"]}));
+	h.hub.invoice.lock().unwrap().amount = "0.01".into();
+	let pay = h.intent(INVEST, json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}})).await;
+	assert_eq!(pay["min_aal"], 2);
 	assert_eq!(
-		(small["summary"]["amount"].as_str(), small["summary"]["recipient_full"].as_str()),
-		(Some("100"), Some("EV Invest"))
+		(pay["summary"]["amount"].as_str(), pay["summary"]["recipient_full"].as_str(), pay["summary"]["scope"].as_str()),
+		(Some("0.01"), Some("EV Invest"), Some("invest"))
 	);
-	h.hub.invoice.lock().unwrap().amount = "300".into();
-	let large = h.intent(INVEST, pay).await;
-	assert_eq!(large["stepup"], json!({"required": true, "methods": ["passkey"]}), "over the email cap");
-
-	let email = Proof {
-		method: StepupMethod::EmailCode,
-		..Proof::for_intent(&large)
-	};
-	assert_eq!(h.confirm(INVEST, &large, email.body()).await.error(), "stepup_invalid");
-	assert_eq!(h.confirm(INVEST, &large, Proof::for_intent(&large).body()).await.status, StatusCode::OK);
-	assert_eq!(h.hub.seen.lock().unwrap().payments[0].idempotency_key, large["intent_id"].as_str().unwrap());
+	assert_eq!(h.confirm(INVEST, &pay, json!({})).await.error(), "proof_required");
+	assert_eq!(h.confirm(INVEST, &pay, Proof::for_intent(&pay).body()).await.status, StatusCode::OK);
+	assert_eq!(h.hub.seen.lock().unwrap().payments[0].idempotency_key, pay["intent_id"].as_str().unwrap());
 
 	let mandate = h.intent(INVEST, json!({"kind": "mandate", "params": {"request_id": MANDATE_REQUEST}})).await;
-	assert_eq!(mandate["stepup"], json!({"required": true, "methods": ["passkey"]}));
+	assert_eq!(mandate["min_aal"], 2);
 	assert_eq!(mandate["summary"]["mandate"]["cap_24h"], "1000");
 	assert_eq!(mandate["summary"]["mandate"]["operations"], json!(["MANDATE_OPERATION_RESERVE"]));
-	let email = Proof {
-		method: StepupMethod::EmailCode,
-		..Proof::for_intent(&mandate)
-	};
-	assert_eq!(h.confirm(INVEST, &mandate, email.body()).await.error(), "stepup_invalid", "a mandate takes a passkey only");
+	assert_eq!(h.confirm(INVEST, &mandate, json!({})).await.error(), "proof_required");
 	assert_eq!(h.confirm(INVEST, &mandate, Proof::for_intent(&mandate).body()).await.status, StatusCode::OK);
 	let seen = h.hub.seen.lock().unwrap();
 	assert_eq!((seen.grants.len(), seen.grants[0].request_id.as_str()), (1, MANDATE_REQUEST));
@@ -1373,7 +1412,7 @@ async fn a_lost_answer_is_resent_under_the_same_key_and_opens_one_act() {
 
 	let resent = h.confirm(INVEST, &intent, json!({})).await;
 	assert_eq!(resent.status, StatusCode::OK, "no proof is asked for again: {}", resent.body);
-	assert_eq!((resent.body["status"].as_str(), resent.body["stepup_method"].as_str()), (Some("executed"), Some("passkey")));
+	assert_eq!((resent.body["status"].as_str(), resent.body["stepup_method"].as_str()), (Some("executed"), Some("aal2")));
 	assert_eq!(resent.body["result"]["amount"], "150");
 	{
 		let seen = h.hub.seen.lock().unwrap();
@@ -1381,7 +1420,7 @@ async fn a_lost_answer_is_resent_under_the_same_key_and_opens_one_act() {
 		assert_eq!(seen.moves.len(), 1, "one move opened");
 	}
 	assert!(!h.store.spend_jti(&proof.jti, 60).await.unwrap(), "the proof's jti was spent on the first send");
-	let moved = h.store.used_since(&store::move_budget(USER), now() - BUDGET_WINDOW_SECS).await.unwrap();
+	let moved = h.store.moved_since(USER, now() - BUDGET_WINDOW_SECS).await.unwrap();
 	assert_eq!(moved, 150_000_000, "the move is counted once");
 	assert_eq!(status_of(&h, &intent).await, IntentStatus::Executed);
 
@@ -1421,10 +1460,10 @@ async fn an_executing_intent_can_be_resent_after_its_expiry() {
 	let intent = plant(&h, now() - 200, now() - 80).await;
 	let id = intent["intent_id"].as_str().unwrap();
 	assert!(h.store.transition(id, IntentStatus::Created, IntentStatus::Authorized).await.unwrap());
-	assert!(h.store.begin_execution(id, "none", 3_600).await.unwrap());
+	assert!(h.store.begin_execution(id, Assurance::NONE, 3_600).await.unwrap());
 	let answer = h.confirm(INVEST, &intent, json!({})).await;
 	assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
-	assert_eq!(answer.body["stepup_method"], "none", "the method the act was authorised with");
+	assert_eq!(answer.body["stepup_method"], "none", "the assurance the act was authorised with");
 	assert_eq!(h.hub.seen.lock().unwrap().moves[0].audit.as_ref().unwrap().stepup_method, "none");
 }
 
@@ -1464,43 +1503,142 @@ async fn the_move_budget_is_one_total_across_hosts() {
 	let h = harness(BOTH, "move").await;
 	for (origin, scope) in [(INVEST, "invest"), (INVEST, "invest"), (SA, "sa")] {
 		let intent = h.intent(origin, move_in(scope, "100")).await;
-		assert_eq!(intent["stepup"]["required"], false, "{origin}");
+		assert_eq!(intent["min_aal"], Value::Null, "{origin}");
 		assert_eq!(h.confirm(origin, &intent, json!({})).await.status, StatusCode::OK, "{origin}");
 	}
 	let next = h.intent(SA, move_in("sa", "1")).await;
-	assert_eq!(next["stepup"]["required"], true, "300 already moved, through two hosts");
+	assert_eq!(next["min_aal"], 2, "300 already moved, through two hosts");
 }
 
-/// Emailed codes confirm at most 500 USDT a day per person: two 250 payments pass, a third
-/// one created before them is refused at confirm, and the next one is offered a passkey only.
-#[tokio::test]
-async fn emailed_codes_stop_at_the_daily_total() {
-	let h = harness(INVEST, "pay").await;
-	h.hub.invoice.lock().unwrap().amount = "250".into();
-	let pay = json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}});
-	let intents = [h.intent(INVEST, pay.clone()).await, h.intent(INVEST, pay.clone()).await, h.intent(INVEST, pay.clone()).await];
-	for intent in &intents {
-		assert_eq!(intent["stepup"]["methods"], json!(["passkey", "email_code"]), "nothing emailed yet when each was created");
-	}
-	let email = |intent: &Value| {
-		Proof {
-			method: StepupMethod::EmailCode,
-			..Proof::for_intent(intent)
-		}
-		.body()
-	};
-	assert_eq!(h.confirm(INVEST, &intents[0], email(&intents[0])).await.status, StatusCode::OK);
-	assert_eq!(h.confirm(INVEST, &intents[1], email(&intents[1])).await.status, StatusCode::OK);
-	let third = h.confirm(INVEST, &intents[2], email(&intents[2])).await;
-	assert_eq!((third.status, third.error()), (StatusCode::CONFLICT, "email_limit_reached"));
-	assert_eq!(status_of(&h, &intents[2]).await, IntentStatus::Cancelled);
-	assert_eq!(h.acts(), 2);
+// ── the wallet's own page ────────────────────────────────────────────────────
 
-	let next = h.intent(INVEST, pay).await;
-	assert_eq!(next["stepup"]["methods"], json!(["passkey"]), "the day's emailed total is used up");
+impl Harness {
+	/// A call from the wallet's own page, as a same-origin fetch sends it.
+	async fn on_wallet(&self, uri: &str, body: Value) -> Answer {
+		let call = Call {
+			fetch_site: Some("same-origin"),
+			..Call::post(uri, body).from(Some(WALLET))
+		};
+		self.send(call).await
+	}
+
+	async fn wallet_intent(&self, body: Value) -> Value {
+		let answer = self.on_wallet("/api/wallet/intents", body.clone()).await;
+		assert_eq!(answer.status, StatusCode::OK, "create {body} on the wallet: {}", answer.body);
+		answer.body
+	}
+
+	async fn wallet_confirm(&self, intent: &Value, body: Value) -> Answer {
+		let uri = format!("/api/wallet/intents/{}/confirm", intent["intent_id"].as_str().expect("an intent id"));
+		self.on_wallet(&uri, body).await
+	}
+}
+
+fn approve() -> Value {
+	json!({"kind": "approve_payment", "params": {"payment_id": PAYMENT}})
+}
+
+/// The wallet's money-out acts are intents of the same flow: each asks for a second factor,
+/// reaches every scope of the caller, and runs with the wallet's origin and the achieved
+/// assurance in the audit. Its kinds are fixed, whatever the hosts' env says.
+#[tokio::test]
+async fn the_wallets_money_out_acts_are_intents_with_a_proof() {
+	let h = harness("", "").await;
+	let acts = [
+		json!({"kind": "withdraw", "params": {"network": "bep20", "address": BEP20, "amount": "10"}}),
+		json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "invest"}}),
+		json!({"kind": "mandate", "params": {"request_id": MANDATE_REQUEST}}),
+		approve(),
+	];
+	for body in acts {
+		let intent = h.wallet_intent(body.clone()).await;
+		assert_eq!(intent["min_aal"], 2, "{body}");
+		assert_eq!(intent["summary"]["host_origin"], WALLET, "{body}");
+		assert_eq!(h.wallet_confirm(&intent, json!({})).await.error(), "proof_required", "{body}");
+		let answer = h.wallet_confirm(&intent, Proof::on(WALLET, &intent).body()).await;
+		assert_eq!(answer.status, StatusCode::OK, "{body}: {}", answer.body);
+		assert_eq!(answer.body["stepup_method"], "aal2", "{body}");
+		assert_eq!(cors_of(&answer.headers), (None, None), "same-origin needs no CORS");
+	}
+	{
+		let seen = h.hub.seen.lock().unwrap();
+		let audits = [
+			seen.withdrawals[0].audit.as_ref(),
+			seen.payments[0].audit.as_ref(),
+			seen.grants[0].audit.as_ref(),
+			seen.approvals[0].audit.as_ref(),
+		];
+		for audit in audits {
+			let audit = audit.expect("every act carries its audit");
+			assert_eq!((audit.origin.as_str(), audit.stepup_method.as_str()), (WALLET, "aal2"));
+		}
+		assert_eq!(seen.payments[0].pay_from, "invest", "the wallet pays from the invoice's own compartment too");
+		assert_eq!(seen.approvals[0].decision(), bk::ConsentDecision::Approve);
+	}
+
+	let answer = h.on_wallet("/api/wallet/intents", move_in("invest", "1")).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "kind_not_enabled"), "the wallet moves on its own route");
+}
+
+/// A proof names the page it was made on, so one made on a host cannot confirm the wallet's
+/// intent and one made on the wallet cannot confirm a host's.
+#[tokio::test]
+async fn a_proof_made_on_the_other_surface_is_refused() {
+	let h = harness(INVEST, "pay").await;
+	let pay = json!({"kind": "pay", "params": {"invoice_id": INVOICE, "pay_from": "main"}});
+	let wallet = h.wallet_intent(pay.clone()).await;
+	let host = h.intent(INVEST, pay).await;
+	let answer = h.wallet_confirm(&wallet, Proof::on(INVEST, &wallet).body()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "stepup_invalid"), "a host's proof on the wallet");
+	let answer = h.confirm(INVEST, &host, Proof::on(WALLET, &host).body()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "stepup_invalid"), "the wallet's proof on a host");
+	let answer = h.confirm(INVEST, &wallet, Proof::on(INVEST, &wallet).body()).await;
+	assert_eq!(answer.error(), "intent_not_found", "the wallet's intent is not the host's to confirm");
+	assert_eq!(h.acts(), 0);
+}
+
+/// Only the wallet approves a payment, and only one still open to the caller's answer.
+#[tokio::test]
+async fn a_payment_is_approved_on_the_wallet_while_it_is_answerable() {
+	let h = harness(INVEST, "move,pay,mandate,withdraw").await;
+	let answer = h.create(INVEST, approve()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::FORBIDDEN, "kind_not_enabled"), "no host approves");
+
+	let intent = h.wallet_intent(approve()).await;
+	let summary = &intent["summary"];
 	assert_eq!(
-		h.confirm(INVEST, &next, Proof::for_intent(&next).body()).await.status,
-		StatusCode::OK,
-		"a passkey is not limited by it"
+		(
+			summary["amount"].as_str(),
+			summary["recipient_full"].as_str(),
+			summary["network"].as_str(),
+			summary["scope"].as_str()
+		),
+		(Some("250"), Some(BEP20), Some("bep20"), Some("main"))
 	);
+	h.hub.payment.lock().unwrap().invalidated = true;
+	let answer = h.wallet_confirm(&intent, Proof::on(WALLET, &intent).body()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::PRECONDITION_FAILED, "payment_not_answerable"));
+	let answer = h.on_wallet("/api/wallet/intents", approve()).await;
+	assert_eq!((answer.status, answer.error()), (StatusCode::PRECONDITION_FAILED, "payment_not_answerable"));
+	assert_eq!(h.acts(), 0);
+}
+
+/// An approval whose answer was lost is confirmed again: the hub answers the same decision
+/// with the order as it stands, so the page learns the outcome and the hub records one answer.
+#[tokio::test]
+async fn an_approval_whose_answer_was_lost_is_resent_and_answered_once() {
+	let h = harness("", "").await;
+	let intent = h.wallet_intent(approve()).await;
+	h.hub.lose_next_answer.store(true, Ordering::SeqCst);
+	let lost = h.wallet_confirm(&intent, Proof::on(WALLET, &intent).body()).await;
+	assert_eq!((lost.status, lost.error()), (StatusCode::SERVICE_UNAVAILABLE, "intent_executing"));
+	let resent = h.wallet_confirm(&intent, json!({})).await;
+	assert_eq!(resent.status, StatusCode::OK, "{}", resent.body);
+	assert_eq!(
+		(resent.body["stepup_method"].as_str(), resent.body["result"]["payment_id"].as_str()),
+		(Some("aal2"), Some(PAYMENT))
+	);
+	let seen = h.hub.seen.lock().unwrap();
+	assert_eq!((seen.answers_sent, seen.approvals.len()), (2, 1));
+	assert_eq!(seen.approvals[0].audit.as_ref().unwrap().intent_id, intent["intent_id"].as_str().unwrap());
 }

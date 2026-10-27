@@ -42,9 +42,7 @@ export type ConsentDecision = "approve" | "reject";
 
 /**
  * A payment out of the caller's own claim, as `GET /api/wallet/payments/:id` shows it — the
- * terms the caller answers and nothing about the operator beyond a masked address. The
- * session is the credential, and approving asks for a fresh sign-in (`step_up_required`)
- * while declining never does.
+ * terms the caller answers and nothing about the operator beyond a masked address.
  *
  * `decision` is the wire's spelling and goes through `settledConsent`
  * (`shared/lib/decision.ts`): an unanswered order is the explicit, truthy `"pending"`.

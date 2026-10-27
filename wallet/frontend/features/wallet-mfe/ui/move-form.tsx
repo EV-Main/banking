@@ -6,7 +6,9 @@ import { Field, FieldDescription, FieldLabel, Input } from "@evinvest/uikit";
 
 import { isPositiveWireDecimal } from "@/shared/lib/money";
 
-import { Choice, FormActions, FormError, type ActionFormProps } from "./form-parts";
+import { IntentErrorAlert } from "@/features/wallet-intent";
+
+import { Choice, FormActions, type ActionFormProps } from "./form-parts";
 
 const MAIN = "main";
 type Direction = "in" | "out";
@@ -51,7 +53,7 @@ export function MoveForm({ scope, draft, busy, error, onSubmit, onCancel }: Acti
         />
         <FieldDescription>{t("walletMfe.reviewHint", "You see the exact terms before anything moves.")}</FieldDescription>
       </Field>
-      <FormError error={error} />
+      <IntentErrorAlert error={error} />
       <FormActions busy={busy} disabled={!valid} onCancel={onCancel} />
     </form>
   );
