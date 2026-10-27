@@ -2,7 +2,7 @@
 //
 // A tag names a fact about the account, not an endpoint: `wallet` is "what this account
 // holds", and a withdrawal moves it. Naming facts is what lets a mutation say what it
-// changed without knowing which screens are mounted — `submitWithdrawal` names wallet ·
+// changed without knowing which screens are mounted — `cancelWithdrawal` names wallet ·
 // withdrawals · operations and every open surface reading any of the three refreshes itself.
 
 export const TAG = {

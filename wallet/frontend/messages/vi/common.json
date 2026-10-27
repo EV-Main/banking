@@ -771,10 +771,6 @@
     "en": "Account",
     "t": "Tài khoản"
   },
-  "ui.amount": {
-    "en": "Amount",
-    "t": "Số tiền"
-  },
   "ui.back": {
     "en": "Back",
     "t": "Quay lại"
@@ -799,10 +795,6 @@
     "en": "Deposit USDT",
     "t": "Nạp USDT"
   },
-  "ui.destination": {
-    "en": "Destination",
-    "t": "Người nhận"
-  },
   "ui.kycLevel": {
     "en": "KYC level",
     "t": "Cấp độ KYC"
@@ -810,10 +802,6 @@
   "ui.max": {
     "en": "Max",
     "t": "Tối đa"
-  },
-  "ui.network": {
-    "en": "Network",
-    "t": "Mạng"
   },
   "ui.profile": {
     "en": "Profile",
@@ -842,10 +830,6 @@
   "ui.withdrawUsdt": {
     "en": "Withdraw USDT",
     "t": "Rút USDT"
-  },
-  "wallet.acceptedInstantly": {
-    "en": "Accepted; if {network} liquidity is short right now, it queues until topped up — you'll be notified.",
-    "t": "Đã tiếp nhận; nếu thanh khoản {network} đang thiếu, lệnh sẽ xếp hàng cho tới khi được nạp đủ — bạn sẽ nhận được thông báo."
   },
   "wallet.activitySub": {
     "en": "Deposits and withdrawals — queued, processing, completed",
@@ -882,10 +866,6 @@
   "wallet.chain.unknown": {
     "en": "Network",
     "t": "Mạng"
-  },
-  "wallet.confirmWithdrawal": {
-    "en": "Confirm withdrawal",
-    "t": "Xác nhận rút tiền"
   },
   "wallet.copyAddress": {
     "en": "Copy address",
@@ -979,14 +959,6 @@
     "en": "{network} · USDT",
     "t": "{network} · USDT"
   },
-  "wallet.receiptQueued": {
-    "en": "{amount} USDT to {address} is queued — it is sent once {network} liquidity is topped up.",
-    "t": "{amount} USDT tới {address} đang xếp hàng — sẽ được chuyển đi khi thanh khoản {network} được nạp thêm."
-  },
-  "wallet.receiptSubmitted": {
-    "en": "{amount} USDT is on its way to {address} — pending on-chain confirmation.",
-    "t": "{amount} USDT đang trên đường tới {address} — chờ xác nhận on-chain."
-  },
   "wallet.reviewWithdrawal": {
     "en": "Review withdrawal",
     "t": "Xem lại lệnh rút"
@@ -998,10 +970,6 @@
   "wallet.statusCaps": {
     "en": "STATUS",
     "t": "TRẠNG THÁI"
-  },
-  "wallet.toAddressLine": {
-    "en": "To {address}",
-    "t": "Tới {address}"
   },
   "wallet.txRef": {
     "en": "tx {ref}",
@@ -1019,21 +987,9 @@
     "en": "Verify your identity to withdraw",
     "t": "Xác minh danh tính để rút tiền"
   },
-  "wallet.withdrawalFailed": {
-    "en": "Withdrawal failed",
-    "t": "Rút tiền thất bại"
-  },
   "wallet.withdrawalNetwork": {
     "en": "Withdrawal network",
     "t": "Mạng rút tiền"
-  },
-  "wallet.withdrawalQueued": {
-    "en": "Withdrawal queued",
-    "t": "Lệnh rút đang chờ"
-  },
-  "wallet.withdrawalSubmitted": {
-    "en": "Withdrawal submitted",
-    "t": "Đã gửi lệnh rút"
   },
   "wallet.youWillReceive": {
     "en": "You will receive",
@@ -1431,10 +1387,6 @@
     "en": "End this permission",
     "t": "Thu hồi quyền này"
   },
-  "walletAction.stepUp": {
-    "en": "For your safety, sign in again to continue.",
-    "t": "Để đảm bảo an toàn, hãy đăng nhập lại để tiếp tục."
-  },
   "walletAction.untilRevoked": {
     "en": "Until you end it",
     "t": "Cho đến khi bạn thu hồi"
@@ -1531,11 +1483,7 @@
     "en": "Address",
     "t": "Địa chỉ"
   },
-  "walletMfe.change": {
-    "en": "Change",
-    "t": "Thay đổi"
-  },
-  "walletMfe.checkAgain": {
+  "walletIntent.checkAgain": {
     "en": "Check again",
     "t": "Kiểm tra lại"
   },
@@ -1543,71 +1491,67 @@
     "en": "Close",
     "t": "Đóng"
   },
-  "walletMfe.confirm": {
+  "walletIntent.confirm": {
     "en": "Confirm",
     "t": "Xác nhận"
   },
-  "walletMfe.continueOnEv": {
+  "walletIntent.continueOnEv": {
     "en": "Continue on EV Invest",
     "t": "Tiếp tục trên EV Invest"
   },
-  "walletMfe.err.accountNotActive": {
+  "walletIntent.err.accountNotActive": {
     "en": "Your account cannot move money right now. Contact support.",
     "t": "Tài khoản của bạn hiện không thể chuyển tiền. Hãy liên hệ bộ phận hỗ trợ."
   },
-  "walletMfe.err.address": {
+  "walletIntent.err.address": {
     "en": "Check the address. It does not match this network.",
     "t": "Hãy kiểm tra địa chỉ. Địa chỉ này không khớp với mạng đã chọn."
   },
-  "walletMfe.err.amount": {
+  "walletIntent.err.amount": {
     "en": "Enter an amount greater than zero.",
     "t": "Nhập số tiền lớn hơn 0."
   },
-  "walletMfe.err.belowFee": {
+  "walletIntent.err.belowFee": {
     "en": "The amount does not cover the network fee.",
     "t": "Số tiền không đủ để trả phí mạng."
   },
-  "walletMfe.err.belowMinimum": {
+  "walletIntent.err.belowMinimum": {
     "en": "The amount is below the minimum withdrawal for this network.",
     "t": "Số tiền thấp hơn mức rút tối thiểu của mạng này."
   },
-  "walletMfe.err.emailLimit": {
-    "en": "You have reached today's limit for confirming with an emailed code.",
-    "t": "Bạn đã đạt giới hạn hôm nay cho việc xác nhận bằng mã gửi qua email."
-  },
-  "walletMfe.err.expired": {
+  "walletIntent.err.expired": {
     "en": "These terms are no longer valid. Review them again.",
     "t": "Các điều khoản này không còn hiệu lực. Hãy xem lại."
   },
-  "walletMfe.err.limit": {
+  "walletIntent.err.limit": {
     "en": "You have reached the 24-hour limit for moves without an extra check.",
     "t": "Bạn đã đạt giới hạn 24 giờ cho các lần chuyển không cần kiểm tra thêm."
   },
-  "walletMfe.err.network": {
+  "walletIntent.err.network": {
     "en": "Choose a network.",
     "t": "Hãy chọn mạng."
   },
-  "walletMfe.err.networkUnavailable": {
+  "walletIntent.err.networkUnavailable": {
     "en": "Withdrawals on this network are paused right now.",
     "t": "Rút tiền trên mạng này hiện đang tạm dừng."
   },
-  "walletMfe.err.notEnabled": {
+  "walletIntent.err.notEnabled": {
     "en": "This action is not available on this page yet.",
     "t": "Thao tác này chưa có trên trang này."
   },
-  "walletMfe.err.notPending": {
+  "walletIntent.err.notPending": {
     "en": "This confirmation was already used. Check your recent activity before you try again.",
     "t": "Lần xác nhận này đã được dùng. Hãy kiểm tra hoạt động gần đây trước khi thử lại."
   },
-  "walletMfe.err.proofReplayed": {
+  "walletIntent.err.proofReplayed": {
     "en": "That check was already used. Start again.",
     "t": "Bước kiểm tra này đã được dùng. Hãy bắt đầu lại."
   },
-  "walletMfe.err.scopeMismatch": {
+  "walletIntent.err.scopeMismatch": {
     "en": "This action does not belong to this service.",
     "t": "Thao tác này không thuộc về dịch vụ này."
   },
-  "walletMfe.expired": {
+  "walletIntent.expired": {
     "en": "These terms ran out. Get new ones to continue.",
     "t": "Các điều khoản này đã hết hạn. Hãy lấy điều khoản mới để tiếp tục."
   },
@@ -1619,7 +1563,7 @@
     "en": "Allow a service to use your funds",
     "t": "Cho phép một dịch vụ dùng tiền của bạn"
   },
-  "walletMfe.renew": {
+  "walletIntent.renew": {
     "en": "Get new terms",
     "t": "Lấy điều khoản mới"
   },
@@ -1631,132 +1575,76 @@
     "en": "You see the exact terms before anything moves.",
     "t": "Bạn sẽ thấy điều khoản chính xác trước khi có bất kỳ khoản chuyển nào."
   },
-  "walletMfe.stepupElsewhere": {
-    "en": "This page cannot ask for it yet, so finish on EV Invest.",
-    "t": "Trang này chưa thể yêu cầu bước đó, vì vậy hãy hoàn tất trên EV Invest."
-  },
-  "walletMfe.stepupEmail": {
-    "en": "Confirming this needs a code we email you.",
-    "t": "Để xác nhận, bạn cần mã chúng tôi gửi qua email."
-  },
-  "walletMfe.stepupPasskey": {
-    "en": "Confirming this needs your passkey.",
-    "t": "Để xác nhận, bạn cần passkey của mình."
-  },
-  "walletMfe.stepupPasskeyOrEmail": {
-    "en": "Confirming this needs your passkey or a code we email you.",
-    "t": "Để xác nhận, bạn cần passkey hoặc mã chúng tôi gửi qua email."
-  },
-  "walletMfe.stepupTitle": {
+  "walletIntent.stepupTitle": {
     "en": "One more check is needed",
     "t": "Cần thêm một bước kiểm tra"
   },
-  "walletMfe.term.amount": {
+  "walletIntent.term.amount": {
     "en": "Amount",
     "t": "Số tiền"
   },
-  "walletMfe.term.fee": {
+  "walletIntent.term.fee": {
     "en": "Fee",
     "t": "Phí"
   },
-  "walletMfe.term.host": {
+  "walletIntent.term.host": {
     "en": "Requested by",
     "t": "Yêu cầu từ"
   },
-  "walletMfe.term.net": {
+  "walletIntent.term.net": {
     "en": "Recipient gets",
     "t": "Người nhận nhận được"
   },
-  "walletMfe.term.recipient": {
+  "walletIntent.term.recipient": {
     "en": "To",
     "t": "Đến"
   },
-  "walletMfe.term.scope": {
+  "walletIntent.term.scope": {
     "en": "Account",
     "t": "Tài khoản"
   },
-  "walletMfe.term.service": {
+  "walletIntent.term.service": {
     "en": "Service",
     "t": "Dịch vụ"
   },
-  "walletMfe.termsChanged": {
+  "walletIntent.termsChanged": {
     "en": "The terms changed since you started. Check them again before you confirm.",
     "t": "Điều khoản đã thay đổi kể từ khi bạn bắt đầu. Hãy kiểm tra lại trước khi xác nhận."
   },
-  "walletMfe.unclear": {
+  "walletIntent.unclear": {
     "en": "Still processing. Nothing is lost — check again in a moment.",
     "t": "Vẫn đang xử lý. Không có gì bị mất — hãy kiểm tra lại sau giây lát."
   },
-  "walletMfe.unclearFinal": {
+  "walletIntent.unclearFinal": {
     "en": "We could not get the result. Check your recent activity before you try again.",
     "t": "Chúng tôi không lấy được kết quả. Hãy kiểm tra hoạt động gần đây trước khi thử lại."
   },
-  "walletMfe.validFor": {
+  "walletIntent.validFor": {
     "en": "These terms are valid for {time}",
     "t": "Các điều khoản này còn hiệu lực trong {time}"
   },
-  "walletMfe.withdrawHold": {
+  "walletIntent.withdrawHold": {
     "en": "A withdrawal to an address you have not used before is held for 6 hours. You can cancel it from the email we send you.",
     "t": "Lệnh rút đến một địa chỉ bạn chưa từng dùng sẽ bị giữ 6 giờ. Bạn có thể hủy lệnh từ email chúng tôi gửi."
   },
-  "walletMfe.confirmPasskey": {
-    "en": "Confirm with passkey",
-    "t": "Xác nhận bằng passkey"
-  },
-  "walletMfe.err.stepupInvalid": {
+  "walletIntent.err.stepupInvalid": {
     "en": "The check did not match this confirmation. Start again.",
     "t": "Bước kiểm tra không khớp với lần xác nhận này. Hãy bắt đầu lại."
   },
-  "walletMfe.startAgain": {
+  "walletIntent.startAgain": {
     "en": "Start again",
     "t": "Bắt đầu lại"
   },
-  "walletMfe.stepup.attempts": {
-    "en": "Too many wrong codes. Start again.",
-    "t": "Bạn đã nhập sai mã quá nhiều lần. Hãy bắt đầu lại."
+  "walletIntent.stepupOpening": {
+    "en": "Opening the confirmation…",
+    "t": "Đang mở bước xác nhận…"
   },
-  "walletMfe.stepup.cancelled": {
-    "en": "The passkey prompt was closed. Try again when you are ready.",
-    "t": "Hộp thoại passkey đã bị đóng. Hãy thử lại khi bạn sẵn sàng."
+  "walletIntent.stepupElsewhere": {
+    "en": "The confirmation cannot open on this page. Finish on EV Invest.",
+    "t": "Không thể mở bước xác nhận trên trang này. Hãy hoàn tất trên EV Invest."
   },
-  "walletMfe.stepup.captcha": {
-    "en": "We could not check that a person is asking. Start again.",
-    "t": "Chúng tôi không xác minh được rằng yêu cầu đến từ một người. Hãy bắt đầu lại."
-  },
-  "walletMfe.stepup.expired": {
-    "en": "The check ran out of time. Start again.",
-    "t": "Bước kiểm tra đã hết thời gian. Hãy bắt đầu lại."
-  },
-  "walletMfe.stepup.invalidCode": {
-    "en": "That code is not right. Check it and try again.",
-    "t": "Mã không đúng. Hãy kiểm tra và thử lại."
-  },
-  "walletMfe.stepup.noAuthenticator": {
-    "en": "This browser could not ask for your passkey. Continue on EV Invest.",
-    "t": "Trình duyệt này không thể yêu cầu passkey của bạn. Hãy tiếp tục trên EV Invest."
-  },
-  "walletMfe.stepup.noPasskey": {
-    "en": "This account has no passkey that can confirm this here. Continue on EV Invest.",
-    "t": "Tài khoản này không có passkey nào để xác nhận tại đây. Hãy tiếp tục trên EV Invest."
-  },
-  "walletMfe.stepup.rejected": {
-    "en": "Your passkey was not accepted. Try again.",
-    "t": "Passkey của bạn không được chấp nhận. Hãy thử lại."
-  },
-  "walletMfe.stepup.throttled": {
-    "en": "Too many checks in a short time. Wait a few minutes, then start again.",
-    "t": "Quá nhiều lần kiểm tra trong thời gian ngắn. Hãy đợi vài phút rồi bắt đầu lại."
-  },
-  "walletMfe.stepup.unavailable": {
-    "en": "This check is not available on this page. Continue on EV Invest.",
-    "t": "Bước kiểm tra này không có trên trang này. Hãy tiếp tục trên EV Invest."
-  },
-  "walletMfe.stepupWithPasskey": {
-    "en": "Confirm it with your passkey.",
-    "t": "Hãy xác nhận bằng passkey của bạn."
-  },
-  "walletMfe.tryAgain": {
-    "en": "Try again",
-    "t": "Thử lại"
+  "walletIntent.stepupFailed": {
+    "en": "The confirmation could not load. Try again in a moment.",
+    "t": "Không tải được bước xác nhận. Hãy thử lại sau giây lát."
   }
 }

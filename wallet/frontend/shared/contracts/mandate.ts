@@ -52,9 +52,3 @@ export interface MandateRequest {
   /** Unix seconds until which this request can still be granted. */
   expires_at: string;
 }
-
-/** The only body `POST /api/wallet/mandates` accepts: terms are looked up from the request. */
-export interface GrantMandateBody {
-  request_id: string;
-  idempotency_key: string;
-}

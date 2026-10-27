@@ -1,8 +1,8 @@
-// A stand-in document for rendering the account chip with react-dom's client renderer under
+// A stand-in document for rendering components with react-dom's client renderer under
 // `node --test`. No DOM library is installed; this carries what React reads and writes when
 // it creates, updates and removes host nodes and dispatches events at the root, plus what the
-// chip itself touches (`focus`, `contains`, `getBoundingClientRect`, `toggleAttribute`, the
-// `querySelectorAll`/`closest` shapes it uses, an anchor's resolved `href` and `target`, and
+// components touch (`focus`, `contains`, `getBoundingClientRect`, `toggleAttribute`, the
+// `querySelectorAll`/`closest` shapes they use, an anchor's resolved `href` and `target`, and
 // `instanceof Element`/`HTMLAnchorElement`). Anything else throws or is absent, so a test that
 // starts relying on more DOM fails loudly instead of passing on a missing feature.
 //

@@ -1,4 +1,4 @@
-// Loads chip components under `node --test`, which strips types but cannot run TSX or
+// Loads components under `node --test`, which strips types but cannot run TSX or
 // resolve the `@/` alias. esbuild — the same build `mfe/build.mjs` runs — compiles the given
 // entry into one module, imported from memory; nothing is written to disk.
 //
@@ -13,7 +13,7 @@ import { build, stop, type Plugin } from "esbuild";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const FRONTEND = fileURLToPath(new URL("../../../", import.meta.url));
+const FRONTEND = fileURLToPath(new URL("../../", import.meta.url));
 const resolveFromApp = createRequire(`${FRONTEND}package.json`).resolve;
 
 const external: Plugin = {

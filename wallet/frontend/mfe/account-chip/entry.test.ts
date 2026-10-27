@@ -22,8 +22,8 @@
 import assert from "node:assert/strict";
 import test, { after, afterEach, before } from "node:test";
 
-import { bundle } from "../../features/account-chip/__tests__/bundle.ts";
-import { FakeDocument, FakeElement, installDom } from "../../features/account-chip/__tests__/fake-dom.ts";
+import { bundle } from "../../shared/__tests__/bundle.ts";
+import { FakeDocument, FakeElement, installDom } from "../../shared/__tests__/fake-dom.ts";
 
 const TAG = "mfe-cabinet-account-chip";
 

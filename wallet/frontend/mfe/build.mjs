@@ -42,7 +42,7 @@ await build({
 // ── wallet ──────────────────────────────────────────────────────────────────
 
 const LOCALES = ["en", "ru", "vi", "fr", "de"];
-const WALLET_SOURCES = ["features/wallet-mfe", "mfe/wallet"];
+const WALLET_SOURCES = ["features/wallet-mfe", "features/wallet-intent", "mfe/wallet"];
 
 /** Every `t("key", …)` the wallet's own sources call, so its catalogue holds those and nothing else. */
 async function walletKeys() {

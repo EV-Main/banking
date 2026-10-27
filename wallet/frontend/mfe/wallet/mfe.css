@@ -10,6 +10,7 @@
    compiled in the kit's dist, so the files they live in must be scanned too. Deps hoist
    to the repo-root node_modules (npm workspaces). */
 @source "../../features/wallet-mfe/ui";
+@source "../../features/wallet-intent/ui";
 @source "../../../../node_modules/@evinvest/uikit/dist/components/{alert,badge,button,card,empty,field,input,item,label,list-rows,resource-error,separator,shell-icons,skeleton,spinner}.js";
 /* The components keep their class strings in sibling `generated/` modules (button variants,
    focus rings, accent tints, card and empty layout); scanning `components/` alone compiles

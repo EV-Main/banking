@@ -162,7 +162,7 @@ Rules:
 - **Declare each read once**, in `entities/<x>/model/<x>-resource.ts`, with the
   window it stays fresh for and the tags its mutations move. Views import from
   `model/`, never from `api/`.
-- **A mutation names what it moved**, it does not refetch. `submitWithdrawal`
+- **A mutation names what it moved**, it does not refetch. `cancelWithdrawal`
   names `wallet · withdrawals · operations`, so the balance on *every* open
   surface follows — no call site has to know which screens are mounted. A write
   whose response IS the new state publishes it rather than

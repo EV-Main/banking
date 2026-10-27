@@ -32,7 +32,7 @@ export interface IntentClientDeps {
 export interface IntentClient {
   create(request: IntentRequest): Promise<IntentResult<Intent>>;
   /** Sends the confirm again while the act's outcome is unclear; the intent id keeps it one act. */
-  confirm(intentId: string, proof?: string): Promise<IntentResult<ConfirmedIntent>>;
+  confirm<K extends IntentKind>(intentId: string, proof?: string): Promise<IntentResult<ConfirmedIntent<K>>>;
   /**
    * The kinds this host may run in the page, from the same CSRF answer the posts use. Any
    * failure (routes off, signed out, offline) is no kinds: every action stays the popup.
@@ -125,12 +125,12 @@ export function createIntentClient(deps: IntentClientDeps): IntentClient {
       const answer = await token();
       return answer.ok ? answer.value.kinds : [];
     },
-    async confirm(intentId, proof) {
+    async confirm<K extends IntentKind>(intentId: string, proof?: string) {
       const path = `/intents/${encodeURIComponent(intentId)}/confirm`;
       const payload = proof === undefined ? {} : { proof };
-      let result = await post(path, payload, parseConfirmed);
+      let result = await post(path, payload, parseConfirmed<K>);
       for (let attempt = 1; attempt < CONFIRM_ATTEMPTS && !result.ok && confirmAgain(result.error); attempt++) {
-        result = await post(path, payload, parseConfirmed);
+        result = await post(path, payload, parseConfirmed<K>);
       }
       return result;
     },

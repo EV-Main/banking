@@ -19,7 +19,7 @@ const intentBody = {
   intent_hash: HASH,
   expires_at: 1_000,
   summary: { amount: "1.5", fee: "0", net: "1.5", recipient_full: "main", network: null, scope: "main", host_origin: "https://h.test", mandate: null },
-  stepup: { required: false, methods: [] },
+  min_aal: null,
 };
 const confirmedBody = { intent_id: ID, status: "executed", result: { id: "ref-1" } };
 
@@ -185,7 +185,7 @@ test("a 2xx body that is not the contract is malformed", async () => {
 test("confirm sends {} without a proof and { proof } with one", async () => {
   const bare = harness([csrfReply(), { status: 200, body: confirmedBody }]);
   const done = await bare.client.confirm(ID);
-  assert.deepEqual(done, { ok: true, value: { intentId: ID, reference: "ref-1" } });
+  assert.deepEqual(done, { ok: true, value: { intentId: ID, reference: "ref-1", result: { id: "ref-1" } } });
   assert.deepEqual(bare.calls[1]?.body, {});
   assert.equal(bare.calls[1]?.url, `/intents/${ID}/confirm`);
 

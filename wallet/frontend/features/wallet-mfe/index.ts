@@ -10,4 +10,3 @@ export { InPageAction } from "./ui/in-page-action";
 export type { InPageActionProps } from "./ui/in-page-action";
 export { actionMode } from "./lib/action-mode";
 export { enabledKinds } from "./api/wallet-intents";
-export type { IntentKind } from "./lib/intent";

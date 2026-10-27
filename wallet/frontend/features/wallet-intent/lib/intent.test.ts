@@ -13,7 +13,7 @@ function body(summary: Record<string, unknown> = {}, over: Record<string, unknow
     intent_hash: HASH,
     expires_at: 1_700_000_000,
     summary: { amount: "10.5", fee: "0.5", net: "10", recipient_full: "TXyz", network: "tron", scope: "main", host_origin: "https://h.test", mandate: null, ...summary },
-    stepup: { required: true, methods: ["passkey", "bogus", "email_code"] },
+    min_aal: 2,
     ...over,
   };
 }
@@ -30,11 +30,16 @@ const mandate = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-test("parseIntent accepts a full body and keeps only known step-up methods", () => {
+test("parseIntent accepts a full body", () => {
   const intent = parseIntent(body());
   assert.equal(intent?.id, ID);
   assert.equal(intent?.summary.recipient, "TXyz");
-  assert.deepEqual(intent?.stepup, { required: true, methods: ["passkey", "email_code"] });
+  assert.equal(intent?.minAal, 2);
+});
+
+test("parseIntent reads min_aal as a positive integer or null, and nothing else", () => {
+  assert.equal(parseIntent(body({}, { min_aal: null }))?.minAal, null);
+  for (const min_aal of [undefined, 0, -1, 1.5, "2", true]) assert.equal(parseIntent(body({}, { min_aal })), null, String(min_aal));
 });
 
 test("parseIntent rejects a bad id or hash", () => {

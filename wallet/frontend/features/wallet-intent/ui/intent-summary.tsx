@@ -19,13 +19,13 @@ export function IntentSummaryView({ kind, summary }: { kind: IntentKind; summary
   const t = useT();
   const locale = useLocale();
   const labels: Record<SummaryTerm, string> = {
-    amount: t("walletMfe.term.amount", "Amount"),
-    fee: t("walletMfe.term.fee", "Fee"),
-    net: t("walletMfe.term.net", "Recipient gets"),
-    recipient: kind === "mandate" ? t("walletMfe.term.service", "Service") : t("walletMfe.term.recipient", "To"),
+    amount: t("walletIntent.term.amount", "Amount"),
+    fee: t("walletIntent.term.fee", "Fee"),
+    net: t("walletIntent.term.net", "Recipient gets"),
+    recipient: kind === "mandate" ? t("walletIntent.term.service", "Service") : t("walletIntent.term.recipient", "To"),
     network: t("wallet.withdrawalNetwork", "Withdrawal network"),
-    scope: t("walletMfe.term.scope", "Account"),
-    host: t("walletMfe.term.host", "Requested by"),
+    scope: t("walletIntent.term.scope", "Account"),
+    host: t("walletIntent.term.host", "Requested by"),
   };
   return (
     <div className="flex flex-col gap-4">

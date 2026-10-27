@@ -6,14 +6,14 @@
 // that opens elsewhere stays the browser's and is offered nothing either. What decides "plain
 // and same-origin" is pinned in lib/navigate-event.test.ts; this pins the panel's wiring.
 //
-// Rendered with react-dom's client renderer on the stand-in document of `__tests__/fake-dom.ts`
+// Rendered with react-dom's client renderer on the stand-in document of `shared/__tests__/fake-dom.ts`
 // (as in account-menu.test.ts), inside an element named like the chip's, so the event leaves
 // from where a host listens. The page is `PAGE_URL` (https://cabinet.example/en/cabinet).
 import assert from "node:assert/strict";
 import test, { after, afterEach, before, beforeEach } from "node:test";
 
-import { bundle } from "../__tests__/bundle.ts";
-import { FakeDocument, FakeElement, click, descendants, installDom, type Modifiers } from "../__tests__/fake-dom.ts";
+import { bundle } from "../../../shared/__tests__/bundle.ts";
+import { FakeDocument, FakeElement, click, descendants, installDom, type Modifiers } from "../../../shared/__tests__/fake-dom.ts";
 
 type Loaded = Pick<typeof import("react"), "act" | "createElement"> &
   Pick<typeof import("react-dom/client"), "createRoot"> &

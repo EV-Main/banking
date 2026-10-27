@@ -2,15 +2,15 @@ import { useT } from "@evinvest/i18n/react";
 
 import { useEffect, useId, useRef, type KeyboardEvent } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
+import { Alert, AlertTitle, Button, Card, CardContent, CardHeader, CardTitle } from "@evinvest/uikit";
 
-import { intentClientFor, stepupClientFor } from "../api/wallet-intents";
+import { ConfirmStep, StepupSurface, useIntentFlow, type IntentFlowControls } from "@/features/wallet-intent";
+
+import { intentClientFor } from "../api/wallet-intents";
 import { escapeCloses } from "../lib/escape-closes";
 import { closedAction, type ClosedAction } from "../lib/wallet-result";
 import type { WalletAction } from "../lib/wallet-action";
-import { useIntentFlow, type IntentFlowControls } from "../model/use-intent-flow";
 import { ActionRoot } from "./action-root";
-import { ConfirmStep } from "./confirm-step";
 import type { ActionFormProps } from "./form-parts";
 import { MandateForm } from "./mandate-form";
 import { MoveForm } from "./move-form";
@@ -32,11 +32,11 @@ export interface InPageActionProps {
   request: string | null;
   /** How the action ended, read from the flow at the moment the form closes. */
   onClose: (closed: ClosedAction) => void;
-  /** The same action as an `ev:wallet-action` offer, for what this page cannot finish yet. */
+  /** The same action as an `ev:wallet-action` offer, for when the step-up cannot load here. */
   onFallback: () => void;
 }
 
-function ActionForm({ props, controls, onCancel }: { props: InPageActionProps; controls: IntentFlowControls; onCancel: () => void }) {
+function ActionForm({ props, controls, onCancel }: { props: InPageActionProps; controls: IntentFlowControls<WalletAction>; onCancel: () => void }) {
   const { flow } = controls;
   const form: ActionFormProps = {
     draft: controls.draft,
@@ -83,7 +83,8 @@ function useFocusAcrossPhases(phase: string) {
 export function InPageAction(props: InPageActionProps) {
   const t = useT();
   const titleId = useId();
-  const controls = useIntentFlow(intentClientFor(props.origin));
+  // Nothing to do on the answer itself: the form reports the flow as it stands when it closes.
+  const controls = useIntentFlow<WalletAction>(intentClientFor(props.origin), () => undefined);
   const region = useFocusAcrossPhases(controls.flow.phase);
   const editing = controls.flow.phase === "editing" || controls.flow.phase === "creating";
   const close = () => props.onClose(closedAction(controls.flow));
@@ -100,20 +101,34 @@ export function InPageAction(props: InPageActionProps) {
     mandate: t("walletMfe.mandateTitle", "Allow a service to use your funds"),
     withdraw: t("ui.withdraw", "Withdraw"),
   };
+  // The step-up element stays outside the closed root: its styles live in the document's head
+  // and its focus trap works through `document`, neither of which reaches inside.
   return (
-    <ActionRoot sheetHref={props.sheetHref}>
-      <Card ref={region} role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none" onKeyDown={onKeyDown}>
-        <CardHeader>
-          <CardTitle id={titleId}>{titles[props.action]}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {editing ? (
-            <ActionForm props={props} controls={controls} onCancel={close} />
-          ) : (
-            <ConfirmStep kind={props.action} controls={controls} stepup={stepupClientFor(props.origin)} onClose={close} onFallback={props.onFallback} />
-          )}
-        </CardContent>
-      </Card>
-    </ActionRoot>
+    <>
+      <ActionRoot sheetHref={props.sheetHref}>
+        <Card ref={region} role="region" aria-labelledby={titleId} tabIndex={-1} className="outline-none" onKeyDown={onKeyDown}>
+          <CardHeader>
+            <CardTitle id={titleId}>{titles[props.action]}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {editing ? (
+              <ActionForm props={props} controls={controls} onCancel={close} />
+            ) : controls.flow.phase === "done" ? (
+              <div className="flex flex-col items-start gap-4">
+                <Alert variant="success" role="status">
+                  <AlertTitle>{t("walletAction.done", "Done")}</AlertTitle>
+                </Alert>
+                <Button type="button" onClick={close}>
+                  {t("walletMfe.close", "Close")}
+                </Button>
+              </div>
+            ) : (
+              <ConfirmStep kind={props.action} controls={controls} />
+            )}
+          </CardContent>
+        </Card>
+      </ActionRoot>
+      <StepupSurface dialog={controls.stepupDialog} scopeHost={{ origin: props.origin, handoff: props.onFallback }} />
+    </>
   );
 }
