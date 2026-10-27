@@ -1,6 +1,6 @@
-// The money plane's refusals as they reach the browser: the hub's sentence with the
-// `DomainError` Display prefix still on it — "validation failed: incorrect code — 4
-// attempts remaining", "conflict: the owner roster changed…" (domain/src/error.rs). The BFF
+// The planes' refusals as they reach the browser: the hub's sentence with the `DomainError`
+// Display prefix still on it — "conflict: the owner roster changed…" (domain/src/error.rs) —
+// or concierge's bare one, "incorrect code — 4 attempts remain". The BFF
 // relays a client-safe status's message verbatim (wallet/backend/src/error.rs), so the
 // prefix is not something a screen can ask it to drop.
 //
@@ -26,8 +26,8 @@ function messageOf(error: unknown): string {
 /**
  * A refused approval code, and how many attempts the server says are left.
  *
- * The plane counts the attempt in the same transaction as the comparison and names the
- * remainder in its refusal ("incorrect code — N attempts remaining"); that figure is the
+ * Concierge counts the attempt in the same transaction as the comparison and names the
+ * remainder in its refusal ("incorrect code — N attempts remain"); that figure is the
  * server's, so a screen may show it as the count under the field rather than as prose.
  * `null` for anything else, including a wrong-code sentence whose count did not parse — the
  * screen then re-reads the invitation rather than guessing.
@@ -35,6 +35,6 @@ function messageOf(error: unknown): string {
 export function wrongCodeAttempts(error: unknown): number | null {
   const message = messageOf(error).toLowerCase();
   if (!message.includes("incorrect code")) return null;
-  const found = /(\d+)\s+attempts?\s+remaining/.exec(message);
+  const found = /(\d+)\s+attempts?\s+remain\b/.exec(message);
   return found ? Number(found[1]) : null;
 }

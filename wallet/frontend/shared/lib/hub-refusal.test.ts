@@ -1,7 +1,7 @@
 // Run with `npm run test` (Node's built-in runner, native type-stripping).
 //
-// The wrong-code sentence is copied from the plane's refusal verbatim; the prefixes are `DomainError`'s
-// Display forms (`domain/src/error.rs`). A backend rewording that breaks one of these is
+// The wrong-code sentence is copied verbatim from concierge's refusal (`SubmitSelfDecision`,
+// runner/src/governance.rs); the prefixes are `DomainError`'s Display forms (`domain/src/error.rs`). A backend rewording that breaks one of these is
 // the test doing its job: the screen falls back to the raw prose, safe but untranslated.
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -19,10 +19,9 @@ test("the variant name the hub prefixes its sentence with is dropped, once, and 
 });
 
 test("a refused code is recognised with the server's own count of attempts left", () => {
-  assert.equal(wrongCodeAttempts(new Error("validation failed: incorrect code — 4 attempts remaining")), 4);
-  assert.equal(wrongCodeAttempts("incorrect code — 1 attempts remaining"), 1);
-  assert.equal(wrongCodeAttempts("Incorrect code — 1 attempt remaining"), 1);
-  assert.equal(wrongCodeAttempts("incorrect code — 0 attempts remaining"), 0);
+  assert.equal(wrongCodeAttempts(new Error("incorrect code — 4 attempts remain")), 4);
+  assert.equal(wrongCodeAttempts("incorrect code — 1 attempts remain"), 1);
+  assert.equal(wrongCodeAttempts("incorrect code — 0 attempts remain"), 0);
 });
 
 test("a wrong-code sentence without a readable count is not guessed at", () => {
