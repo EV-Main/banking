@@ -314,11 +314,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1793141853,
-        "narHash": "sha256-XVGstYVdPykooK804V6E3kQ4B4Px+L+8wRZzxXvZbUA=",
+        "lastModified": 1793145411,
+        "narHash": "sha256-MPdL4dOqZzu2lddvPZNbERtx+vYDnpaRp0dbruPtpBE=",
         "owner": "valeratrades",
         "repo": "v_flakes",
-        "rev": "1b3517903a5e3a996e91b66080c625b51417822f",
+        "rev": "1cde82b2fc2281ec32542d3b831e2fda3cc5df87",
         "type": "github"
       },
       "original": {
