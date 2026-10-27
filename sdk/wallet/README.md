@@ -115,8 +115,8 @@ the status; do not offer a retry.
 
 By default every money action goes to a popup on evinvest.ltd. A host can opt
 into **inline mode**: the element then runs an action inside the host page,
-through banking's intent routes on evinvest.ltd, with a step-up (passkey or
-email code) where the action needs it.
+through banking's intent routes on evinvest.ltd, with a second factor
+(concierge's step-up element, `@evinvest/concierge`) where the action needs it.
 
 ```tsx
 <Wallet scriptUrl={wallet.scriptUrl} scope="sa" mode="inline" onResult={() => refresh()} />;
@@ -174,10 +174,12 @@ const header = serializeCsp(mergeCsp(hostDirectives, walletCsp({ mode: 'inline' 
 | `style-src` | `https://evinvest.ltd/wallet/mfe/` |
 | `connect-src` | `https://evinvest.ltd/wallet/mfe/` (registry, stylesheet) · `https://evinvest.ltd/api/auth/session` · `https://evinvest.ltd/cabinet/api/wallet` · `https://evinvest.ltd/cabinet/api/wallet/csrf` (the kinds the BFF runs in the page, read on every connect) · `https://evinvest.ltd/cabinet/api/operations` (history; CSP ignores its query) |
 
-`walletCsp({ mode: 'inline' })` adds two directories to `connect-src`:
-`https://evinvest.ltd/cabinet/api/wallet/` (the intent routes) and
-`https://evinvest.ltd/api/auth/stepup/` (step-up). A source that ends in `/`
-matches every path under it.
+`walletCsp({ mode: 'inline' })` adds concierge's bundle directory
+`https://evinvest.ltd/api/auth/mfe/` (the step-up element and its registry) to
+`script-src`, `style-src` and `connect-src`, and two more directories to
+`connect-src`: `https://evinvest.ltd/cabinet/api/wallet/` (the intent routes)
+and `https://evinvest.ltd/api/auth/stepup/` (step-up). A source that ends in
+`/` matches every path under it.
 
 There is no `frame-src`: the wallet never uses an iframe. The element loads no
 fonts and no images, so there is no `font-src` or `img-src`.
