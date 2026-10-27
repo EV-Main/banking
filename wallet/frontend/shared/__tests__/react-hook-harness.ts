@@ -4,11 +4,10 @@
 // run. The real `react-dom/client` is enough when the probe component renders nothing: the
 // root container is only asked for a few properties, which the stand-in below provides.
 // What a hook does to the page it does through the host element and globals the test hands
-// it (see `fake-chart-engine.ts`), so nothing here pretends to be a browser beyond that.
+// it, so nothing here pretends to be a browser beyond that.
 //
 // `installModuleHooks` registers `module-hooks.mjs`: modules loaded AFTER it may use the `@/`
-// alias, `lightweight-charts` is the fake engine, and the stubs named resolve to their
-// stand-ins. Load the module under test with a dynamic `import()` for that reason — and with
+// alias and the stubs named resolve to their stand-ins. Load the module under test with a dynamic `import()` for that reason — and with
 // a unique query, to get a fresh module-level cache per test.
 
 import { register } from "node:module";

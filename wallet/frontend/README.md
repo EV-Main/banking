@@ -174,8 +174,7 @@ Rules:
 - **A failed refresh never blanks a figure.** The stale value stays and the error
   is reported beside it. Only a read that has *never* succeeded should surface as
   an error state.
-- **`persist: true` is for non-personal data only.** A balance, a position, a profile or an operation stays in memory, which dies
-  with the page. Sign-out clears both halves.
+- **Memory only.** Every cached value dies with the page, and sign-out clears it.
 - **Warm at idle.** `CacheWarmer` in the `(host)` layout warms the balance at
   idle, so the wallet pages usually paint their figures on the first frame.
 

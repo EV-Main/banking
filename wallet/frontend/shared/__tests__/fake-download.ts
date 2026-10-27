@@ -1,7 +1,7 @@
 // A code-split module whose "download" the test lands or fails by hand. A stub module
 // (see `module-hooks.mjs`, `stubs`) awaits `downloadFor(name, case)` at its top level, so
 // `import()` of it settles only when the test says; the test holds the other end through
-// `fakeDownload(name, case)`. Keyed by the importer's `?case=`, as `fake-chart-engine.ts` is.
+// `fakeDownload(name, case)`. Keyed by the importer's `?case=`.
 
 const KEY = Symbol.for("cabinet.test.downloads");
 
