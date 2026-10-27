@@ -1,13 +1,11 @@
-//! Wallet actions from a trusted host page: `GET /api/wallet/csrf`,
-//! `POST /api/wallet/intents` and `POST /api/wallet/intents/{id}/confirm`
-//! (`docs/WALLET-INTENTS.md`).
+//! Wallet actions as intents: `GET /api/wallet/csrf`, `POST /api/wallet/intents` and
+//! `POST /api/wallet/intents/{id}/confirm` (`docs/WALLET-INTENTS.md`).
 //!
-//! The first-party wallet routes (`routes::money`) stay as they are, and a host page still
-//! cannot call them: these three routes are the whole cross-origin surface that may move
-//! money, and they are mounted only when `WALLET_ACTION_ORIGINS` names a host. A host cannot
-//! read the `ev_csrf` cookie, so its CSRF token is an HMAC the BFF hands out per account and
-//! page; and since a cookie still rides along, every request must also prove it comes from
-//! that exact page in a browser that calls it same-site.
+//! Every money-out act goes through these three routes, from the wallet's own page and from a
+//! trusted host's alike; a host cannot call the first-party routes (`routes::money`). A host
+//! cannot read the `ev_csrf` cookie, so the CSRF token here is an HMAC the BFF hands out per
+//! account and page, the same on both surfaces; and since a cookie still rides along, every
+//! request must also prove it comes from that exact page in a browser that calls it same-site.
 
 #[cfg(test)]
 mod tests;
@@ -28,7 +26,7 @@ use domain::money::{Network, Usdt, WalletAddress};
 use evbanking_contracts::banking::v1 as bk;
 use evconcierge_auth::{
 	Claims,
-	stepup::{Expected, StepupMethod},
+	stepup::{Aal, Expected},
 };
 use serde::{Deserialize, Serialize};
 use tonic::{Code, Status};
@@ -41,8 +39,8 @@ use crate::{
 	state::AppState,
 	util::now_secs,
 	wallet_intents::{
-		EnabledHost, IntentKind, WalletActions,
-		intent::{self, Action, IntentRecord, MandateTerms, SessionBinding, Stepup, Summary, Used24h},
+		Assurance, IntentKind, IntentPage, Reach, WalletActions,
+		intent::{self, Action, IntentRecord, MandateTerms, SessionBinding, Summary},
 		keys,
 		store::{self, IntentStatus, StoreError},
 	},
@@ -57,12 +55,7 @@ const MAX_BODY_BYTES: usize = 8 * 1024;
 
 const ALLOW_HEADERS: &str = "content-type, x-ev-csrf";
 
-/// The three routes, or none when no host is switched on: an empty `WALLET_ACTION_ORIGINS`
-/// answers 404 to all of them, preflight included.
 pub fn routes(state: &AppState) -> Router<AppState> {
-	if state.wallet_actions.is_none() {
-		return Router::new();
-	}
 	Router::new()
 		.route(
 			"/api/wallet/csrf",
@@ -88,15 +81,17 @@ async fn cors_for_post(State(st): State<AppState>, request: Request, next: Next)
 	cors(&st, Method::POST, request, next).await
 }
 
-/// CORS for one route: a preflight is answered here and only for an enabled host asking
-/// for this route's method and no header beyond the two the routes read; any other answer
-/// carries no CORS header, so the browser keeps it from the page.
+/// CORS for one route: a preflight is answered here and only for a scope host asking for
+/// this route's method and no header beyond the two the routes read; any other answer
+/// carries no CORS header, so the browser keeps it from the page. The wallet's own page is
+/// same-origin and needs none.
 async fn cors(st: &AppState, method: Method, request: Request, next: Next) -> Response {
 	let origin = request.headers().get(header::ORIGIN).cloned();
 	let enabled = origin
 		.as_ref()
 		.and_then(|value| value.to_str().ok())
-		.is_some_and(|value| st.wallet_actions.as_deref().is_some_and(|actions| actions.host(value).is_some()));
+		.and_then(|value| st.wallet_actions.page(value))
+		.is_some_and(|page| page.reach != Reach::Wallet);
 	let (mut response, allow) = if request.method() == Method::OPTIONS {
 		if enabled && preflight_fits(request.headers(), &method) {
 			let mut response = StatusCode::NO_CONTENT.into_response();
@@ -147,38 +142,34 @@ async fn preflight_refused() -> StatusCode {
 
 // ── the gate every route shares ─────────────────────────────────────────────
 
-/// A verified caller on an enabled host page.
+/// A verified caller on an intent page.
 struct Caller {
-	host: EnabledHost,
+	page: IntentPage,
 	/// The concierge access token, for the identity re-check.
 	token: String,
 	claims: Claims,
 }
 
-fn actions(st: &AppState) -> Result<&WalletActions, ApiError> {
-	st.wallet_actions.as_deref().ok_or(ApiError::Refused(StatusCode::NOT_FOUND, "not_found"))
-}
-
-/// The page is exactly an enabled host, the browser says the call is same-site, and the
-/// session cookie verifies. Unlike the first-party routes, a missing `Sec-Fetch-Site` is a
-/// refusal here: every browser that can run the host's wallet sends it, and without it the
+/// The page is exactly an intent page, the browser says the call is same-site, and the
+/// session cookie verifies. Unlike the other first-party routes, a missing `Sec-Fetch-Site`
+/// is a refusal here: every browser that can run the wallet sends it, and without it the
 /// `Origin` check would stand alone.
-async fn host_caller(st: &AppState, actions: &WalletActions, jar: &CookieJar, headers: &HeaderMap) -> Result<Caller, ApiError> {
+async fn page_caller(st: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<Caller, ApiError> {
 	let origin = headers.get(header::ORIGIN).and_then(|value| value.to_str().ok()).ok_or(ApiError::Csrf)?;
-	let host = actions.host(origin).cloned().ok_or(ApiError::Csrf)?;
+	let page = st.wallet_actions.page(origin).cloned().ok_or(ApiError::Csrf)?;
 	let same_site = matches!(headers.get("sec-fetch-site").map(|value| value.to_str()), Some(Ok("same-origin" | "same-site")));
 	if !same_site {
 		return Err(ApiError::Csrf);
 	}
 	let (token, claims) = require_identity(st, jar).await?;
-	Ok(Caller { host, token, claims })
+	Ok(Caller { page, token, claims })
 }
 
 /// The rest of a POST's gate, after the session: the HMAC token for this account and page,
 /// a body declared exactly `application/json`, and the per-user money budget.
-fn post_gate(st: &AppState, actions: &WalletActions, caller: &Caller, headers: &HeaderMap, body: &Bytes) -> Result<(), ApiError> {
+fn post_gate(st: &AppState, caller: &Caller, headers: &HeaderMap, body: &Bytes) -> Result<(), ApiError> {
 	let token = headers.get("x-ev-csrf").and_then(|value| value.to_str().ok()).unwrap_or_default();
-	if !actions.keys.csrf_valid(token, &caller.claims.sub, caller.host.origin, unix_now()) {
+	if !st.wallet_actions.keys.csrf_valid(token, &caller.claims.sub, &caller.page.origin, unix_now()) {
 		return Err(ApiError::Csrf);
 	}
 	let declared = headers
@@ -255,22 +246,21 @@ pub struct CsrfToken {
 	csrf: String,
 	/// Unix seconds after which the token is refused.
 	expires_at: u64,
-	/// The kinds this host may create now, in matrix order. The page asks here rather than at
+	/// The kinds this page may create now, in matrix order. A host asks here rather than at
 	/// build time, so narrowing `WALLET_ACTION_KINDS` turns its in-page forms off without a
 	/// release; an empty list means the popup.
 	kinds: Vec<IntentKind>,
 }
 
-/// The CSRF token for the signed-in account on this host page: the page sends it back in
+/// The CSRF token for the signed-in account on this page: the page sends it back in
 /// `x-ev-csrf`. In the body and never in a URL, so it reaches no log or `Referer`.
 pub async fn csrf(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap) -> Result<Json<CsrfToken>, ApiError> {
-	let actions = actions(&st)?;
-	let caller = host_caller(&st, actions, &jar, &headers).await?;
-	let (csrf, expires_at) = actions.keys.csrf_token(&caller.claims.sub, caller.host.origin, unix_now());
+	let caller = page_caller(&st, &jar, &headers).await?;
+	let (csrf, expires_at) = st.wallet_actions.keys.csrf_token(&caller.claims.sub, &caller.page.origin, unix_now());
 	Ok(Json(CsrfToken {
 		csrf,
 		expires_at,
-		kinds: caller.host.kinds,
+		kinds: caller.page.kinds,
 	}))
 }
 
@@ -283,7 +273,8 @@ pub struct CreatedIntent {
 	intent_hash: String,
 	summary: Summary,
 	expires_at: u64,
-	stepup: Stepup,
+	/// The least assurance the confirm's proof must carry; `null` asks for no proof.
+	min_aal: Option<Aal>,
 	/// Whether a withdrawal goes to an address the account has not used: the hub decides it
 	/// when the withdrawal is opened and exposes no read of it, so it is `null` here.
 	new_recipient: Option<bool>,
@@ -291,46 +282,42 @@ pub struct CreatedIntent {
 	release_at: Option<u64>,
 }
 
-/// Compute and store an intent for `{kind, params}`. Nothing moves yet. The scope is the
-/// host's own from the matrix, never the body's, and every amount and recipient shown is
+/// Compute and store an intent for `{kind, params}`. Nothing moves yet. The scopes are
+/// judged by the page's reach, never by the body, and every amount and recipient shown is
 /// the hub's record or the BFF's validated reading of the params.
 pub async fn create(State(st): State<AppState>, jar: CookieJar, headers: HeaderMap, body: Bytes) -> Result<Json<CreatedIntent>, ApiError> {
-	let actions = actions(&st)?;
-	let caller = host_caller(&st, actions, &jar, &headers).await?;
-	post_gate(&st, actions, &caller, &headers, &body)?;
+	let actions = &st.wallet_actions;
+	let caller = page_caller(&st, &jar, &headers).await?;
+	post_gate(&st, &caller, &headers, &body)?;
 	let action: Action = serde_json::from_slice(&body).map_err(|_| ApiError::BadRequest("invalid_request".into()))?;
-	if !caller.host.kinds.contains(&action.kind()) {
+	if !caller.page.kinds.contains(&action.kind()) {
 		return Err(ApiError::Refused(StatusCode::FORBIDDEN, "kind_not_enabled"));
 	}
 	account_in_good_standing(&st, &caller).await?;
 	let money_token = money_token_for(&st, &caller.claims).await?;
 	let now = unix_now();
-	let terms = terms_of(&st, &money_token, &caller.host, &action, now).await?;
+	let terms = terms_of(&st, &money_token, &caller.page, &action, now).await?;
 
-	let since = now.saturating_sub(store::BUDGET_WINDOW_SECS);
-	let used = |budget: String| async move { actions.store.used_since(&budget, since).await.map(intent::from_micro).map_err(store_error) };
-	// Only the kinds an emailed code can confirm read its budget; a withdrawal or a mandate is
-	// passkey-only whatever was emailed today.
-	let used = match action {
-		Action::Move(_) => Used24h {
-			moved: used(store::move_budget(&caller.claims.sub)).await?,
-			emailed: used(store::email_budget(&caller.claims.sub)).await?,
-		},
-		Action::Pay(_) => Used24h {
-			moved: Usdt::ZERO,
-			emailed: used(store::email_budget(&caller.claims.sub)).await?,
-		},
-		Action::Withdraw(_) | Action::Mandate(_) => Used24h::default(),
+	// Only a move can fall under the no-step-up line, so only a move reads what was moved.
+	let moved = match action {
+		Action::Move(_) => intent::from_micro(
+			actions
+				.store
+				.moved_since(&caller.claims.sub, now.saturating_sub(store::BUDGET_WINDOW_SECS))
+				.await
+				.map_err(store_error)?,
+		),
+		Action::Withdraw(_) | Action::Pay(_) | Action::Mandate(_) | Action::ApprovePayment(_) => Usdt::ZERO,
 	};
-	let stepup = intent::stepup_for(action.kind(), terms.amount, used, &actions.policy);
+	let min_aal = intent::stepup_for(action.kind(), terms.amount, moved, &actions.policy);
 	let record = IntentRecord {
 		intent_id: intent::new_intent_id().map_err(|e| internal(format!("no randomness for an intent id: {e}")))?,
 		sub: caller.claims.sub.clone(),
-		origin: caller.host.origin.to_owned(),
-		scope: caller.host.scope.to_owned(),
+		origin: caller.page.origin.clone(),
+		scope: terms.summary.scope.clone(),
 		action,
 		summary: terms.summary,
-		stepup,
+		min_aal,
 		created_at: now,
 		expires_at: now + intent::INTENT_TTL_SECS,
 		session: SessionBinding {
@@ -350,7 +337,7 @@ pub async fn create(State(st): State<AppState>, jar: CookieJar, headers: HeaderM
 		intent_hash: keys::hex(&hash),
 		summary: record.summary,
 		expires_at: record.expires_at,
-		stepup: record.stepup,
+		min_aal: record.min_aal,
 		new_recipient: None,
 		release_at: None,
 	}))
@@ -383,33 +370,38 @@ fn plain_id(raw: &str) -> Result<(), ApiError> {
 	}
 }
 
-/// The terms of `action` through `host`, read from the hub where the hub holds them. Run at
-/// create and again at confirm: a confirmation executes only the terms the person saw.
-async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: &Action, now: u64) -> Result<Terms, ApiError> {
-	let summary = |amount: Option<String>, fee: Option<String>, net: Option<String>, recipient_full: String, network: Option<String>| Summary {
+/// The terms of `action` on `page`, read from the hub where the hub holds them. Run at create
+/// and again at confirm: a confirmation executes only the terms the person saw. Every scope
+/// the act touches beside `main` must be in the page's reach: a host acting in another
+/// host's scope is exactly the confused deputy of spec (d).
+async fn terms_of(st: &AppState, money_token: &str, page: &IntentPage, action: &Action, now: u64) -> Result<Terms, ApiError> {
+	let reach = page.reach;
+	let summary = |amount: Option<String>, fee: Option<String>, net: Option<String>, recipient_full: String, network: Option<String>, scope: &str| Summary {
 		amount,
 		fee,
 		net,
 		recipient_full,
 		network,
-		scope: host.scope.to_owned(),
-		host_origin: host.origin.to_owned(),
+		scope: scope.to_owned(),
+		host_origin: page.origin.clone(),
 		mandate: None,
 	};
 	match action {
-		// One side is the host's own compartment and the other is `main`: the hub refuses a
-		// move between two scopes anyway, and a host moving money into another host's scope
-		// is exactly the confused deputy this route must not be.
+		// One side is a compartment and the other is `main`: the hub refuses a move between two
+		// scopes anyway.
 		Action::Move(p) => {
 			let amount = positive_amount(&p.amount)?;
-			let host_side = (p.from_scope == "main" && p.to_scope == host.scope) || (p.from_scope == host.scope && p.to_scope == "main");
-			if !host_side {
+			let compartment = match (p.from_scope.as_str(), p.to_scope.as_str()) {
+				("main", scope) | (scope, "main") if scope != "main" => scope,
+				_ => return Err(refused(StatusCode::FORBIDDEN, "scope_mismatch")),
+			};
+			if !reach.covers(compartment) {
 				return Err(refused(StatusCode::FORBIDDEN, "scope_mismatch"));
 			}
 			let amount_s = amount.to_decimal_string();
 			// A move between compartments carries no fee (`CompartmentService.MoveFunds`).
 			Ok(Terms {
-				summary: summary(Some(amount_s.clone()), Some("0".into()), Some(amount_s), p.to_scope.clone(), None),
+				summary: summary(Some(amount_s.clone()), Some("0".into()), Some(amount_s), p.to_scope.clone(), None, compartment),
 				amount: Some(amount),
 			})
 		}
@@ -444,23 +436,20 @@ async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: 
 					Some(net.to_decimal_string()),
 					address.as_str().to_owned(),
 					Some(network.as_str().to_owned()),
+					"main",
 				),
 				amount: Some(amount),
 			})
 		}
-		// The invoice is the hub's, read server-side: a host may only ask its users to pay its
-		// own invoices, never another scope's (the confused deputy of spec (d)).
+		// The invoice is the hub's, read server-side, and paid from `main` or from its own scope.
 		Action::Pay(p) => {
 			plain_id(&p.invoice_id)?;
-			if p.pay_from != "main" && p.pay_from != host.scope {
-				return Err(refused(StatusCode::FORBIDDEN, "scope_mismatch"));
-			}
 			let invoice = st
 				.grpc
 				.get_payable_invoice(money_token, &p.invoice_id)
 				.await
 				.map_err(|s| ApiError::read(s, "invoice unavailable"))?;
-			if invoice.scope != host.scope {
+			if !reach.covers(&invoice.scope) || (p.pay_from != "main" && p.pay_from != invoice.scope) {
 				return Err(refused(StatusCode::FORBIDDEN, "scope_mismatch"));
 			}
 			if invoice.state != "open" {
@@ -474,7 +463,7 @@ async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: 
 			};
 			// The invoice states no fee, so neither does the summary.
 			Ok(Terms {
-				summary: summary(Some(amount.to_decimal_string()), None, None, recipient, None),
+				summary: summary(Some(amount.to_decimal_string()), None, None, recipient, None, &invoice.scope),
 				amount: Some(amount),
 			})
 		}
@@ -485,7 +474,7 @@ async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: 
 				.get_mandate_request(money_token, &p.request_id)
 				.await
 				.map_err(|s| ApiError::read(s, "mandate request unavailable"))?;
-			if request.scope != host.scope {
+			if !reach.covers(&request.scope) {
 				return Err(refused(StatusCode::FORBIDDEN, "scope_mismatch"));
 			}
 			if request.expires_at <= now as i64 {
@@ -496,7 +485,7 @@ async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: 
 			} else {
 				request.client_display_name.clone()
 			};
-			let mut summary = summary(None, None, None, recipient, None);
+			let mut summary = summary(None, None, None, recipient, None, &request.scope);
 			summary.mandate = Some(MandateTerms {
 				operations: request.operations().map(|op| op.as_str_name().to_owned()).collect(),
 				client_id: request.client_id,
@@ -509,6 +498,31 @@ async fn terms_of(st: &AppState, money_token: &str, host: &EnabledHost, action: 
 			});
 			// A grant moves nothing now; its class does not depend on an amount.
 			Ok(Terms { summary, amount: None })
+		}
+		// The order's terms as the hub states them, and still open to this seat's answer. It
+		// spends the caller's claim, so its scope is `main`.
+		Action::ApprovePayment(p) => {
+			plain_id(&p.payment_id)?;
+			let payment = st
+				.grpc
+				.get_payment_confirmation(money_token, &p.payment_id)
+				.await
+				.map_err(|s| ApiError::read(s, "payment unavailable"))?;
+			let answerable = payment.state() == bk::PaymentState::Pending && payment.decision() == bk::ConsentDecision::Pending && !payment.invalidated && payment.expires_at > now as i64;
+			if !answerable {
+				return Err(refused(StatusCode::PRECONDITION_FAILED, "payment_not_answerable"));
+			}
+			let amount = Usdt::parse_decimal(&payment.amount).map_err(|_| internal("the hub answered an unreadable payment amount"))?;
+			let destination = payment.destination.ok_or_else(|| internal("the hub answered a payment with no destination"))?;
+			let (recipient, network) = if destination.kind == "external" {
+				(destination.address, Some(destination.network))
+			} else {
+				(destination.label, None)
+			};
+			Ok(Terms {
+				summary: summary(Some(amount.to_decimal_string()), None, None, recipient, network, "main"),
+				amount: Some(amount),
+			})
 		}
 	}
 }
@@ -528,8 +542,9 @@ struct ConfirmBody {
 pub struct ConfirmedIntent {
 	intent_id: String,
 	status: &'static str,
-	stepup_method: &'static str,
-	/// The hub's answer, in the shape the matching first-party route returns.
+	/// The assurance the act was authorised with, as the proof achieved it.
+	stepup_method: Assurance,
+	/// The hub's answer, in the shape its matching read returns.
 	result: serde_json::Value,
 }
 
@@ -543,9 +558,9 @@ pub struct ConfirmedIntent {
 /// is asked for or spent again; they were, when the act was first sent.
 pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<String>, peer: Peer, headers: HeaderMap, body: Bytes) -> Result<Json<ConfirmedIntent>, ApiError> {
 	let started = tokio::time::Instant::now();
-	let actions = actions(&st)?;
-	let caller = host_caller(&st, actions, &jar, &headers).await?;
-	post_gate(&st, actions, &caller, &headers, &body)?;
+	let actions = &st.wallet_actions;
+	let caller = page_caller(&st, &jar, &headers).await?;
+	post_gate(&st, &caller, &headers, &body)?;
 	let confirm: ConfirmBody = serde_json::from_slice(&body).map_err(|_| ApiError::BadRequest("invalid_request".into()))?;
 	let not_found = || refused(StatusCode::NOT_FOUND, "intent_not_found");
 	if !intent::is_intent_id(&id) {
@@ -560,7 +575,7 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 	let record: IntentRecord = serde_json::from_slice(&stored.record).map_err(|e| internal(format!("a sealed intent does not parse: {e}")))?;
 	// Another account's or another page's intent is answered as if it did not exist, so the
 	// route is no oracle for which ids are live.
-	if record.intent_id != id || record.sub != caller.claims.sub || record.origin != caller.host.origin {
+	if record.intent_id != id || record.sub != caller.claims.sub || record.origin != caller.page.origin {
 		return Err(not_found());
 	}
 	let binding = SessionBinding {
@@ -576,24 +591,16 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 		// leave the person a new intent — a new key, and a second act — as the only way to learn
 		// what happened. The window is the store's keep of an executing intent.
 		IntentStatus::Executing => {
+			let assurance = stored.assurance.ok_or_else(|| internal(format!("executing intent {id} records no assurance")))?;
 			let money_token = money_token_for(&st, &caller.claims).await?;
-			let stepup_method = match stored.stepup_method.as_deref() {
-				Some("passkey") => "passkey",
-				Some("email_code") => "email_code",
-				Some("none") => "none",
-				other => {
-					tracing::warn!(intent_id = %id, method = ?other, "an executing intent has no readable step-up method");
-					""
-				}
-			};
-			let audit = audit_for(&st, &headers, &peer, &record, stepup_method);
+			let audit = audit_for(&st, &headers, &peer, &record, assurance);
 			return finish(
 				Execution {
 					st: st.clone(),
 					record,
 					money_token,
 					audit,
-					stepup_method,
+					assurance,
 					first: None,
 				},
 				started,
@@ -610,26 +617,27 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 		actions.store.transition(&id, IntentStatus::Created, IntentStatus::Expired).await.map_err(store_error)?;
 		return Err(refused(StatusCode::GONE, "intent_expired"));
 	}
-	match (record.stepup.required, &confirm.proof) {
-		(true, None) => return Err(refused(StatusCode::FORBIDDEN, "proof_required")),
-		(false, Some(_)) => return Err(ApiError::BadRequest("proof_not_expected".into())),
-		(true, Some(_)) | (false, None) => {}
-	}
+	let demand = match (record.min_aal, &confirm.proof) {
+		(Some(_), None) => return Err(refused(StatusCode::FORBIDDEN, "proof_required")),
+		(None, Some(_)) => return Err(ApiError::BadRequest("proof_not_expected".into())),
+		(Some(min_aal), Some(proof)) => Some((min_aal, proof)),
+		(None, None) => None,
+	};
 
 	account_in_good_standing(&st, &caller).await?;
 	let money_token = money_token_for(&st, &caller.claims).await?;
-	if terms_of(&st, &money_token, &caller.host, &record.action, now).await?.summary != record.summary {
+	if terms_of(&st, &money_token, &caller.page, &record.action, now).await?.summary != record.summary {
 		actions.store.transition(&id, IntentStatus::Created, IntentStatus::Cancelled).await.map_err(store_error)?;
 		return Err(refused(StatusCode::CONFLICT, "terms_changed"));
 	}
 
-	let proof = match &confirm.proof {
-		Some(proof) => {
+	let proof = match demand {
+		Some((min_aal, proof)) => {
 			let expected = Expected {
 				intent_hash: &hash,
 				sub: &caller.claims.sub,
 				origin: &record.origin,
-				methods: &record.stepup.methods,
+				min_aal,
 			};
 			let claims = actions.proofs.verify(proof, &expected).await.map_err(|error| {
 				tracing::warn!(intent_id = %id, %error, "step-up proof refused");
@@ -654,17 +662,17 @@ pub async fn confirm(State(st): State<AppState>, jar: CookieJar, Path(id): Path<
 	if !actions.store.transition(&id, IntentStatus::Created, IntentStatus::Authorized).await.map_err(store_error)? {
 		return Err(refused(StatusCode::CONFLICT, "intent_not_pending"));
 	}
-	let stepup_method = proof.as_ref().map(|claims| claims.method.as_str()).unwrap_or("none");
-	let audit = audit_for(&st, &headers, &peer, &record, stepup_method);
+	let assurance = proof.as_ref().map_or(Assurance::NONE, |claims| Assurance::from(claims.aal));
+	let audit = audit_for(&st, &headers, &peer, &record, assurance);
 	finish(
 		Execution {
 			st: st.clone(),
 			record,
 			money_token,
 			audit,
-			stepup_method,
+			assurance,
 			first: Some(FirstSend {
-				proof: proof.map(|claims| (claims.jti, claims.exp, claims.method)),
+				proof: proof.map(|claims| (claims.jti, claims.exp)),
 			}),
 		},
 		started,
@@ -687,15 +695,15 @@ struct Execution {
 	record: IntentRecord,
 	money_token: String,
 	audit: bk::AuditContext,
-	stepup_method: &'static str,
-	/// `Some` for the first send, which still owes the `jti` and the budgets; `None` for a
+	assurance: Assurance,
+	/// `Some` for the first send, which still owes the `jti` and the budget; `None` for a
 	/// resend of an `executing` intent, which already paid them.
 	first: Option<FirstSend>,
 }
 
 struct FirstSend {
-	/// The verified proof's `jti`, `exp` and method.
-	proof: Option<(String, u64, StepupMethod)>,
+	/// The verified proof's `jti` and `exp`.
+	proof: Option<(String, u64)>,
 }
 
 /// Run `execution` on its own task and wait for it within [`ANSWER_WITHIN`]. Neither a
@@ -717,11 +725,11 @@ async fn finish(execution: Execution, started: tokio::time::Instant) -> Result<J
 
 impl Execution {
 	async fn run(self) -> Result<ConfirmedIntent, ApiError> {
-		let actions = actions(&self.st)?;
+		let actions = &self.st.wallet_actions;
 		let id = self.record.intent_id.as_str();
 		if let Some(first) = &self.first {
 			self.pay_the_first_send(actions, first).await?;
-			if !actions.store.begin_execution(id, self.stepup_method, EXECUTING_KEEP_SECS).await.map_err(store_error)? {
+			if !actions.store.begin_execution(id, self.assurance, EXECUTING_KEEP_SECS).await.map_err(store_error)? {
 				return Err(refused(StatusCode::CONFLICT, "intent_not_pending"));
 			}
 		}
@@ -738,7 +746,7 @@ impl Execution {
 				Ok(ConfirmedIntent {
 					intent_id: self.record.intent_id.clone(),
 					status: IntentStatus::Executed.as_str(),
-					stepup_method: self.stepup_method,
+					stepup_method: self.assurance,
 					result,
 				})
 			}
@@ -760,42 +768,25 @@ impl Execution {
 		}
 	}
 
-	/// What the first send owes before the act: the proof's `jti` (concierge doc item 4), the
-	/// day's emailed total, and the move budget. Each is counted once, here, and stays counted
-	/// if the hub then refuses (the safe side).
+	/// What the first send owes before the act: the proof's `jti` (concierge doc item 4) and the
+	/// move budget. Each is counted once, here, and stays counted if the hub then refuses (the
+	/// safe side).
 	async fn pay_the_first_send(&self, actions: &WalletActions, first: &FirstSend) -> Result<(), ApiError> {
 		let id = self.record.intent_id.as_str();
 		let now = unix_now();
-		if let Some((jti, exp, _)) = &first.proof
+		if let Some((jti, exp)) = &first.proof
 			&& !actions.store.spend_jti(jti, exp.saturating_sub(now) + 5).await.map_err(store_error)?
 		{
 			tracing::warn!(intent_id = %id, "step-up proof replayed");
 			return Err(cancel(actions, id, "proof_replayed").await);
 		}
-		// Checked again here, atomically: two intents created side by side each saw the
-		// budget before the other spent it.
-		if let Some((_, _, StepupMethod::EmailCode)) = &first.proof {
-			let amount = sealed_amount(&self.record)?;
-			let cap = Some(intent::micro_floor(actions.policy.email_24h));
-			if !actions
-				.store
-				.count_against(&store::email_budget(&self.record.sub), id, intent::micro_ceil(amount), cap, now)
-				.await
-				.map_err(store_error)?
-			{
-				return Err(cancel(actions, id, "email_limit_reached").await);
-			}
-		}
 		if let Action::Move(_) = self.record.action {
 			let amount = sealed_amount(&self.record)?;
-			// Only a move that needed no step-up is held to the line; every move is counted.
-			let cap = (!self.record.stepup.required).then(|| intent::micro_floor(actions.policy.no_stepup_24h));
-			if !actions
-				.store
-				.count_against(&store::move_budget(&self.record.sub), id, intent::micro_ceil(amount), cap, now)
-				.await
-				.map_err(store_error)?
-			{
+			// Only a move that needed no step-up is held to the line, again here and atomically:
+			// two intents created side by side each saw the budget before the other spent it.
+			// Every move is counted.
+			let cap = self.record.min_aal.is_none().then(|| intent::micro_floor(actions.policy.no_stepup_24h));
+			if !actions.store.count_move(&self.record.sub, id, intent::micro_ceil(amount), cap, now).await.map_err(store_error)? {
 				return Err(cancel(actions, id, "limit_reached").await);
 			}
 		}
@@ -803,7 +794,7 @@ impl Execution {
 	}
 }
 
-/// The amount a sealed pay or move confirms.
+/// The amount a sealed move confirms.
 fn sealed_amount(record: &IntentRecord) -> Result<Usdt, ApiError> {
 	match record.summary.amount.as_deref().map(Usdt::parse_decimal) {
 		Some(Ok(amount)) => Ok(amount),
@@ -813,9 +804,9 @@ fn sealed_amount(record: &IntentRecord) -> Result<Usdt, ApiError> {
 }
 
 /// The audit block of the act: the request's own reading, with the intent's origin and id and
-/// the step-up method the act was authorised with.
-fn audit_for(st: &AppState, headers: &HeaderMap, peer: &Peer, record: &IntentRecord, stepup_method: &str) -> bk::AuditContext {
-	let mut audit = audit_context(st, headers, peer.addr(), stepup_method);
+/// the assurance the act was authorised with.
+fn audit_for(st: &AppState, headers: &HeaderMap, peer: &Peer, record: &IntentRecord, assurance: Assurance) -> bk::AuditContext {
+	let mut audit = audit_context(st, headers, peer.addr(), assurance);
 	audit.origin = record.origin.clone();
 	audit.intent_id = record.intent_id.clone();
 	audit
@@ -889,6 +880,16 @@ async fn execute(st: &AppState, money_token: &str, record: &IntentRecord, audit:
 				audit: Some(audit),
 			};
 			json(serde_json::to_value(dto::Mandate::from(st.grpc.grant_mandate(money_token, req).await?)))
+		}
+		// No idempotency key on the wire: the hub answers a repeated identical decision with the
+		// order as it stands, so a resend learns the outcome without a second answer.
+		Action::ApprovePayment(p) => {
+			let req = bk::AnswerPaymentConfirmationRequest {
+				payment_id: p.payment_id.clone(),
+				decision: bk::ConsentDecision::Approve as i32,
+				audit: Some(audit),
+			};
+			json(serde_json::to_value(dto::PaymentConfirmation::from(st.grpc.answer_payment_confirmation(money_token, req).await?)))
 		}
 	}
 }

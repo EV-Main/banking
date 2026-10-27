@@ -21,9 +21,8 @@ cookie IS the request's credential.
 
 There is no session store, no opaque session cookie, and no `oauth.rs`. The one piece of
 server-side state left is `session.rs`'s per-user **cache** of banking money tokens, which
-a lost entry simply re-mints. The exception is opt-in: with `WALLET_ACTION_ORIGINS` set, the
-wallet intents of a host page live in Redis (`REDIS_URL`), shared by every replica
-(`docs/WALLET-INTENTS.md`).
+a lost entry simply re-mints. The exception is the wallet intents, every money-out act's,
+which live in Redis (`REDIS_URL`), shared by every replica (`docs/WALLET-INTENTS.md`).
 
 Cookies read (never set): `ev_access` (the access JWT) and `ev_csrf` (the readable
 double-submit token, echoed in `x-ev-csrf` on every mutation). Both are `__Host-`-prefixed

@@ -56,40 +56,29 @@ ev::settings! {
 		/// balance, never that anyone can move money. Mirrors the origins in
 		/// `wallet/frontend/shared/config/wallet-scopes.ts`.
 		wallet_cors_origins: Vec<CorsOrigin> = "",
-		/// Paying an invoice above this amount (decimal USDT) needs a sign-in no older than
-		/// `STEP_UP_MAX_AGE_SECS`; at or below it a session is enough. Optional on purpose: the
-		/// default is the product's line, and a malformed value fails the boot rather than
-		/// silently lifting the check.
-		pay_stepup_threshold_usdt: UsdtThreshold = "100",
-		/// The host pages that may run a wallet action in place (`routes::intents`,
-		/// `docs/WALLET-INTENTS.md`). Empty ⇒ the intent routes are not mounted at all. Each
-		/// must be an entry of the in-code matrix (`wallet_intents::TRUSTED_HOSTS`): this
-		/// list switches a host on and cannot add one. See [`Self::check_wallet_actions`].
+		/// The scope hosts that may run a wallet action in place (`routes::intents`,
+		/// `docs/WALLET-INTENTS.md`); the wallet's own page needs no entry. Each must be an
+		/// entry of the in-code matrix (`wallet_intents::TRUSTED_HOSTS`): this list switches a
+		/// host on and cannot add one. See [`Self::check_wallet_actions`].
 		wallet_action_origins: Vec<CorsOrigin> = "",
 		/// The kinds a host may ask for (`move`, `pay`, `mandate`, `withdraw`), narrowing each
 		/// host's matrix entry. `move` alone by default: the spec switches the kinds on one by
 		/// one, with observation after each.
 		wallet_action_kinds: Vec<IntentKind> = "move",
-		/// The BFF's wallet key: it signs the hosts' CSRF tokens and seals stored intents, each
-		/// through its own derived subkey. Required once a host is switched on.
+		/// The BFF's wallet key: it signs the intent pages' CSRF tokens and seals stored
+		/// intents, each through its own derived subkey.
 		#[secret]
-		wallet_intent_key: Option<WalletIntentKey>,
-		/// The store every replica shares for intents, spent step-up proofs and the budgets.
-		/// Required in production once a host is switched on: with an in-process store a proof
-		/// could be spent once per replica. A secret: in production it carries the Redis
-		/// password (`redis://default:<password>@…`).
+		wallet_intent_key: WalletIntentKey,
+		/// The store every replica shares for intents, spent step-up proofs and the move
+		/// budget: with an in-process store a proof could be spent once per replica. A secret:
+		/// in production it carries the Redis password (`redis://default:<password>@…`).
+		#[required_in("production")]
 		#[secret]
 		redis_url: Option<String>,
 		/// A move through a host at or below this (decimal USDT) needs no step-up, while…
 		wallet_move_no_stepup_per_op_usdt: UsdtThreshold = "100",
 		/// …the user's moves through all hosts together in 24 h stay at or below this.
 		wallet_move_no_stepup_24h_usdt: UsdtThreshold = "300",
-		/// The largest pay or move an emailed code may confirm; above it a passkey only. The
-		/// email method rests on a mailbox and on a summary the page writes itself.
-		wallet_email_stepup_cap_usdt: UsdtThreshold = "250",
-		/// The most one user may confirm by emailed code in 24 h, through all hosts together;
-		/// past it a passkey only.
-		wallet_email_stepup_24h_usdt: UsdtThreshold = "500",
 		/// How many reverse proxies in front of the BFF append to `X-Forwarded-For` (Traefik
 		/// alone is 1; Traefik plus the Next.js `/api` rewrite is 2). The audit trail takes the
 		/// address that many entries from the RIGHT, because everything left of the trusted hops is
@@ -118,11 +107,10 @@ impl AppConfig {
 	}
 
 	/// In production, no script from another origin may run in the wallet host's page. The
-	/// wallet's consent routes (GrantMandate above all) trust a request from the first-party
-	/// origin with the user's cookies, and a microfrontend mounts in that page's light DOM,
-	/// so a scope's bundle could grant itself a mandate with no one clicking. Until concierge
-	/// stamps a login time the BFF can demand a fresh sign-in by, the only safe list is one
-	/// naming nothing but the wallet host's own origin.
+	/// wallet's first-party routes trust a request from its origin with the user's cookies,
+	/// and a microfrontend mounts in that page's light DOM, so a scope's bundle could act as
+	/// the user with no one clicking; the only safe list names nothing but the wallet host's
+	/// own origin.
 	pub fn check_script_origins(&self) -> Result<(), String> {
 		if self.app_env != "production" {
 			return Ok(());
@@ -138,14 +126,10 @@ impl AppConfig {
 		))
 	}
 
-	/// The boot check of the wallet-intent surface; nothing to check while it is off. Every
-	/// listed origin must be a matrix entry and must not be the wallet host's own; production
-	/// also holds each to [`production_host_rule`] and needs `REDIS_URL`. The key is needed
-	/// everywhere: without it there is nothing to sign a CSRF token or an intent with.
+	/// The boot check of the wallet-intent surface. Every listed host must be a matrix entry
+	/// and must not be the wallet host's own origin, whose page the BFF knows already;
+	/// production also holds each to [`production_host_rule`].
 	pub fn check_wallet_actions(&self) -> Result<(), String> {
-		if self.wallet_action_origins.is_empty() {
-			return Ok(());
-		}
 		let production = self.app_env == "production";
 		let mut problems = Vec::new();
 		for origin in self.wallet_action_origins.iter().map(CorsOrigin::as_str) {
@@ -156,22 +140,15 @@ impl AppConfig {
 				problems.push(format!("{origin} {why}"));
 			}
 			if self.wallet_ws_origin.as_deref() == Some(origin) {
-				problems.push(format!("{origin} is the wallet host's own origin; its wallet routes are the first-party ones"));
+				problems.push(format!("{origin} is the wallet host's own origin, an intent page without a host entry"));
 			}
 		}
-		match &self.wallet_intent_key {
-			None => problems.push("WALLET_INTENT_KEY is required once WALLET_ACTION_ORIGINS names a host".to_owned()),
-			Some(key) if key.0.len() < MIN_WALLET_INTENT_KEY_BYTES => problems.push(format!("WALLET_INTENT_KEY is shorter than {MIN_WALLET_INTENT_KEY_BYTES} bytes")),
-			Some(_) => {}
-		}
-		if production && self.redis_url.is_none() {
-			problems.push("REDIS_URL is required in production once WALLET_ACTION_ORIGINS names a host".to_owned());
+		if self.wallet_intent_key.0.len() < MIN_WALLET_INTENT_KEY_BYTES {
+			problems.push(format!("WALLET_INTENT_KEY is shorter than {MIN_WALLET_INTENT_KEY_BYTES} bytes"));
 		}
 		for (var, threshold) in [
 			("WALLET_MOVE_NO_STEPUP_PER_OP_USDT", &self.wallet_move_no_stepup_per_op_usdt),
 			("WALLET_MOVE_NO_STEPUP_24H_USDT", &self.wallet_move_no_stepup_24h_usdt),
-			("WALLET_EMAIL_STEPUP_CAP_USDT", &self.wallet_email_stepup_cap_usdt),
-			("WALLET_EMAIL_STEPUP_24H_USDT", &self.wallet_email_stepup_24h_usdt),
 		] {
 			if let Err(why) = crate::wallet_intents::usdt(threshold) {
 				problems.push(format!("{var}: {why}"));
@@ -297,6 +274,7 @@ mod tests {
 			("CONCIERGE_GRPC_ADDR", "http://127.0.0.1:50061"),
 			("AUTH_ISSUER", "https://auth.concierge.ev"),
 			("AUTH_CLIENT_AUDIENCE", "concierge"),
+			("WALLET_INTENT_KEY", KEY),
 			("APP_ENV", "development"),
 		]
 		.into_iter()
@@ -328,15 +306,12 @@ mod tests {
 				"MFE_ALLOWED_ORIGINS",
 				"CABINET_WS_ORIGIN",
 				"WALLET_CORS_ORIGINS",
-				"PAY_STEPUP_THRESHOLD_USDT",
 				"WALLET_ACTION_ORIGINS",
 				"WALLET_ACTION_KINDS",
 				"WALLET_INTENT_KEY",
 				"REDIS_URL",
 				"WALLET_MOVE_NO_STEPUP_PER_OP_USDT",
 				"WALLET_MOVE_NO_STEPUP_24H_USDT",
-				"WALLET_EMAIL_STEPUP_CAP_USDT",
-				"WALLET_EMAIL_STEPUP_24H_USDT",
 				"TRUSTED_PROXY_HOPS",
 				"APP_ENV",
 				"SENTRY_DSN",
@@ -357,7 +332,7 @@ mod tests {
 			.collect();
 		// POSTHOG_KEY is read (it is in the env surface above) but never required:
 		// analytics is a metric, not a safety net. See the field's comment.
-		assert_eq!(extra, vec!["CABINET_WS_ORIGIN", "SENTRY_DSN"]);
+		assert_eq!(extra, vec!["CABINET_WS_ORIGIN", "REDIS_URL", "SENTRY_DSN"]);
 	}
 
 	#[test]
@@ -367,13 +342,11 @@ mod tests {
 		let error = AppConfig::from_source(|var| env.get(var).cloned()).expect_err("production without monitoring must not boot");
 
 		let vars: Vec<&str> = error.errors.iter().map(|e| e.var.as_str()).collect();
-		assert_eq!(vars, vec!["CABINET_WS_ORIGIN", "SENTRY_DSN"]);
+		assert_eq!(vars, vec!["CABINET_WS_ORIGIN", "REDIS_URL", "SENTRY_DSN"]);
 	}
 
 	#[test]
-	fn the_pay_step_up_threshold_defaults_to_100_and_refuses_junk() {
-		let config = AppConfig::from_source(|var| minimal_env().get(var).cloned()).expect("minimal env loads");
-		assert_eq!(config.pay_stepup_threshold_usdt.as_str(), "100");
+	fn a_usdt_threshold_refuses_junk() {
 		for good in ["0", "250", "99.5"] {
 			assert!(good.parse::<UsdtThreshold>().is_ok(), "{good}");
 		}
@@ -381,7 +354,7 @@ mod tests {
 			assert!(bad.parse::<UsdtThreshold>().is_err(), "{bad}");
 		}
 		let mut env = minimal_env();
-		env.insert("PAY_STEPUP_THRESHOLD_USDT".into(), "lots".into());
+		env.insert("WALLET_MOVE_NO_STEPUP_PER_OP_USDT".into(), "lots".into());
 		assert!(AppConfig::from_source(|var| env.get(var).cloned()).is_err(), "a malformed threshold must fail the boot");
 	}
 
@@ -423,10 +396,7 @@ mod tests {
 
 	#[test]
 	fn production_refuses_scripts_from_any_origin_but_the_wallet_hosts() {
-		let mut env = minimal_env();
-		env.insert("APP_ENV".to_string(), "production".to_string());
-		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
-		env.insert("CABINET_WS_ORIGIN".to_string(), "https://evinvest.ltd".to_string());
+		let env = production_env();
 		let load = |origins: &str| {
 			let mut env = env.clone();
 			env.insert("MFE_ALLOWED_ORIGINS".to_string(), origins.to_string());
@@ -451,6 +421,7 @@ mod tests {
 		env.insert("APP_ENV".to_string(), "production".to_string());
 		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
 		env.insert("CABINET_WS_ORIGIN".to_string(), "https://evinvest.ltd".to_string());
+		env.insert("REDIS_URL".to_string(), "redis://10.42.0.1:6379/2".to_string());
 		env
 	}
 
@@ -464,27 +435,37 @@ mod tests {
 
 	const KEY: &str = "0123456789abcdef0123456789abcdef";
 
-	/// Off by default: no origin, no routes, and nothing else is demanded — not even in
-	/// production, where the surface has to be switched on deliberately.
+	/// No host by default, with `move` as the only kind; the wallet's own kind is no host's.
 	#[test]
-	fn wallet_actions_are_off_by_default_with_move_as_the_only_kind() {
-		let config = with_wallet(production_env(), &[]).expect("production boots with the surface off");
+	fn no_host_acts_by_default_and_move_is_the_only_kind() {
+		let config = with_wallet(production_env(), &[]).expect("production boots with no host");
 		assert!(config.wallet_action_origins.is_empty());
 		assert_eq!(config.wallet_action_kinds, vec![IntentKind::Move]);
-		assert!(config.wallet_intent_key.is_none() && config.redis_url.is_none());
 		let config = with_wallet(minimal_env(), &[("WALLET_ACTION_KINDS", "move, pay,mandate,withdraw")]).expect("every kind parses");
 		assert_eq!(config.wallet_action_kinds, vec![IntentKind::Move, IntentKind::Pay, IntentKind::Mandate, IntentKind::Withdraw]);
 		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_KINDS", "move,transfer")]).is_err(), "an unknown kind fails the boot");
+		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_KINDS", "approve_payment")]).is_err(), "the wallet's own kind");
 	}
 
-	/// Production takes only the matrix's exact hosts, with the key and the shared store.
+	/// The key and, in production, the shared store are needed whatever the hosts.
+	#[test]
+	fn the_key_is_required_everywhere_and_redis_in_production() {
+		let mut env = minimal_env();
+		env.remove("WALLET_INTENT_KEY");
+		let error = AppConfig::from_source(|var| env.get(var).cloned()).expect_err("no key");
+		assert_eq!(error.errors.iter().map(|e| e.var.as_str()).collect::<Vec<_>>(), ["WALLET_INTENT_KEY"]);
+		let refused = with_wallet(minimal_env(), &[("WALLET_INTENT_KEY", "short")]).expect_err("a short key");
+		assert!(refused.contains("shorter than 32"), "{refused}");
+		let mut env = production_env();
+		env.remove("REDIS_URL");
+		let error = AppConfig::from_source(|var| env.get(var).cloned()).expect_err("no shared store");
+		assert_eq!(error.errors.iter().map(|e| e.var.as_str()).collect::<Vec<_>>(), ["REDIS_URL"]);
+	}
+
+	/// Production takes only the matrix's exact hosts.
 	#[test]
 	fn production_switches_on_matrix_hosts_only() {
-		let good = [
-			("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd,https://sa.evinvest.ltd"),
-			("WALLET_INTENT_KEY", KEY),
-			("REDIS_URL", "redis://10.42.0.1:6379/2"),
-		];
+		let good = [("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd,https://sa.evinvest.ltd")];
 		with_wallet(production_env(), &good).expect("both hosts boot");
 
 		for bad in [
@@ -500,28 +481,20 @@ mod tests {
 			"*",
 			"null",
 		] {
-			let refused = with_wallet(production_env(), &[good[1], good[2], ("WALLET_ACTION_ORIGINS", bad)]);
+			let refused = with_wallet(production_env(), &[("WALLET_ACTION_ORIGINS", bad)]);
 			assert!(refused.is_err(), "{bad} must not boot in production");
 		}
-		let refused = with_wallet(production_env(), &[good[0], good[1]]).expect_err("no shared store");
-		assert!(refused.contains("REDIS_URL"), "{refused}");
-		let refused = with_wallet(production_env(), &[good[0], good[2]]).expect_err("no key");
-		assert!(refused.contains("WALLET_INTENT_KEY"), "{refused}");
-		let refused = with_wallet(production_env(), &[good[0], good[2], ("WALLET_INTENT_KEY", "short")]).expect_err("a short key");
-		assert!(refused.contains("shorter than 32"), "{refused}");
 	}
 
-	/// A dev box may run on the in-process store, but never with a host the matrix lacks or
-	/// without a key.
+	/// A dev box may run on the in-process store, but never with a host the matrix lacks.
 	#[test]
-	fn development_still_needs_a_matrix_host_and_a_key() {
-		with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).expect("no Redis is fine off production");
-		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "http://localhost:3001"), ("WALLET_INTENT_KEY", KEY)]).is_err());
-		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd")]).is_err());
+	fn development_still_needs_a_matrix_host() {
+		with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd")]).expect("no Redis is fine off production");
+		assert!(with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "http://localhost:3001")]).is_err());
 		let mut first_party = minimal_env();
 		first_party.insert("CABINET_WS_ORIGIN".into(), "https://invest.evinvest.ltd".into());
 		assert!(
-			with_wallet(first_party, &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY)]).is_err(),
+			with_wallet(first_party, &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd")]).is_err(),
 			"the wallet host's own origin"
 		);
 	}
@@ -529,11 +502,7 @@ mod tests {
 	#[test]
 	fn the_wallet_key_and_the_redis_password_never_print() {
 		let url = "redis://default:hunter2-redis-password@10.42.0.1:6379/2";
-		let config = with_wallet(
-			minimal_env(),
-			&[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("WALLET_INTENT_KEY", KEY), ("REDIS_URL", url)],
-		)
-		.unwrap();
+		let config = with_wallet(minimal_env(), &[("WALLET_ACTION_ORIGINS", "https://invest.evinvest.ltd"), ("REDIS_URL", url)]).unwrap();
 		let printed = format!("{config:?}");
 		assert!(!printed.contains(KEY) && !printed.contains("hunter2"), "{printed}");
 		assert!(!format!("{:?}", config.wallet_intent_key).contains(KEY));
@@ -550,6 +519,7 @@ mod tests {
 		let mut env = minimal_env();
 		env.insert("APP_ENV".to_string(), "production".to_string());
 		env.insert("SENTRY_DSN".to_string(), "https://k@sentry.invalid/1".to_string());
+		env.insert("REDIS_URL".to_string(), "redis://10.42.0.1:6379/2".to_string());
 		let error = AppConfig::from_source(|var| env.get(var).cloned()).expect_err("production without a ws origin must not boot");
 		let vars: Vec<&str> = error.errors.iter().map(|e| e.var.as_str()).collect();
 		assert_eq!(vars, vec!["CABINET_WS_ORIGIN"]);

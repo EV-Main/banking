@@ -1,21 +1,23 @@
-//! Wallet actions a trusted host page runs in place (spec controls (a), (b), (d), (h)): the
-//! host asks for an intent, the BFF computes and stores its terms, and the same session on
-//! the same page confirms it — with a concierge step-up proof when the risk class asks for
-//! one. The routes are `routes::intents`; the contract is `docs/WALLET-INTENTS.md`.
+//! Wallet actions as intents (spec controls (a), (b), (d), (h)): a page asks for an intent,
+//! the BFF computes and stores its terms, and the same session on the same page confirms it —
+//! with a concierge step-up proof when the act asks for one. The pages are the wallet itself
+//! and the trusted scope hosts. The routes are `routes::intents`; the contract is
+//! `docs/WALLET-INTENTS.md`.
 
 pub mod intent;
 pub mod keys;
 pub mod proof;
 pub mod store;
 
-use std::{str::FromStr, sync::Arc};
+use std::{fmt, str::FromStr, sync::Arc};
 
 use domain::money::Usdt;
+use evconcierge_auth::stepup::Aal;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AppConfig, UsdtThreshold};
 
-/// What a host may ask for.
+/// What a page may ask for.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentKind {
@@ -23,8 +25,11 @@ pub enum IntentKind {
 	Withdraw,
 	Pay,
 	Mandate,
+	ApprovePayment,
 }
 
+/// The env names host kinds only: [`IntentKind::ApprovePayment`] is the wallet's own, so no
+/// list can hand it to a host.
 impl FromStr for IntentKind {
 	type Err = String;
 
@@ -34,7 +39,7 @@ impl FromStr for IntentKind {
 			"withdraw" => Ok(Self::Withdraw),
 			"pay" => Ok(Self::Pay),
 			"mandate" => Ok(Self::Mandate),
-			other => Err(format!("{other:?} is not a wallet action (move, withdraw, pay, mandate)")),
+			other => Err(format!("{other:?} is not a host wallet action (move, withdraw, pay, mandate)")),
 		}
 	}
 }
@@ -65,6 +70,9 @@ pub const TRUSTED_HOSTS: &[TrustedHost] = &[
 	},
 ];
 
+/// The wallet's own money-out acts. Fixed here: the env narrows hosts, never the wallet.
+pub const WALLET_KINDS: &[IntentKind] = &[IntentKind::Withdraw, IntentKind::Pay, IntentKind::Mandate, IntentKind::ApprovePayment];
+
 pub fn trusted_host(origin: &str) -> Option<&'static TrustedHost> {
 	TRUSTED_HOSTS.iter().find(|host| host.origin == origin)
 }
@@ -86,30 +94,89 @@ pub fn production_host_rule(origin: &str) -> Result<(), &'static str> {
 	}
 }
 
-/// A host that is switched on: its matrix entry narrowed by `WALLET_ACTION_KINDS`.
+/// The scopes a page may act in, beside `main`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reach {
+	/// The wallet: every scope of the caller.
+	Wallet,
+	/// A scope host: its own scope only.
+	Scope(&'static str),
+}
+
+impl Reach {
+	pub fn covers(self, scope: &str) -> bool {
+		match self {
+			Self::Wallet => true,
+			Self::Scope(own) => own == scope,
+		}
+	}
+}
+
+/// A page that may run intents: its exact origin, its reach, and the kinds it may create now.
 #[derive(Clone, Debug)]
-pub struct EnabledHost {
-	pub origin: &'static str,
-	pub scope: &'static str,
+pub struct IntentPage {
+	pub origin: String,
+	pub reach: Reach,
 	pub kinds: Vec<IntentKind>,
 }
 
-/// The thresholds of the risk classes (spec (h)).
-#[derive(Clone, Copy, Debug)]
-pub struct RiskPolicy {
-	/// A move at or below this needs no step-up…
-	pub no_stepup_per_op: Usdt,
-	/// …while the user's moves through every host in 24 h stay at or below this.
-	pub no_stepup_24h: Usdt,
-	/// The largest amount an emailed code may confirm; above it only a passkey.
-	pub email_cap: Usdt,
-	/// The most a user may confirm by emailed code in 24 h, through every host together.
-	pub email_24h: Usdt,
+/// The assurance an act was authorised with: the level its proof achieved, or none. Written
+/// `aal<N>` / `none` in the audit, the store and the confirm answer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Assurance(Option<Aal>);
+
+impl Assurance {
+	pub const NONE: Self = Self(None);
 }
 
-/// Everything the intent routes need, present only when a host is switched on.
+impl From<Aal> for Assurance {
+	fn from(aal: Aal) -> Self {
+		Self(Some(aal))
+	}
+}
+
+impl fmt::Display for Assurance {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self.0 {
+			Some(aal) => write!(f, "aal{}", aal.level()),
+			None => f.write_str("none"),
+		}
+	}
+}
+
+impl FromStr for Assurance {
+	type Err = String;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		if s == "none" {
+			return Ok(Self::NONE);
+		}
+		s.strip_prefix("aal")
+			.filter(|level| level.bytes().all(|b| b.is_ascii_digit()))
+			.and_then(|level| level.parse::<u8>().ok())
+			.and_then(Aal::named)
+			.map(Self::from)
+			.ok_or_else(|| format!("{s:?} is not an assurance"))
+	}
+}
+
+impl Serialize for Assurance {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		serializer.collect_str(self)
+	}
+}
+
+/// The thresholds of the risk classes (spec (h)): a move within both needs no step-up.
+#[derive(Clone, Copy, Debug)]
+pub struct RiskPolicy {
+	pub no_stepup_per_op: Usdt,
+	/// The user's moves through every page together in 24 h.
+	pub no_stepup_24h: Usdt,
+}
+
+/// Everything the intent routes need.
 pub struct WalletActions {
-	hosts: Vec<EnabledHost>,
+	pages: Vec<IntentPage>,
 	pub keys: keys::IntentKeys,
 	pub store: Arc<dyn store::WalletStore>,
 	pub proofs: proof::ProofVerifier,
@@ -117,13 +184,9 @@ pub struct WalletActions {
 }
 
 impl WalletActions {
-	/// `None` when `WALLET_ACTION_ORIGINS` is empty. Expects a config that passed
-	/// [`AppConfig::check_wallet_actions`], and refuses one that did not rather than
-	/// serving a host it would not have booted with.
-	pub async fn connect(config: &AppConfig, jwks_endpoint: &str) -> Result<Option<Self>, String> {
-		if config.wallet_action_origins.is_empty() {
-			return Ok(None);
-		}
+	/// Expects a config that passed [`AppConfig::check_wallet_actions`], and refuses one that
+	/// did not rather than serving a page it would not have booted with.
+	pub async fn connect(config: &AppConfig, jwks_endpoint: &str) -> Result<Self, String> {
 		config.check_wallet_actions()?;
 		let store: Arc<dyn store::WalletStore> = match config.redis_url.as_deref() {
 			Some(url) => Arc::new(store::RedisStore::connect(url).await.map_err(|e| e.to_string())?),
@@ -132,40 +195,41 @@ impl WalletActions {
 				Arc::new(store::MemoryStore::default())
 			}
 		};
-		Self::with_store(config, store, jwks_endpoint).map(Some)
+		Self::with_store(config, store, jwks_endpoint)
 	}
 
 	pub fn with_store(config: &AppConfig, store: Arc<dyn store::WalletStore>, jwks_endpoint: &str) -> Result<Self, String> {
-		let key = config.wallet_intent_key.as_ref().ok_or("WALLET_INTENT_KEY is not set")?;
-		let hosts = config
-			.wallet_action_origins
-			.iter()
-			.map(|origin| {
-				let host = trusted_host(origin.as_str()).ok_or_else(|| format!("{} is not in the host matrix", origin.as_str()))?;
-				Ok(EnabledHost {
-					origin: host.origin,
-					scope: host.scope,
-					kinds: host.kinds.iter().copied().filter(|kind| config.wallet_action_kinds.contains(kind)).collect(),
-				})
+		let hosts = config.wallet_action_origins.iter().map(|origin| {
+			let host = trusted_host(origin.as_str()).ok_or_else(|| format!("{} is not in the host matrix", origin.as_str()))?;
+			Ok(IntentPage {
+				origin: host.origin.to_owned(),
+				reach: Reach::Scope(host.scope),
+				kinds: host.kinds.iter().copied().filter(|kind| config.wallet_action_kinds.contains(kind)).collect(),
 			})
-			.collect::<Result<Vec<_>, String>>()?;
+		});
+		// Unset only outside production, where the first-party gate admits no page either.
+		let wallet = config.wallet_ws_origin.iter().map(|origin| {
+			Ok(IntentPage {
+				origin: origin.clone(),
+				reach: Reach::Wallet,
+				kinds: WALLET_KINDS.to_vec(),
+			})
+		});
 		Ok(Self {
-			hosts,
-			keys: keys::IntentKeys::derive(key.as_bytes()),
+			pages: hosts.chain(wallet).collect::<Result<Vec<_>, String>>()?,
+			keys: keys::IntentKeys::derive(config.wallet_intent_key.as_bytes()),
 			store,
 			proofs: proof::ProofVerifier::new(config.auth_issuer.clone(), jwks_endpoint)?,
 			policy: RiskPolicy {
 				no_stepup_per_op: usdt(&config.wallet_move_no_stepup_per_op_usdt)?,
 				no_stepup_24h: usdt(&config.wallet_move_no_stepup_24h_usdt)?,
-				email_cap: usdt(&config.wallet_email_stepup_cap_usdt)?,
-				email_24h: usdt(&config.wallet_email_stepup_24h_usdt)?,
 			},
 		})
 	}
 
-	/// The enabled host whose origin is exactly `origin`.
-	pub fn host(&self, origin: &str) -> Option<&EnabledHost> {
-		self.hosts.iter().find(|host| host.origin == origin)
+	/// The page whose origin is exactly `origin`.
+	pub fn page(&self, origin: &str) -> Option<&IntentPage> {
+		self.pages.iter().find(|page| page.origin == origin)
 	}
 }
 
@@ -184,6 +248,7 @@ mod tests {
 		for host in TRUSTED_HOSTS {
 			assert_eq!(production_host_rule(host.origin), Ok(()), "{}", host.origin);
 			assert!(!host.kinds.is_empty(), "{}", host.origin);
+			assert!(!host.kinds.contains(&IntentKind::ApprovePayment), "{}", host.origin);
 		}
 	}
 
@@ -205,5 +270,16 @@ mod tests {
 		}
 		assert_eq!(production_host_rule("https://rogue.evinvest.ltd"), Ok(()), "shape alone passes; the matrix refuses it");
 		assert!(trusted_host("https://rogue.evinvest.ltd").is_none());
+	}
+
+	#[test]
+	fn an_assurance_reads_back_as_written() {
+		for assurance in [Assurance::NONE, Assurance::from(Aal::SECOND_FACTOR), Assurance::from(Aal::named(3).unwrap())] {
+			assert_eq!(assurance.to_string().parse::<Assurance>(), Ok(assurance));
+		}
+		assert_eq!(Assurance::from(Aal::SECOND_FACTOR).to_string(), "aal2");
+		for bad in ["", "aal1", "aal", "aal+2", "passkey", "AAL2"] {
+			assert!(bad.parse::<Assurance>().is_err(), "{bad}");
+		}
 	}
 }

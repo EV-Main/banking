@@ -30,7 +30,7 @@ use tower_http::{
 	trace::{DefaultOnFailure, TraceLayer},
 };
 
-use crate::{error::ApiError, routes::approval::AttemptLimiter, session::MoneyToken, state::AppState};
+use crate::{error::ApiError, routes::approval::AttemptLimiter, session::MoneyToken, state::AppState, wallet_intents::Assurance};
 
 /// Outer per-request deadline: a handler that is still awaiting an upstream plane past
 /// this bound is aborted and the response becomes a 504, so a wedged plane can never hold
@@ -61,23 +61,21 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/compartment", cors::scope_readable(&state, get(money::get_compartment)))
 		.route("/api/wallet/compartments/move", post(money::move_funds))
 		.route("/api/wallet/deposit-address", get(money::deposit_address))
-		.route("/api/wallet/withdrawals", get(money::list_withdrawals).post(money::request_withdrawal))
+		.route("/api/wallet/withdrawals", get(money::list_withdrawals))
 		.route("/api/wallet/withdrawals/cancel", post(money::cancel_withdrawal))
 		.route("/api/wallet/deposits", get(money::list_deposits))
 		.route("/api/wallet/invoices/{id}", get(money::get_payable_invoice))
-		.route("/api/wallet/invoices/{id}/pay", post(money::pay_invoice))
-		.route("/api/wallet/mandates", get(money::list_mandates).post(money::grant_mandate))
+		.route("/api/wallet/mandates", get(money::list_mandates))
 		.route("/api/wallet/mandate-requests/{id}", get(money::get_mandate_request))
 		.route("/api/wallet/mandates/{id}/revoke", post(money::revoke_mandate))
 		.route("/api/wallet/payments", get(money::list_payment_confirmations))
 		.route("/api/wallet/payments/{id}", get(money::get_payment_confirmation))
-		.route("/api/wallet/payments/{id}/answer", post(money::answer_payment_confirmation))
+		.route("/api/wallet/payments/{id}/reject", post(money::reject_payment_confirmation))
 		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
 		// The public approval surface. NO session, NO CSRF, and no session cookie is even
 		// read: the emailed token in the path is the whole credential. See `approval`.
 		.route("/api/approval/removal/{token}", get(approval::removal_invitation).post(approval::removal_decision))
-		// A trusted host's wallet actions: the one cross-origin surface that may move money,
-		// mounted only when `WALLET_ACTION_ORIGINS` names a host. See `intents`.
+		// Every money-out act, from the wallet and from a trusted host alike. See `intents`.
 		.merge(intents::routes(&state))
 		.layer(middleware::from_fn_with_state(state.clone(), evict_banking_pair_on_unauthorized))
 		.with_state(state)
@@ -165,11 +163,9 @@ pub fn money_mutation_limiter() -> AttemptLimiter {
 	AttemptLimiter::new(MONEY_MUTATION_WINDOW, MONEY_MUTATIONS_PER_WINDOW)
 }
 
-/// The preamble of a route that moves the caller's money or consents to it being drawn:
+/// The preamble of a first-party route that moves the caller's money within their claim:
 /// first-party origin, fetch metadata and CSRF, then the verified identity, then the per-user
-/// bound. It stops short of the banking token so a route with one more check on the verified
-/// claims (see [`require_fresh_login`]) runs it before an exchange RPC is spent; the route
-/// then calls `money_token_for`.
+/// bound. The route then calls `money_token_for`.
 pub async fn money_gate(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> Result<Claims, ApiError> {
 	first_party_request(state, jar, headers)?;
 	let (_token, claims) = require_identity(state, jar).await?;
@@ -177,21 +173,6 @@ pub async fn money_gate(state: &AppState, jar: &CookieJar, headers: &HeaderMap) 
 		return Err(ApiError::Grpc(Status::resource_exhausted("too many money operations; try again shortly")));
 	}
 	Ok(claims)
-}
-
-/// How recent the user's last interactive sign-in must be for an act that consents to future
-/// debits. Long enough to read the terms, short enough that a script riding a stale session
-/// cannot grant on its own.
-pub const STEP_UP_MAX_AGE_SECS: u64 = 300;
-
-/// `Ok` when the claims carry an `auth_time` within [`STEP_UP_MAX_AGE_SECS`] of `now`, else
-/// [`ApiError::StepUpRequired`]. A token with no `auth_time` (minted before the claim, or by a
-/// session older than it) is "no signal", not "just signed in", so it is refused too.
-pub fn require_fresh_login(claims: &Claims, now: u64) -> Result<(), ApiError> {
-	match claims.auth_time {
-		Some(at) if now.saturating_sub(at) <= STEP_UP_MAX_AGE_SECS => Ok(()),
-		_ => Err(ApiError::StepUpRequired),
-	}
 }
 
 /// The first-party gate of a mutating wallet route (`wallet.proto`, FIRST-PARTY ONLY): the
@@ -208,17 +189,17 @@ pub fn first_party_origin(state: &AppState, headers: &HeaderMap) -> bool {
 }
 
 /// The audit block the hub records beside a money act. Every field is the BFF's own reading of
-/// the request, never a body field; `stepup_method` is what this route demanded of the session
-/// (`fresh_login`, `passkey`, `email_code` or `none`), not something the browser claims.
-/// `intent_id` is empty here: only `intents::confirm` executes an intent, and it sets it.
-pub fn audit_context(state: &AppState, headers: &HeaderMap, peer: Option<std::net::SocketAddr>, stepup_method: &str) -> bk::AuditContext {
+/// the request, never a body field; `stepup_method` is the assurance the act was authorised
+/// with, not something the browser claims. `intent_id` is empty here: only `intents::confirm`
+/// executes an intent, and it sets it.
+pub fn audit_context(state: &AppState, headers: &HeaderMap, peer: Option<std::net::SocketAddr>, assurance: Assurance) -> bk::AuditContext {
 	let clamp = |value: &str, max: usize| value.chars().take(max).collect::<String>();
 	bk::AuditContext {
 		origin: clamp(headers.get(axum::http::header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or_default(), 128),
 		client_ip: trusted_client_ip(headers, peer, state.config.trusted_proxy_hops),
 		user_agent: clamp(headers.get(axum::http::header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default(), 256),
 		intent_id: String::new(),
-		stepup_method: stepup_method.to_owned(),
+		stepup_method: assurance.to_string(),
 	}
 }
 
@@ -354,16 +335,6 @@ mod tests {
 		assert!(ct_str_eq("", ""));
 	}
 
-	fn claims_at(auth_time: Option<u64>) -> Claims {
-		serde_json::from_value(serde_json::json!({
-			"sub": "user-1", "iss": "i", "aud": "a", "exp": 0, "iat": 0, "typ": "access", "token_version": 0, "auth_time": auth_time,
-		}))
-		.expect("claims parse")
-	}
-
-	/// The edges a `<` / `<=` slip would move: exactly the limit passes, one second past it does
-	/// not, and a missing claim is never a pass. A future `auth_time` passes by design — concierge
-	/// signs it, so only its own clock skew can produce one.
 	#[test]
 	fn fetch_metadata_admits_same_site_and_a_missing_header_only() {
 		let with = |value: Option<&str>| {
@@ -397,16 +368,5 @@ mod tests {
 		assert!(!with(Some("application/jsonp"), "{}"));
 		assert!(!with(None, "{}"));
 		assert!(with(None, ""));
-	}
-
-	#[test]
-	fn fresh_login_is_judged_at_the_five_minute_edge() {
-		let now = 1_000_000;
-		let judged = |at| require_fresh_login(&claims_at(at), now).is_ok();
-		assert!(judged(Some(now)));
-		assert!(judged(Some(now - STEP_UP_MAX_AGE_SECS)));
-		assert!(!judged(Some(now - STEP_UP_MAX_AGE_SECS - 1)));
-		assert!(!judged(None));
-		assert!(judged(Some(now + 30)));
 	}
 }

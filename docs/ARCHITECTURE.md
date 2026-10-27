@@ -190,16 +190,17 @@ in a server-side session (in-process for now, `SESSION_REDIS_URL` in production 
 the auth refresh Redis), the browser holds only the opaque session id + a readable CSRF cookie
 (double-submit on mutations).
 
-**Wallet mutations: first-party, plus one host surface.** Every mutating wallet route
-(`/api/wallet/**`) accepts only the first-party origin
-(`CABINET_WS_ORIGIN`) with the cookie double-submit. A scope host (`invest.`, `sa.`) may read
-the wallet cross-origin (`WALLET_CORS_ORIGINS`), and it acts only through the intent routes
-`GET /api/wallet/csrf`, `POST /api/wallet/intents` and `POST /api/wallet/intents/{id}/confirm`.
-These routes are mounted only when `WALLET_ACTION_ORIGINS` names a host of the in-code matrix
-(`wallet/backend/src/wallet_intents/mod.rs`). The BFF computes the terms from the hub, stores
-the intent in Redis, and executes it only on a confirmation from the same account, page and
-session, with a concierge step-up proof when the risk class asks for one. Contract and
-limits: [`WALLET-INTENTS.md`](./WALLET-INTENTS.md).
+**Wallet mutations: money out is an intent.** Money leaves a wallet only through the intent
+routes `GET /api/wallet/csrf`, `POST /api/wallet/intents` and
+`POST /api/wallet/intents/{id}/confirm`, from the wallet's own page (`CABINET_WS_ORIGIN`) and
+from a scope host (`invest.`, `sa.`) that `WALLET_ACTION_ORIGINS` switches on in the in-code
+matrix (`wallet/backend/src/wallet_intents/mod.rs`). The BFF computes the terms from the hub,
+stores the intent in Redis, and executes it only on a confirmation from the same account,
+page and session, with a concierge step-up proof of `aal ≥ N` when the risk class asks for
+one; banking never names a kind of factor. The other mutating wallet routes keep money inside
+the user's claim or only reduce risk; they accept only the first-party origin with the cookie
+double-submit. A scope host may also read the wallet cross-origin (`WALLET_CORS_ORIGINS`).
+Contract and limits: [`WALLET-INTENTS.md`](./WALLET-INTENTS.md).
 
 **Cross-plane token-trust (the BFF holds two token pairs).** The wallet host spans both planes,
 which sign tokens under **separate** issuers and **distinct `aud`** (concierge `aud=concierge`
