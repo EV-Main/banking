@@ -1265,41 +1265,32 @@
         };
       in
       {
-        # `nix run .#init`           → one-shot env setup for a fresh clone (dev .env secrets, npm deps, TB client link)
-        # `nix run .#dev`            → everything (postgres + tigerbeetle + redis + signer + piggybank + cabinet-backend + cabinet)
-        # `nix run .#piggybank`      → hub server: core gRPC + auth tasks (applies DB migrations on boot; needs DB + TB + signer: `.#db`/`.#tb`/`.#signer`, or `.#dev`)
-        # `nix run .#signer`         → key vault: generates+seals chain keys (applies its own DB migrations on boot; needs DB: `.#db`, or `.#dev`)
-        # `nix run .#cabinet-backend`→ cabinet BFF (:4000; needs piggybank on :50051; identity flows need concierge on :50061 from its own repo)
-        # `nix run .#cabinet`        → Next.js host shell (:3000, proxies /api/* to the cabinet backend on :4000)
-        # `nix run .#db`             → ensure the SHARED ev_invest Postgres is up (+ this repo's databases)
-        # `nix run .#tb`        → local TigerBeetle only (banking-only, repo-local data)
-        # `nix run .#new-replica` → move a PROD cluster replica to another host (recover, never format)
-        # `nix run .#redis`     → ensure the SHARED ev_invest Redis is up
-        # `nix run .#gen-api`   → regenerate contracts/openapi.json + cabinet TS types from the proto
-        # `nix run .#concierge-pin-check` → assert the concierge contract pin is an ancestor of origin/main + bytes match (pin ↔ main ↔ cargo checkout, list: contracts/concierge-protos.txt; CI: .github/workflows/drift.yml)
-        # `nix run .#drift-check` → assert Cargo.lock matches the manifests and the committed contract matches the protos (CI: .github/workflows/drift.yml)
-        # `nix run .#check-rust`     → clippy (warnings denied) + workspace tests, the way CI runs them (CI: .github/workflows/checks.yml)
-        # `nix run .#check-frontend` → cabinet tsc + tests against a clean `npm ci` (CI: .github/workflows/checks.yml)
-        # Author new migrations with the sqlx CLI (in the dev shell):
-        #   sqlx migrate add --source piggybank/core/migrations --sequential <name>
-        apps = {
-          init = { type = "app"; program = "${runInit}/bin/run-init"; };
-          dev = { type = "app"; program = "${runDev}/bin/run-dev"; };
-          piggybank = { type = "app"; program = "${runPiggybank}/bin/run-piggybank"; };
-          signer = { type = "app"; program = "${runSigner}/bin/run-signer"; };
-          cabinet-backend = { type = "app"; program = "${runCabinetBackend}/bin/run-cabinet-backend"; };
-          cabinet = { type = "app"; program = "${runCabinet}/bin/run-cabinet"; };
-          db = { type = "app"; program = "${runPostgres}/bin/run-postgres"; };
-          tb = { type = "app"; program = "${runTigerbeetle}/bin/run-tigerbeetle"; };
-          new-replica = { type = "app"; program = "${runNewReplica}/bin/new-replica"; };
-          redis = { type = "app"; program = "${runRedis}/bin/run-redis"; };
-          gen-api = { type = "app"; program = "${runGenApi}/bin/run-gen-api"; };
-          concierge-pin-check = { type = "app"; program = "${runConciergePinCheck}/bin/run-concierge-pin-check"; };
-          drift-check = { type = "app"; program = "${runDriftCheck}/bin/run-drift-check"; };
-          check-rust = { type = "app"; program = "${runCheckRust}/bin/run-check-rust"; };
-          check-frontend = { type = "app"; program = "${runCheckFrontend}/bin/run-check-frontend"; };
-          publish = { type = "app"; program = "${runPublish}/bin/publish"; };
-        };
+        apps =
+          let
+            app = program: description: { type = "app"; inherit program; meta.description = description; };
+          in
+          {
+            init = app "${runInit}/bin/run-init" "one-shot env setup for a fresh clone (dev .env secrets, npm deps, TB client link)";
+            dev = app "${runDev}/bin/run-dev" "everything: postgres + tigerbeetle + redis + signer + piggybank + cabinet-backend + cabinet";
+            piggybank = app "${runPiggybank}/bin/run-piggybank" "hub server: core gRPC + auth tasks; migrates on boot; needs .#db, .#tb, .#signer";
+            signer = app "${runSigner}/bin/run-signer" "key vault: generates and seals chain keys; migrates on boot; needs .#db";
+            cabinet-backend = app "${runCabinetBackend}/bin/run-cabinet-backend" "wallet BFF; needs piggybank, and concierge from its own repo for identity";
+            cabinet = app "${runCabinet}/bin/run-cabinet" "Next.js host shell, proxies /api/* to the BFF";
+            db = app "${runPostgres}/bin/run-postgres" "ensure the SHARED ev_invest Postgres is up, with this repo's databases";
+            tb = app "${runTigerbeetle}/bin/run-tigerbeetle" "local TigerBeetle (banking-only, repo-local data)";
+            new-replica = app "${runNewReplica}/bin/new-replica" "move a PROD cluster replica to another host (recover, never format)";
+            redis = app "${runRedis}/bin/run-redis" "ensure the SHARED ev_invest Redis is up";
+            gen-api = app "${runGenApi}/bin/run-gen-api" "regenerate contracts/openapi.json + the wallet's TS types from the protos";
+            concierge-pin-check = app "${runConciergePinCheck}/bin/run-concierge-pin-check" "the concierge pin is an ancestor of origin/main and its protos match (CI: drift.yml)";
+            drift-check = app "${runDriftCheck}/bin/run-drift-check" "Cargo.lock matches the manifests, the committed contract matches the protos (CI: drift.yml)";
+            check-rust = app "${runCheckRust}/bin/run-check-rust" "clippy (warnings denied) + workspace tests, as CI runs them";
+            check-frontend = app "${runCheckFrontend}/bin/run-check-frontend" "wallet tsc + tests against a clean npm ci, as CI runs them";
+            publish = app "${runPublish}/bin/publish" "tag the next vX.Y.Z (-- major|minor|patch) and push it";
+            help = v_flakes.utils.help {
+              inherit pkgs self system;
+              about = "New migrations: sqlx migrate add --source piggybank/core/migrations --sequential <name> (in the dev shell)";
+            };
+          };
 
         packages = {
           default = bankingBins;
