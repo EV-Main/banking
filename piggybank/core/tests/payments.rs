@@ -569,7 +569,7 @@ async fn the_subjects_answer_approves_the_order_and_reserves_its_source() {
 	reset_payments(&pool).await;
 }
 
-#[derive(sqlx::FromRow, Debug, PartialEq)]
+#[derive(Debug, PartialEq, sqlx::FromRow)]
 struct ConsentAuditRow {
 	origin: Option<String>,
 	client_ip: Option<String>,
