@@ -34,7 +34,6 @@ serde_json.workspace = true
 # Intent hashes and the HMAC of the wallet key.
 sha2.workspace = true
 subtle.workspace = true
-time.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tonic.workspace = true
 tower-http = { workspace = true, features = ["timeout", "trace"] }

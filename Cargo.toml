@@ -7,12 +7,12 @@ cargo-features = ["codegen-backend"]
 # `wallet/backend` is the wallet host's BFF — a standalone HTTP service that
 # orchestrates the money plane (this repo) and the concierge identity plane.
 members = [
-    "wallet/backend",
     "contracts",
     "domain",
     "piggybank/auth",
     "piggybank/core",
     "piggybank/signer",
+    "wallet/backend",
 ]
 # `.tb-client` must live at the repo root, NOT inside a member dir: cargo's
 # exclude check is `!explicit_member && excluded`, and member matching is
@@ -81,7 +81,6 @@ subtle = "2.6"
 thiserror = "2.0.18"
 # via the symlink (kept current by the flake shellHook), not the canonicalized store path - hardcoding the hash goes stale on every tigerbeetle derivation rebuild
 tigerbeetle = { path = ".tb-client" }
-time = "0.3"
 tokio = "1.52.3"
 # `TcpListenerStream`, so a test server can be handed an already-bound listener rather
 # than re-binding a port it just released.
