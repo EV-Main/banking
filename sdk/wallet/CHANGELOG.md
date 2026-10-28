@@ -4,7 +4,7 @@ All notable changes to `@evinvest/wallet` are in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-10-28
 
 Release banking's wallet bundle of contract version 3 before this version. A
 host on 0.2.0 refuses an older element and shows its fallback.
