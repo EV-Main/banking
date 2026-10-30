@@ -281,8 +281,7 @@
             # like the two above; unset, the card is simply not shown.
             NEXT_PUBLIC_SA_PANEL_URL = "https://sa.evinvest.ltd";
             # The platform origin: account actions (verify email, profile, security) are
-            # concierge's, at /admin/account here. Public, inlined at build, also into the
-            # account-chip bundle, which the SA panel serves from another origin.
+            # concierge's, at /account here. Public, inlined at build.
             NEXT_PUBLIC_PLATFORM_URL = "https://evinvest.ltd";
             # The invest cabinet, zone prefix included: the proxy redirects the investor
             # pages this cabinet no longer has (banking#584) there. Public, inlined at build.

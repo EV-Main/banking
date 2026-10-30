@@ -124,10 +124,6 @@ export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathna
  * Whether `pathname` is a page of this zone — `/cabinet`, `/cabinet/…`, or the same
  * behind a locale segment. Assets, BFF calls and MFE bundles under the prefix are not
  * pages (see {@link isNonPagePath}), and a sibling route like `/cabinets` is not this zone.
- *
- * The account chip needs the answer from the document it was mounted into: the same
- * bundle renders on the public site and inside the wallet host, and where its link goes
- * depends on which of the two the reader is looking at.
  */
 export const isZonePage = (pathname: string): boolean => {
   if (isNonPagePath(pathname)) return false;

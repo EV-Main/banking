@@ -1,12 +1,12 @@
 /* The whole layer order, declared before anything else so it is the FIRST declaration
    the page sees — which by the cascade-layers spec is the one that counts. Same order the
    conductor fixes in its own globals.css: `reamfe` is where element remotes' styles go,
-   ranked below every host layer so the host always wins. The account chip's stylesheet
-   (`mfe/account-chip/mfe.css`, built to `public/mfe/account-chip.css` and attached when
-   the chip mounts, so always after this one) pre-layers its utilities into `reamfe` on
+   ranked below every host layer so the host always wins. The wallet elements' stylesheet
+   (`mfe/wallet/mfe.css`, built to `public/mfe/wallet/wallet.css` and attached when
+   an element mounts, so always after this one) pre-layers its utilities into `reamfe` on
    that understanding. Without `reamfe` named here, a layer first met in that later sheet
    is appended after `utilities` and becomes the HIGHEST instead: every `.text-ink-soft`,
-   `.bg-card` or `.text-positive` the chip happened to compile then outranked the wallet host's
+   `.bg-card` or `.text-positive` an element happened to compile then outranked the wallet host's
    own on any element carrying the same class — Alert descriptions stuck on soft ink,
    variant tints never applied (banking#320). Tailwind keeps this statement ahead of the
    `@layer theme, base, components, utilities;` it emits itself; `properties` (its

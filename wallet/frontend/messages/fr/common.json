@@ -183,10 +183,6 @@
     "en": "A request to end your ownership",
     "t": "Une demande de mettre fin à votre propriété"
   },
-  "auth.cabinet": {
-    "en": "Cabinet",
-    "t": "Mon espace"
-  },
   "auth.err.denied": {
     "en": "Sign-in was cancelled.",
     "t": "La connexion a été annulée."
@@ -206,18 +202,6 @@
   "auth.signInAgain": {
     "en": "Sign in again",
     "t": "Se reconnecter"
-  },
-  "auth.signOut": {
-    "en": "Sign out",
-    "t": "Se déconnecter"
-  },
-  "auth.manageAccount": {
-    "en": "Manage account",
-    "t": "Gérer le compte"
-  },
-  "auth.switchAccount": {
-    "en": "Switch account",
-    "t": "Changer de compte"
   },
   "auth.signedOut": {
     "en": "Signed out",
@@ -767,10 +751,6 @@
     "en": "You will receive",
     "t": "Vous recevrez"
   },
-  "ui.account": {
-    "en": "Account",
-    "t": "Compte"
-  },
   "ui.back": {
     "en": "Back",
     "t": "Retour"
@@ -803,17 +783,9 @@
     "en": "Max",
     "t": "Max"
   },
-  "ui.profile": {
-    "en": "Profile",
-    "t": "Profil"
-  },
   "ui.receiveFunds": {
     "en": "Receive funds into your wallet",
     "t": "Recevoir des fonds sur votre wallet"
-  },
-  "ui.services": {
-    "en": "Services",
-    "t": "Services"
   },
   "ui.walletHistory": {
     "en": "History",
@@ -1082,10 +1054,6 @@
   "auth.err.passwordLocked": {
     "en": "Too many wrong passwords. Sign in with a code instead.",
     "t": "Trop de mots de passe erronés. Connectez-vous plutôt avec un code."
-  },
-  "auth.err.signOut": {
-    "en": "We couldn't sign you out. Please try again.",
-    "t": "Impossible de vous déconnecter. Veuillez réessayer."
   },
   "auth.err.throttled": {
     "en": "Too many codes went to this address. Try again in a few minutes.",

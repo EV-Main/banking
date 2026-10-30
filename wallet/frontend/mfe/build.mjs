@@ -1,5 +1,5 @@
 // Bundles the element remotes into self-registering ESM files served from public/mfe/:
-// the account chip, and banking's wallet elements (public/mfe/wallet/, published as
+// banking's wallet elements (public/mfe/wallet/, published as
 // https://evinvest.ltd/wallet/mfe/ through the next.config rewrite). React and each
 // element are bundled in (the host never imports this module graph — it only injects the
 // <script>). The sibling CSS is compiled separately by the Tailwind CLI (see the
@@ -23,21 +23,6 @@ const shared = {
 
 // React reads process.env.NODE_ENV; there is no `process` in the browser, so inline it.
 const NODE_ENV = { "process.env.NODE_ENV": '"production"' };
-
-await build({
-  ...shared,
-  entryPoints: ["mfe/account-chip/entry.tsx"],
-  outfile: "public/mfe/account-chip.js",
-  define: {
-    ...NODE_ENV,
-    // The menu's Service-Arb entry; unset, it is left out.
-    "process.env.NEXT_PUBLIC_SA_PANEL_URL":
-      process.env.NEXT_PUBLIC_SA_PANEL_URL === undefined ? "undefined" : JSON.stringify(process.env.NEXT_PUBLIC_SA_PANEL_URL),
-    // Where "Profile" and "Manage account" go: concierge's account page on the platform.
-    "process.env.NEXT_PUBLIC_PLATFORM_URL":
-      process.env.NEXT_PUBLIC_PLATFORM_URL === undefined ? "undefined" : JSON.stringify(process.env.NEXT_PUBLIC_PLATFORM_URL),
-  },
-});
 
 // ── wallet ──────────────────────────────────────────────────────────────────
 

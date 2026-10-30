@@ -183,10 +183,6 @@
     "en": "A request to end your ownership",
     "t": "Просьба прекратить ваше владение"
   },
-  "auth.cabinet": {
-    "en": "Cabinet",
-    "t": "Кабинет"
-  },
   "auth.err.denied": {
     "en": "Sign-in was cancelled.",
     "t": "Вход отменён."
@@ -206,18 +202,6 @@
   "auth.signInAgain": {
     "en": "Sign in again",
     "t": "Войти снова"
-  },
-  "auth.signOut": {
-    "en": "Sign out",
-    "t": "Выйти"
-  },
-  "auth.manageAccount": {
-    "en": "Manage account",
-    "t": "Управление аккаунтом"
-  },
-  "auth.switchAccount": {
-    "en": "Switch account",
-    "t": "Сменить аккаунт"
   },
   "auth.signedOut": {
     "en": "Signed out",
@@ -767,10 +751,6 @@
     "en": "You will receive",
     "t": "Вы получите"
   },
-  "ui.account": {
-    "en": "Account",
-    "t": "Аккаунт"
-  },
   "ui.back": {
     "en": "Back",
     "t": "Назад"
@@ -803,17 +783,9 @@
     "en": "Max",
     "t": "Макс."
   },
-  "ui.profile": {
-    "en": "Profile",
-    "t": "Профиль"
-  },
   "ui.receiveFunds": {
     "en": "Receive funds into your wallet",
     "t": "Получить средства на кошелёк"
-  },
-  "ui.services": {
-    "en": "Services",
-    "t": "Сервисы"
   },
   "ui.walletHistory": {
     "en": "History",
@@ -1082,10 +1054,6 @@
   "auth.err.passwordLocked": {
     "en": "Too many wrong passwords. Sign in with a code instead.",
     "t": "Слишком много неверных паролей. Войдите с кодом."
-  },
-  "auth.err.signOut": {
-    "en": "We couldn't sign you out. Please try again.",
-    "t": "Не удалось выйти. Попробуйте ещё раз."
   },
   "auth.err.throttled": {
     "en": "Too many codes went to this address. Try again in a few minutes.",

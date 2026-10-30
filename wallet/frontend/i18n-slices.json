@@ -787,14 +787,9 @@
     ]
   },
   "serverOnly": [
-    "auth.cabinet",
-    "auth.err.signOut",
-    "auth.manageAccount",
     "auth.signInAgain",
-    "auth.signOut",
     "auth.signedOut",
     "auth.signedOutSub",
-    "auth.switchAccount",
     "meta.description",
     "meta.title",
     "mfe.loading",
@@ -815,9 +810,6 @@
     "tips.wallet.withdraw.queueing.body",
     "tips.wallet.withdraw.queueing.title",
     "tips.wallet.withdraw.review.body",
-    "tips.wallet.withdraw.review.title",
-    "ui.account",
-    "ui.profile",
-    "ui.services"
+    "tips.wallet.withdraw.review.title"
   ]
 }
