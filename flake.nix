@@ -831,7 +831,7 @@
         # and .tb-client all exist and match what developers run.
         runCheckRust = pkgs.writeShellApplication {
           name = "run-check-rust";
-          runtimeInputs = (with pkgs; [ rust git protobuf mold postgresql coreutils ]) ++ [ tigerbeetleBin ]; # tests/ledger_gap.rs runs its own clusters
+          runtimeInputs = (with pkgs; [ rust git protobuf mold postgresql redis coreutils ]) ++ [ tigerbeetleBin ]; # tests/ledger_gap.rs runs its own clusters
           text = ''
             cd "$(git rev-parse --show-toplevel)"
             ${linkTbClient}
@@ -858,16 +858,22 @@
             export POSTGRES_PORT="''${CHECK_POSTGRES_PORT:-54329}"
             export TIGERBEETLE_PORT="''${CHECK_TIGERBEETLE_PORT:-3039}"
             export PGDATABASES="banking_check"
+            redis_port="''${CHECK_REDIS_PORT:-63799}"
             tb_pid=""
+            redis_pid=""
             cleanup() {
               if [ -n "$tb_pid" ]; then kill "$tb_pid" 2>/dev/null || true; fi
+              if [ -n "$redis_pid" ]; then kill "$redis_pid" 2>/dev/null || true; fi
               pg_ctl -D "$XDG_STATE_HOME/ev_invest/pg/data" -m fast stop >/dev/null 2>&1 || true
               rm -rf "$scratch"
             }
             trap cleanup EXIT
 
-            echo "▶ postgres :$POSTGRES_PORT + tigerbeetle :$TIGERBEETLE_PORT (throwaway)"
+            echo "▶ postgres :$POSTGRES_PORT + tigerbeetle :$TIGERBEETLE_PORT + redis :$redis_port (throwaway)"
             ${runPostgres}/bin/run-postgres
+            # The wallet intents' Lua scripts and once-only step-up jti, and piggybank's refresh store, only run against a real Redis (#576).
+            redis-server --port "$redis_port" --bind 127.0.0.1 --save "" --appendonly no >"$scratch/redis.log" 2>&1 &
+            redis_pid=$!
             TBCLUSTER=0 ${runTigerbeetle}/bin/run-tigerbeetle >"$scratch/tb.log" 2>&1 &
             tb_pid=$!
             for _ in $(seq 1 150); do
@@ -878,6 +884,12 @@
             if ! (exec 3<>"/dev/tcp/127.0.0.1/$TIGERBEETLE_PORT") 2>/dev/null; then
               cat "$scratch/tb.log" >&2; echo "tigerbeetle did not come up on :$TIGERBEETLE_PORT" >&2; exit 1
             fi
+            for _ in $(seq 1 50); do
+              if redis-cli -p "$redis_port" ping >/dev/null 2>&1; then break; fi
+              sleep 0.2
+            done
+            redis-cli -p "$redis_port" ping >/dev/null || { cat "$scratch/redis.log" >&2; echo "redis did not come up on :$redis_port" >&2; exit 1; }
+            export REDIS_URL="redis://127.0.0.1:$redis_port/15"
             export DATABASE_URL="postgres://postgres@127.0.0.1:$POSTGRES_PORT/banking_check"
             # The signer suites create their own throwaway databases from this URL.
             export SIGNER_DATABASE_URL="$DATABASE_URL"

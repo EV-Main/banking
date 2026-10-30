@@ -772,8 +772,7 @@ mod tests {
 }
 
 /// Real-Redis round-trips for [`RedisRefreshStore`]. No mocks — these hit the Redis at
-/// `REDIS_URL` and are skipped (early-return) when it is unset, so unconfigured local/CI
-/// runs are unaffected. They prove the Redis arm matches the in-process semantics:
+/// `REDIS_URL` (CI brings one up) and are skipped when it is unset locally. They prove the Redis arm matches the in-process semantics:
 /// rotation, reuse detection, the lifetime bounds, listing, and the revoke surfaces.
 #[cfg(test)]
 mod redis_tests {
@@ -790,7 +789,10 @@ mod redis_tests {
 	/// Connect to the configured Redis, or `None` to skip when `REDIS_URL` is unset.
 	/// A unique user id per test keeps concurrent test runs from colliding on keys.
 	async fn store() -> Option<(RedisRefreshStore, String)> {
-		let url = std::env::var("REDIS_URL").ok().filter(|u| !u.is_empty())?;
+		let Some(url) = std::env::var("REDIS_URL").ok().filter(|u| !u.is_empty()) else {
+			assert!(std::env::var("CI").is_err(), "REDIS_URL required in CI");
+			return None;
+		};
 		let store = RedisRefreshStore::connect(&url).await.expect("connect to REDIS_URL");
 		Some((store, format!("user-{}", uuid::Uuid::new_v4())))
 	}
