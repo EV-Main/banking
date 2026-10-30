@@ -64,7 +64,7 @@ test("real production asset paths are not pages", () => {
     "/cabinet/_next/static/media/Inter_Italic-s.p.3ub0m60m9w90g.ttf",
     "/cabinet/_next/image",
     "/cabinet/api/session",
-    "/cabinet/mfe/account-chip.js",
+    "/cabinet/mfe/wallet.js",
     "/cabinet/favicon.ico",
   ]) {
     assert.equal(isNonPagePath(path), true, path);
@@ -76,7 +76,7 @@ test("the bare forms still hold, for a direct run of the zone", () => {
     "/_next/static/chunks/x.css",
     "/_next/image",
     "/api/session",
-    "/mfe/account-chip.js",
+    "/mfe/wallet.js",
     "/favicon.ico",
   ]) {
     assert.equal(isNonPagePath(path), true, path);
@@ -159,8 +159,7 @@ test("a path that is not a zone page is left for someone else", () => {
   assert.equal(localeRepairedPath("/zz/cabinets/list", "ru"), null);
 });
 
-// The account chip mounts on both origins and links to a different place from each: into
-// the wallet host home from the public site, to the profile from inside the wallet host. The
+// Zone-page detection runs on both origins: the public site and the wallet host. The
 // answer comes from `document.location.pathname`, so it has to be right for the real
 // shapes both hosts produce — locale-prefixed pages, the unprefixed mount, and the
 // conductor's own routes that merely share the origin.
@@ -188,9 +187,9 @@ test("a sibling that merely starts with the zone name is not a zone page", () =>
 });
 
 test("assets and BFF calls under the prefix are not zone pages", () => {
-  // The chip never renders inside one of these, but the function is public and the
+  // Nothing renders inside one of these, but the function is public and the
   // proxy's distinction between pages and non-pages should hold here too.
-  for (const path of ["/cabinet/_next/static/chunks/x.css", "/cabinet/api/session", "/cabinet/mfe/account-chip.js", "/cabinet/favicon.ico"]) {
+  for (const path of ["/cabinet/_next/static/chunks/x.css", "/cabinet/api/session", "/cabinet/mfe/wallet.js", "/cabinet/favicon.ico"]) {
     assert.equal(isZonePage(path), false, path);
   }
 });

@@ -76,12 +76,12 @@ const nextConfig: NextConfig = {
       // `public/` is served from the origin root, so the element-remote bundles
       // land on `/mfe/*` — but both MFE registries, and therefore the conductor's
       // injected shell, ask for `/cabinet/mfe/*`. `basePath` used to add that
-      // prefix for free; without it the account chip 404s on every page of the
+      // prefix for free; without it the element bundles 404 on every page of the
       // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
       { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
       // The wallet bundles' public directory — `https://evinvest.ltd/wallet/mfe/`, the
       // prefix `@evinvest/wallet` holds every registry entry to and hosts name in their
-      // CSP. Built to `public/mfe/wallet/` beside the chip.
+      // CSP. Built to `public/mfe/wallet/` beside the other element bundles.
       { source: "/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
     ];
   },
@@ -116,7 +116,7 @@ const nextConfig: NextConfig = {
     const tokenPageHeaders = headers
       .filter((h) => h.key !== "Referrer-Policy")
       .concat({ key: "Referrer-Policy", value: "no-referrer" });
-    // The element-remote bundles keep fixed names (`account-chip.js`/`.css`: a content hash
+    // The element-remote bundles keep fixed names (`wallet.js`/`.css`: a content hash
     // would make the conductor read a manifest to find them), so they cannot be immutable.
     // Without any Cache-Control every page of the site revalidated them; five minutes fresh
     // plus ten minutes of stale-while-revalidate bounds how long a release — or a security

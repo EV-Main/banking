@@ -1,11 +1,11 @@
-// Run with `node --test --experimental-strip-types mfe/account-chip/stylesheet.test.ts`.
+// Run with `node --test --experimental-strip-types mfe/wallet/stylesheet.test.ts`.
 //
-// `whenStylesheetReady` gates the chip's first paint, on every page of every host. What is
+// `whenStylesheetReady` gates the wallet element's first paint, on every page of every host. What is
 // pinned here: a sheet already in the head is reused, never fetched again; a successful
 // fetch lands as exactly one `<style>` that already holds its CSS when it is attached (an
 // empty one filled afterwards re-triggers the host's font-set rebuild the inline sheet
 // exists to avoid); a failed fetch falls back to a `<link>`; and nothing — a hung fetch, a
-// lost load event — keeps the chip hidden past four seconds.
+// lost load event — keeps the element hidden past four seconds.
 //
 // No DOM library is installed, so a stand-in document carries exactly what the module
 // touches: `head` with `querySelectorAll("link, style")`, `createElement`, `styleSheets`
@@ -14,8 +14,8 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach, mock } from "node:test";
 
-const TAG = "mfe-ev-account-chip";
-const HREF = "https://cabinet.example/cabinet/mfe/account-chip.css";
+const TAG = "mfe-banking-wallet";
+const HREF = "https://cabinet.example/cabinet/mfe/wallet.css";
 const CSS = ".chip{color:red}";
 
 class FakeElement extends EventTarget {
@@ -225,7 +225,7 @@ test("an HTTP error falls back to a link that is waited on", async () => {
   assert.equal(await state(ready), "resolved");
 });
 
-test("a network error falls back to a link, and its load error releases the chip", async () => {
+test("a network error falls back to a link, and its load error releases the element", async () => {
   stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
   const { whenStylesheetReady } = await freshModule();
 
@@ -273,7 +273,7 @@ test("an error from some other element does not release the chip", async () => {
 
 // ── the cap ─────────────────────────────────────────────────────────────────
 
-test("a fetch that never answers releases the chip after four seconds", async () => {
+test("a fetch that never answers releases the element after four seconds", async () => {
   stubFetch(() => new Promise<Response>(() => undefined));
   const { whenStylesheetReady } = await freshModule();
 
@@ -285,7 +285,7 @@ test("a fetch that never answers releases the chip after four seconds", async ()
   assert.equal(await state(ready), "resolved");
 });
 
-test("a link whose load event is lost releases the chip after four seconds", async () => {
+test("a link whose load event is lost releases the element after four seconds", async () => {
   doc.preload(link(HREF, TAG));
   stubFetch(() => Promise.resolve(new Response(CSS)));
   const { whenStylesheetReady } = await freshModule();

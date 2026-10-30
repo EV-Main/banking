@@ -1,4 +1,4 @@
-// The chip's stylesheet: attach it once, and know when it applies.
+// The element's stylesheet: attach it once, and know when it applies.
 //
 // Delivered as an already-filled `<style>`, not a `<link>`. A stylesheet that arrives late
 // from the network — any `<link>` or `@import`, even an empty one — makes Chrome rebuild
@@ -14,17 +14,17 @@
 // the reason `mfe.css` keeps its theme import unlayered is the utility generator at build
 // time, which this does not touch.
 //
-// The chip must not paint before its CSS (15 of 15 measured loads had an unstyled first
+// The element must not paint before its CSS (15 of 15 measured loads had an unstyled first
 // frame without the wait). A failed fetch falls back to the `<link>`, whose readiness is
 // read off `document.styleSheets` because site_conductor's `containRemoteStyles` may swap
 // it for `<style>@import url(…) layer(reamfe)</style>`, and a detached link never fires
 // `load`.
 
-/** Never hidden longer than this: a lost load event must not cost the host its account chip. */
+/** Never hidden longer than this: a lost load event must not cost the host its wallet element. */
 const READY_TIMEOUT_MS = 4000;
 
 /** The sibling sheet `file` next to this bundle. The wallet bundle reuses this module with its own sheet. */
-export function stylesheetHref(file = "account-chip.css"): string {
+export function stylesheetHref(file: string): string {
   const src = import.meta.url;
   // String math, not `new URL(…, import.meta.url)`: esbuild would try to resolve and inline
   // the sheet, which the Tailwind CLI emits separately.
@@ -107,7 +107,7 @@ async function inlineOrLink(tag: string, href: string): Promise<void> {
     // conductor serves /cabinet/mfe, the panel proxies it), so this is a same-origin read
     // under the `/mfe/*` Cache-Control in next.config.ts; a cross-origin host without CORS lands in the fallback.
     const res = await fetch(href);
-    if (!res.ok) throw new Error(`account-chip.css: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`stylesheet: HTTP ${res.status}`);
     css = await res.text();
   } catch {
     return appendLink(tag, href);

@@ -1,7 +1,8 @@
-/* Stylesheet for the wallet element remotes. Same shape as mfe/account-chip/mfe.css, and
-   for the same reasons (read the note there before changing the layering): light DOM, so
-   no preflight and no fonts; utilities pre-assigned to `reamfe` so the host always wins;
-   the theme import unlayered so fractional spacing steps still compile. */
+/* Stylesheet for the wallet element remotes. Light DOM, so no preflight and no fonts;
+   utilities pre-assigned to `reamfe` so the host always wins. The theme import stays
+   unlayered: layering it hides the spacing scale from the utility generator and fractional
+   steps (`size-8.5`, `gap-2.5`) silently compile to nothing. Tokens come from the kit's
+   sheet, the same source as globals.css. */
 @import "tailwindcss/theme.css";
 @import "tailwindcss/utilities.css" layer(reamfe);
 @import "@evinvest/uikit/styles/tokens.css" layer(reamfe);

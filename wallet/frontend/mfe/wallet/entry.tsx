@@ -22,7 +22,7 @@ import {
 } from "@/features/wallet-mfe";
 import type { IntentKind } from "@/features/wallet-intent";
 
-import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet";
+import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 
 // Self-registering ESM entry for banking's wallet element remotes, served from
 // `https://evinvest.ltd/wallet/mfe/` and mounted by the invest cabinet, the SA panel and
@@ -43,7 +43,7 @@ import { stylesheetHref, whenStylesheetReady } from "../account-chip/stylesheet"
 // `kinds`). Turning a kind off is a server env change, not a release. When the in-page form
 // closes, the element dispatches `ev:wallet-result` (`detail: { kind, outcome, reference? }`,
 // the popup's words); a fallback to the popup dispatches nothing, as the popup reports itself.
-// Light DOM, like the account chip: the host's tokens and fonts cascade in, and the
+// Light DOM: the host's tokens and fonts cascade in, and the
 // element's own utilities arrive as `@layer reamfe`, below every host layer.
 
 // esbuild `define` (mfe/build.mjs): the element's own keys cut from the wallet host catalogues,
