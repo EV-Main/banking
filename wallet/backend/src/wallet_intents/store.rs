@@ -457,13 +457,14 @@ mod tests {
 		store_contract(&MemoryStore::default(), "memory").await;
 	}
 
-	/// The same contract against a real Redis. Not part of the default run, because the
-	/// check brings up Postgres and TigerBeetle but no Redis; run it with
-	/// `REDIS_URL=redis://127.0.0.1:6379/15 cargo test -p cabinet-backend -- --ignored redis_store`.
+	/// The same contract against the Redis in `REDIS_URL`, which `nix run .#check-rust` brings up.
 	#[tokio::test]
-	#[ignore = "needs a Redis server in REDIS_URL"]
 	async fn the_redis_store_keeps_the_contract() {
-		let url = std::env::var("REDIS_URL").expect("REDIS_URL names the Redis to test against");
+		let Some(url) = std::env::var("REDIS_URL").ok().filter(|u| !u.is_empty()) else {
+			assert!(std::env::var("CI").is_err(), "REDIS_URL required in CI");
+			eprintln!("SKIPPED the_redis_store_keeps_the_contract: REDIS_URL unset");
+			return;
+		};
 		let store = RedisStore::connect(&url).await.expect("connect");
 		let tag = super::super::intent::new_intent_id().expect("a random tag");
 		store_contract(&store, &tag).await;
