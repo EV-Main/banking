@@ -35,7 +35,7 @@ use tracing::Instrument;
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{approval::Peer, audit_context, money_token_for, require_identity},
+	routes::{Peer, audit_context, money_token_for, require_identity},
 	state::AppState,
 	util::now_secs,
 	wallet_intents::{

@@ -321,9 +321,7 @@ impl TxRef {
 	}
 }
 
-/// Whether `value` carries a URL by the needles concierge's governance relay refuses
-/// (`no_url`): a scheme separator or a `www.` host, case-insensitive. Text that ends up in
-/// a payment label has to clear exactly these, or its mail is never sent.
+/// Whether `value` carries a URL: a scheme separator or a `www.` host, case-insensitive.
 pub(crate) fn contains_url(value: &str) -> bool {
 	let lower = value.to_ascii_lowercase();
 	lower.contains("://") || lower.contains("www.")

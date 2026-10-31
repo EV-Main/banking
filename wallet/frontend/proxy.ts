@@ -8,14 +8,12 @@ import { config as appConfig } from "@/config";
 import { zonePagePath, isNonPagePath, localeRepairedPath, walletActionPage } from "@/shared/config/base-path";
 import { COOKIES } from "@/shared/config/cookies";
 import { movedPageTarget, renamedPaymentTarget } from "@/shared/config/moved-pages";
-import { isTokenApprovalPath } from "@/shared/config/public-routes";
 import { contentSecurityPolicy } from "@/shared/config/security";
 import { isSessionId, needsRenewal, renewAccess, type Renewal } from "@/shared/lib/access-renewal";
 import { localeIsGuessed } from "@/shared/lib/locale-guess";
 import { decideSession } from "@/shared/lib/session-gate";
 
 const CSP_HEADER = "content-security-policy";
-const REFERRER_HEADER = "referrer-policy";
 
 // A/B assignment boundary (Next 16 "proxy", formerly middleware; Node runtime).
 // Assigns a sticky `ab_<key>` cookie per experiment in the registry on first
@@ -163,7 +161,7 @@ export async function proxy(req: NextRequest) {
     return finish(withCsp(NextResponse.redirect(url), csp));
   }
 
-  return finish(withReferrerPolicy(withCsp(withLocale(req, ab(req)), csp), pathname));
+  return finish(withCsp(withLocale(req, ab(req)), csp));
 }
 
 // Only when the cookie is missing or close to lapsing, so the common request — a fresh
@@ -197,17 +195,6 @@ function withSetCookies(res: NextResponse, lines: readonly string[]): NextRespon
   if (lines.length === 0) return res;
   for (const line of lines) res.headers.append("set-cookie", line);
   res.headers.set("cache-control", "private, no-store");
-  return res;
-}
-
-// On the approval page the URL *is* the credential, so the wallet host's default
-// `strict-origin-when-cross-origin` is not enough: it still sends the full URL along with
-// same-origin requests, and the origin alone to everywhere else. `no-referrer` closes that
-// channel for exactly the page that has something to leak.
-// Scoped rather than global — the rest of the wallet host gains nothing from it and loses the
-// same-origin referrer that analytics and error reports read.
-function withReferrerPolicy(res: NextResponse, pathname: string): NextResponse {
-  if (isTokenApprovalPath(pathname)) res.headers.set(REFERRER_HEADER, "no-referrer");
   return res;
 }
 

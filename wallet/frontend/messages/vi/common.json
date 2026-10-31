@@ -3,41 +3,9 @@
     "en": "Amount",
     "t": "Số tiền"
   },
-  "approval.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.",
-    "t": "Mã đã bị nhập sai quá nhiều lần, nên liên kết đã bị đóng và mọi chủ sở hữu đã được thông báo. Không có gì được chấp thuận và không có khoản tiền nào được chuyển. Hãy đề nghị người đã mở yêu cầu gửi một yêu cầu mới."
-  },
-  "approval.burned.title": {
-    "en": "This link has been closed",
-    "t": "Liên kết này đã bị đóng"
-  },
-  "approval.codeHint": {
-    "en": "Ten characters, printed in the message that brought you here. It is what tells us a person opened this, and not an automatic link checker.",
-    "t": "Mười ký tự, in trong thư đã đưa bạn đến đây. Đó là cách chúng tôi biết một người thật đã mở trang này, chứ không phải một công cụ kiểm tra liên kết tự động."
-  },
-  "approval.codeLabel": {
-    "en": "Code from your email",
-    "t": "Mã từ email của bạn"
-  },
-  "approval.codePlaceholder": {
-    "en": "e.g. K3M9XR2Q7T",
-    "t": "ví dụ K3M9XR2Q7T"
-  },
-  "approval.codeWrong": {
-    "en": "That code didn't match. {n, plural, one {# attempt remains} other {# attempts remain}} before this link closes for good.",
-    "t": "Mã đó không khớp. {n, plural, one {Còn # lần thử} other {Còn # lần thử}} trước khi liên kết này đóng vĩnh viễn."
-  },
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Bạn đã trả lời trước đó, và câu trả lời đó vẫn giữ nguyên. Một câu trả lời không thể thay đổi sau khi đã đưa ra."
-  },
-  "approval.expired.title": {
-    "en": "The deadline for this request has passed",
-    "t": "Hạn chót của yêu cầu này đã qua"
-  },
-  "approval.expiredNote": {
-    "en": "The deadline for this request has passed, so it can no longer be answered. Nothing was decided.",
-    "t": "Hạn chót của yêu cầu này đã qua, nên không thể trả lời nữa. Không có gì được quyết định."
   },
   "approval.expires": {
     "en": "Expires",
@@ -63,18 +31,6 @@
     "en": "The deadline has passed",
     "t": "Hạn chót đã qua"
   },
-  "approval.footnote": {
-    "en": "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.",
-    "t": "Liên kết này được tạo riêng cho bạn. Nó chỉ dùng được một lần, hết hạn 72 giờ sau khi gửi, và không nên được chuyển tiếp."
-  },
-  "approval.gone.body": {
-    "en": "Approval links work once and expire after 72 hours. This one may have been used already, run out of time, or been closed — which of those it was cannot be told from here. Ask whoever opened the request to send a new one.",
-    "t": "Liên kết chấp thuận chỉ dùng được một lần và hết hạn sau 72 giờ. Liên kết này có thể đã được dùng, đã hết thời gian hoặc đã bị đóng — không thể biết là trường hợp nào từ đây. Hãy đề nghị người đã mở yêu cầu gửi một yêu cầu mới."
-  },
-  "approval.gone.title": {
-    "en": "This link can no longer be used",
-    "t": "Liên kết này không còn dùng được"
-  },
   "approval.loadFailed": {
     "en": "We couldn't load this request",
     "t": "Chúng tôi không tải được yêu cầu này"
@@ -82,10 +38,6 @@
   "approval.loadFailedHint": {
     "en": "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.",
     "t": "Bản thân liên kết có thể hoàn toàn bình thường — đây có vẻ là sự cố khi kết nối tới chúng tôi. Hãy thử lại sau một lát."
-  },
-  "approval.openedAt": {
-    "en": "Opened",
-    "t": "Mở lúc"
   },
   "approval.payloadHash": {
     "en": "Request fingerprint",
@@ -106,82 +58,6 @@
   "approval.payment.to": {
     "en": "To",
     "t": "Tới"
-  },
-  "approval.removal.about": {
-    "en": "About",
-    "t": "Về"
-  },
-  "approval.removal.accept": {
-    "en": "Accept and give up my seat",
-    "t": "Chấp nhận và từ bỏ ghế của tôi"
-  },
-  "approval.removal.accepted.body": {
-    "en": "You accepted this earlier. Your ownership has ended.",
-    "t": "Bạn đã chấp nhận trước đó. Quyền sở hữu của bạn đã kết thúc."
-  },
-  "approval.removal.accepted.freshBody": {
-    "en": "Your ownership has ended and the other owners have been told. Nothing else about your account has changed.",
-    "t": "Quyền sở hữu của bạn đã kết thúc và các chủ sở hữu khác đã được thông báo. Không có gì khác trong tài khoản của bạn thay đổi."
-  },
-  "approval.removal.accepted.title": {
-    "en": "You gave up your seat",
-    "t": "Bạn đã từ bỏ ghế của mình"
-  },
-  "approval.removal.confirmAction": {
-    "en": "Give up my seat",
-    "t": "Từ bỏ ghế của tôi"
-  },
-  "approval.removal.confirmBody": {
-    "en": "Your owner seat ends immediately and cannot be restored from here. You would need the remaining owners to make you an owner again. Nothing else about your account changes.",
-    "t": "Ghế chủ sở hữu của bạn kết thúc ngay lập tức và không thể khôi phục từ đây. Bạn sẽ cần các chủ sở hữu còn lại đưa bạn trở lại làm chủ sở hữu. Không có gì khác trong tài khoản của bạn thay đổi."
-  },
-  "approval.removal.confirmTitle": {
-    "en": "This ends your ownership",
-    "t": "Điều này kết thúc quyền sở hữu của bạn"
-  },
-  "approval.removal.decisionLead": {
-    "en": "You can accept this or refuse it, and either answer needs the code from your email. Refusing does not end the matter: the other owners can still decide it between them, and that takes all of them agreeing.",
-    "t": "Bạn có thể chấp nhận hoặc từ chối, và câu trả lời nào cũng cần mã từ email của bạn. Từ chối không kết thúc vấn đề: các chủ sở hữu khác vẫn có thể tự quyết định với nhau, và điều đó đòi hỏi tất cả họ đồng ý."
-  },
-  "approval.removal.decisionTitle": {
-    "en": "Your answer",
-    "t": "Câu trả lời của bạn"
-  },
-  "approval.removal.irreversible": {
-    "en": "Accepting is final. Your ownership ends as soon as it is recorded, and it cannot be undone from this page or any other.",
-    "t": "Chấp nhận là quyết định cuối cùng. Quyền sở hữu của bạn kết thúc ngay khi được ghi nhận, và không thể hoàn tác từ trang này hay bất kỳ trang nào khác."
-  },
-  "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
-    "t": "{initiator} đã đề xuất rằng bạn không còn là chủ sở hữu của nền tảng. Bạn có tiếng nói trong việc này, và có một hạn chót."
-  },
-  "approval.removal.noReason": {
-    "en": "No reason was given.",
-    "t": "Không có lý do nào được đưa ra."
-  },
-  "approval.removal.proposedBy": {
-    "en": "Proposed by",
-    "t": "Người đề xuất"
-  },
-  "approval.removal.reasonLabel": {
-    "en": "Reason given",
-    "t": "Lý do đưa ra"
-  },
-  "approval.removal.refuse": {
-    "en": "Refuse — keep my seat",
-    "t": "Từ chối — giữ ghế của tôi"
-  },
-  "approval.removal.refused.body": {
-    "en": "Your answer has been recorded. You keep your seat unless every other eligible owner agrees to end it, and you will be told either way.",
-    "t": "Câu trả lời của bạn đã được ghi nhận. Bạn giữ ghế của mình trừ khi mọi chủ sở hữu đủ điều kiện khác đều đồng ý kết thúc nó, và bạn sẽ được thông báo dù kết quả thế nào."
-  },
-  "approval.removal.refused.title": {
-    "en": "You refused this",
-    "t": "Bạn đã từ chối"
-  },
-  "approval.removal.title": {
-    "en": "A request to end your ownership",
-    "t": "Một yêu cầu kết thúc quyền sở hữu của bạn"
   },
   "auth.err.denied": {
     "en": "Sign-in was cancelled.",
@@ -754,10 +630,6 @@
   "ui.back": {
     "en": "Back",
     "t": "Quay lại"
-  },
-  "ui.cancel": {
-    "en": "Cancel",
-    "t": "Hủy"
   },
   "ui.copied": {
     "en": "Copied",

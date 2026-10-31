@@ -7,12 +7,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { settledConsent, settledRemoval } from "./decision.ts";
+import { settledConsent } from "./decision.ts";
 
 test("an unanswered seat is not a settled answer, however the wire spells it", () => {
   for (const raw of ["pending", "PENDING", "", "   ", null, undefined, "unknown_future_state"]) {
-    assert.equal(settledRemoval(raw), null, `removal: ${String(raw)}`);
-    assert.equal(settledConsent(raw), null, `consent: ${String(raw)}`);
+    assert.equal(settledConsent(raw), null, String(raw));
   }
 });
 
@@ -23,18 +22,8 @@ test("a payment answer is read in either tense", () => {
   assert.equal(settledConsent(" rejected "), "reject");
 });
 
-test("a removal answer is read in both vocabularies", () => {
-  assert.equal(settledRemoval("remove"), "remove");
-  assert.equal(settledRemoval("approve"), "remove");
-  assert.equal(settledRemoval("removed"), "remove");
-  assert.equal(settledRemoval("keep"), "keep");
-  assert.equal(settledRemoval("reject"), "keep");
-  assert.equal(settledRemoval("kept"), "keep");
-});
-
 test("a non-string is never mistaken for an answer", () => {
   for (const raw of [0, 1, {}, [], true]) {
-    assert.equal(settledRemoval(raw), null, String(raw));
     assert.equal(settledConsent(raw), null, String(raw));
   }
 });

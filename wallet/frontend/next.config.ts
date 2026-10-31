@@ -103,19 +103,6 @@ const nextConfig: NextConfig = {
         value: "max-age=63072000; includeSubDomains; preload",
       });
     }
-    // The token approval page needs `no-referrer`, not the site-wide
-    // `strict-origin-when-cross-origin`: its URL contains a single-use approval
-    // credential, and the default still sends the whole URL to same-origin destinations.
-    // `proxy.ts` sets the same header per-request; stating
-    // it here as well makes the outcome deterministic rather than depending on which of
-    // the two writers Next lets win. A more specific `source` is listed first so it is not
-    // shadowed by the catch-all below.
-    //
-    // `:locale` matches the one segment, so this covers `/en/cabinet/owner-removal/<token>`
-    // and its four siblings without matching anything deeper.
-    const tokenPageHeaders = headers
-      .filter((h) => h.key !== "Referrer-Policy")
-      .concat({ key: "Referrer-Policy", value: "no-referrer" });
     // The element-remote bundles keep fixed names (`wallet.js`/`.css`: a content hash
     // would make the conductor read a manifest to find them), so they cannot be immutable.
     // Without any Cache-Control every page of the site revalidated them; five minutes fresh
@@ -133,7 +120,6 @@ const nextConfig: NextConfig = {
       // files, so `*` grants nothing a direct download would not.
       { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/mfe/wallet/:path*", headers: walletCors },
-      { source: "/:locale/cabinet/owner-removal/:token", headers: tokenPageHeaders },
       { source: "/:path*", headers },
     ];
   },

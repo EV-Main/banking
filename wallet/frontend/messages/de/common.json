@@ -3,41 +3,9 @@
     "en": "Amount",
     "t": "Betrag"
   },
-  "approval.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.",
-    "t": "Der Code wurde zu oft falsch eingegeben, deshalb wurde der Link geschlossen und alle Eigentümer wurden informiert. Nichts wurde genehmigt, und es ist kein Geld bewegt worden. Bitten Sie die Person, die den Antrag eröffnet hat, einen neuen zu senden."
-  },
-  "approval.burned.title": {
-    "en": "This link has been closed",
-    "t": "Dieser Link wurde geschlossen"
-  },
-  "approval.codeHint": {
-    "en": "Ten characters, printed in the message that brought you here. It is what tells us a person opened this, and not an automatic link checker.",
-    "t": "Zehn Zeichen, abgedruckt in der Nachricht, die Sie hierhergeführt hat. Daran erkennen wir, dass ein Mensch dies geöffnet hat und nicht ein automatischer Linkprüfer."
-  },
-  "approval.codeLabel": {
-    "en": "Code from your email",
-    "t": "Code aus Ihrer E-Mail"
-  },
-  "approval.codePlaceholder": {
-    "en": "e.g. K3M9XR2Q7T",
-    "t": "z. B. K3M9XR2Q7T"
-  },
-  "approval.codeWrong": {
-    "en": "That code didn't match. {n, plural, one {# attempt remains} other {# attempts remain}} before this link closes for good.",
-    "t": "Dieser Code hat nicht gepasst. {n, plural, one {Noch # Versuch} other {Noch # Versuche}}, bevor dieser Link endgültig geschlossen wird."
-  },
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Sie haben dies bereits beantwortet, und diese Antwort gilt. Eine einmal gegebene Antwort kann nicht geändert werden."
-  },
-  "approval.expired.title": {
-    "en": "The deadline for this request has passed",
-    "t": "Die Frist für diesen Antrag ist abgelaufen"
-  },
-  "approval.expiredNote": {
-    "en": "The deadline for this request has passed, so it can no longer be answered. Nothing was decided.",
-    "t": "Die Frist für diesen Antrag ist abgelaufen, er kann also nicht mehr beantwortet werden. Es wurde nichts entschieden."
   },
   "approval.expires": {
     "en": "Expires",
@@ -63,18 +31,6 @@
     "en": "The deadline has passed",
     "t": "Die Frist ist abgelaufen"
   },
-  "approval.footnote": {
-    "en": "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.",
-    "t": "Dieser Link wurde nur für Sie erstellt. Er funktioniert einmal, läuft 72 Stunden nach dem Versand ab und sollte nicht weitergeleitet werden."
-  },
-  "approval.gone.body": {
-    "en": "Approval links work once and expire after 72 hours. This one may have been used already, run out of time, or been closed — which of those it was cannot be told from here. Ask whoever opened the request to send a new one.",
-    "t": "Zustimmungslinks funktionieren einmal und laufen nach 72 Stunden ab. Dieser könnte bereits benutzt, abgelaufen oder geschlossen worden sein — welches davon zutrifft, lässt sich von hier aus nicht sagen. Bitten Sie die Person, die den Antrag eröffnet hat, einen neuen zu senden."
-  },
-  "approval.gone.title": {
-    "en": "This link can no longer be used",
-    "t": "Dieser Link kann nicht mehr verwendet werden"
-  },
   "approval.loadFailed": {
     "en": "We couldn't load this request",
     "t": "Wir konnten diesen Antrag nicht laden"
@@ -82,10 +38,6 @@
   "approval.loadFailedHint": {
     "en": "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.",
     "t": "Der Link selbst ist womöglich völlig in Ordnung — das sieht nach einem Problem beim Erreichen unseres Servers aus. Versuchen Sie es gleich noch einmal."
-  },
-  "approval.openedAt": {
-    "en": "Opened",
-    "t": "Eröffnet"
   },
   "approval.payloadHash": {
     "en": "Request fingerprint",
@@ -106,82 +58,6 @@
   "approval.payment.to": {
     "en": "To",
     "t": "An"
-  },
-  "approval.removal.about": {
-    "en": "About",
-    "t": "Betrifft"
-  },
-  "approval.removal.accept": {
-    "en": "Accept and give up my seat",
-    "t": "Annehmen und meinen Sitz aufgeben"
-  },
-  "approval.removal.accepted.body": {
-    "en": "You accepted this earlier. Your ownership has ended.",
-    "t": "Sie haben dies bereits angenommen. Ihr Eigentum ist beendet."
-  },
-  "approval.removal.accepted.freshBody": {
-    "en": "Your ownership has ended and the other owners have been told. Nothing else about your account has changed.",
-    "t": "Ihr Eigentum ist beendet, und die anderen Eigentümer wurden informiert. Sonst hat sich an Ihrem Konto nichts geändert."
-  },
-  "approval.removal.accepted.title": {
-    "en": "You gave up your seat",
-    "t": "Sie haben Ihren Sitz aufgegeben"
-  },
-  "approval.removal.confirmAction": {
-    "en": "Give up my seat",
-    "t": "Meinen Sitz aufgeben"
-  },
-  "approval.removal.confirmBody": {
-    "en": "Your owner seat ends immediately and cannot be restored from here. You would need the remaining owners to make you an owner again. Nothing else about your account changes.",
-    "t": "Ihr Eigentümersitz endet sofort und kann von hier aus nicht wiederhergestellt werden. Die verbleibenden Eigentümer müssten Sie erneut zum Eigentümer machen. Sonst ändert sich an Ihrem Konto nichts."
-  },
-  "approval.removal.confirmTitle": {
-    "en": "This ends your ownership",
-    "t": "Das beendet Ihr Eigentum"
-  },
-  "approval.removal.decisionLead": {
-    "en": "You can accept this or refuse it, and either answer needs the code from your email. Refusing does not end the matter: the other owners can still decide it between them, and that takes all of them agreeing.",
-    "t": "Sie können dies annehmen oder ablehnen, und beide Antworten brauchen den Code aus Ihrer E-Mail. Eine Ablehnung beendet die Sache nicht: Die anderen Eigentümer können sie weiterhin unter sich entscheiden, und dafür müssen sie alle zustimmen."
-  },
-  "approval.removal.decisionTitle": {
-    "en": "Your answer",
-    "t": "Ihre Antwort"
-  },
-  "approval.removal.irreversible": {
-    "en": "Accepting is final. Your ownership ends as soon as it is recorded, and it cannot be undone from this page or any other.",
-    "t": "Die Annahme ist endgültig. Ihr Eigentum endet, sobald sie festgehalten ist, und lässt sich weder von dieser noch von einer anderen Seite rückgängig machen."
-  },
-  "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
-    "t": "{initiator} hat vorgeschlagen, dass Sie nicht länger Eigentümer der Plattform sind. Sie haben dabei ein Mitspracherecht, und es gibt eine Frist."
-  },
-  "approval.removal.noReason": {
-    "en": "No reason was given.",
-    "t": "Es wurde kein Grund angegeben."
-  },
-  "approval.removal.proposedBy": {
-    "en": "Proposed by",
-    "t": "Vorgeschlagen von"
-  },
-  "approval.removal.reasonLabel": {
-    "en": "Reason given",
-    "t": "Angegebener Grund"
-  },
-  "approval.removal.refuse": {
-    "en": "Refuse — keep my seat",
-    "t": "Ablehnen — meinen Sitz behalten"
-  },
-  "approval.removal.refused.body": {
-    "en": "Your answer has been recorded. You keep your seat unless every other eligible owner agrees to end it, and you will be told either way.",
-    "t": "Ihre Antwort wurde festgehalten. Sie behalten Ihren Sitz, sofern nicht jeder andere stimmberechtigte Eigentümer zustimmt, ihn zu beenden — und Sie werden so oder so informiert."
-  },
-  "approval.removal.refused.title": {
-    "en": "You refused this",
-    "t": "Sie haben dies abgelehnt"
-  },
-  "approval.removal.title": {
-    "en": "A request to end your ownership",
-    "t": "Ein Antrag, Ihr Eigentum zu beenden"
   },
   "auth.err.denied": {
     "en": "Sign-in was cancelled.",
@@ -754,10 +630,6 @@
   "ui.back": {
     "en": "Back",
     "t": "Zurück"
-  },
-  "ui.cancel": {
-    "en": "Cancel",
-    "t": "Abbrechen"
   },
   "ui.copied": {
     "en": "Copied",
