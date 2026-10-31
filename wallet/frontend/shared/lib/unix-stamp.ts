@@ -7,7 +7,7 @@
 //
 // This module exists because two callers had drifted on that. `shared/lib/datetime.ts`
 // parsed the value as RFC 3339, which no caller was ever given: `new Date("1757000000")`
-// is an Invalid Date, so every date on the emailed approval pages rendered "—". Nothing caught it — both shapes are
+// is an Invalid Date, so every date on the approval pages rendered "—". Nothing caught it — both shapes are
 // `string`, so neither `tsc` nor eslint had anything to object to, and the only thing that
 // showed was a dash where a date belonged.
 //

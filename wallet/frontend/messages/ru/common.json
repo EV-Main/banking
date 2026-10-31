@@ -3,41 +3,9 @@
     "en": "Amount",
     "t": "Сумма"
   },
-  "approval.burned.body": {
-    "en": "The code was entered incorrectly too many times, so the link was closed and every owner has been told. Nothing was approved and no money has moved. Ask whoever opened the request to send a new one.",
-    "t": "Код вводили неверно слишком много раз, поэтому ссылка закрыта, а все владельцы уведомлены. Ничего не подтверждено, деньги никуда не ушли. Попросите того, кто открыл запрос, прислать новую ссылку."
-  },
-  "approval.burned.title": {
-    "en": "This link has been closed",
-    "t": "Эта ссылка закрыта"
-  },
-  "approval.codeHint": {
-    "en": "Ten characters, printed in the message that brought you here. It is what tells us a person opened this, and not an automatic link checker.",
-    "t": "Десять символов, напечатанных в письме, из которого вы сюда перешли. Именно код подтверждает, что письмо открыл человек, а не автоматическая проверка ссылок."
-  },
-  "approval.codeLabel": {
-    "en": "Code from your email",
-    "t": "Код из письма"
-  },
-  "approval.codePlaceholder": {
-    "en": "e.g. K3M9XR2Q7T",
-    "t": "например, K3M9XR2Q7T"
-  },
-  "approval.codeWrong": {
-    "en": "That code didn't match. {n, plural, one {# attempt remains} other {# attempts remain}} before this link closes for good.",
-    "t": "Код не подошёл. {n, plural, one {Осталась # попытка} few {Осталось # попытки} many {Осталось # попыток} other {Осталось # попытки}}, после чего ссылка закроется окончательно."
-  },
   "approval.decided.body": {
     "en": "You answered this earlier, and that answer stands. An answer cannot be changed once it is given.",
     "t": "Вы ответили на это ранее, и ваш ответ остаётся в силе. Изменить данный ответ нельзя."
-  },
-  "approval.expired.title": {
-    "en": "The deadline for this request has passed",
-    "t": "Срок ответа на этот запрос истёк"
-  },
-  "approval.expiredNote": {
-    "en": "The deadline for this request has passed, so it can no longer be answered. Nothing was decided.",
-    "t": "Срок ответа на этот запрос истёк, ответить на него больше нельзя. Ничего не решено."
   },
   "approval.expires": {
     "en": "Expires",
@@ -63,18 +31,6 @@
     "en": "The deadline has passed",
     "t": "Срок истёк"
   },
-  "approval.footnote": {
-    "en": "This link was made for you alone. It works once, expires 72 hours after it was sent, and should not be forwarded.",
-    "t": "Эта ссылка сделана лично для вас. Она срабатывает один раз, истекает через 72 часа после отправки, и её не следует пересылать."
-  },
-  "approval.gone.body": {
-    "en": "Approval links work once and expire after 72 hours. This one may have been used already, run out of time, or been closed — which of those it was cannot be told from here. Ask whoever opened the request to send a new one.",
-    "t": "Ссылки для подтверждения срабатывают один раз и истекают через 72 часа. Возможно, эта уже использована, просрочена или закрыта — отсюда определить, что именно, невозможно. Попросите того, кто открыл запрос, прислать новую."
-  },
-  "approval.gone.title": {
-    "en": "This link can no longer be used",
-    "t": "Эта ссылка больше не действует"
-  },
   "approval.loadFailed": {
     "en": "We couldn't load this request",
     "t": "Не удалось загрузить запрос"
@@ -82,10 +38,6 @@
   "approval.loadFailedHint": {
     "en": "The link itself may be perfectly fine — this looks like a problem reaching us. Try again in a moment.",
     "t": "Сама ссылка, скорее всего, в порядке — похоже на проблему со связью. Попробуйте ещё раз через минуту."
-  },
-  "approval.openedAt": {
-    "en": "Opened",
-    "t": "Открыт"
   },
   "approval.payloadHash": {
     "en": "Request fingerprint",
@@ -106,82 +58,6 @@
   "approval.payment.to": {
     "en": "To",
     "t": "Куда"
-  },
-  "approval.removal.about": {
-    "en": "About",
-    "t": "О ком"
-  },
-  "approval.removal.accept": {
-    "en": "Accept and give up my seat",
-    "t": "Согласиться и уступить место"
-  },
-  "approval.removal.accepted.body": {
-    "en": "You accepted this earlier. Your ownership has ended.",
-    "t": "Вы согласились с этим ранее. Ваше владение прекращено."
-  },
-  "approval.removal.accepted.freshBody": {
-    "en": "Your ownership has ended and the other owners have been told. Nothing else about your account has changed.",
-    "t": "Ваше владение прекращено, остальные владельцы уведомлены. Больше в вашем аккаунте ничего не изменилось."
-  },
-  "approval.removal.accepted.title": {
-    "en": "You gave up your seat",
-    "t": "Вы уступили своё место"
-  },
-  "approval.removal.confirmAction": {
-    "en": "Give up my seat",
-    "t": "Уступить место"
-  },
-  "approval.removal.confirmBody": {
-    "en": "Your owner seat ends immediately and cannot be restored from here. You would need the remaining owners to make you an owner again. Nothing else about your account changes.",
-    "t": "Ваше место владельца прекращается немедленно, и вернуть его отсюда нельзя. Чтобы снова стать владельцем, потребуется решение оставшихся владельцев. Больше в вашем аккаунте ничего не изменится."
-  },
-  "approval.removal.confirmTitle": {
-    "en": "This ends your ownership",
-    "t": "Это прекращает ваше владение"
-  },
-  "approval.removal.decisionLead": {
-    "en": "You can accept this or refuse it, and either answer needs the code from your email. Refusing does not end the matter: the other owners can still decide it between them, and that takes all of them agreeing.",
-    "t": "Вы можете согласиться или отказаться; для любого ответа нужен код из письма. Отказ не закрывает вопрос: остальные владельцы всё ещё могут решить его между собой, и для этого нужно согласие их всех."
-  },
-  "approval.removal.decisionTitle": {
-    "en": "Your answer",
-    "t": "Ваш ответ"
-  },
-  "approval.removal.irreversible": {
-    "en": "Accepting is final. Your ownership ends as soon as it is recorded, and it cannot be undone from this page or any other.",
-    "t": "Согласие окончательно. Ваше владение прекращается сразу после записи ответа, и отменить это ни с этой страницы, ни с какой-либо другой нельзя."
-  },
-  "approval.removal.lead": {
-    "en": "{initiator} has proposed that you stop being an owner of the platform. You have a say in it, and there is a deadline.",
-    "t": "{initiator} предлагает лишить вас статуса владельца платформы. Ваш голос учитывается, и у ответа есть срок."
-  },
-  "approval.removal.noReason": {
-    "en": "No reason was given.",
-    "t": "Причина не указана."
-  },
-  "approval.removal.proposedBy": {
-    "en": "Proposed by",
-    "t": "Кто предложил"
-  },
-  "approval.removal.reasonLabel": {
-    "en": "Reason given",
-    "t": "Указанная причина"
-  },
-  "approval.removal.refuse": {
-    "en": "Refuse — keep my seat",
-    "t": "Отказаться — оставить своё место"
-  },
-  "approval.removal.refused.body": {
-    "en": "Your answer has been recorded. You keep your seat unless every other eligible owner agrees to end it, and you will be told either way.",
-    "t": "Ваш ответ записан. Вы сохраняете своё место, если только все остальные владельцы, имеющие право голоса, не согласятся его прекратить. Вам сообщат в любом случае."
-  },
-  "approval.removal.refused.title": {
-    "en": "You refused this",
-    "t": "Вы отказались"
-  },
-  "approval.removal.title": {
-    "en": "A request to end your ownership",
-    "t": "Просьба прекратить ваше владение"
   },
   "auth.err.denied": {
     "en": "Sign-in was cancelled.",
@@ -754,10 +630,6 @@
   "ui.back": {
     "en": "Back",
     "t": "Назад"
-  },
-  "ui.cancel": {
-    "en": "Cancel",
-    "t": "Отмена"
   },
   "ui.copied": {
     "en": "Copied",

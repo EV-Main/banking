@@ -366,8 +366,7 @@ impl From<SubjectRef> for String {
 pub const MAX_MEMO_CHARS: usize = 140;
 
 /// A memo shown to people in wallet history and on approvals: plain text, at most
-/// [`MAX_MEMO_CHARS`] characters, no control characters and no link — the same needles
-/// concierge's relay refuses (`no_url`), so a memo that reaches a mail is one it will send.
+/// [`MAX_MEMO_CHARS`] characters, no control characters and no link.
 pub fn validate_memo(memo: &str) -> Result<(), DomainError> {
 	if memo.chars().count() > MAX_MEMO_CHARS {
 		return Err(DomainError::Validation(format!("memo is longer than {MAX_MEMO_CHARS} characters")));

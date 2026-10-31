@@ -23,7 +23,6 @@ mod config;
 mod cookies;
 mod dto;
 mod error;
-mod governance;
 mod routes;
 mod session;
 mod state;
@@ -32,7 +31,6 @@ mod wallet_intents;
 
 use config::AppConfig;
 use cookies::CookieNames;
-use routes::approval::AttemptLimiter;
 use session::BankingTokens;
 use state::{AppState, Grpc};
 
@@ -126,7 +124,6 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 	let state = AppState {
 		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
 		banking: Arc::new(BankingTokens::new()),
-		approvals: Arc::new(AttemptLimiter::default()),
 		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 		verifier,
 		wallet_actions: Arc::new(wallet_actions),
@@ -135,9 +132,8 @@ async fn run(config: AppConfig) -> color_eyre::Result<()> {
 	};
 
 	let listener = tokio::net::TcpListener::bind(bind_addr).await.context("failed to bind HTTP listener")?;
-	// `with_connect_info` so the public approval routes have a peer address to fall back
-	// on when no proxy header is present — an audit field and a rate-limit key, never an
-	// authorization input.
+	// `with_connect_info` so the money routes' audit has a peer address to fall back on when
+	// no proxy header is present — never an authorization input.
 	//
 	// Graceful on SIGTERM: the kubelet sends it on every rollout of this pod, and without
 	// this the listener and every in-flight response died with the process — a read that

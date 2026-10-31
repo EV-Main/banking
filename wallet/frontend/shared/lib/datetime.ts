@@ -1,8 +1,7 @@
 // The wallet host's one answer to "when was that" for absolute stamps and deadlines.
 //
-// It lives in `shared/` because several slices render the same deadline — the emailed
-// approval page and the signed-in payment answer — and a helper each would be a chance for
-// them to disagree about what "expires in 2 days" means. Same argument
+// It lives in `shared/` because several slices render the same stamps, and a helper each
+// would be a chance for them to disagree about what "expires in 2 days" means. Same argument
 // `shared/lib/intl-locale.ts` makes for its one line.
 //
 // WHAT A STAMP IS HERE: unix SECONDS, as a decimal string, with "0" meaning "no stamp

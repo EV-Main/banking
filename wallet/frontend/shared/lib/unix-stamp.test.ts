@@ -1,5 +1,5 @@
 // The regression these cover shipped to production: a dash stood in for every deadline and
-// decision time on the emailed approval pages.
+// decision time on the approval pages.
 //
 // The first assertion is the one that matters. It fails against the old RFC 3339 parser
 // (`new Date("1757000000")` is an Invalid Date) and passes against this one, which is the

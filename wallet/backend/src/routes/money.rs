@@ -12,7 +12,7 @@ use tonic::{Code, Status};
 use crate::{
 	dto,
 	error::ApiError,
-	routes::{approval::Peer, audit_context, first_party_request, money_gate, money_token_for, parse_json_body, require_money_token, required},
+	routes::{Peer, audit_context, first_party_request, money_gate, money_token_for, parse_json_body, require_money_token, required},
 	state::AppState,
 	wallet_intents::Assurance,
 };

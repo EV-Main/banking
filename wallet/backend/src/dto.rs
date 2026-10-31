@@ -626,56 +626,6 @@ impl From<bk::PaymentConfirmation> for PaymentConfirmation {
 
 list_dto! { PaymentConfirmationList from bk::PaymentConfirmationList { items: Vec<PaymentConfirmation> } }
 
-// ── governance: an owner's removal, answered from the mailbox (ownership plane) ──
-
-/// What the TARGET is shown before answering: no peer identities, no vote breakdown.
-/// Both addresses are masked — this surface, too, needs no session.
-#[derive(Default, Serialize)]
-pub struct OwnerRemovalInvitation {
-	pub removal_id: String,
-	pub state: String,
-	pub initiator_email: String,
-	pub target_email: String,
-	pub reason: String,
-	pub created_at: String,
-	pub expires_at: String,
-	pub decision: String,
-	pub attempts_remaining: u32,
-}
-
-impl From<cc::OwnerRemovalInvitation> for OwnerRemovalInvitation {
-	fn from(i: cc::OwnerRemovalInvitation) -> Self {
-		let state = enum_label(i.state().as_str_name(), "OWNER_REMOVAL_STATE_");
-		let decision = enum_label(i.decision().as_str_name(), "REMOVAL_VOTE_");
-		Self {
-			removal_id: i.removal_id,
-			state,
-			initiator_email: mask_email(&i.initiator_email),
-			target_email: mask_email(&i.target_email),
-			reason: i.reason,
-			created_at: i.created_at.to_string(),
-			expires_at: i.expires_at.to_string(),
-			decision,
-			attempts_remaining: i.attempts_remaining,
-		}
-	}
-}
-
-#[derive(Serialize)]
-pub struct RemovalDecision {
-	pub invitation: OwnerRemovalInvitation,
-	pub decided: bool,
-}
-
-impl From<cc::SubmitSelfDecisionResponse> for RemovalDecision {
-	fn from(r: cc::SubmitSelfDecisionResponse) -> Self {
-		Self {
-			invitation: r.invitation.map(OwnerRemovalInvitation::from).unwrap_or_default(),
-			decided: r.decided,
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -735,19 +685,6 @@ mod tests {
 		assert_eq!(enum_label(bk::PaymentState::Pending.as_str_name(), "PAYMENT_STATE_"), "pending");
 		assert_eq!(enum_label(bk::PaymentState::ExecutionFailed.as_str_name(), "PAYMENT_STATE_"), "execution_failed");
 		assert_eq!(enum_label(bk::ConsentDecision::Approve.as_str_name(), "CONSENT_DECISION_"), "approve");
-	}
-
-	/// The redacted invitation is the one surface a stranger holding a link can read: no
-	/// address on it may be renderable back to a real mailbox.
-	#[test]
-	fn the_public_invitation_masks_both_addresses() {
-		let invitation = OwnerRemovalInvitation::from(cc::OwnerRemovalInvitation {
-			initiator_email: "ada@example.com".into(),
-			target_email: "grace@example.com".into(),
-			..Default::default()
-		});
-		assert_eq!(invitation.initiator_email, "a***@example.com");
-		assert_eq!(invitation.target_email, "g***@example.com");
 	}
 
 	/// The wallet host parses every stamp as unix seconds (`shared/lib/unix-stamp.ts`).

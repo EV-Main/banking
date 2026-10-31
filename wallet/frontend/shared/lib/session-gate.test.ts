@@ -65,7 +65,7 @@ test("a renewal with no verdict changes nothing and lets a signed-in request ren
 });
 
 test("no page keeps a guest out", () => {
-  for (const pathname of ["/en/cabinet", "/en/cabinet/wallet", "/en/cabinet/admin/users", "/en/cabinet/owner-removal/tok-123"]) {
+  for (const pathname of ["/en/cabinet", "/en/cabinet/wallet", "/en/cabinet/admin/users"]) {
     assert.equal(decideSession(input({ pathname, hasSession: false })).redirect, null, pathname);
   }
 });

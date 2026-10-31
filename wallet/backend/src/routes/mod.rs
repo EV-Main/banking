@@ -1,4 +1,3 @@
-pub mod approval;
 pub mod cors;
 pub mod identity;
 pub mod intents;
@@ -30,7 +29,7 @@ use tower_http::{
 	trace::{DefaultOnFailure, TraceLayer},
 };
 
-use crate::{error::ApiError, routes::approval::AttemptLimiter, session::MoneyToken, state::AppState, wallet_intents::Assurance};
+use crate::{error::ApiError, session::MoneyToken, state::AppState, wallet_intents::Assurance};
 
 /// Outer per-request deadline: a handler that is still awaiting an upstream plane past
 /// this bound is aborted and the response becomes a 504, so a wedged plane can never hold
@@ -72,9 +71,6 @@ fn requests(state: AppState) -> Router {
 		.route("/api/wallet/payments/{id}", get(money::get_payment_confirmation))
 		.route("/api/wallet/payments/{id}/reject", post(money::reject_payment_confirmation))
 		.route("/api/operations", cors::scope_readable(&state, get(money::list_operations)))
-		// The public approval surface. NO session, NO CSRF, and no session cookie is even
-		// read: the emailed token in the path is the whole credential. See `approval`.
-		.route("/api/approval/removal/{token}", get(approval::removal_invitation).post(approval::removal_decision))
 		// Every money-out act, from the wallet and from a trusted host alike. See `intents`.
 		.merge(intents::routes(&state))
 		.layer(middleware::from_fn_with_state(state.clone(), evict_banking_pair_on_unauthorized))
@@ -161,6 +157,75 @@ const MONEY_MUTATION_WINDOW: Duration = Duration::from_secs(60);
 /// The per-user limiter [`money_gate`] consults.
 pub fn money_mutation_limiter() -> AttemptLimiter {
 	AttemptLimiter::new(MONEY_MUTATION_WINDOW, MONEY_MUTATIONS_PER_WINDOW)
+}
+
+/// Above this many tracked clients the map is swept of expired windows, so a spray of
+/// subjects cannot grow it without bound.
+const SWEEP_AT: usize = 4096;
+
+/// A per-client fixed window, keyed by the verified subject.
+///
+/// In-process and per-replica ON PURPOSE: the bounds that matter are the hub's own limits and
+/// idempotency. This exists only so a script cannot turn one session into a flood of upstream
+/// RPCs; approximate, per-replica counting is enough for that, and a shared store would put a
+/// dependency in front of paths that have to keep working when the rest is degraded.
+pub struct AttemptLimiter {
+	window: Duration,
+	max_attempts: u32,
+	windows: std::sync::Mutex<std::collections::HashMap<String, Window>>,
+}
+
+struct Window {
+	started: std::time::Instant,
+	attempts: u32,
+}
+
+impl AttemptLimiter {
+	fn new(window: Duration, max_attempts: u32) -> Self {
+		Self {
+			window,
+			max_attempts,
+			windows: std::sync::Mutex::new(std::collections::HashMap::new()),
+		}
+	}
+
+	/// Count one attempt from `client`, and say whether it may proceed.
+	pub fn allow(&self, client: &str) -> bool {
+		let mut windows = self.windows.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+		let now = std::time::Instant::now();
+		if windows.len() >= SWEEP_AT {
+			windows.retain(|_, window| now.duration_since(window.started) < self.window);
+		}
+		let window = windows.entry(client.to_string()).or_insert(Window { started: now, attempts: 0 });
+		if now.duration_since(window.started) >= self.window {
+			*window = Window { started: now, attempts: 0 };
+		}
+		window.attempts += 1;
+		window.attempts <= self.max_attempts
+	}
+}
+
+/// The socket peer, when the server was built with connect info. Optional on purpose: the
+/// address is an audit field and not a gate, so a request without it must still be served.
+pub struct Peer(Option<std::net::SocketAddr>);
+
+impl Peer {
+	pub fn addr(&self) -> Option<std::net::SocketAddr> {
+		self.0
+	}
+}
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Peer {
+	type Rejection = std::convert::Infallible;
+
+	async fn from_request_parts(parts: &mut axum::http::request::Parts, _state: &S) -> Result<Self, Self::Rejection> {
+		Ok(Self(
+			parts
+				.extensions
+				.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+				.map(|axum::extract::ConnectInfo(addr)| *addr),
+		))
+	}
 }
 
 /// The preamble of a first-party route that moves the caller's money within their claim:
@@ -267,7 +332,7 @@ pub fn verify_csrf(state: &AppState, jar: &CookieJar, headers: &HeaderMap) -> bo
 
 /// Parse a request body leniently (a malformed/empty body becomes `{}`), matching the
 /// old BFF's `req.json().catch(() => ({}))`.
-pub fn parse_body(body: &Bytes) -> Value {
+fn parse_body(body: &Bytes) -> Value {
 	serde_json::from_slice(body).unwrap_or_else(|_| Value::Object(Default::default()))
 }
 /// [`parse_body`] for a first-party money route: a body that is there must be declared
@@ -303,6 +368,17 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn the_window_admits_its_quota_then_refuses() {
+		let limiter = money_mutation_limiter();
+		for attempt in 1..=MONEY_MUTATIONS_PER_WINDOW {
+			assert!(limiter.allow("user-a"), "attempt {attempt} is within the window");
+		}
+		assert!(!limiter.allow("user-a"));
+		// The bound is per client, so one noisy subject cannot lock everyone else out.
+		assert!(limiter.allow("user-b"));
+	}
 
 	fn forwarded(value: &'static str) -> HeaderMap {
 		let mut headers = HeaderMap::new();

@@ -15,7 +15,6 @@ use tonic::{Request, Response, Status};
 use crate::{
 	config::AppConfig,
 	cookies::CookieNames,
-	routes::approval::AttemptLimiter,
 	session::BankingTokens,
 	state::{AppState, Grpc},
 	wallet_intents::{WalletActions, store::WalletStore},
@@ -53,7 +52,6 @@ pub fn state(vars: &HashMap<&'static str, String>, store: Arc<dyn WalletStore>) 
 	AppState {
 		cookies: Arc::new(CookieNames::new(config.cookie_secure())),
 		banking: Arc::new(BankingTokens::new()),
-		approvals: Arc::new(AttemptLimiter::default()),
 		money_mutations: Arc::new(crate::routes::money_mutation_limiter()),
 		verifier,
 		grpc: Grpc::connect_lazy(hub, hub, concierge, Some("test-issuance".into())).expect("build the lazy channels"),

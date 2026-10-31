@@ -5,8 +5,7 @@ because gitops names the image): a standalone, **stateless** HTTP service that
 is the wallet host's egress boundary. It proxies the browser's same-origin `/api/*` JSON
 requests to two gRPC planes:
 
-- **concierge** (identity) — `UserDirectory` `GetMe`, and the ownership plane's emailed
-  removal answer.
+- **concierge** (identity) — `UserDirectory` `GetMe`.
 - **piggybank** (money) — `WalletService`, `CompartmentService`, `InvoicePaymentService`,
   `OperationsService`, `PaymentConfirmationService` and `HealthService`.
 
@@ -36,11 +35,10 @@ in production.
 | `state.rs` | `AppState` + `Grpc` (lazy channels + typed client calls to both planes) |
 | `session.rs` | the per-user banking money-token cache + single-flight refresh |
 | `cookies.rs` | the cookie names the BFF reads (must match the shell's) |
-| `governance.rs` | the ownership plane's removal vote, as the emailed approval surface casts it |
 | `dto.rs` | browser-facing JSON DTOs (snake_case; 64-bit values as strings) |
 | `error.rs` | gRPC status → HTTP status + `{ "error": … }` body |
 | `wallet_intents/` | a trusted host's in-page wallet actions: the host matrix, the risk classes, the wallet key (CSRF HMAC + intent seal), the step-up proof verifier and the shared store (`docs/WALLET-INTENTS.md`) |
-| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`, `approval`; `ws` holds the `Origin` check of the first-party gate |
+| `routes/` | one handler per endpoint: `identity`, `money`, `intents`, `system`; `ws` holds the `Origin` check of the first-party gate |
 
 ## The wallet surface and the scope hosts
 
@@ -61,20 +59,6 @@ make that hold at the BFF:
   the verified subject (in-process, per replica; the hub's limits and idempotency are the
   real bound). Locally, flake.nix defaults `CABINET_WS_ORIGIN` to `http://localhost:$CABINET_FRONTEND_PORT`;
   a browser reaching the host by another origin overrides it.
-
-## The approval surface
-
-**`GET`/`POST /api/approval/removal/{token}`** is the surface an emailed owner reaches when
-another owner moves to remove them; ownership is a concierge-owned fact, so it calls that
-plane and forwards no user token. It
-carries no session and requires none — the emailed token is the credential — so it is the
-one part of this service with no cookie and no CSRF check. The `GET` is strictly read-only
-because mail scanners fetch every URL in a message; the vote is a `POST` carrying the
-secret code from the same mail. Every response sends `Referrer-Policy: no-referrer` and
-`Cache-Control: no-store`, and every unusable token — unknown, expired, spent, burned,
-wrong-state — produces one identical 404, so the endpoint cannot be used to probe which is
-which. The POST is bounded by a small in-process per-IP limiter; the real anti-brute-force
-bound is the plane's five-attempt token burn.
 
 ## Run
 

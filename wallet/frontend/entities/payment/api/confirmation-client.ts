@@ -1,8 +1,7 @@
 "use client";
 
-// A payment out of the caller's own claim, answered by the caller signed in — the session
-// replaces the token-and-code of `entities/approval`. An answer names only the order: the
-// terms are the stored order's, so a page cannot approve more than it showed.
+// A payment out of the caller's own claim, answered by the caller signed in. An answer names
+// only the order: the terms are the stored order's, so a page cannot approve more than it showed.
 
 import type { PaymentConfirmation } from "@/shared/contracts/payments";
 import { getJson, postJson } from "@/shared/lib/api-client";

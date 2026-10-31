@@ -7,7 +7,7 @@ use tonic::{
 	transport::{Channel, Endpoint},
 };
 
-use crate::{config::AppConfig, cookies::CookieNames, routes::approval::AttemptLimiter, session::BankingTokens, wallet_intents::WalletActions};
+use crate::{config::AppConfig, cookies::CookieNames, routes::AttemptLimiter, session::BankingTokens, wallet_intents::WalletActions};
 
 /// Cap on establishing a TCP/TLS connection to an upstream plane: a black-holed or
 /// half-open replica must fail fast rather than wedge the awaiting request task.
@@ -29,9 +29,6 @@ pub struct AppState {
 	/// is shell-owned and the request credential is the verified access-JWT cookie).
 	pub banking: Arc<BankingTokens>,
 	pub cookies: Arc<CookieNames>,
-	/// The per-IP bound on the public approval vote — see [`crate::routes::approval`].
-	/// Not a session and not a credential: the only state here that no cookie reaches.
-	pub approvals: Arc<AttemptLimiter>,
 	/// The per-user bound on the money mutations, keyed by the verified subject — see
 	/// [`crate::routes::money_gate`].
 	pub money_mutations: Arc<AttemptLimiter>,
@@ -96,10 +93,6 @@ impl Grpc {
 
 	fn payment_confirmations(&self) -> bk::payment_confirmation_service_client::PaymentConfirmationServiceClient<Channel> {
 		bk::payment_confirmation_service_client::PaymentConfirmationServiceClient::new(self.piggybank.clone())
-	}
-
-	fn removal_approval(&self) -> cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient<Channel> {
-		cc::owner_removal_approval_service_client::OwnerRemovalApprovalServiceClient::new(self.concierge.clone())
 	}
 
 	// ── concierge identity plane ───────────────────────────────────────────────
@@ -230,19 +223,6 @@ impl Grpc {
 	pub async fn list_operations(&self, token: &str, limit: u32) -> Result<bk::OperationList, Status> {
 		let req = bk::ListOperationsRequest { limit };
 		Ok(self.operations().list_operations(bearer(token, req)?).await?.into_inner())
-	}
-
-	// ── concierge ownership plane: an owner's removal, answered from the mailbox ──
-	// These carry NO bearer: the emailed token IS the credential and the target clicking
-	// it may not be signed in.
-
-	pub async fn removal_invitation(&self, token: &str) -> Result<cc::OwnerRemovalInvitation, Status> {
-		let req = cc::GetRemovalInvitationRequest { token: token.to_string() };
-		Ok(self.removal_approval().get_invitation(req).await?.into_inner())
-	}
-
-	pub async fn submit_self_decision(&self, req: cc::SubmitSelfDecisionRequest) -> Result<cc::SubmitSelfDecisionResponse, Status> {
-		Ok(self.removal_approval().submit_self_decision(req).await?.into_inner())
 	}
 }
 
