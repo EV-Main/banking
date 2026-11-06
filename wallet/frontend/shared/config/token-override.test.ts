@@ -4,7 +4,7 @@
 // that once and neither announced itself: markup written against a token vocabulary the
 // kit had already retired (kept alive by a local alias sheet, PR #290), and kit tokens
 // re-pointed in the wallet host's own CSS so half the screens drifted from the design system.
-// These tests fail the build on either, so a fix has to land upstream in EV-invest/lib's
+// These tests fail the build on either, so a fix has to land upstream in EV-Main/web_std's
 // `tokens.css` — or sit in the marked block below, which forces its own deletion.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -147,7 +147,7 @@ test("no wallet host stylesheet redeclares a kit token outside the marked block"
   assert.deepEqual(
     strays,
     [],
-    `kit tokens redeclared in the wallet host — fix them in EV-invest/lib tokens.css, or mirror the fix between\n${BLOCK_BEGIN} … ${BLOCK_END}:\n${strays.join("\n")}`,
+    `kit tokens redeclared in the wallet host — fix them in EV-Main/web_std tokens.css, or mirror the fix between\n${BLOCK_BEGIN} … ${BLOCK_END}:\n${strays.join("\n")}`,
   );
 });
 

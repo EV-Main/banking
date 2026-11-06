@@ -267,7 +267,7 @@ roots, and global tokens/uikit must cascade in.
   that carries a money action to evinvest.ltd and posts the result back. In-page
   actions on a host go through the BFF's intent routes instead
   ([`WALLET-INTENTS.md`](./WALLET-INTENTS.md)); the popup stays as the fallback. It lives
-  here, not in `EV-Main/lib`, because it is banking's contract; lib holds no
+  here, not in `EV-Main/web_std`, because it is banking's contract; lib holds no
   service logic. Not an npm workspace (own lockfile, `@evinvest/mfe` from npm);
   published by the `@evinvest/wallet-v<version>` tag via
   `.github/workflows/npm-publish.yml`, which never triggers a container release.

@@ -1,6 +1,6 @@
 // The EV Investment lockup — the brand mark over the wordmark, as one CSS-masked span.
 //
-// Local since `@evinvest/uikit` 0.10: EV-invest/lib#105 (1a48dc2) cut `Logo` from the kit
+// Local since `@evinvest/uikit` 0.10: EV-Main/web_std#105 (1a48dc2) cut `Logo` from the kit
 // together with the other EV-only chrome, because a kit every non-EV consumer would have
 // overridden class by class is not a kit. 0.15 (056761a) brought the mechanism back and
 // left the artwork with the consumer: the kit's `Logo` masks `--brand-mark` /
