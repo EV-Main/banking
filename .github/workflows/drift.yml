@@ -21,6 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/nix-env
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Manifest ↔ lock, protos ↔ committed contract
         run: nix run .#drift-check
       # The concierge pin: ancestor of origin/main, proto bytes equal at the pin, on

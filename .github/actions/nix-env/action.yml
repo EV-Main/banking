@@ -1,5 +1,8 @@
 description: Install Nix with the repo's v_flakes binary cache; optionally Swatinem/rust-cache keyed on the dev shell's toolchain
 inputs:
+  cachix-auth-token:
+    description: Cachix auth token, for pushing to the cache
+    required: true
   rust-cache:
     default: ""
     description: rust-cache shared-key; empty leaves rust-cache off
@@ -14,7 +17,7 @@ runs:
     - name: Setup Cachix
       uses: cachix/cachix-action@v17
       with:
-        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        authToken: ${{ inputs.cachix-auth-token }}
         name: ev-invest
     - if: inputs.rust-cache != ''
       name: Toolchain on PATH

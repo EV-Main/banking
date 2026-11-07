@@ -22,7 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/nix-env
-        with: { rust-cache: rust }
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          rust-cache: rust
       - name: clippy + tests
         run: nix run .#check-rust
 
@@ -33,5 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/nix-env
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: tsc + tests
         run: nix run .#check-frontend
