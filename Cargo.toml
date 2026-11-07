@@ -107,10 +107,15 @@ uuid = "1.23.2"
 zeroize = "1"
 
 [workspace.lints.rust]
+stable_features = "allow"
 unused_features = "allow"
 
 [workspace.lints.cargo]
 non_kebab_case_bins = "allow"
+
+[workspace.lints.clippy]
+if_not_else = "warn"
+integer_division = "warn"
 
 # smaller target/: trim debuginfo (deps need none), keep line tables for backtraces
 [profile.dev]

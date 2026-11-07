@@ -1,0 +1,32 @@
+description: Install Nix with the repo's v_flakes binary cache; optionally Swatinem/rust-cache keyed on the dev shell's toolchain
+inputs:
+  rust-cache:
+    default: ""
+    description: rust-cache shared-key; empty leaves rust-cache off
+    required: false
+name: nix-env
+runs:
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@main
+      with:
+        extra-conf: lazy-trees = true
+    - name: Setup Cachix
+      uses: cachix/cachix-action@v17
+      with:
+        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        name: ev-invest
+    - if: inputs.rust-cache != ''
+      name: Toolchain on PATH
+      run: nix develop --command bash -c 'dirname "$(command -v rustc)" >> "$GITHUB_PATH"'
+      shell: bash
+    - if: inputs.rust-cache != ''
+      name: No rustc wrapper
+      run: echo RUSTC_WRAPPER= >> "$GITHUB_ENV"
+      shell: bash
+    - if: inputs.rust-cache != ''
+      uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref_name == github.event.repository.default_branch }}
+        shared-key: ${{ inputs.rust-cache }}
+  using: composite

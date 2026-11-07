@@ -2,6 +2,8 @@
 ![Minimum Supported Rust Version](https://img.shields.io/badge/nightly-1.92+-ab6000.svg)
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs&style=flat-square" height="20">](https://docs.rs/ev_banking)
 [<img alt="WebAssembly" src="https://img.shields.io/badge/WebAssembly-654FF0?logo=webassembly&logoColor=white" height="20">](https://webassembly.org)
+![Build time](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/valeratrades/b48e6f02c61942200e7d1e3eeabf9bcb/raw/ev_banking-build.json)
+![Test time](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/valeratrades/b48e6f02c61942200e7d1e3eeabf9bcb/raw/ev_banking-test.json)
 
 `banking` is the central public hub of the `EV Investment` platform — the one process
 that owns the money, the identities, and the contracts. A Cargo + Turborepo
@@ -81,9 +83,11 @@ Admin surfaces **Sentry** (errors + tracing across hub and services) and **PostH
 
 <br>
 
-<sup>
-	This repository follows <a href="https://github.com/valeratrades/.github/tree/master/best_practices">my best practices</a> and <a href="https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md">Tiger Style</a> (except "proper capitalization for acronyms": (VsrState, not VSRState) and formatting). For project's architecture, see <a href="./docs/ARCHITECTURE.md">ARCHITECTURE.md</a>.
-</sup>
+<sup>Links for devs:</sup>
+- <sup><a href="./docs/ARCHITECTURE.md">architecture</a></sup>
+- <sup><a href="https://github.com/EV-Main/.github/blob/main/code/STYLE.md">style</a></sup>
+- <sup><a href="https://github.com/EV-Main/.github/tree/main/code/conventions">conventions</a></sup>
+- <sup><a href="https://github.com/EV-Main/.github/blob/main/code/conventions/git">contributing</a></sup>
 
 #### License
 
