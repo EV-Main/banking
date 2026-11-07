@@ -379,7 +379,7 @@ fn the_notice_amount_is_the_consent_decimal_spelled_as_money() {
 	}
 	let max = notice_amount(Usdt::from_base_units(u128::MAX));
 	assert!(is_money(&max), "{max}");
-	assert!(max.starts_with(&(u128::MAX / 10u128.pow(18)).to_string()), "{max}");
+	assert!(max.starts_with(&u128::MAX.div_euclid(10u128.pow(18)).to_string()), "{max}");
 }
 
 /// Assert the order's outcome notices: one per person in `recipients`, each under its own key,

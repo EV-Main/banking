@@ -1115,7 +1115,7 @@ mod tests {
 		assert!(PaymentReason::new("x".repeat(MAX_REASON_BYTES + 1)).is_err());
 		// BYTES, not chars: the limit bounds what a column and an approval carry, and both count
 		// bytes. A 2-byte character therefore costs two, so half as many of them fit.
-		let multibyte = "д".repeat(MAX_REASON_BYTES / 2 + 1);
+		let multibyte = "д".repeat(MAX_REASON_BYTES.div_euclid(2) + 1);
 		assert!(multibyte.chars().count() <= MAX_REASON_BYTES, "still well inside a character-counted limit");
 		assert!(PaymentReason::new(multibyte).is_err());
 		// A newline in the reason forges a line in the plain text of the approval.

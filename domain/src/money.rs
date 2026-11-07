@@ -187,7 +187,7 @@ impl Usdt {
 		if !self.0.is_multiple_of(factor) {
 			return Err(DomainError::Validation(format!("amount not representable on {network} (sub-precision dust)")));
 		}
-		Ok(self.0 / factor)
+		Ok(self.0.div_euclid(factor))
 	}
 
 	/// Parse a human/wire decimal string (e.g. `"100"`, `"100.5"`, `"0.000001"`)
@@ -229,7 +229,7 @@ impl Usdt {
 	/// outbound wire format). `"0"` for zero.
 	pub fn to_decimal_string(self) -> String {
 		let scale = 10u128.pow(CANONICAL_DECIMALS);
-		let int = self.0 / scale;
+		let int = self.0.div_euclid(scale);
 		let frac = self.0 % scale;
 		if frac == 0 {
 			return int.to_string();

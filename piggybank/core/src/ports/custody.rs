@@ -104,7 +104,7 @@ pub struct GasRunway {
 }
 impl GasRunway {
 	pub fn withdrawals(&self) -> u64 {
-		u64::try_from(self.balance / self.per_withdrawal).unwrap_or(u64::MAX) // saturates: past u64::MAX withdrawals is "plenty"
+		u64::try_from(self.balance.div_euclid(self.per_withdrawal)).unwrap_or(u64::MAX) // saturates: past u64::MAX withdrawals is "plenty"
 	}
 }
 
@@ -149,7 +149,7 @@ pub struct TreasuryFunding {
 /// 6 (SUN) / 9 (nanoton) dp per rail.
 pub fn format_native_units(units: u128, decimals: u32) -> String {
 	let scale = 10u128.pow(decimals);
-	let int = units / scale;
+	let int = units.div_euclid(scale);
 	let frac = units % scale;
 	if frac == 0 {
 		return int.to_string();

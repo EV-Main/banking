@@ -343,7 +343,7 @@ fn eip55_checksum(addr: &[u8]) -> String {
 	let mut out = String::with_capacity(2 + lower.len());
 	out.push_str("0x");
 	for (i, c) in lower.bytes().enumerate() {
-		let nibble = if i % 2 == 0 { hash[i / 2] >> 4 } else { hash[i / 2] & 0x0f };
+		let nibble = if i % 2 == 0 { hash[i.div_euclid(2)] >> 4 } else { hash[i.div_euclid(2)] & 0x0f };
 		if c.is_ascii_alphabetic() && nibble >= 8 {
 			out.push(c.to_ascii_uppercase() as char);
 		} else {

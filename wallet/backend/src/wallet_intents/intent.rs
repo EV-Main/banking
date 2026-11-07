@@ -181,7 +181,7 @@ pub fn micro_ceil(amount: Usdt) -> u64 {
 /// `amount` in whole micro-USDT, rounded down: a cap is never read as more than it says.
 pub fn micro_floor(amount: Usdt) -> u64 {
 	const PER_MICRO: u128 = 1_000_000_000_000;
-	u64::try_from(amount.base_units() / PER_MICRO).unwrap_or(u64::MAX)
+	u64::try_from(amount.base_units().div_euclid(PER_MICRO)).unwrap_or(u64::MAX)
 }
 
 pub fn from_micro(micro: u64) -> Usdt {

@@ -30,7 +30,7 @@ impl IntentKeys {
 
 	/// A token for `sub` on the page `origin`, and the unix second after which it is refused.
 	pub fn csrf_token(&self, sub: &str, origin: &str, now: u64) -> (String, u64) {
-		let window = now / CSRF_WINDOW_SECS;
+		let window = now.div_euclid(CSRF_WINDOW_SECS);
 		let token = format!("{window}.{}", hex(&self.csrf_mac(sub, origin, window)));
 		(token, (window + 2) * CSRF_WINDOW_SECS)
 	}
@@ -44,7 +44,7 @@ impl IntentKeys {
 		let Ok(window) = window.parse::<u64>() else {
 			return false;
 		};
-		let current = now / CSRF_WINDOW_SECS;
+		let current = now.div_euclid(CSRF_WINDOW_SECS);
 		if window != current && Some(window) != current.checked_sub(1) {
 			return false;
 		}

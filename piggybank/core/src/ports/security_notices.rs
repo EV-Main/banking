@@ -91,8 +91,8 @@ pub fn mandate_changed(user: UserId, mandate_id: &str, granted: bool, client: &s
 
 fn hours(secs: u64) -> String {
 	match secs {
-		s if s >= 3600 && s % 3600 == 0 => format!("{} h", s / 3600),
-		s if s >= 3600 => format!("{} h {} min", s / 3600, s % 3600 / 60),
+		s if s >= 3600 && s % 3600 == 0 => format!("{} h", s.div_euclid(3600)),
+		s if s >= 3600 => format!("{} h {} min", s.div_euclid(3600), (s % 3600).div_euclid(60)),
 		s => format!("{} min", s.div_ceil(60).max(1)),
 	}
 }

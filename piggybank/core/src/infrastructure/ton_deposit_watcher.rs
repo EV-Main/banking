@@ -450,6 +450,6 @@ mod tests {
 
 	#[test]
 	fn a_clock_before_the_lookback_window_cannot_underflow() {
-		assert_eq!(next_watermark(0, 0, true, LOOKBACK_SECS / 2), 0);
+		assert_eq!(next_watermark(0, 0, true, LOOKBACK_SECS.div_euclid(2)), 0);
 	}
 }

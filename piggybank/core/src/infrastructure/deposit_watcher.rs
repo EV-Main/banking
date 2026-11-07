@@ -410,7 +410,7 @@ impl DepositWatcher {
 					return Ok((logs, to));
 				}
 				Err(err) if matches!(classify(&err.to_string()), RpcAction::Narrow) && range > MIN_BLOCK_RANGE => {
-					let narrowed = (range / 2).max(MIN_BLOCK_RANGE);
+					let narrowed = range.div_euclid(2).max(MIN_BLOCK_RANGE);
 					self.block_range.store(narrowed, Ordering::Relaxed);
 					// Bounded: the window only ever shrinks, so this fires at most
 					// log2(max_block_range / MIN_BLOCK_RANGE) times for the process's life.
@@ -663,7 +663,7 @@ async fn first_retained_block<E>(pruned: u64, mut hi: u64, mut probe: impl Async
 	}
 	let mut lo = pruned;
 	while hi - lo > 1 {
-		let mid = lo + (hi - lo) / 2;
+		let mid = lo + (hi - lo).div_euclid(2);
 		if probe(mid).await? {
 			hi = mid;
 		} else {
@@ -1084,7 +1084,7 @@ mod tests {
 		let mut range = 500u64;
 		let mut steps = 0;
 		while range > MIN_BLOCK_RANGE {
-			range = (range / 2).max(MIN_BLOCK_RANGE);
+			range = range.div_euclid(2).max(MIN_BLOCK_RANGE);
 			steps += 1;
 			assert!(steps < 64, "narrowing must terminate");
 		}
