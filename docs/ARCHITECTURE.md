@@ -272,8 +272,8 @@ roots, and global tokens/uikit must cascade in.
   published by the `@evinvest/banking-v<version>` tag via
   `.github/workflows/npm-publish.yml`, which never triggers a container release.
 - **On evinvest.ltd the wallet has concierge's shape:** one address, `/wallet` (as
-  `/account`), which every other host links to, and the bundles under `/api/wallet/mfe/`
-  (as `/api/auth/mfe/`).
+  `/account`), which every other host links to, and the bundles under `/mfe/banking/`
+  (the platform's `/mfe/<producer>/`, devops docs/ARCHITECTURE.md).
 - **Rust/WASM producer** (other repos): Dioxus 0.7 mounts via
   `dioxus-web` `Config::rootelement(Element)` into the custom element (don't use
   `dioxus-web-component` yet — it pins Dioxus 0.6); Leptos mounts via

@@ -2,7 +2,7 @@
 // build:mfe`, on the very files that ship (uncompressed, as the consumers hash them).
 //
 // The wallet elements' bundle: the line `@evinvest/banking` reads (`parseWalletPins`). Names are
-// relative to the served directory https://evinvest.ltd/api/wallet/mfe/, and the SDK checks one
+// relative to the served directory https://evinvest.ltd/mfe/banking/, and the SDK checks one
 // module: the build emits no chunks. `wallet` as an argument is accepted and means the same.
 //   $ npm run --silent mfe:pins
 //   wallet.js=…,wallet.css=…
@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 // Order and names are the consumers': each parses `file=hex` pairs, 64 lowercase hex each.
-const dir = "public/mfe/wallet/";
+const dir = "public/mfe/banking/";
 const files = ["wallet.js", "wallet.css"];
 
 const args = process.argv.slice(2);

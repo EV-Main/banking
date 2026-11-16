@@ -5,7 +5,7 @@ pay-invoice button and the mandate button — over [`@evinvest/mfe`](https://www
 that carries a money action to evinvest.ltd and brings its result back, the
 opt-in inline mode, the CSP sources a host needs, and the bundle integrity
 checks. Hosts: the invest cabinet and the SA panel. The elements are
-banking's, served from `https://evinvest.ltd/api/wallet/mfe/`. This package only
+banking's, served from `https://evinvest.ltd/mfe/banking/`. This package only
 puts the pieces together: it has no iframe and no money logic.
 
 - `.` — server-safe core: registry constants, tags, `openWalletAction` and its
@@ -170,12 +170,13 @@ const header = serializeCsp(mergeCsp(hostDirectives, walletCsp({ mode: 'inline' 
 
 | Directive | Sources |
 | --- | --- |
-| `script-src` | `https://evinvest.ltd/api/wallet/mfe/` |
-| `style-src` | `https://evinvest.ltd/api/wallet/mfe/` |
-| `connect-src` | `https://evinvest.ltd/api/wallet/mfe/` (registry, stylesheet) · `https://evinvest.ltd/api/auth/session` · `https://evinvest.ltd/cabinet/api/wallet` · `https://evinvest.ltd/cabinet/api/wallet/csrf` (the kinds the BFF runs in the page, read on every connect) · `https://evinvest.ltd/cabinet/api/operations` (history; CSP ignores its query) |
+| `script-src` | `https://evinvest.ltd/mfe/banking/` |
+| `style-src` | `https://evinvest.ltd/mfe/banking/` |
+| `connect-src` | `https://evinvest.ltd/mfe/banking/` (registry, stylesheet) · `https://evinvest.ltd/api/auth/session` · `https://evinvest.ltd/cabinet/api/wallet` · `https://evinvest.ltd/cabinet/api/wallet/csrf` (the kinds the BFF runs in the page, read on every connect) · `https://evinvest.ltd/cabinet/api/operations` (history; CSP ignores its query) |
 
 `walletCsp({ mode: 'inline' })` adds concierge's bundle directory
-`https://evinvest.ltd/api/auth/mfe/` (the step-up element and its registry) to
+`https://evinvest.ltd/mfe/concierge/`, and its old `/api/auth/mfe/` while concierge moves
+(the step-up element and its registry), to
 `script-src`, `style-src` and `connect-src`, and two more directories to
 `connect-src`: `https://evinvest.ltd/cabinet/api/wallet/` (the intent routes)
 and `https://evinvest.ltd/api/auth/stepup/` (step-up). A source that ends in
@@ -214,7 +215,7 @@ Banking publishes the sha256 of each shipped file as one line, from
 wallet.js=<64 lowercase hex>,wallet.css=<64 lowercase hex>
 ```
 
-The names are relative to `https://evinvest.ltd/api/wallet/mfe/`. A host keeps
+The names are relative to `https://evinvest.ltd/mfe/banking/`. A host keeps
 this line in its config, built from banking's source and never read from
 evinvest.ltd, and updates it by a reviewed commit *before* banking rolls the
 bundle out. An SRI value may list several hashes (`sha256-A sha256-B` accepts

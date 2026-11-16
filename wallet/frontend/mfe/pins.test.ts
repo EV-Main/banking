@@ -41,9 +41,9 @@ const WALLET_JS_SHA256 = "936107adb3e970a54546140d379df936f0e7da01b374c68485a72a
 const WALLET_CSS_SHA256 = "310767756e9d1fba6550eafdef0ce360665cfae9870a847332847f080316d8ef";
 
 async function walletBundles(files: { js?: string; css?: string }): Promise<void> {
-  await mkdir(join(root, "public", "mfe", "wallet"), { recursive: true });
-  if (files.js !== undefined) await writeFile(join(root, "public", "mfe", "wallet", "wallet.js"), files.js);
-  if (files.css !== undefined) await writeFile(join(root, "public", "mfe", "wallet", "wallet.css"), files.css);
+  await mkdir(join(root, "public", "mfe", "banking"), { recursive: true });
+  if (files.js !== undefined) await writeFile(join(root, "public", "mfe", "banking", "wallet.js"), files.js);
+  if (files.css !== undefined) await writeFile(join(root, "public", "mfe", "banking", "wallet.css"), files.css);
 }
 
 function pinsWith(...args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -88,7 +88,7 @@ test("a missing wallet bundle fails with the build hint and prints no pins", asy
 
   assert.notEqual(failed.code, 0);
   assert.equal(failed.stdout, "");
-  assert.match(failed.stderr, /public\/mfe\/wallet\/wallet\.js is missing — run `npm run build:mfe` first/);
+  assert.match(failed.stderr, /public\/mfe\/banking\/wallet\.js is missing — run `npm run build:mfe` first/);
 });
 
 test("an unknown argument fails and prints no pins", async () => {

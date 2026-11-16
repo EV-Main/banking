@@ -1,14 +1,1 @@
-[
-  {
-    "name": "example.widget",
-    "tag": "mfe-example-widget",
-    "scriptUrl": "/cabinet/mfe/example-widget.js",
-    "kind": "component"
-  },
-  {
-    "name": "example",
-    "tag": "mfe-example-dashboard",
-    "scriptUrl": "/cabinet/mfe/example-dashboard.js",
-    "kind": "page"
-  }
-]
+[]

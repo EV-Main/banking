@@ -48,9 +48,10 @@ export function walletCsp({ mode = 'popup', origin = WALLET_ORIGIN }: WalletCspO
   ];
   const bundles = [prefix];
   if (mode === 'inline') {
-    const stepup = `${base}/api/auth/mfe/`; // concierge's CONCIERGE_MFE_PREFIX
-    bundles.push(stepup);
-    connect.push(stepup, `${base}/cabinet/api/wallet/`, `${base}/api/auth/stepup/`);
+    // concierge's CONCIERGE_MFE_PREFIX, and its old directory while concierge moves (banking#609)
+    const stepup = [`${base}/mfe/concierge/`, `${base}/api/auth/mfe/`];
+    bundles.push(...stepup);
+    connect.push(...stepup, `${base}/cabinet/api/wallet/`, `${base}/api/auth/stepup/`);
   }
   return Object.freeze({
     'script-src': Object.freeze(bundles),

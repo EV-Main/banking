@@ -73,20 +73,13 @@ const nextConfig: NextConfig = {
     // shell-owned auth routes on the same origin.
     return [
       { source: "/cabinet/api/:path*", destination: `${BACKEND}/api/:path*` },
-      // `public/` is served from the origin root, so the element-remote bundles
-      // land on `/mfe/*` — but both MFE registries, and therefore the conductor's
-      // injected shell, ask for `/cabinet/mfe/*`. `basePath` used to add that
-      // prefix for free; without it the element bundles 404 on every page of the
-      // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
-      { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
-      // The wallet bundles' public directory — `https://evinvest.ltd/api/wallet/mfe/`, the
-      // prefix `@evinvest/banking` holds every registry entry to and hosts name in their
-      // CSP. Built to `public/mfe/wallet/` beside the other element bundles.
-      { source: "/api/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
-      // Its alias, for the hosts built before the move (#609), with the registry that
-      // names the alias's own files (mfe/wallet-registry.mjs).
-      { source: "/wallet/mfe/registry.json", destination: "/mfe/wallet/registry.alias.json" },
-      { source: "/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
+      // The wallet bundles are `public/mfe/banking/`, served as is at `/mfe/banking/`. These are
+      // the directories hosts built before the move ask for (#609), each with the registry that
+      // names its own files (mfe/wallet-registry.mjs).
+      { source: "/api/wallet/mfe/registry.json", destination: "/mfe/banking/registry.api.json" },
+      { source: "/api/wallet/mfe/:path*", destination: "/mfe/banking/:path*" },
+      { source: "/wallet/mfe/registry.json", destination: "/mfe/banking/registry.alias.json" },
+      { source: "/wallet/mfe/:path*", destination: "/mfe/banking/:path*" },
     ];
   },
   // Request-invariant hardening on every response, mirroring
@@ -112,19 +105,16 @@ const nextConfig: NextConfig = {
     // Without any Cache-Control every page of the site revalidated them; five minutes fresh
     // plus ten minutes of stale-while-revalidate bounds how long a release — or a security
     // fix — takes to reach a returning visitor (15 min) while sparing the header a round trip
-    // on every navigation. A day of SWR kept a revoked bundle alive far too long. Both
-    // spellings: the conductor asks for `/cabinet/mfe/*`, a direct run of the zone for `/mfe/*`.
+    // on every navigation. A day of SWR kept a revoked bundle alive far too long.
     const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=600" }];
     const walletCors = [{ key: "Access-Control-Allow-Origin", value: "*" }];
     return [
       { source: "/mfe/:path*", headers: mfeHeaders },
-      { source: "/cabinet/mfe/:path*", headers: mfeHeaders },
-      // The wallet elements are loaded by OTHER origins (the scope hosts): a module script
-      // and the sheet's fetch are CORS requests, refused without this. Public, cookie-less
-      // files, so `*` grants nothing a direct download would not.
+      // Other origins (the scope hosts) load the elements: a module script and the sheet's fetch
+      // are CORS requests. `/mfe/banking/` gets its CORS at the edge (devops), these old
+      // directories reach the zone on another route.
       { source: "/api/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
-      { source: "/mfe/wallet/:path*", headers: walletCors },
       { source: "/:path*", headers },
     ];
   },

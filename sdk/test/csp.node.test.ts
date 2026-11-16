@@ -8,10 +8,10 @@ import { mergeCsp, serializeCsp, walletCsp } from '../src/index';
 describe('walletCsp', () => {
   it('should_list_the_bundle_directory_and_read_routes_in_popup_mode', () => {
     expect(walletCsp()).toEqual({
-      'script-src': ['https://evinvest.ltd/api/wallet/mfe/'],
-      'style-src': ['https://evinvest.ltd/api/wallet/mfe/'],
+      'script-src': ['https://evinvest.ltd/mfe/banking/'],
+      'style-src': ['https://evinvest.ltd/mfe/banking/'],
       'connect-src': [
-        'https://evinvest.ltd/api/wallet/mfe/',
+        'https://evinvest.ltd/mfe/banking/',
         'https://evinvest.ltd/api/auth/session',
         'https://evinvest.ltd/cabinet/api/wallet',
         'https://evinvest.ltd/cabinet/api/wallet/csrf',
@@ -23,14 +23,15 @@ describe('walletCsp', () => {
   it('should_add_the_intent_directory_and_the_step_up_element_in_inline_mode', () => {
     const csp = walletCsp({ mode: 'inline' });
 
-    expect(csp['script-src']).toEqual(['https://evinvest.ltd/api/wallet/mfe/', 'https://evinvest.ltd/api/auth/mfe/']);
-    expect(csp['style-src']).toEqual(['https://evinvest.ltd/api/wallet/mfe/', 'https://evinvest.ltd/api/auth/mfe/']);
+    expect(csp['script-src']).toEqual(['https://evinvest.ltd/mfe/banking/', 'https://evinvest.ltd/mfe/concierge/', 'https://evinvest.ltd/api/auth/mfe/']);
+    expect(csp['style-src']).toEqual(['https://evinvest.ltd/mfe/banking/', 'https://evinvest.ltd/mfe/concierge/', 'https://evinvest.ltd/api/auth/mfe/']);
     expect(csp['connect-src']).toEqual([
-      'https://evinvest.ltd/api/wallet/mfe/',
+      'https://evinvest.ltd/mfe/banking/',
       'https://evinvest.ltd/api/auth/session',
       'https://evinvest.ltd/cabinet/api/wallet',
       'https://evinvest.ltd/cabinet/api/wallet/csrf',
       'https://evinvest.ltd/cabinet/api/operations',
+      'https://evinvest.ltd/mfe/concierge/',
       'https://evinvest.ltd/api/auth/mfe/',
       'https://evinvest.ltd/cabinet/api/wallet/',
       'https://evinvest.ltd/api/auth/stepup/',
@@ -45,7 +46,7 @@ describe('walletCsp', () => {
   });
 
   it('should_accept_a_staging_origin_with_a_port', () => {
-    expect(walletCsp({ origin: 'https://x.y:8443' })['script-src']).toEqual(['https://x.y:8443/api/wallet/mfe/']);
+    expect(walletCsp({ origin: 'https://x.y:8443' })['script-src']).toEqual(['https://x.y:8443/mfe/banking/']);
   });
 
   it.each([
@@ -90,9 +91,9 @@ describe('mergeCsp', () => {
   const wallet = walletCsp();
 
   it('should_append_wallet_sources_after_the_host_sources_without_repeating_them', () => {
-    const merged = mergeCsp({ 'script-src': ["'self'", 'https://evinvest.ltd/api/wallet/mfe/'] }, { 'script-src': ['https://evinvest.ltd/api/wallet/mfe/', 'https://b.example'] });
+    const merged = mergeCsp({ 'script-src': ["'self'", 'https://evinvest.ltd/mfe/banking/'] }, { 'script-src': ['https://evinvest.ltd/mfe/banking/', 'https://b.example'] });
 
-    expect(merged['script-src']).toEqual(["'self'", 'https://evinvest.ltd/api/wallet/mfe/', 'https://b.example']);
+    expect(merged['script-src']).toEqual(["'self'", 'https://evinvest.ltd/mfe/banking/', 'https://b.example']);
   });
 
   it('should_seed_a_missing_fetch_directive_from_default_src', () => {
@@ -101,13 +102,13 @@ describe('mergeCsp', () => {
     expect(merged['default-src']).toEqual(["'self'"]);
     expect(merged['connect-src']).toEqual([
       "'self'",
-      'https://evinvest.ltd/api/wallet/mfe/',
+      'https://evinvest.ltd/mfe/banking/',
       'https://evinvest.ltd/api/auth/session',
       'https://evinvest.ltd/cabinet/api/wallet',
       'https://evinvest.ltd/cabinet/api/wallet/csrf',
       'https://evinvest.ltd/cabinet/api/operations',
     ]);
-    expect(merged['script-src']).toEqual(["'self'", 'https://evinvest.ltd/api/wallet/mfe/']);
+    expect(merged['script-src']).toEqual(["'self'", 'https://evinvest.ltd/mfe/banking/']);
   });
 
   it('should_add_no_wallet_directive_where_the_host_restricts_nothing', () => {
@@ -132,13 +133,13 @@ describe('mergeCsp', () => {
   it('should_give_style_src_elem_the_style_src_sources_when_the_host_sets_it', () => {
     const merged = mergeCsp({ 'style-src': ["'self'"], 'style-src-elem': ["'self'"] }, wallet);
 
-    expect(merged['style-src-elem']).toEqual(["'self'", 'https://evinvest.ltd/api/wallet/mfe/']);
+    expect(merged['style-src-elem']).toEqual(["'self'", 'https://evinvest.ltd/mfe/banking/']);
   });
 
   it('should_give_script_src_elem_the_script_src_sources_when_the_host_sets_it', () => {
     const merged = mergeCsp({ 'default-src': ["'self'"], 'script-src-elem': ["'self'", "'nonce-abc'"] }, wallet);
 
-    expect(merged['script-src-elem']).toEqual(["'self'", "'nonce-abc'", 'https://evinvest.ltd/api/wallet/mfe/']);
+    expect(merged['script-src-elem']).toEqual(["'self'", "'nonce-abc'", 'https://evinvest.ltd/mfe/banking/']);
   });
 
   it('should_not_create_an_element_directive_the_host_does_not_set', () => {
@@ -161,7 +162,7 @@ describe('mergeCsp', () => {
     const merged = mergeCsp({ 'default-src': ["'self'"], 'img-src': ['data:'] }, walletCsp({ mode: 'inline' }));
 
     expect(serializeCsp(merged)).toBe(
-      "connect-src 'self' https://evinvest.ltd/api/wallet/mfe/ https://evinvest.ltd/api/auth/session https://evinvest.ltd/cabinet/api/wallet https://evinvest.ltd/cabinet/api/wallet/csrf https://evinvest.ltd/cabinet/api/operations https://evinvest.ltd/api/auth/mfe/ https://evinvest.ltd/cabinet/api/wallet/ https://evinvest.ltd/api/auth/stepup/; default-src 'self'; img-src data:; script-src 'self' https://evinvest.ltd/api/wallet/mfe/ https://evinvest.ltd/api/auth/mfe/; style-src 'self' https://evinvest.ltd/api/wallet/mfe/ https://evinvest.ltd/api/auth/mfe/",
+      "connect-src 'self' https://evinvest.ltd/mfe/banking/ https://evinvest.ltd/api/auth/session https://evinvest.ltd/cabinet/api/wallet https://evinvest.ltd/cabinet/api/wallet/csrf https://evinvest.ltd/cabinet/api/operations https://evinvest.ltd/mfe/concierge/ https://evinvest.ltd/api/auth/mfe/ https://evinvest.ltd/cabinet/api/wallet/ https://evinvest.ltd/api/auth/stepup/; default-src 'self'; img-src data:; script-src 'self' https://evinvest.ltd/mfe/banking/ https://evinvest.ltd/mfe/concierge/ https://evinvest.ltd/api/auth/mfe/; style-src 'self' https://evinvest.ltd/mfe/banking/ https://evinvest.ltd/mfe/concierge/ https://evinvest.ltd/api/auth/mfe/",
     );
   });
 });

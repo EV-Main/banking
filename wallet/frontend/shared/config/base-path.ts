@@ -122,9 +122,8 @@ const NON_PAGE = new RegExp(
 );
 
 /** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle.
- *  The wallet bundles' public directory is `/api/wallet/mfe/*` (`@evinvest/banking`, under
- *  `api/`), served from `public/mfe/wallet/` by the next.config rewrite; `/wallet/mfe/*` is
- *  its alias for hosts built before the move (#609). */
+ *  The wallet bundles are `/mfe/banking/*` (`@evinvest/banking`); `/api/wallet/mfe/*` and
+ *  `/wallet/mfe/*` are their old directories, for hosts built before the move (#609). */
 export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathname);
 
 /**

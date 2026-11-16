@@ -13,8 +13,8 @@ const CSS = 'body{}';
 const JS_SHA256 = '6e11c72f7cf6bc383152dd16ddd5903aba6bb1c99d6b6639a4bb0b838185fa92';
 const CSS_SHA256 = '7c98040a541657584690ae2a1cc3b42a8b53b159cc60c5d3abbfecbaeac6c94a';
 const PINS: WalletPins = { 'wallet.js': JS_SHA256, 'wallet.css': CSS_SHA256 };
-const JS_URL = 'https://evinvest.ltd/api/wallet/mfe/wallet.js';
-const CSS_URL = 'https://evinvest.ltd/api/wallet/mfe/wallet.css';
+const JS_URL = 'https://evinvest.ltd/mfe/banking/wallet.js';
+const CSS_URL = 'https://evinvest.ltd/mfe/banking/wallet.css';
 
 // Copied into a fresh buffer: `encode` is typed as possibly shared, which `BufferSource` refuses.
 function bytes(text: string): Uint8Array<ArrayBuffer> {
@@ -174,7 +174,7 @@ describe('verifyWalletBundle', () => {
   });
 
   it('should_fetch_from_a_staging_origin', async () => {
-    const fetchMock = serve({ 'https://x.y:8443/api/wallet/mfe/wallet.js': JS, 'https://x.y:8443/api/wallet/mfe/wallet.css': CSS });
+    const fetchMock = serve({ 'https://x.y:8443/mfe/banking/wallet.js': JS, 'https://x.y:8443/mfe/banking/wallet.css': CSS });
 
     const check = await verifyWalletBundle(PINS, { fetch: fetchMock, origin: 'https://x.y:8443' });
 
@@ -196,9 +196,9 @@ describe('walletImportMap', () => {
   });
 
   it('should_pin_another_absolute_https_url', () => {
-    const map = walletImportMap('sha384-HT2E9NfWiuQ/w1PRai+hTyqW16NIoCGA/m8VQDUopfAtcz6YQjtsMmQd5uRbVDpW', 'https://x.y:8443/api/wallet/mfe/wallet.js');
+    const map = walletImportMap('sha384-HT2E9NfWiuQ/w1PRai+hTyqW16NIoCGA/m8VQDUopfAtcz6YQjtsMmQd5uRbVDpW', 'https://x.y:8443/mfe/banking/wallet.js');
 
-    expect(map.integrity).toEqual({ 'https://x.y:8443/api/wallet/mfe/wallet.js': 'sha384-HT2E9NfWiuQ/w1PRai+hTyqW16NIoCGA/m8VQDUopfAtcz6YQjtsMmQd5uRbVDpW' });
+    expect(map.integrity).toEqual({ 'https://x.y:8443/mfe/banking/wallet.js': 'sha384-HT2E9NfWiuQ/w1PRai+hTyqW16NIoCGA/m8VQDUopfAtcz6YQjtsMmQd5uRbVDpW' });
   });
 
   it.each([
@@ -210,8 +210,8 @@ describe('walletImportMap', () => {
   });
 
   it.each([
-    ['relative', '/api/wallet/mfe/wallet.js'],
-    ['http', 'http://evinvest.ltd/api/wallet/mfe/wallet.js'],
+    ['relative', '/mfe/banking/wallet.js'],
+    ['http', 'http://evinvest.ltd/mfe/banking/wallet.js'],
   ])('should_throw_for_a_script_url_that_is_%s', (_label, scriptUrl) => {
     expect(() => walletImportMap('sha256-bhHHL3z2vDgxUt0W3dWQOrprscmda2Y5pLsLg4GF+pI=', scriptUrl)).toThrow(TypeError);
   });

@@ -1,6 +1,5 @@
 // Bundles the element remotes into self-registering ESM files served from public/mfe/:
-// banking's wallet elements (public/mfe/wallet/, published as
-// https://evinvest.ltd/api/wallet/mfe/ through the next.config rewrite). React and each
+// banking's wallet elements (public/mfe/banking/, published as https://evinvest.ltd/mfe/banking/). React and each
 // element are bundled in (the host never imports this module graph — it only injects the
 // <script>). The sibling CSS is compiled separately by the Tailwind CLI (see the
 // `build:mfe` npm script) so this stays a pure JS build.
@@ -8,7 +7,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 
 import { build } from "esbuild";
 
-import { WALLET_ALIAS_DIR, WALLET_DIR, walletRegistryJson } from "./wallet-registry.mjs";
+import { WALLET_DIR, WALLET_OLD_DIRS, walletRegistryJson } from "./wallet-registry.mjs";
 
 const shared = {
   bundle: true,
@@ -72,10 +71,10 @@ async function walletMessages() {
 await build({
   ...shared,
   entryPoints: ["mfe/wallet/entry.tsx"],
-  outfile: "public/mfe/wallet/wallet.js",
+  outfile: "public/mfe/banking/wallet.js",
   define: { ...NODE_ENV, __WALLET_MESSAGES__: JSON.stringify(await walletMessages()) },
 });
 
-await mkdir("public/mfe/wallet", { recursive: true });
-await writeFile("public/mfe/wallet/registry.json", walletRegistryJson(WALLET_DIR));
-await writeFile("public/mfe/wallet/registry.alias.json", walletRegistryJson(WALLET_ALIAS_DIR));
+await mkdir("public/mfe/banking", { recursive: true });
+await writeFile("public/mfe/banking/registry.json", walletRegistryJson(WALLET_DIR));
+for (const { dir, registry } of WALLET_OLD_DIRS) await writeFile(`public/mfe/banking/${registry}`, walletRegistryJson(dir));

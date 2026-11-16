@@ -103,9 +103,8 @@ function appendLink(tag: string, href: string): Promise<void> {
 async function inlineOrLink(tag: string, href: string): Promise<void> {
   let css: string;
   try {
-    // Defaults on purpose: the bundle and its sheet share an origin on every host (the
-    // conductor serves /cabinet/mfe, the panel proxies it), so this is a same-origin read
-    // under the `/mfe/*` Cache-Control in next.config.ts; a cross-origin host without CORS lands in the fallback.
+    // Defaults on purpose: the sheet is the bundle's sibling, read under the `/mfe/*`
+    // Cache-Control in next.config.ts; a cross-origin host without CORS lands in the fallback.
     const res = await fetch(href);
     if (!res.ok) throw new Error(`stylesheet: HTTP ${res.status}`);
     css = await res.text();
