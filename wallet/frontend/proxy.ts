@@ -247,6 +247,6 @@ export const config = {
   // code and is what the tests pin; keep the two in step.
   matcher: [
     "/",
-    "/((?!(?:cabinet/)?(?:api|_next/static|_next/image|favicon.ico|mfe/|wallet/mfe/)).*)",
+    "/((?!(?:cabinet/)?(?:api|_next/static|_next/image|favicon.ico|mfe/)).*)",
   ],
 };

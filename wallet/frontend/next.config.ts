@@ -83,10 +83,6 @@ const nextConfig: NextConfig = {
       // prefix `@evinvest/banking` holds every registry entry to and hosts name in their
       // CSP. Built to `public/mfe/wallet/` beside the other element bundles.
       { source: "/api/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
-      // Its alias, for the hosts built before the move (#609), with the registry that
-      // names the alias's own files (mfe/wallet-registry.mjs).
-      { source: "/wallet/mfe/registry.json", destination: "/mfe/wallet/registry.alias.json" },
-      { source: "/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
     ];
   },
   // Request-invariant hardening on every response, mirroring
@@ -123,7 +119,6 @@ const nextConfig: NextConfig = {
       // and the sheet's fetch are CORS requests, refused without this. Public, cookie-less
       // files, so `*` grants nothing a direct download would not.
       { source: "/api/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
-      { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/mfe/wallet/:path*", headers: walletCors },
       { source: "/:path*", headers },
     ];
