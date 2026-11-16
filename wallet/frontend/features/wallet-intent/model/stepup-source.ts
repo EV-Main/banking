@@ -5,9 +5,8 @@ import { useEffect, useState } from "react";
 
 export type StepupSource = { status: "loading" } | { status: "ready"; scriptUrl: string } | { status: "failed" };
 
-// Concierge serves its bundles beside its routes, under `/api/auth/` of the wallet origin: the
-// conductor fronts both, in production and in dev, as for the session read the client renews.
-const MFE_DIR = "/api/auth/mfe/";
+// Concierge's bundles on the wallet origin, which the edge routes to concierge.
+const MFE_DIR = "/mfe/concierge/";
 
 const registries = new Map<string, Promise<ParseResult<MfeEntry[]>>>();
 

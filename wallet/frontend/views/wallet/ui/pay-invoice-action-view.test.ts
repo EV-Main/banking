@@ -44,7 +44,7 @@ const STUBS = {
     }
     export function StepupDialog() { return null; }
   `,
-  "../model/stepup-source": `export const useStepupSource = () => ({ status: "ready", scriptUrl: "/api/auth/mfe/stepup.js" });`,
+  "../model/stepup-source": `export const useStepupSource = () => ({ status: "ready", scriptUrl: "/mfe/concierge/stepup.js" });`,
   "@/features/wallet-action": `
     export const ActionFrame = ({ children }) => children;
     export const ActionCancel = () => null;
