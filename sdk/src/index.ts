@@ -1,5 +1,5 @@
 /**
- * @module @evinvest/wallet
+ * @module @evinvest/banking
  *
  * Host side of the banking wallet microfrontends (`Wallet`, `PayInvoiceButton`,
  * `MandateButton`): where they live, their tags and contract version, the popup

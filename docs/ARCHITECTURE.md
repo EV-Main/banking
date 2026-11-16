@@ -261,15 +261,15 @@ roots, and global tokens/uikit must cascade in.
   Federation 2.0 **runtime** (`@module-federation/runtime` + `bridge-react`) to
   share one React instance — never `@module-federation/nextjs-mf`
   (App-Router-unsupported, sunsetting).
-- **Host SDK for banking's own elements** — [`sdk/wallet`](../sdk/wallet)
-  (`@evinvest/wallet`): the wallet and pay-invoice elements as React wrappers for
-  other hosts (invest cabinet, SA panel, admin), plus `openWalletAction`, the popup
+- **Host SDK for banking's own elements** — [`sdk/`](../sdk)
+  (`@evinvest/banking`): the wallet and pay-invoice elements as React wrappers for
+  other hosts (invest cabinet, SA panel), plus `openWalletAction`, the popup
   that carries a money action to evinvest.ltd and posts the result back. In-page
   actions on a host go through the BFF's intent routes instead
   ([`WALLET-INTENTS.md`](./WALLET-INTENTS.md)); the popup stays as the fallback. It lives
   here, not in `EV-Main/web_std`, because it is banking's contract; lib holds no
   service logic. Not an npm workspace (own lockfile, `@evinvest/mfe` from npm);
-  published by the `@evinvest/wallet-v<version>` tag via
+  published by the `@evinvest/banking-v<version>` tag via
   `.github/workflows/npm-publish.yml`, which never triggers a container release.
 - **On evinvest.ltd the wallet has concierge's shape:** one address, `/wallet` (as
   `/account`), which every other host links to, and the bundles under `/api/wallet/mfe/`

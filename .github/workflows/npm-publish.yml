@@ -1,19 +1,19 @@
 # HAND-WRITTEN — like checks.yml and drift.yml, and not generator output: v_flakes only
 # `cp -f`s its own filenames, so this file survives `nix develop`.
 #
-# Publishes `sdk/wallet` (@evinvest/wallet) through npm trusted publishing (OIDC): no
+# Publishes `sdk/` (@evinvest/banking) through npm trusted publishing (OIDC): no
 # token, no 2FA, for a job matching the package's trusted-publisher entry on npmjs.com
-# (this repo, this file). Fired by the `@evinvest/wallet-v<version>` tag; dispatch it by
+# (this repo, this file). Fired by the `@evinvest/banking-v<version>` tag; dispatch it by
 # hand with that tag to retry. The tag never matches release-container.yml's
 # `v[0-9]+.*`, so publishing the package does not ship the hub.
 name: npm-publish
 'on':
   push:
-    tags: ['@evinvest/wallet-v*']
+    tags: ['@evinvest/banking-v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: release tag, e.g. @evinvest/wallet-v0.1.1
+        description: release tag, e.g. @evinvest/banking-v0.3.0
         required: true
 permissions:
   contents: read
@@ -29,9 +29,9 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           # Strict, so a dispatched tag can only ever name a semver of this package.
-          re='^@evinvest/wallet-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$'
+          re='^@evinvest/banking-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$'
           if [[ ! "$TAG" =~ $re ]]; then
-            echo "::error::not an @evinvest/wallet-v<semver> tag: $TAG" >&2
+            echo "::error::not an @evinvest/banking-v<semver> tag: $TAG" >&2
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -63,7 +63,7 @@ jobs:
       # whatever `latest` happens to be.
       - run: npm install -g npm@11.21.0
       - name: Check, test and publish
-        working-directory: sdk/wallet
+        working-directory: sdk
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |

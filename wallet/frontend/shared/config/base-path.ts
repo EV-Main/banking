@@ -122,7 +122,7 @@ const NON_PAGE = new RegExp(
 );
 
 /** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle.
- *  The wallet bundles' public directory is `/api/wallet/mfe/*` (`@evinvest/wallet`, under
+ *  The wallet bundles' public directory is `/api/wallet/mfe/*` (`@evinvest/banking`, under
  *  `api/`), served from `public/mfe/wallet/` by the next.config rewrite; `/wallet/mfe/*` is
  *  its alias for hosts built before the move (#609). */
 export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathname);
@@ -155,7 +155,7 @@ export const relocalise = (
 ): string => zonePagePath(locale, zonePathname(url.pathname)) + url.search + url.hash;
 
 // The money actions scope hosts open on evinvest.ltd, by the exact paths the host SDK
-// (`@evinvest/wallet` `WALLET_ACTION_PATHS`, `walletPaymentUrl`) builds: no locale, no zone
+// (`@evinvest/banking` `WALLET_ACTION_PATHS`, `walletPaymentUrl`) builds: no locale, no zone
 // prefix, because they are the wallet's public addresses rather than zone pages. The
 // payment id has the SDK's id rule, so nothing but a plain segment reaches the page route.
 const WALLET_ACTION = /^\/wallet\/(withdraw|move|pay|mandate|payment\/[A-Za-z0-9_-]{1,128})$/;

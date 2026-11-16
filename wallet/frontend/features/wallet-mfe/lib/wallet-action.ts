@@ -1,12 +1,12 @@
-// The wallet element's side of the money-action contract (`@evinvest/wallet`, banking
-// `sdk/wallet`). On a scope host the element moves no money: every action is a page on the
+// The wallet element's side of the money-action contract (`@evinvest/banking`, banking
+// `sdk/`). On a scope host the element moves no money: every action is a page on the
 // wallet origin, offered to the host as a cancelable `ev:wallet-action` so it can open it in
 // a popup and hear the result back. Left alone, the element navigates — which is also the
 // in-place behaviour on evinvest.ltd itself, where the host does not intercept.
 //
 // Pure and import-free so `node --test` runs it as is.
 
-/** Cancelable; `detail` is `{ href }`. Name frozen with apiVersion 2 (sdk/wallet `WALLET_ACTION_EVENT`). */
+/** Cancelable; `detail` is `{ href }`. Name frozen with apiVersion 2 (sdk/ `WALLET_ACTION_EVENT`). */
 export const WALLET_ACTION_EVENT = "ev:wallet-action";
 
 /** The four action pages, by the exact path the host SDK accepts (`WALLET_ACTION_PATHS`). */

@@ -1,7 +1,7 @@
 // Prints the sha256 pins of a built bundle, one line, nothing else. Run after `npm run
 // build:mfe`, on the very files that ship (uncompressed, as the consumers hash them).
 //
-// The wallet elements' bundle: the line `@evinvest/wallet` reads (`parseWalletPins`). Names are
+// The wallet elements' bundle: the line `@evinvest/banking` reads (`parseWalletPins`). Names are
 // relative to the served directory https://evinvest.ltd/api/wallet/mfe/, and the SDK checks one
 // module: the build emits no chunks. `wallet` as an argument is accepted and means the same.
 //   $ npm run --silent mfe:pins

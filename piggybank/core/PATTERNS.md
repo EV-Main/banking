@@ -545,7 +545,7 @@ invoice past `expires_at` as EXPIRED and a payment or cancel is refused under th
 (`scope_invoices::expire_due_invoices`), which is what puts INVOICE_EXPIRED in the issuer's
 stream whether or not anyone reads the invoice again. `CancelInvoice` carries no key: it asks
 for one end state, so a repeat returns the cancelled invoice unchanged. `pay_url` is
-`@evinvest/wallet`'s pay page, `https://evinvest.ltd/wallet/pay?invoice=<id>`. The clock of
+`@evinvest/banking`'s pay page, `https://evinvest.ltd/wallet/pay?invoice=<id>`. The clock of
 every expiry decision is the statement's (`clock_timestamp()`), not the transaction's start.
 
 ## Operations — the activity timeline (`OperationsService`)

@@ -1,6 +1,6 @@
 // Run with `node --test --experimental-strip-types mfe/pins.test.ts`.
 //
-// `npm run --silent mfe:pins` prints the line `@evinvest/wallet` parses with `parseWalletPins`:
+// `npm run --silent mfe:pins` prints the line `@evinvest/banking` parses with `parseWalletPins`:
 // exactly one line, `wallet.js=<hex>,wallet.css=<hex>`, in that order, each the sha256 of the
 // file's bytes — the expected digests below were taken with `shasum -a 256` on the same
 // fixture bytes, not computed by the test — and a missing bundle is a failure, never a line

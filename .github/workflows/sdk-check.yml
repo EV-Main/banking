@@ -4,7 +4,7 @@
 name: sdk-check
 'on':
   pull_request:
-    paths: ['sdk/wallet/**', '.github/workflows/sdk-check.yml']
+    paths: ['sdk/**', '.github/workflows/sdk-check.yml']
 permissions:
   contents: read
 jobs:
@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '24'
       - name: Typecheck and test
-        working-directory: sdk/wallet
+        working-directory: sdk
         run: |
           npm ci
           npm run typecheck

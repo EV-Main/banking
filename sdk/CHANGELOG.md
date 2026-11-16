@@ -1,13 +1,17 @@
 # Changelog
 
-All notable changes to `@evinvest/wallet` are in this file. The format follows
+All notable changes to `@evinvest/banking` (up to 0.2.0 published as
+`@evinvest/wallet`) are in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-11-16
 
 ### Changed
 
+- Renamed from `@evinvest/wallet` to `@evinvest/banking`, after its provider
+  (as `@evinvest/concierge`); `@evinvest/wallet` is deprecated. Imports change
+  their package name only: every export keeps its name.
 - The wallet bundles moved to `https://evinvest.ltd/api/wallet/mfe/`, beside
   concierge's `/api/auth/mfe/`: `WALLET_MFE_PREFIX`, `WALLET_REGISTRY_URL`,
   `walletMfePrefix`, the CSP sources and the integrity URLs follow. A host's

@@ -1,10 +1,10 @@
-# @evinvest/wallet
+# @evinvest/banking
 
 Host wrappers for the **banking wallet microfrontends** — the wallet, the
 pay-invoice button and the mandate button — over [`@evinvest/mfe`](https://www.npmjs.com/package/@evinvest/mfe), plus the popup round trip
 that carries a money action to evinvest.ltd and brings its result back, the
 opt-in inline mode, the CSP sources a host needs, and the bundle integrity
-checks. Hosts: the invest cabinet, the SA panel, admin. The elements are
+checks. Hosts: the invest cabinet and the SA panel. The elements are
 banking's, served from `https://evinvest.ltd/api/wallet/mfe/`. This package only
 puts the pieces together: it has no iframe and no money logic.
 
@@ -27,7 +27,7 @@ puts the pieces together: it has no iframe and no money logic.
 All three come from the same `wallet.js`.
 
 ```ts
-import { fetchWalletRegistry, walletEntry } from '@evinvest/wallet';
+import { fetchWalletRegistry, walletEntry } from '@evinvest/banking';
 
 // WALLET_REGISTRY_URL by default; every bundle must sit under WALLET_MFE_PREFIX.
 const registry = await fetchWalletRegistry();
@@ -70,7 +70,7 @@ money by itself.
 
 ```tsx
 'use client';
-import { PayInvoiceButton, Wallet } from '@evinvest/wallet/react';
+import { PayInvoiceButton, Wallet } from '@evinvest/banking/react';
 
 <Wallet scriptUrl={wallet.scriptUrl} scope="sa" onResult={() => refresh()} />;
 
@@ -161,7 +161,7 @@ directives sorted by name and joined with `; `, sources joined with ` `.
 keeps the host's sources and their order, and it does not repeat a source.
 
 ```ts
-import { mergeCsp, serializeCsp, walletCsp } from '@evinvest/wallet';
+import { mergeCsp, serializeCsp, walletCsp } from '@evinvest/banking';
 
 const header = serializeCsp(mergeCsp(hostDirectives, walletCsp({ mode: 'inline' })));
 ```
@@ -306,7 +306,7 @@ that works is `same-origin-allow-popups`.
 
 ## Develop
 
-The package lives next to the elements it wraps (banking `sdk/wallet`) so a
+The package lives next to the elements it wraps (banking `sdk/`) so a
 change to the wallet contract and its host side land in one PR. It is not an
 npm workspace of the repo: it has its own lockfile, and `@evinvest/mfe` comes
 from npm.
@@ -319,7 +319,7 @@ npm run typecheck && npm test && npm run build
 ## Release
 
 Bump `version` in `package.json` on `main` and add the version to
-`CHANGELOG.md`. Then push the tag `@evinvest/wallet-v<version>`.
+`CHANGELOG.md`. Then push the tag `@evinvest/banking-v<version>`.
 `.github/workflows/npm-publish.yml` checks the tag against `package.json`, runs
 the typecheck and tests and publishes with npm trusted publishing (OIDC, no
 token). The tag does not match `v*`, so it does not start a container release.

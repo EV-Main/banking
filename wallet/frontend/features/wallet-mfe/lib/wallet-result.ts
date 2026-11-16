@@ -1,4 +1,4 @@
-// How an in-page action tells the host it ended (apiVersion 3, sdk/wallet). The popup tells
+// How an in-page action tells the host it ended (apiVersion 3, sdk/). The popup tells
 // its opener by postMessage; an action that ran inside the element tells the page around it
 // with this event, in the same words. Pure so `node --test` runs it as is.
 
@@ -8,7 +8,7 @@ import type { WalletAction } from "./wallet-action.ts";
 /** Not cancelable; `detail` is a {@link WalletResultDetail}. Same name as the popup's message type. */
 export const WALLET_RESULT_EVENT = "ev:wallet-result";
 
-/** The popup's words (`ActionOutcome`, sdk/wallet `WalletResult`). */
+/** The popup's words (`ActionOutcome`, sdk/ `WalletResult`). */
 export type WalletOutcome = "done" | "failed" | "cancelled";
 
 /** What the in-page form reports when it closes. */

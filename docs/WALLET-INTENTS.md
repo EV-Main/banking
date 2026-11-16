@@ -71,8 +71,8 @@ The boot refuses (exit 78):
 ## The element side (apiVersion 3)
 
 The host page does not call these routes itself. It mounts the wallet elements from
-`https://evinvest.ltd/api/wallet/mfe/wallet.js` through `@evinvest/wallet` (banking
-`sdk/wallet`), and the element calls the routes. The code is
+`https://evinvest.ltd/api/wallet/mfe/wallet.js` through `@evinvest/banking` (banking
+`sdk/`), and the element calls the routes. The code is
 `wallet/frontend/mfe/wallet/entry.tsx`, `wallet/frontend/features/wallet-mfe/` and the flow
 both surfaces share, `wallet/frontend/features/wallet-intent/`. Each element class has
 `apiVersion = 3`. A host checks it with `>=`, because version 3 only adds to version 2.

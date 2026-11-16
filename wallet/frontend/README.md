@@ -30,7 +30,7 @@ wallet element reach:
 | Group | Pages | Why it stays |
 |---|---|---|
 | `(host)` | `/cabinet`, `/cabinet/wallet`, `/cabinet/wallet/deposit`, `/cabinet/wallet/activity` | The sign-in host and the concierge `KYC_RETURN_URL` target; the wallet panel (the fallback link of wallet notices); the two pages the wallet element links to |
-| `(wallet-action)` | `/cabinet/wallet/action/*` | The money-action popups scope hosts open (`@evinvest/wallet`) and the payment answer link |
+| `(wallet-action)` | `/cabinet/wallet/action/*` | The money-action popups scope hosts open (`@evinvest/banking`) and the payment answer link |
 | `(mfe)` | `/cabinet/[service]/[[...slug]]` | Page microfrontends |
 | `(auth)` | `/cabinet/loggedout` | The sign-out landing |
 

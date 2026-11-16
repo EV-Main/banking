@@ -26,7 +26,7 @@ import { stylesheetHref, whenStylesheetReady } from "./stylesheet";
 
 // Self-registering ESM entry for banking's wallet element remotes, served from
 // `https://evinvest.ltd/api/wallet/mfe/` and mounted by the invest cabinet, the SA panel and
-// admin through `@evinvest/wallet` (banking `sdk/wallet` — the host side of this contract;
+// admin through `@evinvest/banking` (banking `sdk/` — the host side of this contract;
 // tags, attributes and events must stay in step with it). Three elements, one bundle:
 //
 //   • <mfe-banking-wallet scope? actions?> — balances and recent history. With `scope` (a

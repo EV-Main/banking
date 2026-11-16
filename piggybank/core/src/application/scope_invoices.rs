@@ -37,7 +37,7 @@ use crate::{
 
 /// Where every invoice is paid. First-party only: a scope's own host never takes the payment,
 /// and nothing a client sends changes this.
-/// The page is `@evinvest/wallet`'s pay action (`sdk/wallet`): it takes the invoice id and
+/// The page is `@evinvest/banking`'s pay action (`sdk/`): it takes the invoice id and
 /// reads everything else from the server's invoice.
 pub const PAY_URL_BASE: &str = "https://evinvest.ltd/wallet/pay?invoice=";
 

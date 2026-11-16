@@ -1,5 +1,5 @@
 {
-  "name": "@evinvest/wallet",
+  "name": "@evinvest/banking",
   "version": "0.3.0",
   "description": "Host wrappers for the banking wallet microfrontends: the wallet, the pay-invoice button and the mandate button, with money actions in a popup on evinvest.ltd or, when the host opts in, inline in the host page. Also the CSP sources and the bundle integrity checks a host needs. A thin layer over @evinvest/mfe.",
   "license": "BlueOak-1.0.0",
@@ -9,7 +9,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/EV-Main/banking.git",
-    "directory": "sdk/wallet"
+    "directory": "sdk"
   },
   "type": "module",
   "exports": {

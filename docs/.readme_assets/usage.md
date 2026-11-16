@@ -7,7 +7,7 @@
 | [`contracts/`](contracts) | gRPC wire contracts (`proto/` → tonic stubs) | Rust · tonic-build · proto3 | — |
 | [`domain/`](domain) | shared domain types (pure, wasm-safe) over `ev::architecture` | Rust | — |
 | [`wallet/`](wallet) | wallet host — host shell (`frontend/`) + BFF (`backend/`) + microfrontend runtime | Next.js 16 · TS · Tailwind · Rust · axum | [frontend](wallet/frontend/README.md) · [BFF](wallet/backend/README.md) |
-| [`sdk/wallet/`](sdk/wallet) | `@evinvest/wallet` — host wrappers for the wallet MFEs, published to npm by the `@evinvest/wallet-v*` tag | TS · React · tsup | [README](sdk/wallet/README.md) |
+| [`sdk/`](sdk) | `@evinvest/banking` — host wrappers for the wallet MFEs, published to npm by the `@evinvest/banking-v*` tag | TS · React · tsup | [README](sdk/README.md) |
 
 `domain` is the shared source of truth for types — the hub and every service repo
 depend on it, never on each other. `contracts` (vendoring `proto/`) is the single

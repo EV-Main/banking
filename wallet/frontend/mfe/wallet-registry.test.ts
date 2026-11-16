@@ -1,6 +1,6 @@
 // Run with `npm run test`.
 //
-// build.mjs writes this text to public/mfe/wallet/registry.json (and the alias's copy), which `@evinvest/wallet`
+// build.mjs writes this text to public/mfe/wallet/registry.json (and the alias's copy), which `@evinvest/banking`
 // reads to find the elements. A host that asks for a name missing here gets no element.
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -17,7 +17,7 @@ test("the registry lists the three wallet elements, all from the one wallet bund
   }
 });
 
-test("the bundles' directory is the one @evinvest/wallet holds them to", () => {
+test("the bundles' directory is the one @evinvest/banking holds them to", () => {
   assert.equal(WALLET_DIR, "/api/wallet/mfe/");
 });
 

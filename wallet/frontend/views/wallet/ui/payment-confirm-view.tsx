@@ -1,7 +1,7 @@
 "use client";
 
 // "This payment is out of your account — do you agree?" — reached signed in, from the notice
-// that asks or as a money action a scope host opens in a popup (`@evinvest/wallet`
+// that asks or as a money action a scope host opens in a popup (`@evinvest/banking`
 // `walletPaymentUrl`). The money is the reader's: nobody else is asked, and nobody else can
 // answer.
 //

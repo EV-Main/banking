@@ -24,7 +24,7 @@ export interface ActionParams {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-// `@evinvest/wallet` draws 128 bits and writes them as 32 lowercase hex digits.
+// `@evinvest/banking` draws 128 bits and writes them as 32 lowercase hex digits.
 const STATE = /^[0-9a-f]{32}$/;
 
 function id(raw: string | null): string | null {
@@ -82,7 +82,7 @@ export function readActionParams(search: string, pageOrigin: string, hosts: Read
 
 export type ActionOutcome = "done" | "failed" | "cancelled";
 
-/** `type` of the result message (`@evinvest/wallet` `WALLET_RESULT_MESSAGE`). */
+/** `type` of the result message (`@evinvest/banking` `WALLET_RESULT_MESSAGE`). */
 export const WALLET_RESULT_MESSAGE = "ev:wallet-result";
 
 /** The message an opener accepts, or null when there is no one to send it to. */

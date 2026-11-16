@@ -80,7 +80,7 @@ const nextConfig: NextConfig = {
       // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
       { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
       // The wallet bundles' public directory — `https://evinvest.ltd/api/wallet/mfe/`, the
-      // prefix `@evinvest/wallet` holds every registry entry to and hosts name in their
+      // prefix `@evinvest/banking` holds every registry entry to and hosts name in their
       // CSP. Built to `public/mfe/wallet/` beside the other element bundles.
       { source: "/api/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
       // Its alias, for the hosts built before the move (#609), with the registry that
