@@ -3,7 +3,7 @@
 #
 # Publishes `sdk/` (@evinvest/banking) through npm trusted publishing (OIDC): no
 # token, no 2FA, for a job matching the package's trusted-publisher entry on npmjs.com
-# (this repo, this file). Fired by the `@evinvest/banking-v<version>` tag; dispatch it by
+# (this repo, this file); else, as v_flakes' release-npm, the org's `NPM_TOKEN`. Fired by the `@evinvest/banking-v<version>` tag; dispatch it by
 # hand with that tag to retry. The tag never matches release-container.yml's
 # `v[0-9]+.*`, so publishing the package does not ship the hub.
 name: npm-publish
@@ -62,7 +62,7 @@ jobs:
       # Node 24 may be older. Pinned: this job can mint an id-token, so it never installs
       # whatever `latest` happens to be.
       - run: npm install -g npm@11.21.0
-      - name: Check, test and publish
+      - name: Check and test
         working-directory: sdk
         env:
           VERSION: ${{ steps.tag.outputs.version }}
@@ -71,6 +71,14 @@ jobs:
           npm ci
           npm run typecheck
           npm test
+      - name: Publish
+        working-directory: sdk
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          # Only on this step, so `npm ci`'s install scripts never see it. Used only when OIDC
+          # is refused: a package without a trusted-publisher entry yet.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
           # npm 11 refuses a prerelease without an explicit dist-tag, and `latest` must
           # never point at one.
           dist_tag=latest
