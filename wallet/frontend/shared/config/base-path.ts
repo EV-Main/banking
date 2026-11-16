@@ -32,6 +32,9 @@ export const apiPath = (path: `/${string}`): string => `${BASE_PATH}${path}`;
 export const zonePagePath = (locale: Locale, path: `/${string}`): string =>
   path === "/" ? `/${locale}${BASE_PATH}` : `/${locale}${BASE_PATH}${path}`;
 
+/** The wallet page's address on evinvest.ltd, as `/account` is concierge's. */
+const WALLET_ADDRESS = "/wallet";
+
 /**
  * The page URL a zone request *should* have had, when its locale segment is
  * missing or is not a locale we serve — or `null` when the path is not a zone
@@ -53,9 +56,6 @@ export const zonePagePath = (locale: Locale, path: `/${string}`): string =>
  * Repairing the URL is better than any 404 anyway. Someone typing `/pt/cabinet`
  * wants their wallet, and we have five languages to offer them.
  */
-/** The wallet page's address on evinvest.ltd, as `/account` is concierge's. */
-const WALLET_ADDRESS = "/wallet";
-
 export const localeRepairedPath = (pathname: string, locale: Locale): string | null => {
   if (pathname === WALLET_ADDRESS) return zonePagePath(locale, "/wallet");
   const zone = BASE_PATH.slice(1);
