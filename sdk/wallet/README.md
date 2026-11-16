@@ -215,7 +215,11 @@ wallet.js=<64 lowercase hex>,wallet.css=<64 lowercase hex>
 ```
 
 The names are relative to `https://evinvest.ltd/api/wallet/mfe/`. A host keeps
-this line in its config and updates it with each banking release.
+this line in its config, built from banking's source and never read from
+evinvest.ltd, and updates it by a reviewed commit *before* banking rolls the
+bundle out. An SRI value may list several hashes (`sha256-A sha256-B` accepts
+either), so the host can pin the released bundle and the next one together.
+site_conductor's `.github/workflows/wallet-pin.yml` does this (banking#601).
 
 - `parseWalletPins(text)` checks the line and returns `{ ok: true, value }` or
   `{ ok: false, error }`. It refuses a file other than `wallet.js` and

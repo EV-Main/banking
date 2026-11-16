@@ -35,8 +35,9 @@ Before you turn a host kind on, know what it switches on:
 - The in-page form runs in the host page's JavaScript realm. A script in the host page can
   show the person other terms than the ones the proof binds. Spec control (g) is the defence:
   a strict CSP, bundle pins or registry SRI, and Trusted Types.
-- Turn `withdraw` on only after control (g) is live on each enabled host, and after the hub
-  holds new withdrawal addresses (`release_at`, banking#559).
+- Enable a host, for any kind, only after control (g) is live on it: the spec's controls
+  "must all exist before a trusted host is enabled". `withdraw` waits, in addition, for the
+  hub to hold new withdrawal addresses (`release_at`, banking#559).
 - Each host must exclude `/api/auth/stepup/*` and `/cabinet/api/wallet/intents*` from the
   network-payload capture of Sentry Replay and PostHog. Those bodies carry the step-up proof
   and the CSRF token.
