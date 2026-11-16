@@ -9,14 +9,14 @@ const WALLET: MfeEntry = {
   name: 'banking.wallet',
   tag: 'mfe-banking-wallet',
   kind: 'component',
-  scriptUrl: '/wallet/mfe/wallet.js',
+  scriptUrl: '/api/wallet/mfe/wallet.js',
 };
 
 const PAY_INVOICE: MfeEntry = {
   name: 'banking.pay-invoice',
   tag: 'mfe-banking-pay-invoice',
   kind: 'component',
-  scriptUrl: '/wallet/mfe/pay-invoice.js',
+  scriptUrl: '/api/wallet/mfe/pay-invoice.js',
 };
 
 describe('walletEntry', () => {
@@ -40,11 +40,11 @@ describe('walletEntry', () => {
 
 describe('registry location', () => {
   it('should_point_at_the_wallet_registry_on_evinvest_ltd', () => {
-    expect(WALLET_REGISTRY_URL).toBe('https://evinvest.ltd/wallet/mfe/registry.json');
+    expect(WALLET_REGISTRY_URL).toBe('https://evinvest.ltd/api/wallet/mfe/registry.json');
   });
 
   it('should_hold_bundles_to_the_wallet_mfe_directory', () => {
-    expect(WALLET_MFE_PREFIX).toBe('https://evinvest.ltd/wallet/mfe/');
+    expect(WALLET_MFE_PREFIX).toBe('https://evinvest.ltd/api/wallet/mfe/');
   });
 });
 
@@ -58,7 +58,7 @@ describe('fetchWalletRegistry', () => {
 
     const result = await fetchWalletRegistry();
 
-    expect(result).toEqual({ ok: true, value: [{ ...WALLET, scriptUrl: 'https://evinvest.ltd/wallet/mfe/wallet.js' }] });
+    expect(result).toEqual({ ok: true, value: [{ ...WALLET, scriptUrl: 'https://evinvest.ltd/api/wallet/mfe/wallet.js' }] });
   });
 
   it('should_refuse_a_registry_with_a_bundle_elsewhere_on_evinvest_ltd', async () => {
@@ -69,7 +69,7 @@ describe('fetchWalletRegistry', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: `registry ${WALLET_REGISTRY_URL}: entry 0: banking.wallet: scriptUrl https://evinvest.ltd/wallet/pay is outside https://evinvest.ltd/wallet/mfe/`,
+      error: `registry ${WALLET_REGISTRY_URL}: entry 0: banking.wallet: scriptUrl https://evinvest.ltd/wallet/pay is outside https://evinvest.ltd/api/wallet/mfe/`,
     });
   });
 
@@ -83,7 +83,7 @@ describe('fetchWalletRegistry', () => {
   });
 
   it('should_hold_a_staging_registry_to_the_prefix_the_caller_names', async () => {
-    const staging = 'https://stage.evinvest.ltd/wallet/mfe/';
+    const staging = 'https://stage.evinvest.ltd/api/wallet/mfe/';
     vi.stubGlobal('fetch', vi.fn(async () => Response.json([WALLET])));
 
     const result = await fetchWalletRegistry(`${staging}registry.json`, { allowedPrefix: staging });

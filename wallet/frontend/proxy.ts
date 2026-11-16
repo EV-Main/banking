@@ -80,8 +80,8 @@ export async function proxy(req: NextRequest) {
     return withCsp(NextResponse.redirect(url), csp);
   }
 
-  // No usable locale in the path: an old link, a bookmark, the conductor's
-  // unprefixed /cabinet mount, or a first segment that looks like a locale and is
+  // No usable locale in the path: the wallet's platform address `/wallet`, an old link, a
+  // bookmark, the conductor's unprefixed /cabinet mount, or a first segment that looks like a locale and is
   // not one (`/zz/cabinet/wallet`, `/pt/cabinet` — a typo, or a language we do not
   // serve). Send them all to a real URL rather than 404ing — the cookie is the
   // reader's last choice, Accept-Language the first guess, English the floor.

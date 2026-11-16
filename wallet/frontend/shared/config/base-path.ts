@@ -37,6 +37,8 @@ export const zonePagePath = (locale: Locale, path: `/${string}`): string =>
  * missing or is not a locale we serve — or `null` when the path is not a zone
  * page at all and there is nothing to repair.
  *
+ *   /wallet              → /{locale}/cabinet/wallet   (the wallet's platform address,
+ *                                                      the one other hosts link to)
  *   /cabinet/wallet      → /{locale}/cabinet/wallet   (an old link, or the
  *                                                      conductor's unprefixed mount)
  *   /zz/cabinet/wallet   → /{locale}/cabinet/wallet   (a typo, or a language we
@@ -51,7 +53,11 @@ export const zonePagePath = (locale: Locale, path: `/${string}`): string =>
  * Repairing the URL is better than any 404 anyway. Someone typing `/pt/cabinet`
  * wants their wallet, and we have five languages to offer them.
  */
+/** The wallet page's address on evinvest.ltd, as `/account` is concierge's. */
+const WALLET_ADDRESS = "/wallet";
+
 export const localeRepairedPath = (pathname: string, locale: Locale): string | null => {
+  if (pathname === WALLET_ADDRESS) return zonePagePath(locale, "/wallet");
   const zone = BASE_PATH.slice(1);
   const [, first, ...rest] = pathname.split("/");
   // `/cabinet/…` — nothing in front of the zone prefix.
@@ -116,8 +122,9 @@ const NON_PAGE = new RegExp(
 );
 
 /** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle.
- *  `/wallet/mfe/*` is the wallet bundles' public directory (`@evinvest/wallet`), served
- *  from `public/mfe/wallet/` by the next.config rewrite. */
+ *  The wallet bundles' public directory is `/api/wallet/mfe/*` (`@evinvest/wallet`, under
+ *  `api/`), served from `public/mfe/wallet/` by the next.config rewrite; `/wallet/mfe/*` is
+ *  its alias for hosts built before the move (#609). */
 export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathname);
 
 /**

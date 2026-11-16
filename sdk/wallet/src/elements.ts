@@ -11,7 +11,7 @@ export const WALLET_ORIGIN = 'https://evinvest.ltd';
  * refuses a registry with a bundle outside it, and a host's CSP names the same
  * path in `script-src`.
  */
-export const WALLET_MFE_PREFIX = `${WALLET_ORIGIN}/wallet/mfe/`;
+export const WALLET_MFE_PREFIX = `${WALLET_ORIGIN}/api/wallet/mfe/`;
 
 /** The published registry of wallet bundles; relative `scriptUrl`s resolve against it. */
 export const WALLET_REGISTRY_URL = `${WALLET_MFE_PREFIX}registry.json`;
@@ -57,7 +57,7 @@ export function walletOriginOf(origin: string): string | null {
 
 /** The bundle directory on `origin`: {@link WALLET_MFE_PREFIX} for the default origin. */
 export function walletMfePrefix(origin: string): string {
-  return `${origin}/wallet/mfe/`;
+  return `${origin}/api/wallet/mfe/`;
 }
 
 export interface WalletRegistryOptions {

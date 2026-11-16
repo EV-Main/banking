@@ -79,9 +79,13 @@ const nextConfig: NextConfig = {
       // prefix for free; without it the element bundles 404 on every page of the
       // site. `assetPrefix` does not cover this: it rewrites `/_next/*` only.
       { source: "/cabinet/mfe/:path*", destination: "/mfe/:path*" },
-      // The wallet bundles' public directory — `https://evinvest.ltd/wallet/mfe/`, the
+      // The wallet bundles' public directory — `https://evinvest.ltd/api/wallet/mfe/`, the
       // prefix `@evinvest/wallet` holds every registry entry to and hosts name in their
       // CSP. Built to `public/mfe/wallet/` beside the other element bundles.
+      { source: "/api/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
+      // Its alias, for the hosts built before the move (#609), with the registry that
+      // names the alias's own files (mfe/wallet-registry.mjs).
+      { source: "/wallet/mfe/registry.json", destination: "/mfe/wallet/registry.alias.json" },
       { source: "/wallet/mfe/:path*", destination: "/mfe/wallet/:path*" },
     ];
   },
@@ -118,6 +122,7 @@ const nextConfig: NextConfig = {
       // The wallet elements are loaded by OTHER origins (the scope hosts): a module script
       // and the sheet's fetch are CORS requests, refused without this. Public, cookie-less
       // files, so `*` grants nothing a direct download would not.
+      { source: "/api/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/mfe/wallet/:path*", headers: walletCors },
       { source: "/:path*", headers },

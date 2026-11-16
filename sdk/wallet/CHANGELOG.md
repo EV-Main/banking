@@ -4,6 +4,16 @@ All notable changes to `@evinvest/wallet` are in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - Unreleased
+
+### Changed
+
+- The wallet bundles moved to `https://evinvest.ltd/api/wallet/mfe/`, beside
+  concierge's `/api/auth/mfe/`: `WALLET_MFE_PREFIX`, `WALLET_REGISTRY_URL`,
+  `walletMfePrefix`, the CSP sources and the integrity URLs follow. A host's
+  CSP must name the new directory. Banking keeps serving `/wallet/mfe/` for
+  hosts on 0.2.0 until they move.
+
 ## [0.2.0] - 2026-10-28
 
 Release banking's wallet bundle of contract version 3 before this version. A

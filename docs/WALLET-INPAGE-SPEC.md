@@ -1,7 +1,7 @@
 # Wallet actions inside the host page — spec (2026-10-19)
 
 Owner decision: pay / withdraw / move / mandate run INSIDE the host page (SA panel, invest cabinet; admin stays first-party on
-evinvest.ltd), as part of the wallet micro-frontend (`<mfe-banking-wallet>` from evinvest.ltd/wallet/mfe/*). No popups by default,
+evinvest.ltd), as part of the wallet micro-frontend (`<mfe-banking-wallet>` from evinvest.ltd/api/wallet/mfe/*). No popups by default,
 no iframe, no redirect. The popup `openWalletAction` stays as a fallback behind a flag. The hosts and the bank are one product
 ("powered by Expected Value Investment"). The security model below is what makes this acceptable; do not weaken it.
 

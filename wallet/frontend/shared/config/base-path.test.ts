@@ -140,6 +140,18 @@ test("a zone path with no locale is repaired into one", () => {
   assert.equal(localeRepairedPath("/cabinet/admin/revenue", "de"), "/de/cabinet/admin/revenue");
 });
 
+test("the wallet's platform address is its page in the reader's locale", () => {
+  // `https://evinvest.ltd/wallet`, the address every other host links to.
+  for (const locale of LOCALES) assert.equal(localeRepairedPath("/wallet", locale), zonePagePath(locale, "/wallet"), locale);
+});
+
+test("only the bare wallet address is the wallet page", () => {
+  // The money actions are the proxy's other branch; the rest is nobody's wallet.
+  for (const path of ["/wallets", "/wallet/activity", "/wallet/mfe", "/zz/wallet", "/en/wallet"]) {
+    assert.equal(localeRepairedPath(path, "en"), null, path);
+  }
+});
+
 test("a first segment that is not a locale is replaced, not kept", () => {
   // The case that used to reach the root layout's `notFound()` — thrown by the ROOT
   // layout, so no `not-found.tsx` boundary exists above it and Next served its own
@@ -237,6 +249,7 @@ test("a wallet payment address with an unsafe or missing id is not an action", (
   }
 });
 
-test("the wallet element bundles are not pages", () => {
+test("the wallet element bundles are not pages, in their directory and its alias", () => {
+  assert.equal(isNonPagePath("/api/wallet/mfe/x.js"), true);
   assert.equal(isNonPagePath("/wallet/mfe/x.js"), true);
 });

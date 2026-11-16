@@ -3,15 +3,19 @@
 // and each tag is defined. Names and tags are the SDK's. Kept apart from the build so a test
 // reads it without running esbuild.
 
-const WALLET_SCRIPT = "/wallet/mfe/wallet.js";
+/** The bundles' public directory on evinvest.ltd (`@evinvest/wallet` `WALLET_MFE_PREFIX`). */
+export const WALLET_DIR = "/api/wallet/mfe/";
+/** Its alias for the hosts built before the move (#609). A registry reader refuses a
+ *  path-relative `scriptUrl`, so each directory gets a registry naming itself. */
+export const WALLET_ALIAS_DIR = "/wallet/mfe/";
 
-export const WALLET_REGISTRY = [
-  { name: "banking.wallet", tag: "mfe-banking-wallet", kind: "component", scriptUrl: WALLET_SCRIPT },
-  { name: "banking.pay-invoice", tag: "mfe-banking-pay-invoice", kind: "component", scriptUrl: WALLET_SCRIPT },
-  { name: "banking.mandate", tag: "mfe-banking-mandate", kind: "component", scriptUrl: WALLET_SCRIPT },
-];
-
-/** The file's exact text. */
-export function walletRegistryJson() {
-  return `${JSON.stringify(WALLET_REGISTRY, null, 2)}\n`;
+/** The registry file's exact text, for the bundles served from `dir`. */
+export function walletRegistryJson(dir) {
+  const scriptUrl = `${dir}wallet.js`;
+  const registry = [
+    { name: "banking.wallet", tag: "mfe-banking-wallet", kind: "component", scriptUrl },
+    { name: "banking.pay-invoice", tag: "mfe-banking-pay-invoice", kind: "component", scriptUrl },
+    { name: "banking.mandate", tag: "mfe-banking-mandate", kind: "component", scriptUrl },
+  ];
+  return `${JSON.stringify(registry, null, 2)}\n`;
 }
