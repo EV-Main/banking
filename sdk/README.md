@@ -175,8 +175,7 @@ const header = serializeCsp(mergeCsp(hostDirectives, walletCsp({ mode: 'inline' 
 | `connect-src` | `https://evinvest.ltd/mfe/banking/` (registry, stylesheet) · `https://evinvest.ltd/api/auth/session` · `https://evinvest.ltd/cabinet/api/wallet` · `https://evinvest.ltd/cabinet/api/wallet/csrf` (the kinds the BFF runs in the page, read on every connect) · `https://evinvest.ltd/cabinet/api/operations` (history; CSP ignores its query) |
 
 `walletCsp({ mode: 'inline' })` adds concierge's bundle directory
-`https://evinvest.ltd/mfe/concierge/`, and its old `/api/auth/mfe/` while concierge moves
-(the step-up element and its registry), to
+`https://evinvest.ltd/mfe/concierge/` (the step-up element and its registry) to
 `script-src`, `style-src` and `connect-src`, and two more directories to
 `connect-src`: `https://evinvest.ltd/cabinet/api/wallet/` (the intent routes)
 and `https://evinvest.ltd/api/auth/stepup/` (step-up). A source that ends in

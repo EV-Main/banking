@@ -118,12 +118,11 @@ export const zonePathname = (pathname: string): `/${string}` => {
  * never exposed.
  */
 const NON_PAGE = new RegExp(
-  `^(?:${BASE_PATH})?/(?:_next/static/|_next/image|api/|mfe/|wallet/mfe/|favicon\\.ico$)`
+  `^(?:${BASE_PATH})?/(?:_next/static/|_next/image|api/|mfe/|favicon\\.ico$)`
 );
 
 /** @see NON_PAGE — true when `pathname` is an asset, a BFF call or an MFE bundle.
- *  The wallet bundles are `/mfe/banking/*` (`@evinvest/banking`); `/api/wallet/mfe/*` and
- *  `/wallet/mfe/*` are their old directories, for hosts built before the move (#609). */
+ *  The wallet bundles are `/mfe/banking/*` (`@evinvest/banking`). */
 export const isNonPagePath = (pathname: string): boolean => NON_PAGE.test(pathname);
 
 /**

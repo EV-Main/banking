@@ -5,6 +5,14 @@ All notable changes to `@evinvest/banking` (up to 0.2.0 published as
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-16
+
+### Removed
+
+- `walletCsp({ mode: 'inline' })` no longer names concierge's old `/api/auth/mfe/`.
+  Banking no longer serves `/api/wallet/mfe/` or `/wallet/mfe/`: a host on 0.3.0 or
+  older loses the wallet until it upgrades.
+
 ## [0.4.0] - 2026-11-16
 
 ### Changed

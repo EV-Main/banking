@@ -73,13 +73,6 @@ const nextConfig: NextConfig = {
     // shell-owned auth routes on the same origin.
     return [
       { source: "/cabinet/api/:path*", destination: `${BACKEND}/api/:path*` },
-      // The wallet bundles are `public/mfe/banking/`, served as is at `/mfe/banking/`. These are
-      // the directories hosts built before the move ask for (#609), each with the registry that
-      // names its own files (mfe/wallet-registry.mjs).
-      { source: "/api/wallet/mfe/registry.json", destination: "/mfe/banking/registry.api.json" },
-      { source: "/api/wallet/mfe/:path*", destination: "/mfe/banking/:path*" },
-      { source: "/wallet/mfe/registry.json", destination: "/mfe/banking/registry.alias.json" },
-      { source: "/wallet/mfe/:path*", destination: "/mfe/banking/:path*" },
     ];
   },
   // Request-invariant hardening on every response, mirroring
@@ -107,14 +100,8 @@ const nextConfig: NextConfig = {
     // fix — takes to reach a returning visitor (15 min) while sparing the header a round trip
     // on every navigation. A day of SWR kept a revoked bundle alive far too long.
     const mfeHeaders = [{ key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=600" }];
-    const walletCors = [{ key: "Access-Control-Allow-Origin", value: "*" }];
     return [
       { source: "/mfe/:path*", headers: mfeHeaders },
-      // Other origins (the scope hosts) load the elements: a module script and the sheet's fetch
-      // are CORS requests. `/mfe/banking/` gets its CORS at the edge (devops), these old
-      // directories reach the zone on another route.
-      { source: "/api/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
-      { source: "/wallet/mfe/:path*", headers: [...mfeHeaders, ...walletCors] },
       { source: "/:path*", headers },
     ];
   },

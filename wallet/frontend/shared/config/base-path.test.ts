@@ -249,8 +249,6 @@ test("a wallet payment address with an unsafe or missing id is not an action", (
   }
 });
 
-test("the wallet element bundles are not pages, in their directory and its alias", () => {
+test("the wallet element bundles are not pages", () => {
   assert.equal(isNonPagePath("/mfe/banking/x.js"), true);
-  assert.equal(isNonPagePath("/api/wallet/mfe/x.js"), true);
-  assert.equal(isNonPagePath("/wallet/mfe/x.js"), true);
 });

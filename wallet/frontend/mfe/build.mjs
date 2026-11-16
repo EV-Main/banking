@@ -7,7 +7,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 
 import { build } from "esbuild";
 
-import { WALLET_DIR, WALLET_OLD_DIRS, walletRegistryJson } from "./wallet-registry.mjs";
+import { walletRegistryJson } from "./wallet-registry.mjs";
 
 const shared = {
   bundle: true,
@@ -76,5 +76,4 @@ await build({
 });
 
 await mkdir("public/mfe/banking", { recursive: true });
-await writeFile("public/mfe/banking/registry.json", walletRegistryJson(WALLET_DIR));
-for (const { dir, registry } of WALLET_OLD_DIRS) await writeFile(`public/mfe/banking/${registry}`, walletRegistryJson(dir));
+await writeFile("public/mfe/banking/registry.json", walletRegistryJson());
