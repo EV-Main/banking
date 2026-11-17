@@ -322,9 +322,6 @@ async fn a_server_demanding_a_client_certificate_gets_one_only_when_an_identity_
 
 // ── the real consumer, over TLS, against Postgres ──────────────────────────────
 
-/// The bridge cursor is one global row, so the two consumer tests take turns.
-static CURSOR: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 async fn user_exists(pool: &PgPool, subject: &str) -> bool {
 	sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM users WHERE auth_subject = $1)")
 		.bind(subject)
@@ -336,7 +333,7 @@ async fn user_exists(pool: &PgPool, subject: &str) -> bool {
 /// Run the real consumer over the endpoint built for `tls` against the fake concierge, give
 /// it long enough to pull and apply, then report whether `subject` was mirrored.
 async fn consumer_mirrors(pool: &PgPool, server: &ServerSide, tls: BridgeTlsFiles, subject: &str) -> bool {
-	let _turn = CURSOR.lock().await;
+	let _turn = common::bridge_cursor_serial().await;
 	sqlx::query("UPDATE bridge_cursor SET position = 0 WHERE id = TRUE").execute(pool).await.expect("reset cursor");
 	with_server(server, vec![created(subject)], |port, _| async move {
 		let endpoint = bridge_endpoint(&format!("https://localhost:{port}"), &tls).expect("the endpoint builds");

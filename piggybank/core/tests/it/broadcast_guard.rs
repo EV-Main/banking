@@ -67,9 +67,11 @@ struct Harness {
 	relay: Relay,
 	notify: Arc<Notify>,
 	custody: Arc<RecordingCustody>,
+	_serial: tokio::sync::MutexGuard<'static, ()>,
 }
 
 async fn harness() -> Option<Harness> {
+	let serial = common::outbox_serial().await;
 	let pool = common::pool().await?;
 	let ledger = common::seeded_ledger(&pool, "broadcast guard test").await?;
 
@@ -88,6 +90,7 @@ async fn harness() -> Option<Harness> {
 		relay,
 		notify,
 		custody,
+		_serial: serial,
 	})
 }
 

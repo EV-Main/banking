@@ -23,14 +23,13 @@ use sqlx::PgPool;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-use crate::common;
-
-use crate::common::ledger_for;
+use crate::{common, common::ledger_for};
 
 struct Harness {
 	pool: PgPool,
 	deposits: PgDeposits,
 	notify: Arc<Notify>,
+	_serial: tokio::sync::MutexGuard<'static, ()>,
 }
 impl Harness {
 	async fn balance(&self, key: &LedgerAccountKey) -> u128 {
@@ -39,12 +38,14 @@ impl Harness {
 }
 
 async fn harness() -> Option<Harness> {
+	let serial = common::outbox_serial().await;
 	let pool = common::pool().await?;
 	common::seeded_ledger(&pool, "relay batching test").await?;
 	Some(Harness {
 		deposits: PgDeposits::new(pool.clone()),
 		pool,
 		notify: Arc::new(Notify::new()),
+		_serial: serial,
 	})
 }
 

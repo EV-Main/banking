@@ -52,12 +52,6 @@ use uuid::Uuid;
 
 use crate::common;
 
-static PAYMENTS: std::sync::LazyLock<tokio::sync::Mutex<()>> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
-
-async fn exclusive() -> tokio::sync::MutexGuard<'static, ()> {
-	PAYMENTS.lock().await
-}
-
 fn now() -> i64 {
 	std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
 }
@@ -533,7 +527,7 @@ async fn a_proposed_treasury_payment(a: &App, initiator: UserId, amount: &str) -
 /// written or proposed.
 #[tokio::test]
 async fn the_treasury_cannot_be_spent_through_open_with_proof() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals treasury closed").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -560,7 +554,7 @@ async fn the_treasury_cannot_be_spent_through_open_with_proof() {
 /// decision until its outcome is taken, and the order must neither reserve nor fail twice.
 #[tokio::test]
 async fn a_treasury_payment_is_decided_over_a_concierge_approval_and_closes_failed_once() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals flow").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -646,7 +640,7 @@ async fn a_treasury_payment_is_decided_over_a_concierge_approval_and_closes_fail
 /// beside a retry — and the order is still approved, reserved and closed once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_executors_on_one_decision_reserve_once() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals race").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -678,7 +672,7 @@ async fn two_executors_on_one_decision_reserve_once() {
 /// the order, reserves nothing, and a stale PASSED served for it afterwards is told VOID.
 #[tokio::test]
 async fn an_approval_that_does_not_pass_ends_the_order_and_reserves_nothing() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals refusal").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -708,7 +702,7 @@ async fn an_approval_that_does_not_pass_ends_the_order_and_reserves_nothing() {
 /// proposed under.
 #[tokio::test]
 async fn a_decision_that_is_not_the_stored_orders_moves_nothing() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals mismatch").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -740,7 +734,7 @@ async fn a_decision_that_is_not_the_stored_orders_moves_nothing() {
 /// one — never executes it, and neither does a decision naming a payment banking does not have.
 #[tokio::test]
 async fn only_the_approval_opened_for_an_order_may_execute_it() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals other approval").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -773,7 +767,7 @@ async fn only_the_approval_opened_for_an_order_may_execute_it() {
 /// again with concierge back, it goes through.
 #[tokio::test]
 async fn a_concierge_outage_at_open_closes_the_order_and_a_retry_opens_it() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(mut a) = app("payment approvals outage").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -803,7 +797,7 @@ async fn a_concierge_outage_at_open_closes_the_order_and_a_retry_opens_it() {
 /// executor, never proposed later without the proof.
 #[tokio::test]
 async fn the_initiator_does_not_vote_on_their_own_payment() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals initiator").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -858,7 +852,7 @@ async fn the_initiator_does_not_vote_on_their_own_payment() {
 /// asked: a decision needs 96 hours (72 open, 24 of veto) plus a margin.
 #[tokio::test]
 async fn an_order_with_too_little_window_left_is_not_proposed() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals window").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -894,7 +888,7 @@ async fn an_order_with_too_little_window_left_is_not_proposed() {
 /// on the seat instead of being passed off as "told".
 #[tokio::test]
 async fn a_decision_past_its_execute_by_fails_the_order_closed() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals execute_by").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -929,7 +923,7 @@ async fn a_decision_past_its_execute_by_fails_the_order_closed() {
 /// not the sweep reached it: the decision is reported VOID and the order stays as it was.
 #[tokio::test]
 async fn a_decision_arriving_after_the_orders_window_approves_nothing() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals expired window").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -953,7 +947,7 @@ async fn a_decision_arriving_after_the_orders_window_approves_nothing() {
 /// second time.
 #[tokio::test]
 async fn the_migration_is_idempotent() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else { return };
 	let mut tx = pool.begin().await.unwrap();
 	sqlx::raw_sql(include_str!("../../migrations/0066_payment_approvals.sql"))
@@ -968,7 +962,7 @@ async fn the_migration_is_idempotent() {
 /// (as a failure: the treasury is closed).
 #[tokio::test]
 async fn an_operator_pause_holds_a_decided_payment_without_closing_it() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals pause").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -997,7 +991,7 @@ async fn an_operator_pause_holds_a_decided_payment_without_closing_it() {
 /// afterwards is told VOID and moves nothing.
 #[tokio::test]
 async fn a_withdrawn_payment_takes_its_proposal_back() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals withdraw").await else { return };
 	reset(&a.pool).await;
 	let initiator = an_investor(&a.pool).await;
@@ -1023,7 +1017,7 @@ async fn a_withdrawn_payment_takes_its_proposal_back() {
 /// asked is needed for it — and nothing is proposed to concierge.
 #[tokio::test]
 async fn an_investors_payment_needs_no_proof_of_who_asked() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals investor proof").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1095,7 +1089,7 @@ async fn notices(pool: &PgPool, payment: PaymentId) -> Vec<(Uuid, String, String
 /// from the ledger.
 #[tokio::test]
 async fn an_investors_payment_is_answered_in_the_wallet_host_and_settles_once() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals session flow").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1178,7 +1172,7 @@ async fn an_investors_payment_is_answered_in_the_wallet_host_and_settles_once() 
 /// A decline ends the order and reserves nothing; the invitation still queued is taken back.
 #[tokio::test]
 async fn an_investor_may_decline_and_nothing_moves() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals decline").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1207,7 +1201,7 @@ async fn an_investor_may_decline_and_nothing_moves() {
 /// one with a link, or too long, is left for the confirmation page, which shows it as text.
 #[tokio::test]
 async fn an_operators_reason_with_a_link_stays_out_of_the_notice() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals notice reason").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1247,7 +1241,7 @@ async fn an_operators_reason_with_a_link_stays_out_of_the_notice() {
 /// not the sweep reached it first.
 #[tokio::test]
 async fn an_expired_order_cannot_be_approved_by_a_late_answer() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals late answer").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1276,7 +1270,7 @@ async fn an_expired_order_cannot_be_approved_by_a_late_answer() {
 /// execution and gives the reservation back.
 #[tokio::test]
 async fn a_revocation_voids_the_investors_answer_before_and_after_it_is_given() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals revocation").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1341,7 +1335,7 @@ async fn a_revocation_voids_the_investors_answer_before_and_after_it_is_given() 
 /// changed, is not told; only the operator is.
 #[tokio::test]
 async fn a_changed_mailbox_voids_the_answer_and_only_the_operator_is_told() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals mailbox").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1378,7 +1372,7 @@ async fn a_changed_mailbox_voids_the_answer_and_only_the_operator_is_told() {
 /// refusal of the notice itself is charged; a delivered one is not sent again.
 #[tokio::test]
 async fn the_notice_worker_waits_for_the_catalog_and_charges_only_real_refusals() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals notices").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1426,7 +1420,7 @@ async fn the_notice_worker_waits_for_the_catalog_and_charges_only_real_refusals(
 /// rather than left unanswerable for a week.
 #[tokio::test]
 async fn an_investor_with_no_mirrored_identity_cannot_be_asked() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals unmirrored").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1450,7 +1444,7 @@ async fn an_investor_with_no_mirrored_identity_cannot_be_asked() {
 /// reads it in that scope's cabinet.
 #[tokio::test]
 async fn a_queued_mandate_notice_reaches_the_inbox_with_its_scope() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals mandate notice").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1472,7 +1466,7 @@ async fn a_queued_mandate_notice_reaches_the_inbox_with_its_scope() {
 /// after attempt, long after the fact that queued it.
 #[tokio::test]
 async fn the_outbox_refuses_a_scope_concierge_would_refuse() {
-	let _guard = exclusive().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payment approvals malformed link scope").await else { return };
 	reset(&a.pool).await;
 	let investor = an_investor(&a.pool).await;

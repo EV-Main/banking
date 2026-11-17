@@ -45,12 +45,6 @@ use uuid::Uuid;
 
 use crate::common;
 
-static PAYMENTS: std::sync::LazyLock<tokio::sync::Mutex<()>> = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
-
-async fn exclusive_payments() -> tokio::sync::MutexGuard<'static, ()> {
-	PAYMENTS.lock().await
-}
-
 /// Clear everything this suite writes, including the outbox and event-log rows the orders
 /// drained. The outbox is shared with the relay suites, so leaving `payment` rows behind
 /// would hand a live relay money facts about claims this suite never funded.
@@ -129,7 +123,7 @@ async fn insert_payment(pool: &PgPool, id: Uuid, state: &str, from_kind: &str, f
 /// so the keyed source here is `treasury`.
 #[tokio::test]
 async fn only_one_order_may_be_open_against_the_treasury_claim() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments schema tests");
 		return;
@@ -166,7 +160,7 @@ async fn only_one_order_may_be_open_against_the_treasury_claim() {
 /// to 72h — a denial of service dressed as a guarantee.
 #[tokio::test]
 async fn an_investor_may_have_several_orders_open_at_once() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments schema tests");
 		return;
@@ -190,7 +184,7 @@ async fn an_investor_may_have_several_orders_open_at_once() {
 /// else, and a treasury order (whose generated column is NULL) can have no session seat.
 #[tokio::test]
 async fn a_session_seat_can_only_name_its_payments_own_source_user() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments schema tests");
 		return;
@@ -220,7 +214,7 @@ async fn a_session_seat_can_only_name_its_payments_own_source_user() {
 /// seated over an investor's order by any code path, and a treasury order takes them.
 #[tokio::test]
 async fn a_concierge_seat_can_only_attach_to_a_treasury_order() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments schema tests");
 		return;
@@ -402,7 +396,7 @@ async fn assert_outcome_told(pool: &PgPool, order: PaymentId, recipients: &[User
 /// in the outbox, because an order that has not been approved has moved no money.
 #[tokio::test]
 async fn opening_an_order_materializes_its_session_seat_and_relays_nothing() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -435,7 +429,7 @@ async fn opening_an_order_materializes_its_session_seat_and_relays_nothing() {
 /// name, rather than surfacing as the foreign-key string the schema would otherwise answer.
 #[tokio::test]
 async fn open_refuses_a_seat_that_is_not_the_one_the_terms_call_for() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -472,7 +466,7 @@ async fn open_refuses_a_seat_that_is_not_the_one_the_terms_call_for() {
 /// owners refused all have their own channel or none, and none of them is this.
 #[tokio::test]
 async fn an_answered_expired_withdrawn_or_owner_refused_order_sends_no_outcome_notice() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -520,7 +514,7 @@ async fn an_answered_expired_withdrawn_or_owner_refused_order_sends_no_outcome_n
 /// again is a no-op, a different one is a conflict.
 #[tokio::test]
 async fn the_subjects_answer_approves_the_order_and_reserves_its_source() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -582,7 +576,7 @@ struct ConsentAuditRow {
 /// BFF said about it stays beside the seat, and what it left empty stays NULL.
 #[tokio::test]
 async fn an_answer_keeps_the_audit_it_was_given_beside_the_seat() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -641,7 +635,7 @@ async fn an_answer_keeps_the_audit_it_was_given_beside_the_seat() {
 /// idempotent for the same effect and a conflict for a different one.
 #[tokio::test]
 async fn a_treasury_order_is_carried_by_its_concierge_approval() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -696,7 +690,7 @@ async fn a_treasury_order_is_carried_by_its_concierge_approval() {
 /// an order may withdraw it.
 #[tokio::test]
 async fn the_feed_filters_and_the_sweep_close_what_nobody_answered() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -780,7 +774,7 @@ async fn consent_notice(pool: &PgPool, order: PaymentId) -> (bool, bool) {
 /// already delivered stands: the row says sent, never withdrawn.
 #[tokio::test]
 async fn withdrawing_or_expiring_an_order_withdraws_the_consent_notice_not_yet_delivered() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -831,7 +825,7 @@ async fn withdrawing_or_expiring_an_order_withdraws_the_consent_notice_not_yet_d
 /// shared with every other suite, so every figure here is a DELTA.
 #[tokio::test]
 async fn a_failed_execution_releases_the_reservation_it_was_holding() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -911,7 +905,7 @@ async fn a_failed_execution_releases_the_reservation_it_was_holding() {
 /// rather than with a stale read. Only the settlement posts it.
 #[tokio::test]
 async fn an_approved_payment_reserves_its_source_and_then_settles_it() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -976,7 +970,7 @@ async fn an_approved_payment_reserves_its_source_and_then_settles_it() {
 /// the request to.
 #[tokio::test]
 async fn revoking_the_investors_sessions_voids_a_pending_consent() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -1019,7 +1013,7 @@ async fn revoking_the_investors_sessions_voids_a_pending_consent() {
 /// was reserved at approval — releases its reservation on the way out.
 #[tokio::test]
 async fn a_revocation_between_consent_and_execution_fails_the_payment_closed() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -1075,7 +1069,7 @@ async fn a_revocation_between_consent_and_execution_fails_the_payment_closed() {
 /// first-login upsert applies it.
 #[tokio::test]
 async fn a_changed_mailbox_voids_a_pending_consent() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(pool) = common::pool().await else {
 		eprintln!("DATABASE_URL unset — skipping payments adapter tests");
 		return;
@@ -1217,7 +1211,7 @@ async fn fund(a: &App, claim: LedgerAccountKey, amount: &str) {
 /// derived from the order, and a second execution finds it rather than opening another.
 #[tokio::test]
 async fn an_investors_external_payment_creates_one_withdrawal_under_the_derived_id() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments external flow").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1263,7 +1257,7 @@ async fn an_investors_external_payment_creates_one_withdrawal_under_the_derived_
 /// a source that cannot cover the amount, and an unverified investor.
 #[tokio::test]
 async fn an_order_that_could_never_execute_is_refused_at_open() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments open refusals").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1327,7 +1321,7 @@ async fn an_order_that_could_never_execute_is_refused_at_open() {
 /// the operator lifts the pause and the sweeper comes back to it.
 #[tokio::test]
 async fn an_operator_pause_holds_an_approved_order_without_closing_it() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments read-only pause").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1373,7 +1367,7 @@ async fn an_operator_pause_holds_an_approved_order_without_closing_it() {
 /// reconciliation counts it as in flight there rather than as a stranded reservation.
 #[tokio::test]
 async fn an_approved_internal_payment_awaiting_the_sweeper_reconciles_clearing() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments clearing reconciliation").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1423,7 +1417,7 @@ async fn an_approved_internal_payment_awaiting_the_sweeper_reconciles_clearing()
 /// a refusal over a control the operator meant as a hold.
 #[tokio::test]
 async fn a_frozen_subject_holds_an_approved_order_without_closing_it() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments frozen subject").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1477,7 +1471,7 @@ async fn a_frozen_subject_holds_an_approved_order_without_closing_it() {
 async fn a_revocation_inside_the_execution_window_cancels_the_queued_withdrawal() {
 	use domain::withdrawals::WithdrawalState;
 
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments L1 window").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1516,7 +1510,7 @@ async fn a_revocation_inside_the_execution_window_cancels_the_queued_withdrawal(
 /// and an answer arriving afterwards finds nothing.
 #[tokio::test]
 async fn the_sweep_expires_what_nobody_consented_to() {
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments expiry sweep").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1595,7 +1589,7 @@ async fn an_approved_l1_order(a: &App, investor: UserId, initiator: UserId, amou
 async fn a_consent_void_found_at_execution_cancels_the_withdrawal_a_crashed_attempt_left_queued() {
 	use domain::withdrawals::WithdrawalState;
 
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments consent void over a queued withdrawal").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1625,7 +1619,7 @@ async fn a_consent_void_found_at_execution_cancels_the_withdrawal_a_crashed_atte
 async fn a_broken_notice_queue_does_not_undo_the_void_in_the_execution_window() {
 	use domain::withdrawals::WithdrawalState;
 
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments L1 window with the notice queue refusing").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;
@@ -1657,7 +1651,7 @@ async fn a_broken_notice_queue_does_not_undo_the_void_in_the_execution_window() 
 async fn a_withdrawal_created_after_the_order_was_voided_is_cancelled_when_its_record_is_refused() {
 	use domain::withdrawals::WithdrawalState;
 
-	let _guard = exclusive_payments().await;
+	let _guard = common::outbox_serial().await;
 	let Some(a) = app("payments late withdrawal after a void").await else { return };
 	reset_payments(&a.pool).await;
 	let investor = an_investor(&a.pool).await;

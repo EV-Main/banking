@@ -75,6 +75,14 @@ pub async fn outbox_serial() -> tokio::sync::MutexGuard<'static, ()> {
 	OUTBOX.lock().await
 }
 
+/// The bridge cursor is one global row: hold this for the whole life of a test that runs
+/// `BridgeConsumer`. One lock across suites, for the reason [`OUTBOX`] is.
+static BRIDGE_CURSOR: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+pub async fn bridge_cursor_serial() -> tokio::sync::MutexGuard<'static, ()> {
+	BRIDGE_CURSOR.lock().await
+}
+
 /// Drain the outbox to quiescence. `Relay::drain` applies one pass and answers `true` when
 /// a transient failure told it to back off — `Relay::run` sleeps and comes back, so a test
 /// that took one pass for "everything landed" read the ledger before its own rows did

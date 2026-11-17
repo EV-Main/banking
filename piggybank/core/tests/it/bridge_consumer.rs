@@ -17,6 +17,7 @@ use std::{
 	time::{Duration, Instant},
 };
 
+use common::pool;
 use concierge_domain::authz::bank;
 use evconcierge_contracts::concierge::v1::{
 	PullUserLifecycleRequest, PullUserLifecycleResponse, SeatPermissions, UserLifecycleEvent,
@@ -33,7 +34,6 @@ use tokio_util::sync::CancellationToken;
 use tonic::{Request, Response, Status, transport::Server};
 
 use crate::common;
-use common::pool;
 
 const BRIDGE_TOKEN: &str = "test-bridge-token";
 
@@ -47,8 +47,6 @@ async fn blocked(pool: &PgPool, user_id: uuid::Uuid) -> bool {
 		.expect("the user has a banking row")
 		.blocked
 }
-/// Fixed advisory-lock key serializing the two tests' drains over the single global cursor row.
-const BRIDGE_TEST_LOCK: i64 = 0x4556_4252_4944_4745;
 
 fn unique_subject() -> String {
 	format!("itest-bridge-{}", uuid::Uuid::new_v4())
@@ -133,15 +131,8 @@ where
 	Fut: Future<Output = ()>, {
 	// Bind once to claim a free ephemeral port, read it, then drop the listener and let tonic
 	// re-bind the same addr — avoids a tokio-stream dep just to pass a pre-bound listener.
-	// The bridge cursor is a single global row, so the two tests must not interleave their
-	// drains. Serialize at the DB with a session advisory lock (held on a dedicated connection
-	// for this drive) and reset the cursor so this drive pulls its own server from position 0.
-	let mut guard = pool.acquire().await.expect("lock connection");
-	sqlx::query("SELECT pg_advisory_lock($1)")
-		.bind(BRIDGE_TEST_LOCK)
-		.execute(guard.as_mut())
-		.await
-		.expect("take bridge test lock");
+	// Reset the cursor so this drive pulls its own server from position 0.
+	let _turn = common::bridge_cursor_serial().await;
 	sqlx::query("UPDATE bridge_cursor SET position = 0 WHERE id = TRUE").execute(pool).await.expect("reset cursor");
 
 	let addr: SocketAddr = {
@@ -176,10 +167,6 @@ where
 	};
 
 	tokio::join!(server, consumer, asserter);
-
-	// Release the session advisory lock (a pooled connection isn't closed, so it must be
-	// unlocked explicitly) before the connection returns to the pool for the next drive.
-	sqlx::query("SELECT pg_advisory_unlock($1)").bind(BRIDGE_TEST_LOCK).execute(guard.as_mut()).await.ok();
 }
 
 #[tokio::test]
@@ -948,18 +935,9 @@ impl UserEvents for FlakyUserEvents {
 /// Run `service` against the real consumer at `poll` until `pulls` holds `want` entries (or
 /// [`OBSERVE_CAP`] passes), then cancel and wind down. Returns whether the consumer
 /// actually finished within [`CONSUMER_GRACE`] of being told to stop.
-///
-/// Deliberately takes no assertion closure: the bridge cursor is one global row, so this
-/// holds the suite's advisory lock for the drive, and an assertion that unwound inside the
-/// `join!` would leave that lock on a pooled connection and wedge every later test. The
-/// caller asserts afterwards, on the log it passed in and on the database.
+/// The caller asserts afterwards, on the log it passed in and on the database.
 async fn drive_misbehaving<S: UserEvents>(pool: &PgPool, service: S, poll: Duration, pulls: PullLog, want: usize) -> bool {
-	let mut guard = pool.acquire().await.expect("lock connection");
-	sqlx::query("SELECT pg_advisory_lock($1)")
-		.bind(BRIDGE_TEST_LOCK)
-		.execute(guard.as_mut())
-		.await
-		.expect("take bridge test lock");
+	let _turn = common::bridge_cursor_serial().await;
 	sqlx::query("UPDATE bridge_cursor SET position = 0 WHERE id = TRUE").execute(pool).await.expect("reset cursor");
 
 	let addr: SocketAddr = {
@@ -1002,8 +980,6 @@ async fn drive_misbehaving<S: UserEvents>(pool: &PgPool, service: S, poll: Durat
 	};
 
 	let (_, finished, ()) = tokio::join!(server, consumer, stopper);
-
-	sqlx::query("SELECT pg_advisory_unlock($1)").bind(BRIDGE_TEST_LOCK).execute(guard.as_mut()).await.ok();
 	finished
 }
 
