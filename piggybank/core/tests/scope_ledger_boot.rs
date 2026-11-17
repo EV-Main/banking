@@ -26,6 +26,7 @@ use tonic::{
 	transport::{Certificate, ClientTlsConfig, Endpoint, Identity},
 };
 
+#[path = "it/common/mod.rs"]
 mod common;
 
 fn fixture(name: &str) -> String {
