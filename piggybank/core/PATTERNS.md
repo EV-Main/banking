@@ -1030,7 +1030,7 @@ one: `TIGERBEETLE_PORT=3034 TBCLUSTER=1 nix run .#tb`, then
 
 `domain` unit tests cover the money math, the chart of accounts (every key round-trips, every
 live and retired code is unique) and the withdrawal and payment transitions.
-`piggybank/core/tests/wallet_withdrawals.rs` hits **real** Postgres + TigerBeetle (the
+`piggybank/core/tests/it/wallet_withdrawals.rs` hits **real** Postgres + TigerBeetle (the
 withdrawal reserve→settle with fee, fail→refund, short-rail queue→dispatch→settle, queued
 cancel→refund; the on-chain dispatch gate's three arms — short treasury queues despite a
 liquid TB rail, liquid treasury dispatches, read failure degrades to queued — plus the
@@ -1038,18 +1038,18 @@ refused admin dispatch and the `Dispatcher::sweep` both-gates flow, driven by a 
 `Custody` adapter with a configurable treasury view; plus the dispatch-time outflow
 policy — a tier revoked after acceptance stops the sweep, the admin dispatch is refused
 under read-only, under a freeze and at tier 0, and a withdrawal whose owner row is gone
-fails closed). `piggybank/core/tests/kyc_gating.rs` covers the verification floor against
+fails closed). `piggybank/core/tests/it/kyc_gating.rs` covers the verification floor against
 real Postgres + TigerBeetle: tier 0 is refused a deposit address **without the address
 gateway being reached at all** (a call counter, since a gate placed after the port would
 look identical from the return value while having already minted the key), tier 0 cannot
 withdraw *with a funded claim* (so the refusal is the gate, not insolvency), tier 1 does
 both, the unconfigured-rail `None` stays distinguishable from the unverified `Forbidden`,
 and a payment to a tier-0 investor is gated on its source, not on them.
-`piggybank/core/tests/treasury.rs` (`held_by_users` a sum of user claims, not a remainder;
-banking's treasury on a line of its own) and `piggybank/core/tests/retired_claims.rs` (value
+`piggybank/core/tests/it/treasury.rs` (`held_by_users` a sum of user claims, not a remainder;
+banking's treasury on a line of its own) and `piggybank/core/tests/it/retired_claims.rs` (value
 on a retired code fails reconciliation and is never unclassified) hit real Postgres +
 TigerBeetle too.
-`piggybank/core/tests/relay_recovery.rs`
+`piggybank/core/tests/it/relay_recovery.rs`
 proves a parked event lands in the distinct `parked_at` state (never marked dispatched),
 stays queryable, and is surfaced by `Reconciliation::scan`; that `Reaper::sweep` alerts on
 a stuck `processing` withdrawal (never auto-voids it) while auto-cancelling an abandoned

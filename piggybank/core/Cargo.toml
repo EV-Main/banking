@@ -6,6 +6,7 @@ description = "The EV banking hub server — composition root that runs the core
 license = "BlueOak-1.0.0"
 publish = false
 default-run = "piggybank"
+autotests = false
 
 [[bin]]
 name = "piggybank"
@@ -14,6 +15,15 @@ path = "src/main.rs"
 [[bin]]
 name = "ledger-gap"
 path = "src/ledger_gap.rs"
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+# asserts no rustls provider is installed process-wide, so it needs its own process
+[[test]]
+name = "scope_ledger_boot"
+path = "tests/scope_ledger_boot.rs"
 
 [dependencies]
 async-trait.workspace = true
