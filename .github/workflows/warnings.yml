@@ -40,14 +40,14 @@ jobs:
         name: Restore particles' cache
         uses: actions/cache/restore@v5
         with:
-          key: particles-warnings-${{ runner.os }}-${{ hashFiles('wallet/frontend/package-lock.json') }}
+          key: particles-warnings-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
           restore-keys: particles-warnings-${{ runner.os }}-
       - if: github.ref_name == github.event.repository.default_branch
         name: Particles' cache
         uses: actions/cache@v5
         with:
-          key: particles-warnings-${{ runner.os }}-${{ hashFiles('wallet/frontend/package-lock.json') }}
+          key: particles-warnings-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
           restore-keys: particles-warnings-${{ runner.os }}-
       - id: run

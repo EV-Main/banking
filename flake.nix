@@ -920,19 +920,7 @@
           };
         };
 
-        # the wallet's i18n catalogues; shares the wallet particles' `npm ci`
-        i18n = {
-          name = "wallet-frontend-i18n";
-          inherit (pkgs.lib.findFirst (p: p.name == "wallet-frontend-typecheck") (throw "js has no wallet-frontend-typecheck") js.particles.errors) prepare ciCache;
-          program = pkgs.writeShellApplication {
-            name = "wallet-frontend-i18n";
-            runtimeInputs = [ js.nodejs pkgs.git ];
-            text = ''
-              cd "$(git rev-parse --show-toplevel)/wallet/frontend"
-              exec npm run i18n:check
-            '';
-          };
-        };
+        i18n = js.script "wallet/frontend" "i18n:check";
 
         # ── shared Redis (ensure-running) ───────────────────────────────────
         # ONE instance for all ev_invest repos (numeric dbs: 0=banking, 1=concierge),

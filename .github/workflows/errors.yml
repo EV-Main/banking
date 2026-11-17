@@ -18,8 +18,8 @@ jobs:
       sdk-test_status: ${{ steps.run.outputs['sdk-test_status'] }}
       sdk-typecheck_seconds: ${{ steps.run.outputs['sdk-typecheck_seconds'] }}
       sdk-typecheck_status: ${{ steps.run.outputs['sdk-typecheck_status'] }}
-      wallet-frontend-i18n_seconds: ${{ steps.run.outputs['wallet-frontend-i18n_seconds'] }}
-      wallet-frontend-i18n_status: ${{ steps.run.outputs['wallet-frontend-i18n_status'] }}
+      wallet-frontend-i18n-check_seconds: ${{ steps.run.outputs['wallet-frontend-i18n-check_seconds'] }}
+      wallet-frontend-i18n-check_status: ${{ steps.run.outputs['wallet-frontend-i18n-check_status'] }}
       wallet-frontend-test_seconds: ${{ steps.run.outputs['wallet-frontend-test_seconds'] }}
       wallet-frontend-test_status: ${{ steps.run.outputs['wallet-frontend-test_status'] }}
       wallet-frontend-typecheck_seconds: ${{ steps.run.outputs['wallet-frontend-typecheck_seconds'] }}
@@ -42,18 +42,18 @@ jobs:
         name: Restore particles' cache
         uses: actions/cache/restore@v5
         with:
-          key: particles-errors-${{ runner.os }}-${{ hashFiles('sdk/package-lock.json', 'wallet/frontend/package-lock.json') }}
+          key: particles-errors-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
           restore-keys: particles-errors-${{ runner.os }}-
       - if: github.ref_name == github.event.repository.default_branch
         name: Particles' cache
         uses: actions/cache@v5
         with:
-          key: particles-errors-${{ runner.os }}-${{ hashFiles('sdk/package-lock.json', 'wallet/frontend/package-lock.json') }}
+          key: particles-errors-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           path: ~/.npm
           restore-keys: particles-errors-${{ runner.os }}-
       - id: run
-        run: nix run .#test -- --severity errors --serial sdk-typecheck sdk-test wallet-frontend-typecheck wallet-frontend-test rust-tests drift concierge-pin wallet-frontend-i18n
+        run: nix run .#test -- --severity errors --serial sdk-typecheck sdk-test wallet-frontend-typecheck wallet-frontend-test rust-tests drift concierge-pin wallet-frontend-i18n-check
     timeout-minutes: 90
   report:
     if: always() && github.ref_name == github.event.repository.default_branch
@@ -64,7 +64,7 @@ jobs:
     steps:
       - env:
           NEEDS: ${{ toJSON(needs) }}
-          PARTICLES: '[{"generic":true,"name":"sdk-typecheck"},{"generic":true,"name":"sdk-test"},{"generic":true,"name":"wallet-frontend-typecheck"},{"generic":true,"name":"wallet-frontend-test"},{"generic":true,"name":"rust-tests"},{"generic":true,"name":"drift"},{"generic":true,"name":"concierge-pin"},{"generic":true,"name":"wallet-frontend-i18n"}]'
+          PARTICLES: '[{"generic":true,"name":"sdk-typecheck"},{"generic":true,"name":"sdk-test"},{"generic":true,"name":"wallet-frontend-typecheck"},{"generic":true,"name":"wallet-frontend-test"},{"generic":true,"name":"rust-tests"},{"generic":true,"name":"drift"},{"generic":true,"name":"concierge-pin"},{"generic":true,"name":"wallet-frontend-i18n-check"}]'
         name: Tally the particles
         run: |
           read -r failed total seconds incomplete < <(jq -rn --argjson needs "$NEEDS" --argjson spec "$PARTICLES" '
