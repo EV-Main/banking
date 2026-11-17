@@ -16,15 +16,6 @@ path = "src/main.rs"
 name = "ledger-gap"
 path = "src/ledger_gap.rs"
 
-[[test]]
-name = "it"
-path = "tests/it/main.rs"
-
-# asserts no rustls provider is installed process-wide, so it needs its own process
-[[test]]
-name = "scope_ledger_boot"
-path = "tests/scope_ledger_boot.rs"
-
 [dependencies]
 async-trait.workspace = true
 hex = { workspace = true }
@@ -68,6 +59,15 @@ domain.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 tokio-util.workspace = true
 uuid = { workspace = true, features = ["v4"] }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+# asserts no rustls provider is installed process-wide, so it needs its own process
+[[test]]
+name = "scope_ledger_boot"
+path = "tests/scope_ledger_boot.rs"
 
 [lints]
 workspace = true

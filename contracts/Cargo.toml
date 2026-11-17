@@ -6,6 +6,10 @@ description = "gRPC wire contracts for the EV banking hub — generated tonic cl
 license = "BlueOak-1.0.0"
 publish = false
 
+# used by the code tonic-prost-build generates into OUT_DIR, which machete doesn't read
+[package.metadata.cargo-machete]
+ignored = ["prost", "tonic-prost"]
+
 [dependencies]
 prost.workspace = true
 tonic.workspace = true
