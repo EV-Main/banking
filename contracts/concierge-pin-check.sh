@@ -15,9 +15,9 @@
 # WHICH protos: contracts/concierge-protos.txt — the same list `gen-api` feeds protoc,
 # so a proto cannot be generated without being guarded (issue #293).
 #
-# Run in CI (.github/workflows/drift.yml) and locally before bumping the pin. Needs
+# The `concierge-pin` particle (`nix run .#test concierge-pin`); run it before bumping the pin. Needs
 # network access to the concierge remote and a resolvable cargo workspace (`cargo
-# metadata`, i.e. .tb-client linked — the nix app does that); exits non-zero on any
+# metadata`, i.e. .tb-client linked — the particle's prepare does that); exits non-zero on any
 # violation so a bad pin can't merge.
 set -euo pipefail
 

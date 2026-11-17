@@ -1,4 +1,4 @@
-# HAND-WRITTEN — like checks.yml and drift.yml, and not generator output: v_flakes only
+# HAND-WRITTEN, not generator output: v_flakes only
 # `cp -f`s its own filenames, so this file survives `nix develop`.
 #
 # Publishes `sdk/` (@evinvest/banking) through npm trusted publishing (OIDC): no

@@ -14,7 +14,7 @@ pub struct TestDb {
 }
 
 /// True under CI: `CI` is set, non-empty and not `"0"`/`"false"` (GitHub Actions and the
-/// flake's `check-rust` gate both export `CI=true`).
+/// flake's `rust-tests` particle both export `CI=true`).
 fn ci() -> bool {
 	std::env::var("CI").is_ok_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
 }

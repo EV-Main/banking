@@ -4,7 +4,7 @@
 #   - `nix run .#gen-api` (flake.nix, runGenApi): every file here is fed to protoc
 #     alongside contracts/proto/banking/v1/*.proto to produce contracts/openapi.json
 #     and the wallet frontend's shared/contracts/gen types;
-#   - `nix run .#concierge-pin-check` (contracts/concierge-pin-check.sh): every file
+#   - the `concierge-pin` particle (contracts/concierge-pin-check.sh): every file
 #     here has its bytes compared pin ↔ concierge origin/main ↔ local cargo checkout.
 #
 # Add a proto here when the wallet frontend starts consuming it; it is then generated AND

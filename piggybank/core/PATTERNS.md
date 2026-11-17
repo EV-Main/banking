@@ -1015,9 +1015,9 @@ A missing service is a **skip locally and a failure under CI**. Without `DATABAS
 (or with a replica that does not answer) a suite prints a notice and returns early — the
 counters still read `N passed`, so the signature of a run that executed nothing is
 `finished in 0.00s`, not a zero. Under `CI=true` — GitHub Actions exports it, and
-`nix run .#check-rust` exports it too — the same condition panics with
+`nix run .#test rust-tests` exports it too — the same condition panics with
 `integration services required in CI`, so a green tick means the money plane was actually
-exercised (#259). `check-rust` brings up its own throwaway Postgres (`:54329`) and
+exercised (#259). `rust-tests` brings up its own throwaway Postgres (`:54329`) and
 TigerBeetle (`:3039`) from the flake apps, runs the workspace against them and tears them
 down on exit; move the ports with `CHECK_POSTGRES_PORT` / `CHECK_TIGERBEETLE_PORT`.
 

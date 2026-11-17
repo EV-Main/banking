@@ -44,8 +44,9 @@
         portEnv = pkgs.lib.concatStrings (pkgs.lib.mapAttrsToList (n: v: "export ${n}=\"\${${n}:-${v}}\"\n") ports);
 
         rs = v_flakes.rs { inherit pkgs rust; };
+        js = v_flakes.js { inherit pkgs; packages = [ "sdk" "wallet/frontend" ]; };
         github = v_flakes.github {
-          inherit pkgs pname rs;
+          inherit pkgs pname rs js;
           enable = true;
           # Public repo → public Cachix (`ev-invest`); pull deps + push built paths.
           cache = { cachix = "ev-invest"; };
@@ -71,9 +72,21 @@
             CLAUDE.md
             .claude/
           '';
+          # v_flakes' rust particles can't link .tb-client, which the workspace's `tigerbeetle` path dep needs: these do
           jobs = {
-            warnings.augment = [ "tokei" "code-duplication" ];
-            other.augment = [ "loc-badge" ];
+            default = true;
+            errors = {
+              exclude = [ "rust-tests" ];
+              augment = [ rustTests drift conciergePin i18n ];
+            };
+            warnings = {
+              exclude = [
+                "rust-doc"
+                "rust-clippy"
+                "sdk-lint" # sdk/ has no eslint config
+              ];
+              augment = [ rustClippy ];
+            };
           };
           lfs = true;
         };
@@ -82,12 +95,11 @@
           defaults = true;
           lastSupportedVersion = "nightly-1.92";
           rootDir = ./.;
-          # crates_io (unpublished), loc (no gist) and ci (private repo) all
-          # render "not found" — keep only the badges that resolve. The wasm
+          # crates_io (unpublished) and loc (no gist) render "not found". The wasm
           # badge is injected in the devShell shellHook (no generator key for it).
-          badges = [ "msrv" "docs_rs" ];
+          badges = [ "msrv" "docs_rs" "ci" ];
         };
-        combined = v_flakes.utils.combine { inherit rust; modules = [ rs github readme ]; };
+        combined = v_flakes.utils.combine { inherit rust; modules = [ rs js github readme ]; };
 
         # ── shared shims ────────────────────────────────────────────────────
         # rust-lld (wasm32 linker) embeds the wrong rpath on macOS — it looks for
@@ -703,7 +715,7 @@
         # `BankingV1*` and `ConciergeV1*` types with no collision.
         #
         # WHICH concierge protos: contracts/concierge-protos.txt — the same list
-        # `concierge-pin-check` guards, so a proto cannot be generated from without
+        # `concierge-pin` guards, so a proto cannot be generated from without
         # its bytes being pinned (#293).
         runGenApi = pkgs.writeShellApplication {
           name = "run-gen-api";
@@ -728,31 +740,33 @@
         };
 
         # ── cross-repo concierge pin guard ──────────────────────────────────
-        # `nix run .#concierge-pin-check` — assert the pinned `evconcierge_contracts`
+        # The `concierge-pin` particle: assert the pinned `evconcierge_contracts`
         # rev (the directory + auth wire contract banking compiles and re-aliases
         # its cabinet TS from) is an ancestor of concierge origin/main, and that every
         # proto in contracts/concierge-protos.txt has the same bytes at the pin, on
         # origin/main and in the local cargo checkout gen-api reads. CI entry point for
-        # the contract-parity guard (drift.yml); needs network to the remote.
+        # the contract-parity guard; needs network to the remote.
         #
-        # `rust` + the tb-client link + empty RUSTC_WRAPPER as in runDriftCheck below:
-        # the checkout is located via `cargo metadata`, which needs the workspace to
-        # resolve (the .tb-client path dep) and no sccache probe (.cargo/config.toml).
+        # The checkout is located via `cargo metadata`, which needs the workspace to
+        # resolve (the .tb-client path dep) and no wrapper probe (.cargo/config.toml).
         # `bash` explicitly: the script needs bash ≥ 4 (`mapfile`), and `exec bash`
         # would otherwise pick up macOS's system 3.2 from PATH.
-        runConciergePinCheck = pkgs.writeShellApplication {
-          name = "run-concierge-pin-check";
-          runtimeInputs = with pkgs; [ bash rust git jq gnused coreutils gnugrep ];
-          text = ''
-            cd "$(git rev-parse --show-toplevel)"
-            ${linkTbClient}
-            export RUSTC_WRAPPER=""
-            exec bash contracts/concierge-pin-check.sh
-          '';
+        conciergePin = {
+          name = "concierge-pin";
+          prepare = tbClient;
+          program = pkgs.writeShellApplication {
+            name = "concierge-pin";
+            runtimeInputs = with pkgs; [ bash rust git jq gnused coreutils gnugrep ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)"
+              export RUSTC_WRAPPER=""
+              exec bash contracts/concierge-pin-check.sh
+            '';
+          };
         };
 
-        # ── drift gate (CI entry point) ─────────────────────────────────────
-        # `nix run .#drift-check` — the two committed artefacts that are OUTPUT, and
+        # ── drift gate ────────────────────────────────────────────────────
+        # The `drift` particle: the two committed artefacts that are OUTPUT, and
         # so can disagree with the source they were generated from without anything
         # failing to build:
         #
@@ -772,161 +786,152 @@
         # in .cargo/config.toml, and stable cargo refuses to parse the manifest at all
         # — with exit 101, the SAME code a genuine lock mismatch gives. A gate built on
         # stable would be red on a clean tree and indistinguishable from a real find.
-        runDriftCheck = pkgs.writeShellApplication {
-          name = "run-drift-check";
-          runtimeInputs = [ rust pkgs.git pkgs.nodejs runGenApi ];
-          text = ''
-            cd "$(git rev-parse --show-toplevel)"
+        drift = {
+          name = "drift";
+          prepare = tbClient;
+          program = pkgs.writeShellApplication {
+            name = "drift";
+            runtimeInputs = [ rust pkgs.git pkgs.nodejs runGenApi ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)"
 
-            # A fresh clone — which is what CI is — has no .tb-client, and the workspace
-            # carries a path dependency on it, so `cargo metadata` cannot resolve without
-            # this. Same reason every other workspace-touching app links it first.
-            ${linkTbClient}
+              # .cargo/config.toml's rustc-wrapper, probed before anything, may be off a runner's PATH; `metadata` compiles nothing
+              export RUSTC_WRAPPER=""
 
-            # .cargo/config.toml sets `rustc-wrapper = "sccache"`, so cargo probes
-            # `sccache rustc -vV` before doing anything and dies with 101 wherever sccache
-            # is not on PATH — every runner. An empty RUSTC_WRAPPER overrides the config
-            # key; it is the same override the generated workflows carry in their `env`.
-            # Nothing is compiled here anyway: `metadata` resolves, it does not build.
-            export RUSTC_WRAPPER=""
+              echo "▶ Cargo.lock agrees with the manifests"
+              cargo metadata --locked --format-version 1 >/dev/null
 
-            echo "▶ Cargo.lock agrees with the manifests"
-            cargo metadata --locked --format-version 1 >/dev/null
+              echo "▶ the committed contract is what the protos generate"
+              generated=(contracts/openapi.json wallet/frontend/shared/contracts/gen)
+              # Ahead of gen-api's own `npm install` fallback, and deliberately `ci`: on a
+              # fresh checkout `install` is free to move a generator inside its semver range,
+              # which would show up here as contract drift nobody caused.
+              [ -d node_modules ] || npm ci
+              run-gen-api
+              # --porcelain rather than `git diff --exit-code`: a generator that emits a
+              # NEW file leaves it untracked, and a diff alone calls that clean.
+              drift="$(git status --porcelain -- "''${generated[@]}")"
+              if [ -n "$drift" ]; then
+                echo "::error::the committed contract is stale — run 'nix run .#gen-api' and commit both sides" >&2
+                echo "$drift" >&2
+                git --no-pager diff -- "''${generated[@]}" >&2
+                exit 1
+              fi
 
-            echo "▶ the committed contract is what the protos generate"
-            generated=(contracts/openapi.json wallet/frontend/shared/contracts/gen)
-            # Ahead of gen-api's own `npm install` fallback, and deliberately `ci`: on a
-            # fresh checkout `install` is free to move a generator inside its semver range,
-            # which would show up here as contract drift nobody caused.
-            [ -d node_modules ] || npm ci
-            run-gen-api
-            # --porcelain rather than `git diff --exit-code`: a generator that emits a
-            # NEW file leaves it untracked, and a diff alone calls that clean.
-            drift="$(git status --porcelain -- "''${generated[@]}")"
-            if [ -n "$drift" ]; then
-              echo "::error::the committed contract is stale — run 'nix run .#gen-api' and commit both sides" >&2
-              echo "$drift" >&2
-              git --no-pager diff -- "''${generated[@]}" >&2
-              exit 1
-            fi
-
-            echo "✓ no drift"
-          '';
+              echo "✓ no drift"
+            '';
+          };
         };
 
-        # ── the build/test gate (CI entry points) ───────────────────────────
-        # Until these, nothing in CI ever compiled this repository. `jobs` below asks
-        # for `tokei`, `code-duplication` and `loc-badge` and nothing else, so no
-        # errors.yml was generated at all and a green tick on a PR said only that the
-        # comment ratio was acceptable.
-        #
-        # The generator's own `rust-tests` / `rust-clippy` cannot be turned on here,
-        # and not for a reason a flag fixes: they drive cargo from a
-        # dtolnay/rust-toolchain runner, while this workspace declares
-        # `tigerbeetle = { path = ".tb-client" }` — a symlink into the nix store that
-        # only the dev shell creates. Outside nix there is no such directory and cargo
-        # cannot resolve the workspace at all. Hence a nix entry point, like the drift
-        # gate above and the container release: inside the flake the toolchain, protoc
-        # and .tb-client all exist and match what developers run.
-        runCheckRust = pkgs.writeShellApplication {
-          name = "run-check-rust";
-          runtimeInputs = (with pkgs; [ rust git protobuf mold postgresql redis coreutils ]) ++ [ tigerbeetleBin ]; # tests/ledger_gap.rs runs its own clusters
-          text = ''
-            cd "$(git rev-parse --show-toplevel)"
-            ${linkTbClient}
-            ${protocEnv}
-            # See runDriftCheck: .cargo/config.toml names sccache as the rustc wrapper,
-            # which is not on a runner's PATH and aborts cargo before it starts.
-            export RUSTC_WRAPPER=""
-
-            echo "▶ clippy (workspace, all targets, warnings denied)"
-            cargo clippy --workspace --all-targets -- -D warnings
-
-            # Until #259 this step ran deliberately WITHOUT DATABASE_URL, and every suite
-            # under piggybank/*/tests skipped itself — four releases went out on a green
-            # tick that had never touched Postgres or TigerBeetle. Now the gate brings up
-            # both from the same flake apps developers run (`.#db`, `.#tb`; the TB binary
-            # is the 0.17.6 the client is built against), in a throwaway state dir on
-            # ports away from the shared dev cluster, and sets CI=true so
-            # tests/common/mod.rs FAILS instead of skipping when a service is missing.
-            # /tmp rather than mktemp's default: macOS's $TMPDIR pushes the postgres
-            # socket path past the 103-byte sun_path limit.
-            scratch="$(mktemp -d /tmp/check-rust.XXXXXX)"
-            export XDG_STATE_HOME="$scratch/state"
-            export TB_DATA="$scratch/tb"
-            export POSTGRES_PORT="''${CHECK_POSTGRES_PORT:-54329}"
-            export TIGERBEETLE_PORT="''${CHECK_TIGERBEETLE_PORT:-3039}"
-            export PGDATABASES="banking_check"
-            redis_port="''${CHECK_REDIS_PORT:-63799}"
-            tb_pid=""
-            redis_pid=""
-            cleanup() {
-              if [ -n "$tb_pid" ]; then kill "$tb_pid" 2>/dev/null || true; fi
-              if [ -n "$redis_pid" ]; then kill "$redis_pid" 2>/dev/null || true; fi
-              pg_ctl -D "$XDG_STATE_HOME/ev_invest/pg/data" -m fast stop >/dev/null 2>&1 || true
-              rm -rf "$scratch"
-            }
-            trap cleanup EXIT
-
-            echo "▶ postgres :$POSTGRES_PORT + tigerbeetle :$TIGERBEETLE_PORT + redis :$redis_port (throwaway)"
-            ${runPostgres}/bin/run-postgres
-            # The wallet intents' Lua scripts and once-only step-up jti, and piggybank's refresh store, only run against a real Redis (#576).
-            redis-server --port "$redis_port" --bind 127.0.0.1 --save "" --appendonly no >"$scratch/redis.log" 2>&1 &
-            redis_pid=$!
-            TBCLUSTER=0 ${runTigerbeetle}/bin/run-tigerbeetle >"$scratch/tb.log" 2>&1 &
-            tb_pid=$!
-            for _ in $(seq 1 150); do
-              if (exec 3<>"/dev/tcp/127.0.0.1/$TIGERBEETLE_PORT") 2>/dev/null; then break; fi
-              if ! kill -0 "$tb_pid" 2>/dev/null; then cat "$scratch/tb.log" >&2; echo "tigerbeetle exited" >&2; exit 1; fi
-              sleep 0.2
-            done
-            if ! (exec 3<>"/dev/tcp/127.0.0.1/$TIGERBEETLE_PORT") 2>/dev/null; then
-              cat "$scratch/tb.log" >&2; echo "tigerbeetle did not come up on :$TIGERBEETLE_PORT" >&2; exit 1
-            fi
-            for _ in $(seq 1 50); do
-              if redis-cli -p "$redis_port" ping >/dev/null 2>&1; then break; fi
-              sleep 0.2
-            done
-            redis-cli -p "$redis_port" ping >/dev/null || { cat "$scratch/redis.log" >&2; echo "redis did not come up on :$redis_port" >&2; exit 1; }
-            export REDIS_URL="redis://127.0.0.1:$redis_port/15"
-            export DATABASE_URL="postgres://postgres@127.0.0.1:$POSTGRES_PORT/banking_check"
-            # The signer suites create their own throwaway databases from this URL.
-            export SIGNER_DATABASE_URL="$DATABASE_URL"
-            export TIGERBEETLE_ADDRESS="127.0.0.1:$TIGERBEETLE_PORT"
-            export TIGERBEETLE_CLUSTER_ID=0
-            export CI=true
-
-            echo "▶ tests (workspace, integration suites against the throwaway services)"
-            cargo test --workspace
-
-            echo "✓ rust ok"
-          '';
+        # ── checks (particles: `nix run .#test`) ────────────────────────────
+        # The workspace's path dep on .tb-client: a fresh checkout has no link until this runs.
+        tbClient = pkgs.writeShellApplication {
+          name = "tb-client";
+          runtimeInputs = [ pkgs.git pkgs.coreutils ];
+          text = linkTbClient;
         };
 
-        runCheckFrontend = pkgs.writeShellApplication {
-          name = "run-check-frontend";
-          runtimeInputs = with pkgs; [ nodejs git ];
-          text = ''
-            cd "$(git rev-parse --show-toplevel)"
-            # `ci`, not `install`: the lock is the point of a check run.
-            npm ci
+        rustClippy = {
+          name = "rust-clippy";
+          prepare = tbClient;
+          program = pkgs.writeShellApplication {
+            name = "rust-clippy";
+            runtimeInputs = with pkgs; [ rust git protobuf mold ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)"
+              ${protocEnv}
+              export RUSTC_WRAPPER=""
+              exec cargo clippy --workspace --all-targets -- -D warnings
+            '';
+          };
+        };
 
-            echo "▶ tsc --noEmit"
-            npm run check --workspace @evbanking/wallet-host
+        rustTests = {
+          name = "rust-tests";
+          prepare = tbClient;
+          program = pkgs.writeShellApplication {
+            name = "rust-tests";
+            runtimeInputs = (with pkgs; [ rust git protobuf mold postgresql redis coreutils ]) ++ [ tigerbeetleBin ]; # tests/ledger_gap.rs runs its own clusters
+            text = ''
+              cd "$(git rev-parse --show-toplevel)"
+              ${protocEnv}
+              # See `drift`: .cargo/config.toml names a rustc wrapper a runner's PATH may lack.
+              export RUSTC_WRAPPER=""
 
-            echo "▶ cabinet tests"
-            npm run test --workspace @evbanking/wallet-host
+              # Until #259 this step ran deliberately WITHOUT DATABASE_URL, and every suite
+              # under piggybank/*/tests skipped itself — four releases went out on a green
+              # tick that had never touched Postgres or TigerBeetle. Now the gate brings up
+              # both from the same flake apps developers run (`.#db`, `.#tb`; the TB binary
+              # is the 0.17.6 the client is built against), in a throwaway state dir on
+              # ports away from the shared dev cluster, and sets CI=true so
+              # tests/common/mod.rs FAILS instead of skipping when a service is missing.
+              # /tmp rather than mktemp's default: macOS's $TMPDIR pushes the postgres
+              # socket path past the 103-byte sun_path limit.
+              scratch="$(mktemp -d /tmp/check-rust.XXXXXX)"
+              export XDG_STATE_HOME="$scratch/state"
+              export TB_DATA="$scratch/tb"
+              export POSTGRES_PORT="''${CHECK_POSTGRES_PORT:-54329}"
+              export TIGERBEETLE_PORT="''${CHECK_TIGERBEETLE_PORT:-3039}"
+              export PGDATABASES="banking_check"
+              redis_port="''${CHECK_REDIS_PORT:-63799}"
+              tb_pid=""
+              redis_pid=""
+              cleanup() {
+                if [ -n "$tb_pid" ]; then kill "$tb_pid" 2>/dev/null || true; fi
+                if [ -n "$redis_pid" ]; then kill "$redis_pid" 2>/dev/null || true; fi
+                pg_ctl -D "$XDG_STATE_HOME/ev_invest/pg/data" -m fast stop >/dev/null 2>&1 || true
+                rm -rf "$scratch"
+              }
+              trap cleanup EXIT
 
-            echo "▶ cabinet i18n catalogues"
-            npm run i18n:check --workspace @evbanking/wallet-host
+              echo "▶ postgres :$POSTGRES_PORT + tigerbeetle :$TIGERBEETLE_PORT + redis :$redis_port (throwaway)"
+              ${runPostgres}/bin/run-postgres
+              # The wallet intents' Lua scripts and once-only step-up jti, and piggybank's refresh store, only run against a real Redis (#576).
+              redis-server --port "$redis_port" --bind 127.0.0.1 --save "" --appendonly no >"$scratch/redis.log" 2>&1 &
+              redis_pid=$!
+              TBCLUSTER=0 ${runTigerbeetle}/bin/run-tigerbeetle >"$scratch/tb.log" 2>&1 &
+              tb_pid=$!
+              for _ in $(seq 1 150); do
+                if (exec 3<>"/dev/tcp/127.0.0.1/$TIGERBEETLE_PORT") 2>/dev/null; then break; fi
+                if ! kill -0 "$tb_pid" 2>/dev/null; then cat "$scratch/tb.log" >&2; echo "tigerbeetle exited" >&2; exit 1; fi
+                sleep 0.2
+              done
+              if ! (exec 3<>"/dev/tcp/127.0.0.1/$TIGERBEETLE_PORT") 2>/dev/null; then
+                cat "$scratch/tb.log" >&2; echo "tigerbeetle did not come up on :$TIGERBEETLE_PORT" >&2; exit 1
+              fi
+              for _ in $(seq 1 50); do
+                if redis-cli -p "$redis_port" ping >/dev/null 2>&1; then break; fi
+                sleep 0.2
+              done
+              redis-cli -p "$redis_port" ping >/dev/null || { cat "$scratch/redis.log" >&2; echo "redis did not come up on :$redis_port" >&2; exit 1; }
+              export REDIS_URL="redis://127.0.0.1:$redis_port/15"
+              export DATABASE_URL="postgres://postgres@127.0.0.1:$POSTGRES_PORT/banking_check"
+              # The signer suites create their own throwaway databases from this URL.
+              export SIGNER_DATABASE_URL="$DATABASE_URL"
+              export TIGERBEETLE_ADDRESS="127.0.0.1:$TIGERBEETLE_PORT"
+              export TIGERBEETLE_CLUSTER_ID=0
+              export CI=true
 
-            # `npm run lint` is deliberately absent: it reports 5 errors on main today
-            # (profile-schema.ts, instrumentation.ts, next.config.ts, profile-view.tsx,
-            # settings/ui/fields.tsx). Adding it now would land red, which is the exact
-            # thing this gate exists to stop being normal. Clean those, then add it.
+              echo "▶ tests (workspace, integration suites against the throwaway services)"
+              cargo test --workspace
 
-            echo "✓ frontend ok"
-          '';
+              echo "✓ rust ok"
+            '';
+          };
+        };
+
+        # the wallet's i18n catalogues; shares the wallet particles' `npm ci`
+        i18n = {
+          name = "wallet-frontend-i18n";
+          inherit (pkgs.lib.findFirst (p: p.name == "wallet-frontend-typecheck") (throw "js has no wallet-frontend-typecheck") js.particles.errors) prepare ciCache;
+          program = pkgs.writeShellApplication {
+            name = "wallet-frontend-i18n";
+            runtimeInputs = [ js.nodejs pkgs.git ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/wallet/frontend"
+              exec npm run i18n:check
+            '';
+          };
         };
 
         # ── shared Redis (ensure-running) ───────────────────────────────────
@@ -1292,10 +1297,6 @@
             new-replica = app "${runNewReplica}/bin/new-replica" "move a PROD cluster replica to another host (recover, never format)";
             redis = app "${runRedis}/bin/run-redis" "ensure the SHARED ev_invest Redis is up";
             gen-api = app "${runGenApi}/bin/run-gen-api" "regenerate contracts/openapi.json + the wallet's TS types from the protos";
-            concierge-pin-check = app "${runConciergePinCheck}/bin/run-concierge-pin-check" "the concierge pin is an ancestor of origin/main and its protos match (CI: drift.yml)";
-            drift-check = app "${runDriftCheck}/bin/run-drift-check" "Cargo.lock matches the manifests, the committed contract matches the protos (CI: drift.yml)";
-            check-rust = app "${runCheckRust}/bin/run-check-rust" "clippy (warnings denied) + workspace tests, as CI runs them";
-            check-frontend = app "${runCheckFrontend}/bin/run-check-frontend" "wallet tsc + tests against a clean npm ci, as CI runs them";
             publish = app "${runPublish}/bin/publish" "tag the next vX.Y.Z (-- major|minor|patch) and push it";
             help = v_flakes.utils.help {
               inherit pkgs self system;
@@ -1336,7 +1337,6 @@
               '';
 
             packages = [
-              nodejs
               redis
               openssl
               pkg-config

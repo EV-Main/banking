@@ -457,7 +457,7 @@ mod tests {
 		store_contract(&MemoryStore::default(), "memory").await;
 	}
 
-	/// The same contract against the Redis in `REDIS_URL`, which `nix run .#check-rust` brings up.
+	/// The same contract against the Redis in `REDIS_URL`, which the `rust-tests` particle brings up.
 	#[tokio::test]
 	async fn the_redis_store_keeps_the_contract() {
 		let Some(url) = std::env::var("REDIS_URL").ok().filter(|u| !u.is_empty()) else {

@@ -124,7 +124,7 @@ pub async fn drain_to_quiescence(relay: &Relay, pool: &PgPool) {
 }
 
 /// True under CI: `CI` is set, non-empty and not `"0"`/`"false"`. GitHub Actions exports
-/// `CI=true`, and the flake's `check-rust` gate does the same.
+/// `CI=true`, and the flake's `rust-tests` particle does the same.
 fn ci() -> bool {
 	std::env::var("CI").is_ok_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
 }

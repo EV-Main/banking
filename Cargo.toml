@@ -45,7 +45,7 @@ evbanking_contracts = { path = "contracts" }
 # JWTs) — the BFF's request credential is the shell-set `ev_access` cookie.
 evconcierge_auth = { git = "https://github.com/EV-Main/concierge.git", rev = "eb3af41e733199f4bcc2ac2fb43b4e9179514dcd" }
 # The concierge identity plane's wire contracts: the wallet backend and piggybank-core's
-# bridge consumer and approvals client. Moves with `evconcierge_auth`; `nix run .#concierge-pin-check`
+# bridge consumer and approvals client. Moves with `evconcierge_auth`; `nix run .#test concierge-pin`
 # guards the pin, and `git log -p Cargo.toml` says what each bump brought.
 evconcierge_contracts = { git = "https://github.com/EV-Main/concierge.git", rev = "eb3af41e733199f4bcc2ac2fb43b4e9179514dcd" }
 getrandom = { version = "0.3", features = ["wasm_js"] }
@@ -116,6 +116,9 @@ non_kebab_case_bins = "allow"
 [workspace.lints.clippy]
 if_not_else = "warn"
 integer_division = "warn"
+
+[workspace.package]
+repository = "https://github.com/EV-Main/banking"
 
 # smaller target/: trim debuginfo (deps need none), keep line tables for backtraces
 [profile.dev]

@@ -4,14 +4,17 @@ fn main() {
 }
 
 fn git_version() {
-	// resolved by git: the package dir need not be the repo root, and in a worktree `.git` is a file
+	// resolved by git: the package dir need not be the repo root, and in a worktree `.git` is a file.
+	// This checkout's HEAD reflog moves on its every commit/checkout/reset; `refs/` is shared by all worktrees, so watching it rebuilt every checkout on any agent's commit.
 	if let Some(paths) = std::process::Command::new("git")
-		.args(["rev-parse", "--git-path", "HEAD", "--git-path", "refs"])
+		.args(["rev-parse", "--git-path", "HEAD", "--git-path", "logs/HEAD"])
 		.output()
 		.ok()
 		.filter(|o| o.status.success())
 	{
-		for path in String::from_utf8_lossy(&paths.stdout).lines() {
+		// a missing path makes cargo rerun the script on every build
+		// shortcut: without a reflog (core.logAllRefUpdates=false) a commit leaves HEAD untouched and GIT_HASH goes stale, upgrade if a repo ever turns reflogs off
+		for path in String::from_utf8_lossy(&paths.stdout).lines().filter(|p| std::path::Path::new(p).exists()) {
 			println!("cargo:rerun-if-changed={path}");
 		}
 	}
