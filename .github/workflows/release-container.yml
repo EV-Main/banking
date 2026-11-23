@@ -19,7 +19,10 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
         with:
-          extra-conf: lazy-trees = true
+          extra-conf: |
+            lazy-trees = true
+            extra-substituters = https://valeratrades.cachix.org
+            extra-trusted-public-keys = valeratrades.cachix.org-1:gXVwhzO5YB+BaiEJYT48qZgzdaErGQew6xtZcz4Fo1Q=
       - name: Setup Cachix
         uses: cachix/cachix-action@v17
         with:

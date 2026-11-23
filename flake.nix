@@ -45,12 +45,13 @@
 
         rs = v_flakes.rs { inherit pkgs rust; };
         js = v_flakes.js { inherit pkgs; packages = [ "sdk" "wallet/frontend" ]; };
+        oldestSupportedVersion = "nightly-2026-06-29";
         github = v_flakes.github {
           inherit pkgs pname rs js;
           enable = true;
           # Public repo → public Cachix (`ev-invest`); pull deps + push built paths.
           cache = { cachix = "ev-invest"; };
-          lastSupportedVersion = "nightly-2026-05-12";
+          inherit oldestSupportedVersion;
           containerRelease = { registry = "ghcr.io/ev-main"; };
           gitignore.extra = ''
             ## Local Postgres
@@ -93,7 +94,7 @@
         readme = v_flakes.readme-fw {
           inherit pkgs pname;
           defaults = true;
-          lastSupportedVersion = "nightly-1.92";
+          inherit oldestSupportedVersion;
           rootDir = ./.;
           # crates_io (unpublished) and loc (no gist) render "not found". The wasm
           # badge is injected in the devShell shellHook (no generator key for it).
